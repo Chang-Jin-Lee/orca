@@ -55,6 +55,11 @@ type SortOption = 'memory' | 'cpu' | 'name'
 const METRIC_COLUMNS_CLS = 'flex items-center shrink-0 tabular-nums'
 const CPU_COLUMN_CLS = 'w-12 text-right'
 const MEM_COLUMN_CLS = 'w-16 text-right'
+// Why: every row (session, worktree, repo, app) AND the column header
+// reserve this same trailing gutter so the CPU/Memory columns line up
+// regardless of whether a row carries a kill-X. The X button sits inside
+// this gutter for session rows; other rows leave it blank.
+const ROW_TRAILING_GUTTER_CLS = 'w-5 shrink-0 flex items-center justify-end'
 
 // ─── Formatters ─────────────────────────────────────────────────────
 
@@ -191,9 +196,12 @@ function MetricPair({
 
 function AppSubRow({ label, values }: { label: string; values: UsageValues }): React.JSX.Element {
   return (
-    <div className="px-3 py-1.5 pl-6 flex items-center justify-between">
+    <div className="px-3 py-1.5 pl-6 flex items-center justify-between gap-2">
       <span className="text-[11px] text-muted-foreground truncate">{label}</span>
-      <MetricPair cpu={values.cpu} memory={values.memory} size="small" />
+      <div className="flex items-center gap-2 shrink-0">
+        <MetricPair cpu={values.cpu} memory={values.memory} size="small" />
+        <span className={ROW_TRAILING_GUTTER_CLS} aria-hidden />
+      </div>
     </div>
   )
 }
@@ -230,6 +238,7 @@ function AppSection({
           <div className="flex items-center gap-2 shrink-0">
             <Sparkline samples={app.history} />
             <MetricPair cpu={app.cpu} memory={app.memory} />
+            <span className={ROW_TRAILING_GUTTER_CLS} aria-hidden />
           </div>
         </div>
       </div>
@@ -338,24 +347,28 @@ function SessionRow({
         {session.label}
       </span>
       <MetricPair cpu={session.cpu} memory={session.memory} size="small" />
-      {/* Why: bound sessions hide the X until the row is hovered/focused
-          (calm list); orphan sessions show it always so the "this is
-          reclaimable" affordance survives. Mirrors Settings > Manage Sessions. */}
-      <button
-        type="button"
-        onClick={(e) => {
-          e.stopPropagation()
-          onKill(session)
-        }}
-        className={cn(
-          'shrink-0 ml-1 rounded p-0.5 text-muted-foreground transition-opacity hover:bg-destructive/10 hover:text-destructive',
-          session.bound &&
-            'opacity-0 group-hover/sessrow:opacity-100 group-focus-within/sessrow:opacity-100 focus-visible:opacity-100'
-        )}
-        aria-label={`Kill session ${session.sessionId}`}
-      >
-        <X className="size-3" />
-      </button>
+      {/* Why: kill X lives inside the shared trailing gutter so CPU/Memory
+          columns stay aligned with the column header (whose gutter is empty).
+          Bound sessions hide the X until the row is hovered/focused (calm
+          list); orphan sessions show it always so the "this is reclaimable"
+          affordance survives. Mirrors Settings > Manage Sessions. */}
+      <span className={ROW_TRAILING_GUTTER_CLS}>
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation()
+            onKill(session)
+          }}
+          className={cn(
+            'rounded p-0.5 text-muted-foreground transition-opacity hover:bg-destructive/10 hover:text-destructive',
+            session.bound &&
+              'opacity-0 group-hover/sessrow:opacity-100 group-focus-within/sessrow:opacity-100 focus-visible:opacity-100'
+          )}
+          aria-label={`Kill session ${session.sessionId}`}
+        >
+          <X className="size-3" />
+        </button>
+      </span>
     </div>
   )
 }
@@ -496,6 +509,7 @@ function WorktreeRow({
             )}
           </div>
           <MetricPair cpu={worktree.cpu} memory={worktree.memory} />
+          <span className={ROW_TRAILING_GUTTER_CLS} aria-hidden />
         </div>
       </div>
 
@@ -602,7 +616,10 @@ function ResourceTree({
                     </span>
                   )}
                 </span>
-                <MetricPair cpu={group.cpu} memory={group.memory} />
+                <div className="flex items-center gap-2 shrink-0">
+                  <MetricPair cpu={group.cpu} memory={group.memory} />
+                  <span className={ROW_TRAILING_GUTTER_CLS} aria-hidden />
+                </div>
               </div>
             </div>
 
@@ -1099,35 +1116,41 @@ export function ResourceUsageStatusSegment({
               >
                 Name
               </button>
-              <div className={cn(METRIC_COLUMNS_CLS, 'text-[10px]')}>
-                <button
-                  type="button"
-                  onClick={() => setSortOption('cpu')}
-                  className={cn(
-                    CPU_COLUMN_CLS,
-                    'hover:text-foreground transition-colors',
-                    sortOption === 'cpu'
-                      ? 'font-semibold text-foreground'
-                      : 'text-muted-foreground/80'
-                  )}
-                  aria-pressed={sortOption === 'cpu'}
-                >
-                  CPU
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setSortOption('memory')}
-                  className={cn(
-                    MEM_COLUMN_CLS,
-                    'hover:text-foreground transition-colors',
-                    sortOption === 'memory'
-                      ? 'font-semibold text-foreground'
-                      : 'text-muted-foreground/80'
-                  )}
-                  aria-pressed={sortOption === 'memory'}
-                >
-                  Memory
-                </button>
+              <div className="flex items-center gap-2 shrink-0">
+                <div className={cn(METRIC_COLUMNS_CLS, 'text-[10px]')}>
+                  <button
+                    type="button"
+                    onClick={() => setSortOption('cpu')}
+                    className={cn(
+                      CPU_COLUMN_CLS,
+                      'hover:text-foreground transition-colors',
+                      sortOption === 'cpu'
+                        ? 'font-semibold text-foreground'
+                        : 'text-muted-foreground/80'
+                    )}
+                    aria-pressed={sortOption === 'cpu'}
+                  >
+                    CPU
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSortOption('memory')}
+                    className={cn(
+                      MEM_COLUMN_CLS,
+                      'hover:text-foreground transition-colors',
+                      sortOption === 'memory'
+                        ? 'font-semibold text-foreground'
+                        : 'text-muted-foreground/80'
+                    )}
+                    aria-pressed={sortOption === 'memory'}
+                  >
+                    Memory
+                  </button>
+                </div>
+                {/* Why: empty trailing gutter so the CPU/Memory header
+                    cells line up with the row cells; rows reserve the same
+                    width for the kill-X button. */}
+                <span className={ROW_TRAILING_GUTTER_CLS} aria-hidden />
               </div>
             </div>
           )}
@@ -1176,7 +1199,7 @@ export function ResourceUsageStatusSegment({
               onClick={() => void handleKillOrphans()}
               className="inline-flex w-full items-center justify-center rounded-md border border-border/70 px-2.5 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-accent/60"
             >
-              Kill {orphanCount} Orphan{orphanCount > 1 ? 's' : ''}
+              Kill {orphanCount} orphan terminal{orphanCount === 1 ? '' : 's'}
             </button>
           </div>
         )}
