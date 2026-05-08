@@ -1,4 +1,5 @@
-import { ArrowRight, X } from 'lucide-react'
+import { useEffect, useRef } from 'react'
+import { toast } from 'sonner'
 
 import { useAppStore } from '@/store'
 import { openDeveloperPermissionsSettings } from '@/lib/developer-permissions-settings-link'
@@ -10,32 +11,36 @@ type MacPermissionsHintProps = {
   activeWorktreeId: string | null
 }
 
+const TOAST_ID = 'mac-permissions-hint'
+
 // Passive over eager: Superset-style osascript probes at app.whenReady were
 // verified to silently fail under TCC (no Privacy → Automation row appears),
 // so we rely on discoverability into DeveloperPermissionsPane instead.
+//
+// Why a toast (not a banner): an inline banner above the terminal pushed the
+// inline tab strip down by one row, breaking the tabs-flush-to-titlebar
+// attachment in split-group layouts. A sonner toast has no layout footprint
+// and dismisses cleanly.
 export function MacPermissionsHint({
   activeView,
   activeTabType,
   activeWorktreeId
-}: MacPermissionsHintProps): React.JSX.Element | null {
+}: MacPermissionsHintProps): null {
   const dismissed = useAppStore((s) => s.terminalMacPermissionsHintDismissed)
   const dismiss = useAppStore((s) => s.dismissTerminalMacPermissionsHint)
   // Why: persisted dismissal arrives async after first paint; without this
-  // gate, returning users see the hint flash before the `?? false` hydrate
-  // resolves to `true` and removes it.
+  // gate, returning users see the toast fire before the `?? false` hydrate
+  // resolves to `true` and suppresses it.
   const persistedUIReady = useAppStore((s) => s.persistedUIReady)
 
   // Why: TCC (the macOS permission system) is host-local — a Mac client
   // SSH'd into a remote worktree can't grant permissions on the remote.
-  // (The Mac platform check itself lives at the call site so non-Mac
-  // platforms don't instantiate the component at all.)
-  // Why: subscribe to the slices getConnectionId would read (worktreesByRepo
-  // + repos) so this hint re-renders when remote metadata hydrates after the
-  // worktree is already active.
-  // Why: until both worktree and repo are resolved we treat the connection
-  // as unknown (undefined), not local (null) — otherwise an SSH worktree
-  // can flash this Mac-only hint during the hydration window where repos
-  // hasn't populated yet.
+  // Subscribe to the slices getConnectionId would read (worktreesByRepo +
+  // repos) so this re-evaluates when remote metadata hydrates after the
+  // worktree is already active. Until both worktree and repo are resolved
+  // we treat the connection as unknown (undefined), not local (null) —
+  // otherwise an SSH worktree can briefly trigger this Mac-only toast
+  // during the hydration window where repos hasn't populated yet.
   const connectionId = useAppStore((s) => {
     if (!activeWorktreeId) {
       return null
@@ -51,44 +56,43 @@ export function MacPermissionsHint({
     }
     return repo.connectionId ?? null
   })
-  // Why: when the right sidebar is closed, App.tsx renders a floating
-  // `Toggle right sidebar` button at `absolute top-0 right-0 z-10` that
-  // overlays this hint's right edge. Reserve enough right padding to keep
-  // the dismiss button clear of that hit zone.
-  const rightSidebarOpen = useAppStore((s) => s.rightSidebarOpen)
   const isLocalWorktree = connectionId === null
   const isTerminalView =
     activeView === 'terminal' && activeTabType === 'terminal' && activeWorktreeId !== null
+  const shouldShow = persistedUIReady && isTerminalView && isLocalWorktree && !dismissed
 
-  if (!persistedUIReady || !isTerminalView || !isLocalWorktree || dismissed) {
-    return null
-  }
+  // Why: only fire once per process. React StrictMode double-mounts effects
+  // in dev, and the gate can re-flip true→false→true as the user navigates;
+  // a session-scoped ref is the simplest way to keep this as a one-shot.
+  const firedRef = useRef(false)
 
-  return (
-    <div
-      role="status"
-      aria-label="macOS permissions hint"
-      className={`flex shrink-0 items-center gap-2 border-b border-border bg-muted/40 py-1.5 pl-3 text-xs text-muted-foreground ${
-        rightSidebarOpen ? 'pr-3' : 'pr-12'
-      }`}
-    >
-      <span className="flex-1 truncate">Need macOS device permissions for CLIs?</span>
-      <button
-        type="button"
-        onClick={openDeveloperPermissionsSettings}
-        className="flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-foreground underline-offset-2 hover:bg-muted hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-      >
-        Settings · Permissions
-        <ArrowRight className="size-3" aria-hidden />
-      </button>
-      <button
-        type="button"
-        aria-label="Dismiss permissions hint"
-        onClick={dismiss}
-        className="shrink-0 rounded p-0.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-      >
-        <X className="size-3.5" aria-hidden />
-      </button>
-    </div>
-  )
+  useEffect(() => {
+    if (!shouldShow || firedRef.current) {
+      return
+    }
+    firedRef.current = true
+    toast.message('Need macOS device permissions for CLIs?', {
+      id: TOAST_ID,
+      duration: Infinity,
+      action: {
+        label: 'Open Settings',
+        onClick: () => {
+          openDeveloperPermissionsSettings()
+          dismiss()
+          toast.dismiss(TOAST_ID)
+        }
+      },
+      // Why: closing the toast is treated as the dismissal — without this,
+      // a user who clicks the X expects the toast not to come back next
+      // launch, but the persisted flag would stay false.
+      onDismiss: () => {
+        dismiss()
+      },
+      onAutoClose: () => {
+        dismiss()
+      }
+    })
+  }, [shouldShow, dismiss])
+
+  return null
 }

@@ -1232,10 +1232,9 @@ function Terminal(): React.JSX.Element | null {
           — tab groups + terminal extend to the top of the window instead.
           The old summary label (workspace / active surface) is removed. */}
 
-      {/* Why: sits above the layout-switching block so the hint is visible
-          regardless of which workspace render branch (split-group surface or
-          legacy single-pane) ends up active. Non-Mac platforms skip the
-          subtree entirely so its store subscriptions never wire up. */}
+      {/* Why: this component returns null — it only fires a one-shot toast
+          via sonner. Non-Mac platforms skip the subtree entirely so its
+          store subscriptions never wire up. */}
       {IS_MAC && (
         <MacPermissionsHint
           activeView={activeView}
