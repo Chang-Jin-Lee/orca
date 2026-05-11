@@ -114,6 +114,11 @@ export type AgentStatusIpcPayload = ParsedAgentStatusPayload & {
   paneKey: string
   tabId?: string
   worktreeId?: string
+  /** Identifies the SSH connection the event arrived on, or null for local.
+   *  Stamped only on the remote-ingest path (Orca's `ingestRemote`); the
+   *  HTTP path always sets null because it cannot know which mux a request
+   *  came from. See docs/design/agent-status-over-ssh.md §5. */
+  connectionId: string | null
   /** Timestamp (ms) when the hook server received this latest status event. */
   receivedAt: number
   /** Timestamp (ms) when the current state first appeared for this pane. */

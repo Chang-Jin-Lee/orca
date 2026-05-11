@@ -1181,9 +1181,9 @@ export type GlobalSettings = {
   promptCacheTtlMs: number
   /** Why: Codex rate-limit account routing is a durable app preference owned by
    *  the main process, not transient UI state. Persisting the selected managed
-   *  homes here lets Orca resolve the correct `CODEX_HOME` before the renderer
-   *  hydrates, while keeping this scope explicitly separate from Codex usage
-   *  analytics and external terminal sessions. */
+   *  auth here lets Orca prepare shared ~/.codex before the renderer hydrates,
+   *  while keeping this scope explicitly separate from Codex usage analytics
+   *  and external terminal sessions. */
   codexManagedAccounts: CodexManagedAccount[]
   activeCodexManagedAccountId: string | null
   /** Why: Claude Code keeps conversations under one shared config root. Orca
