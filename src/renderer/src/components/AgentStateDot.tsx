@@ -44,7 +44,7 @@ export function agentStateLabel(state: AgentDotState): string {
 
 type Props = {
   state: AgentDotState
-  size?: 'sm' | 'md'
+  size?: 'sm' | 'md' | 'lg'
   className?: string
 }
 
@@ -53,9 +53,12 @@ export const AgentStateDot = React.memo(function AgentStateDot({
   size = 'sm',
   className
 }: Props): React.JSX.Element {
-  const box = size === 'md' ? 'h-3 w-3' : 'h-2.5 w-2.5'
-  const inner = size === 'md' ? 'size-2' : 'size-1.5'
-  const icon = size === 'md' ? 'size-3' : 'size-2.5'
+  // Why ('lg' size): the Activity page renders this in its own 32px column
+  // alongside text rows, where 'md' (12px) reads small and floats. 'lg' (18px)
+  // sits center of mass in that cell.
+  const box = size === 'lg' ? 'h-[18px] w-[18px]' : size === 'md' ? 'h-3 w-3' : 'h-2.5 w-2.5'
+  const inner = size === 'lg' ? 'size-3' : size === 'md' ? 'size-2' : 'size-1.5'
+  const icon = size === 'lg' ? 'size-[18px]' : size === 'md' ? 'size-3' : 'size-2.5'
 
   if (state === 'working') {
     return (

@@ -352,22 +352,22 @@ function AgentEventRow({
         event.unread && 'bg-accent/20'
       )}
     >
-      <div className="flex justify-center pt-1">
+      <div className="flex items-center justify-center pt-0.5">
         <span className="relative inline-flex">
-          {/* Why: anchor the unread dot to the icon's own bounding box (not the
-              24×24 cell) so it tracks the icon's top-left corner regardless of
-              icon size. The previous absolute -left-1 top-1 inside a size-6 box
-              landed visibly off-center against the centered AgentStateDot. */}
+          {/* Why (bell as unread glyph): visually rhymes with the Bell button on
+              ThreadRow so both surfaces share one unread vocabulary. Sits at
+              the icon's top-right corner with a fill-background halo so the
+              bell reads cleanly against the row's tinted unread background. */}
           {event.unread ? (
-            <span
-              className="absolute -top-1 -left-1 size-2 rounded-full bg-primary ring-2 ring-background"
+            <BellDot
+              className="absolute -top-1.5 -right-2 size-3.5 text-primary fill-background"
               aria-hidden
             />
           ) : null}
           <Tooltip>
             <TooltipTrigger asChild>
               <span className="inline-flex">
-                <AgentStateDot state={dotState} size="md" />
+                <AgentStateDot state={dotState} size="lg" />
               </span>
             </TooltipTrigger>
             <TooltipContent side="top" sideOffset={4}>
@@ -454,17 +454,17 @@ function WorktreeEventRow({
         event.unread && 'bg-accent/20'
       )}
     >
-      <div className="flex justify-center pt-0.5">
+      <div className="flex items-center justify-center pt-0.5">
         <span className="relative inline-flex text-muted-foreground">
-          {/* Why: see AgentEventRow — anchor the unread dot to the icon, not the
-              cell, so it lines up at the icon's top-left corner. */}
+          {/* Why: see AgentEventRow — bell at the icon's top-right matches the
+              unread vocabulary used on ThreadRow. */}
           {event.unread ? (
-            <span
-              className="absolute -top-1 -left-1 size-2 rounded-full bg-primary ring-2 ring-background"
+            <BellDot
+              className="absolute -top-1.5 -right-2 size-3.5 text-primary fill-background"
               aria-hidden
             />
           ) : null}
-          <Plus className="size-4" />
+          <Plus className="size-[18px]" />
         </span>
       </div>
       <div className="min-w-0">
