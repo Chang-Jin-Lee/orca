@@ -147,7 +147,7 @@ function agentMeta(event: AgentActivityEvent): string {
 }
 
 function eventTitle(event: ActivityEvent): string {
-  return event.kind === 'agent' ? agentTitle(event) : 'Worktree created'
+  return event.kind === 'agent' ? agentTitle(event) : 'Workspace created'
 }
 
 function eventSummary(event: ActivityEvent): string {
@@ -465,7 +465,7 @@ function WorktreeEventRow({
       <div className="min-w-0">
         <div className="flex min-w-0 items-center gap-2">
           <span className={cn('truncate text-sm', event.unread ? 'font-semibold' : 'font-medium')}>
-            Worktree created
+            Workspace created
           </span>
         </div>
         <div className="mt-0.5 truncate text-sm text-muted-foreground">
@@ -771,14 +771,13 @@ export default function ActivityPrototypePage(): React.JSX.Element {
     storeData.clearWorktreeUnread(event.worktree.id)
   }
 
-  // Why (page padding): drop top padding so the worktree title row in the
-  // right pane and the WORKTREES label in the left pane sit flush with the
-  // titlebar above; drop *left* padding so the thread list extends to the
-  // window edge (matches how sidebars abut the chrome elsewhere). The
-  // titlebar (ActivityTitlebarControls) already provides the breathing-room
-  // band, so doubling it produced a visible gap above the first row.
+  // Why (page padding): drop top + horizontal padding so the page extends to
+  // the window's left and right edges (matching how sidebars abut the chrome
+  // elsewhere). The titlebar (ActivityTitlebarControls) already provides the
+  // breathing-room band above; the right pane's title row supplies its own
+  // top padding (pt-2) so the worktree heading isn't pinned to the titlebar.
   return (
-    <div className="flex h-full min-h-0 flex-col bg-background pr-4 pb-3">
+    <div className="flex h-full min-h-0 flex-col bg-background pb-3">
       <main className="flex min-h-0 flex-1 overflow-hidden">
         <aside
           ref={threadListRef}
@@ -788,7 +787,7 @@ export default function ActivityPrototypePage(): React.JSX.Element {
           <div className="shrink-0 border-b border-border px-2 pt-1.5 pb-2">
             <div className="mb-2 flex items-center justify-between gap-2">
               <div className="text-[11px] font-semibold uppercase tracking-[0.05em] text-muted-foreground">
-                Worktrees
+                Workspaces
               </div>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
@@ -859,7 +858,7 @@ export default function ActivityPrototypePage(): React.JSX.Element {
             ))}
             {visibleThreads.length === 0 ? (
               <div className="px-3 py-8 text-sm text-muted-foreground">
-                No worktree threads match these filters.
+                No workspace threads match these filters.
               </div>
             ) : null}
           </div>
@@ -885,7 +884,7 @@ export default function ActivityPrototypePage(): React.JSX.Element {
         <section className="min-w-0 flex-1 overflow-hidden">
           {selectedThread ? (
             <div className="flex h-full min-h-0 flex-col">
-              <div className="flex shrink-0 items-center justify-between gap-4 border-b border-border px-4 pb-3">
+              <div className="flex shrink-0 items-center justify-between gap-4 border-b border-border px-4 pt-2 pb-3">
                 <div className="min-w-0">
                   <div className="flex min-w-0 items-center gap-2">
                     <h2 className="truncate text-base font-semibold">
@@ -894,7 +893,7 @@ export default function ActivityPrototypePage(): React.JSX.Element {
                     <EventRepoBadge repo={selectedThread.repo} />
                   </div>
                   <div className="mt-1 truncate text-xs text-muted-foreground">
-                    Complete worktree history, from creation through latest agent updates
+                    Complete workspace history, from creation through latest agent updates
                   </div>
                 </div>
                 <Button
@@ -906,7 +905,7 @@ export default function ActivityPrototypePage(): React.JSX.Element {
                     activateAndRevealWorktree(selectedThread.worktree.id)
                   }}
                 >
-                  Jump to worktree
+                  Jump to workspace
                 </Button>
               </div>
               <div className="min-h-0 flex-1 overflow-auto scrollbar-sleek">
