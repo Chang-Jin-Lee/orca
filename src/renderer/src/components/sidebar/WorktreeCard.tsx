@@ -3,10 +3,12 @@ import React, { useEffect, useMemo, useCallback, useState } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import { useAppStore } from '@/store'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
 import {
   AlertTriangle,
   Bell,
+  ChevronDown,
   GitMerge,
   LoaderCircle,
   CircleCheck,
@@ -55,6 +57,9 @@ type WorktreeCardProps = {
   hideRepoBadge?: boolean
   parentLabel?: string
   lineageState?: 'valid' | 'missing'
+  lineageChildCount?: number
+  lineageCollapsed?: boolean
+  onLineageToggle?: (event: React.MouseEvent<HTMLButtonElement>) => void
   onSelectionGesture?: (event: React.MouseEvent<HTMLDivElement>, worktreeId: string) => boolean
   onContextMenuSelect?: (event: React.MouseEvent<HTMLDivElement>) => readonly Worktree[]
 }
@@ -74,7 +79,10 @@ const WorktreeCard = React.memo(function WorktreeCard({
   onContextMenuSelect,
   hideRepoBadge,
   parentLabel,
-  lineageState
+  lineageState,
+  lineageChildCount = 0,
+  lineageCollapsed = false,
+  onLineageToggle
 }: WorktreeCardProps) {
   const openModal = useAppStore((s) => s.openModal)
   const updateWorktreeMeta = useAppStore((s) => s.updateWorktreeMeta)
@@ -432,6 +440,13 @@ const WorktreeCard = React.memo(function WorktreeCard({
   )
 
   const unreadTooltip = worktree.isUnread ? 'Mark read' : 'Mark unread'
+  const childWorkspaceLabel = `${lineageChildCount} child ${
+    lineageChildCount === 1 ? 'workspace' : 'workspaces'
+  }`
+  const childWorkspaceShortLabel = `${lineageChildCount} ${
+    lineageChildCount === 1 ? 'child' : 'children'
+  }`
+  const showLineageChildChip = lineageChildCount > 0 && onLineageToggle !== undefined
 
   // Why: the 'unread' card property is the user's opt-out. When off, we render
   // as if the workspace is read so bold emphasis never appears. The persisted
@@ -651,6 +666,34 @@ const WorktreeCard = React.memo(function WorktreeCard({
           )}
 
           <CacheTimer worktreeId={worktree.id} />
+
+          {showLineageChildChip && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="xs"
+                  className="h-[18px] max-w-[7.5rem] shrink-0 gap-1 rounded-md border border-sidebar-border bg-sidebar-accent/55 px-1.5 text-[10px] font-medium leading-none text-muted-foreground shadow-none hover:bg-sidebar-accent hover:text-foreground focus-visible:ring-1 focus-visible:ring-sidebar-ring"
+                  aria-label={`${lineageCollapsed ? 'Show' : 'Hide'} ${childWorkspaceLabel}`}
+                  aria-expanded={!lineageCollapsed}
+                  onClick={onLineageToggle}
+                >
+                  <Workflow className="size-2.5" />
+                  <span className="truncate">{childWorkspaceShortLabel}</span>
+                  <ChevronDown
+                    className={cn(
+                      'size-2.5 transition-transform',
+                      lineageCollapsed && '-rotate-90'
+                    )}
+                  />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="right" sideOffset={8}>
+                {lineageCollapsed ? 'Show child workspaces' : 'Hide child workspaces'}
+              </TooltipContent>
+            </Tooltip>
+          )}
 
           {parentLabel && (
             <Badge

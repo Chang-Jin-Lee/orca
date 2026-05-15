@@ -1,7 +1,7 @@
 /* eslint-disable max-lines */
 import React, { useMemo, useCallback, useRef, useState, useEffect, useLayoutEffect } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
-import { ChevronDown, ChevronRight, CircleX, Plus } from 'lucide-react'
+import { ChevronDown, CircleX, Plus } from 'lucide-react'
 import { useAppStore } from '@/store'
 import {
   getAllWorktreesFromState,
@@ -94,20 +94,20 @@ function LineageGuides({ row }: { row: Extract<Row, { type: 'item' }> }) {
           continues ? (
             <span
               key={index}
-              className="absolute top-0 bottom-0 w-px bg-current/80"
+              className="absolute top-0 bottom-0 w-[2px] rounded-full bg-current/90"
               style={{ left: `${index * step + lineX}px` }}
             />
           ) : null
         )}
       <span
-        className="absolute top-0 w-px bg-current/80"
+        className="absolute top-0 w-[2px] rounded-full bg-current/90"
         style={{
           left: `${currentX}px`,
           height: row.isLastLineageChild ? '50%' : '100%'
         }}
       />
       <span
-        className="absolute h-px bg-current/80"
+        className="absolute h-[2px] rounded-full bg-current/90"
         style={{
           left: `${currentX}px`,
           top: '50%',
@@ -115,45 +115,6 @@ function LineageGuides({ row }: { row: Extract<Row, { type: 'item' }> }) {
         }}
       />
     </div>
-  )
-}
-
-function LineageDisclosure({
-  row,
-  onToggle
-}: {
-  row: Extract<Row, { type: 'item' }>
-  onToggle: (event: React.MouseEvent<HTMLButtonElement>) => void
-}) {
-  if (!row.lineageGroupKey || row.lineageChildCount <= 0) {
-    return null
-  }
-
-  const label = `${row.lineageCollapsed ? 'Show' : 'Hide'} ${row.lineageChildCount} child ${
-    row.lineageChildCount === 1 ? 'workspace' : 'workspaces'
-  }`
-
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon-xs"
-          className="absolute right-2 top-2 z-10 size-5 rounded-md bg-sidebar/80 text-muted-foreground opacity-80 shadow-sm ring-1 ring-sidebar-border/70 backdrop-blur-sm transition-colors hover:bg-sidebar-accent hover:text-foreground hover:opacity-100 focus-visible:opacity-100"
-          aria-label={label}
-          aria-expanded={!row.lineageCollapsed}
-          onClick={onToggle}
-        >
-          <ChevronRight
-            className={cn('size-3 transition-transform', !row.lineageCollapsed && 'rotate-90')}
-          />
-        </Button>
-      </TooltipTrigger>
-      <TooltipContent side="right" sideOffset={8}>
-        {row.lineageCollapsed ? 'Show child workspaces' : 'Hide child workspaces'}
-      </TooltipContent>
-    </Tooltip>
   )
 }
 
@@ -654,6 +615,8 @@ const VirtualizedWorktreeViewport = React.memo(function VirtualizedWorktreeViewp
             )
           }
 
+          const lineageToggleGroupKey = row.lineageGroupKey
+
           return (
             <div
               key={vItem.key}
@@ -684,16 +647,17 @@ const VirtualizedWorktreeViewport = React.memo(function VirtualizedWorktreeViewp
                     row.depth > 0 && row.lineageState === 'valid' ? undefined : row.parentLabel
                   }
                   lineageState={row.lineageState}
-                />
-                <LineageDisclosure
-                  row={row}
-                  onToggle={(event) => {
-                    event.preventDefault()
-                    event.stopPropagation()
-                    if (row.lineageGroupKey) {
-                      toggleGroup(row.lineageGroupKey)
-                    }
-                  }}
+                  lineageChildCount={row.lineageChildCount}
+                  lineageCollapsed={row.lineageCollapsed}
+                  onLineageToggle={
+                    lineageToggleGroupKey
+                      ? (event) => {
+                          event.preventDefault()
+                          event.stopPropagation()
+                          toggleGroup(lineageToggleGroupKey)
+                        }
+                      : undefined
+                  }
                 />
               </div>
             </div>
