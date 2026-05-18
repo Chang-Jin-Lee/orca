@@ -10,10 +10,10 @@ export const VIRTUALIZED_SCROLL_ANCHOR_RECORD_EVENT = 'orca-record-virtualized-s
 const RECORD_ANCHOR_SCROLL_IDLE_DELAY_MS = 150
 
 export function shouldCancelVirtualizedScrollOffsetRestore(args: {
+  hasDirectScrollInput?: () => boolean
   restoring: boolean
-  shouldSkipRestore?: () => boolean
 }): boolean {
-  return args.restoring && args.shouldSkipRestore?.() === true
+  return args.restoring && args.hasDirectScrollInput?.() === true
 }
 
 type UseVirtualizedScrollAnchorOptions<
@@ -24,6 +24,7 @@ type UseVirtualizedScrollAnchorOptions<
   anchorRef: MutableRefObject<VirtualizedScrollAnchor>
   getItemElementKey?: (element: TItemElement) => string | null
   getRowKey: (row: TRow) => string
+  hasDirectScrollInput?: () => boolean
   itemElementSelector?: string
   rows: readonly TRow[]
   scrollElementRef: RefObject<TScrollElement | null>
@@ -49,6 +50,7 @@ export function useVirtualizedScrollAnchor<
   anchorRef,
   getItemElementKey,
   getRowKey,
+  hasDirectScrollInput,
   itemElementSelector,
   rows,
   scrollElementRef,
@@ -187,8 +189,8 @@ export function useVirtualizedScrollAnchor<
     const onScroll = (): void => {
       if (
         shouldCancelVirtualizedScrollOffsetRestore({
-          restoring,
-          shouldSkipRestore
+          hasDirectScrollInput,
+          restoring
         })
       ) {
         // Why: direct wheel/touch input means the user has taken control of the
@@ -235,7 +237,7 @@ export function useVirtualizedScrollAnchor<
     recordVirtualScrollAnchor,
     scrollElementRef,
     scrollOffsetRef,
-    shouldSkipRestore
+    hasDirectScrollInput
   ])
 
   useLayoutEffect(() => {

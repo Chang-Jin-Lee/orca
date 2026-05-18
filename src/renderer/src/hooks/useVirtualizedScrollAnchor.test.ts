@@ -2,11 +2,19 @@ import { describe, expect, it } from 'vitest'
 import { shouldCancelVirtualizedScrollOffsetRestore } from './useVirtualizedScrollAnchor'
 
 describe('shouldCancelVirtualizedScrollOffsetRestore', () => {
-  it('keeps a pending restore when there is no direct user scroll input', () => {
+  it('keeps a pending restore when direct user scroll input is not tracked', () => {
     expect(
       shouldCancelVirtualizedScrollOffsetRestore({
-        restoring: true,
-        shouldSkipRestore: () => false
+        restoring: true
+      })
+    ).toBe(false)
+  })
+
+  it('keeps a pending restore during programmatic scroll movement', () => {
+    expect(
+      shouldCancelVirtualizedScrollOffsetRestore({
+        hasDirectScrollInput: () => false,
+        restoring: true
       })
     ).toBe(false)
   })
@@ -14,8 +22,8 @@ describe('shouldCancelVirtualizedScrollOffsetRestore', () => {
   it('does not cancel when there is no pending restore', () => {
     expect(
       shouldCancelVirtualizedScrollOffsetRestore({
-        restoring: false,
-        shouldSkipRestore: () => true
+        hasDirectScrollInput: () => true,
+        restoring: false
       })
     ).toBe(false)
   })
@@ -23,8 +31,8 @@ describe('shouldCancelVirtualizedScrollOffsetRestore', () => {
   it('cancels a pending restore while direct user scroll input is active', () => {
     expect(
       shouldCancelVirtualizedScrollOffsetRestore({
-        restoring: true,
-        shouldSkipRestore: () => true
+        hasDirectScrollInput: () => true,
+        restoring: true
       })
     ).toBe(true)
   })
