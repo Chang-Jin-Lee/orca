@@ -433,12 +433,7 @@ export default function WorkspaceCleanupDialog(): React.JSX.Element {
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent
         showCloseButton={false}
-        className={cn(
-          'flex w-[calc(100vw-3rem)] flex-col gap-0 overflow-hidden p-0',
-          confirming
-            ? 'max-w-[560px] sm:max-w-[560px]'
-            : 'h-[min(820px,90vh)] max-w-[calc(100vw-3rem)] sm:max-w-[calc(100vw-3rem)] xl:w-[920px] xl:max-w-[920px]'
-        )}
+        className="flex h-[min(820px,90vh)] w-[calc(100vw-3rem)] max-w-[calc(100vw-3rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-[calc(100vw-3rem)] xl:w-[920px] xl:max-w-[920px]"
       >
         {!confirming ? (
           <>
@@ -648,7 +643,7 @@ export default function WorkspaceCleanupDialog(): React.JSX.Element {
           </>
         ) : (
           <ConfirmRemove
-            count={selectedCount}
+            candidates={selectedCandidates}
             removing={removing}
             onCancel={() => setConfirming(false)}
             onConfirm={() => void confirmRemove()}
@@ -952,16 +947,18 @@ function formatContextDetails(candidate: WorkspaceCleanupCandidate): string | nu
 }
 
 function ConfirmRemove({
-  count,
+  candidates,
   removing,
   onCancel,
   onConfirm
 }: {
-  count: number
+  candidates: WorkspaceCleanupCandidate[]
   removing: boolean
   onCancel: () => void
   onConfirm: () => void
 }): React.JSX.Element {
+  const count = candidates.length
+  const noun = count === 1 ? 'workspace' : 'workspaces'
   return (
     <>
       <DialogHeader className="border-b border-border px-5 py-4">
@@ -971,42 +968,100 @@ function ConfirmRemove({
           </div>
           <div className="min-w-0">
             <DialogTitle className="text-base">
-              Delete {count} workspace{count === 1 ? '' : 's'}?
+              Delete {count} {noun}?
             </DialogTitle>
             <DialogDescription className="mt-1.5 text-xs leading-5">
-              This permanently removes local workspace data from this machine.
+              This permanently deletes their local files. You can&apos;t undo this.
             </DialogDescription>
           </div>
         </div>
       </DialogHeader>
-      <div className="space-y-3 px-5 py-4 text-sm">
-        <div className="rounded-md border border-border bg-muted/25 p-3">
-          <div className="text-xs font-medium text-foreground">This will delete:</div>
-          <ul className="mt-2 space-y-1 text-xs leading-5 text-muted-foreground">
-            <li>Working tree folder{count === 1 ? '' : 's'}</li>
-            <li>Local Orca metadata, terminal history, and browser workspace state</li>
-            <li>Local branch{count === 1 ? '' : 'es'} when git reports they are no longer used</li>
-          </ul>
+      <div className="flex min-h-0 flex-1 flex-col">
+        <div className="flex items-center justify-between border-b border-border px-5 py-2.5">
+          <div className="text-[11px] font-semibold uppercase tracking-[0.05em] text-muted-foreground">
+            {count} {noun} to delete
+          </div>
+          <div className="text-xs text-muted-foreground">Sorted by oldest activity</div>
         </div>
-        <div className="flex gap-2 rounded-md border border-destructive/25 bg-destructive/10 p-3 text-xs leading-5">
+        <ScrollArea className="min-h-0 flex-1">
+          {candidates.map((candidate, index) => (
+            <ConfirmRemoveRow
+              key={candidate.worktreeId}
+              candidate={candidate}
+              last={index === candidates.length - 1}
+            />
+          ))}
+        </ScrollArea>
+      </div>
+      <DialogFooter className="flex-col-reverse items-stretch gap-2 border-t border-border px-5 py-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-start gap-1.5 text-xs leading-5 text-muted-foreground">
           <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-destructive" />
-          <span className="text-foreground">
-            Orca rechecks each selected workspace first. Anything no longer safe to delete is
-            skipped and reported.
+          <span>
+            Orca rechecks each workspace first. Anything no longer safe to delete is skipped and
+            reported.
           </span>
         </div>
-      </div>
-      <DialogFooter className="border-t border-border px-5 py-3">
-        <Button variant="outline" onClick={onCancel} disabled={removing}>
-          Cancel
-        </Button>
-        <Button variant="destructive" onClick={onConfirm} disabled={removing || count === 0}>
-          {removing ? <Loader2 className="size-4 animate-spin" /> : <Trash2 className="size-4" />}
-          Delete {count}
-        </Button>
+        <div className="flex shrink-0 gap-2 sm:justify-end">
+          <Button variant="outline" onClick={onCancel} disabled={removing}>
+            Cancel
+          </Button>
+          <Button variant="destructive" onClick={onConfirm} disabled={removing || count === 0}>
+            {removing ? <Loader2 className="size-4 animate-spin" /> : <Trash2 className="size-4" />}
+            Delete {count} {noun}
+          </Button>
+        </div>
       </DialogFooter>
     </>
   )
+}
+
+function ConfirmRemoveRow({
+  candidate,
+  last
+}: {
+  candidate: WorkspaceCleanupCandidate
+  last: boolean
+}): React.JSX.Element {
+  const dirtyLabel = getDirtyGitLabel(candidate)
+  const branchDiffersFromName = candidate.branch !== candidate.displayName
+  return (
+    <div className={cn('border-b border-border/60 px-5 py-2.5', last && 'border-b-0')}>
+      <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5">
+        <span className="min-w-0 truncate text-sm font-medium">{candidate.displayName}</span>
+        <span className="text-xs text-muted-foreground">
+          Last active {formatRelativeTime(candidate.lastActivityAt)}
+        </span>
+        {dirtyLabel ? <StatusPill tone="destructive">{dirtyLabel}</StatusPill> : null}
+      </div>
+      <div className="mt-0.5 flex min-w-0 flex-wrap items-baseline gap-x-2 text-xs text-muted-foreground">
+        <span className="min-w-0 truncate">{candidate.repoName}</span>
+        {branchDiffersFromName ? (
+          <>
+            <span aria-hidden="true">·</span>
+            <span className="min-w-0 truncate font-mono">{candidate.branch}</span>
+          </>
+        ) : null}
+      </div>
+      <div className="mt-0.5 min-w-0 truncate font-mono text-[11px] text-muted-foreground/80">
+        {candidate.path}
+      </div>
+    </div>
+  )
+}
+
+function getDirtyGitLabel(candidate: WorkspaceCleanupCandidate): string | null {
+  if (candidate.git.upstreamAhead && candidate.git.upstreamAhead > 0) {
+    return `${candidate.git.upstreamAhead} unpushed commit${
+      candidate.git.upstreamAhead === 1 ? '' : 's'
+    }`
+  }
+  if (candidate.git.clean === false) {
+    return 'Uncommitted changes'
+  }
+  if (candidate.git.clean == null) {
+    return 'Git status unknown'
+  }
+  return null
 }
 
 function SkeletonRows(): React.JSX.Element {
