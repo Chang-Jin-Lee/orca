@@ -7,6 +7,7 @@ import type { OnboardingState } from '../../../../shared/types'
 import { AgentStep } from './AgentStep'
 import { ThemeStep } from './ThemeStep'
 import { NotificationStep } from './NotificationStep'
+import { IntegrationsStep } from './IntegrationsStep'
 import { RepoStep } from './RepoStep'
 import { STEPS, useOnboardingFlow } from './use-onboarding-flow'
 import logo from '../../../../../resources/logo.svg'
@@ -28,6 +29,10 @@ const stepCopy = {
     subtitle:
       'Get notifications when agents need you, and choose the capabilities Orca should enable on this computer.'
   },
+  integrations: {
+    title: 'Connect your task sources',
+    subtitle: 'Connect GitHub or Linear to:'
+  },
   repo: {
     title: 'Point Orca at some code',
     subtitle: 'Open a folder or clone a repo to finish setup.'
@@ -38,6 +43,7 @@ const stepTooltipLabels = {
   agent: 'Default Agent',
   theme: 'Appearance',
   notifications: 'Agent tools',
+  integrations: 'Integrations',
   repo: 'Create project'
 } as const
 
@@ -190,6 +196,7 @@ export default function OnboardingFlow({
               featureSetupCommandSelection={flow.featureSetupTerminalSelection}
             />
           )}
+          {currentStep.id === 'integrations' && <IntegrationsStep />}
           {currentStep.id === 'repo' && (
             <RepoStep
               cloneUrl={flow.cloneUrl}
@@ -231,6 +238,15 @@ export default function OnboardingFlow({
               >
                 <ChevronLeft className="size-4" />
                 Back
+              </button>
+            )}
+            {shouldShowSetupAction && (
+              <button
+                className="rounded-md px-3 py-2 text-sm text-muted-foreground hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:text-muted-foreground"
+                disabled={Boolean(busyLabel)}
+                onClick={() => void flow.skipAgentSetup()}
+              >
+                Skip
               </button>
             )}
             {currentStep.id !== 'repo' && (
