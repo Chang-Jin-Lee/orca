@@ -1,0 +1,60 @@
+name: Release Golden E2E
+
+on:
+  workflow_call:
+    inputs:
+      ref:
+        description: Ref to check out
+        required: true
+        type: string
+
+jobs:
+  release-golden-e2e:
+    name: release golden e2e
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+
+      # Why: the release gate should cover the same native install path as PR
+      # CI without inheriting the full suite's current flake rate.
+      - name: Install native build tools
+        run: sudo apt-get update && sudo apt-get install -y build-essential python3 xvfb
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: package.json
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+
+      - name: Use external node-gyp to avoid pnpm's bundled copy (Linux only)
+        if: runner.os == 'Linux'
+        run: |
+          npm install -g node-gyp@11.5.0
+          echo "npm_config_node_gyp=$(npm root -g)/node-gyp/bin/node-gyp.js" >> "$GITHUB_ENV"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build Electron app for release gate
+        run: npx electron-vite build --mode e2e
+
+      - name: Run release golden E2E
+        run: xvfb-run --auto-servernum env SKIP_BUILD=1 ORCA_E2E_FORWARD_APP_LOGS=1 pnpm run test:e2e:release-gate
+
+      - name: Upload Playwright traces
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-golden-playwright-traces
+          path: test-results/
+          retention-days: 7
+          if-no-files-found: ignore

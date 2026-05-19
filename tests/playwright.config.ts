@@ -56,6 +56,13 @@ export default defineConfig({
       metadata: {
         orcaHeadful: true
       }
+    },
+    {
+      name: 'electron-release-gate',
+      testMatch: '**/release-golden-path.spec.ts',
+      metadata: {
+        orcaHeadful: false
+      }
     }
   ]
 })
