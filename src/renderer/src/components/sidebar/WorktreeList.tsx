@@ -130,6 +130,20 @@ export function shouldQueueStartupSidebarReveal(args: {
   )
 }
 
+export function shouldConsumeStartupRevealForPendingReveal(args: {
+  hasQueuedStartupReveal: boolean
+  workspaceSessionReady: boolean
+  persistedUIReady: boolean
+  pendingRevealWorktree: PendingSidebarWorktreeReveal | null
+}): boolean {
+  return (
+    !args.hasQueuedStartupReveal &&
+    args.workspaceSessionReady &&
+    args.persistedUIReady &&
+    args.pendingRevealWorktree !== null
+  )
+}
+
 export function resolvePendingSidebarReveal(args: {
   targetIndex: number
   targetWorktreeStillExists: boolean
@@ -790,6 +804,12 @@ const VirtualizedWorktreeViewport = React.memo(function VirtualizedWorktreeViewp
     viewportHeight: scrollViewport.height,
     pendingRevealWorktreeId: pendingRevealWorktree?.worktreeId ?? null
   })
+  const handleRevealCurrentWorkspace = useCallback(() => {
+    // Why: the reveal request hides this focused button while the list scrolls.
+    // Hand focus to the listbox first so keyboard users keep their context.
+    scrollRef.current?.focus({ preventScroll: true })
+    onRevealCurrentWorkspace()
+  }, [onRevealCurrentWorkspace])
   useLayoutEffect(() => {
     updateScrollViewport()
     const element = scrollRef.current
@@ -1654,7 +1674,7 @@ const VirtualizedWorktreeViewport = React.memo(function VirtualizedWorktreeViewp
         </div>
       </div>
       {showFloatingCurrentWorkspaceButton ? (
-        <FloatingCurrentWorkspaceButton onClick={onRevealCurrentWorkspace} />
+        <FloatingCurrentWorkspaceButton onClick={handleRevealCurrentWorkspace} />
       ) : null}
     </div>
   )
@@ -2132,6 +2152,19 @@ const WorktreeList = React.memo(function WorktreeList({
       return
     }
     if (
+      shouldConsumeStartupRevealForPendingReveal({
+        hasQueuedStartupReveal: hasQueuedStartupRevealRef.current,
+        workspaceSessionReady,
+        persistedUIReady,
+        pendingRevealWorktree
+      })
+    ) {
+      // Why: explicit activation/manual reveals should win startup. Treat them
+      // as consuming the one-shot startup pass so it cannot fire afterward.
+      hasQueuedStartupRevealRef.current = true
+      return
+    }
+    if (
       !shouldQueueStartupSidebarReveal({
         hasQueuedStartupReveal: hasQueuedStartupRevealRef.current,
         workspaceSessionReady,
@@ -2266,12 +2299,13 @@ const WorktreeList = React.memo(function WorktreeList({
 
   const activeWorktreeIsFilteredOut =
     activeWorktreeId !== null && !worktrees.some((worktree) => worktree.id === activeWorktreeId)
+  const canRevealCurrentWorkspace = !activeWorktreeIsFilteredOut || !hasFilters
   const revealCurrentWorkspaceFromFloatingButton = useCallback(() => {
-    if (activeWorktreeIsFilteredOut && hasFilters) {
-      clearFilters()
+    if (!canRevealCurrentWorkspace) {
+      return
     }
     revealCurrentSidebarWorktree({ behavior: 'smooth' })
-  }, [activeWorktreeIsFilteredOut, clearFilters, hasFilters])
+  }, [canRevealCurrentWorkspace])
 
   if (worktrees.length === 0) {
     return (
@@ -2290,7 +2324,7 @@ const WorktreeList = React.memo(function WorktreeList({
             )}
           </div>
         </div>
-        {activeWorktreeIsFilteredOut && hasFilters ? (
+        {canRevealCurrentWorkspace && activeWorktreeIsFilteredOut ? (
           <FloatingCurrentWorkspaceButton onClick={revealCurrentWorkspaceFromFloatingButton} />
         ) : null}
       </div>
@@ -2302,7 +2336,7 @@ const WorktreeList = React.memo(function WorktreeList({
       key={viewportResetKey}
       rows={rows}
       activeWorktreeId={selectedSidebarWorktreeId}
-      currentWorktreeId={activeWorktreeId}
+      currentWorktreeId={canRevealCurrentWorkspace ? activeWorktreeId : null}
       groupBy={groupBy}
       repoGroupOrdering={repoGroupOrdering}
       toggleGroup={toggleGroup}

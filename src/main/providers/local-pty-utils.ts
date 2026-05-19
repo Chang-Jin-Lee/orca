@@ -1,5 +1,13 @@
-import { basename, join } from 'path'
-import { existsSync, accessSync, statSync, chmodSync, constants as fsConstants } from 'fs'
+import { basename, dirname, join } from 'path'
+import {
+  existsSync,
+  accessSync,
+  statSync,
+  chmodSync,
+  copyFileSync,
+  mkdirSync,
+  constants as fsConstants
+} from 'fs'
 import type * as pty from 'node-pty'
 
 let didEnsureSpawnHelperExecutable = false
@@ -22,6 +30,39 @@ export function getNodePtySpawnHelperCandidates(): string[] {
     join(packageRoot, 'build', 'Debug', 'spawn-helper'),
     join(packageRoot, 'prebuilds', `${process.platform}-${process.arch}`, 'spawn-helper')
   ].map(toUnpackedAsarPath)
+}
+
+export function resolveNodePtySpawnHelperPath(args: {
+  unixTerminalPath: string
+  nativeDir: string
+}): string {
+  return toUnpackedAsarPath(join(dirname(args.unixTerminalPath), args.nativeDir, 'spawn-helper'))
+}
+
+export function getResolvedNodePtySpawnHelperPath(): string {
+  const { loadNativeModule } = require('node-pty/lib/utils') as {
+    loadNativeModule: (name: string) => { dir: string }
+  }
+  const native = loadNativeModule('pty')
+  return resolveNodePtySpawnHelperPath({
+    unixTerminalPath: require.resolve('node-pty/lib/unixTerminal.js'),
+    nativeDir: native.dir
+  })
+}
+
+export function selectNodePtySpawnHelperRepair(args: {
+  resolvedHelperPath: string
+  candidates: readonly string[]
+}): { needsRepair: boolean; repairSourcePath: string | null } {
+  if (existsSync(args.resolvedHelperPath)) {
+    return { needsRepair: false, repairSourcePath: null }
+  }
+
+  const repairSourcePath =
+    args.candidates.find(
+      (candidate) => candidate !== args.resolvedHelperPath && existsSync(candidate)
+    ) ?? null
+  return { needsRepair: repairSourcePath !== null, repairSourcePath }
 }
 
 /**
@@ -57,8 +98,16 @@ export function ensureNodePtySpawnHelperExecutable(): void {
   didEnsureSpawnHelperExecutable = true
 
   try {
-    for (const candidate of getNodePtySpawnHelperCandidates()) {
-      if (!existsSync(candidate)) {
+    const candidates = getNodePtySpawnHelperCandidates()
+    const resolvedHelperPath = getResolvedNodePtySpawnHelperPath()
+    const repair = selectNodePtySpawnHelperRepair({ resolvedHelperPath, candidates })
+    if (repair.needsRepair && repair.repairSourcePath) {
+      mkdirSync(dirname(resolvedHelperPath), { recursive: true })
+      copyFileSync(repair.repairSourcePath, resolvedHelperPath)
+    }
+
+    for (const candidate of [resolvedHelperPath, ...candidates]) {
+      if (!existsSync(candidate) || !statSync(candidate).isFile()) {
         continue
       }
       const mode = statSync(candidate).mode

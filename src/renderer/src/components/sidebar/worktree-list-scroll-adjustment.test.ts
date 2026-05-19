@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  shouldConsumeStartupRevealForPendingReveal,
   resolvePendingSidebarReveal,
   shouldAdjustWorktreeSidebarMeasuredRowScroll,
   shouldShowFloatingCurrentWorkspaceButton,
@@ -59,6 +60,28 @@ describe('shouldAdjustWorktreeSidebarMeasuredRowScroll', () => {
         activeWorktreeId: 'wt-1',
         pendingRevealWorktree: { worktreeId: 'wt-2', behavior: 'smooth' },
         renderRowCount: 3
+      })
+    ).toBe(false)
+  })
+
+  it('consumes startup reveal when an explicit reveal is already pending', () => {
+    expect(
+      shouldConsumeStartupRevealForPendingReveal({
+        hasQueuedStartupReveal: false,
+        workspaceSessionReady: true,
+        persistedUIReady: true,
+        pendingRevealWorktree: { worktreeId: 'wt-2', behavior: 'smooth' }
+      })
+    ).toBe(true)
+  })
+
+  it('does not consume startup reveal before hydration is ready', () => {
+    expect(
+      shouldConsumeStartupRevealForPendingReveal({
+        hasQueuedStartupReveal: false,
+        workspaceSessionReady: true,
+        persistedUIReady: false,
+        pendingRevealWorktree: { worktreeId: 'wt-2', behavior: 'smooth' }
       })
     ).toBe(false)
   })
