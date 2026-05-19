@@ -18,6 +18,7 @@ import {
   DialogTitle
 } from '@/components/ui/dialog'
 import { useTerminalSaveDialog } from '@/components/terminal/useTerminalSaveDialog'
+import { appendUniqueOpenFileIds } from '@/components/terminal/unsaved-close-queue'
 import { getConnectionId } from '@/lib/connection-context'
 import { createUntitledMarkdownFile } from '@/lib/create-untitled-markdown'
 import { focusTerminalTabSurface } from '@/lib/focus-terminal-tab-surface'
@@ -32,6 +33,13 @@ import {
 import { useAppStore } from '@/store'
 import type { OpenFile } from '@/store/slices/editor'
 import { destroyWorkspaceWebviews } from '@/store/slices/browser-webview-cleanup'
+import {
+  activateWebRuntimeSessionTab,
+  closeWebRuntimeSessionTab,
+  createWebRuntimeSessionBrowserTab,
+  createWebRuntimeSessionTerminal,
+  isWebRuntimeSessionActive
+} from '@/runtime/web-runtime-session'
 import { FLOATING_TERMINAL_WORKTREE_ID } from '../../../../shared/constants'
 import type {
   BrowserTab as BrowserTabState,
@@ -74,7 +82,6 @@ export function FloatingTerminalPanel({
 }: FloatingTerminalPanelProps): React.JSX.Element | null {
   const tabsByWorktree = useAppStore((s) => s.tabsByWorktree)
   const browserTabsByWorktree = useAppStore((s) => s.browserTabsByWorktree)
-  const browserPagesByWorkspace = useAppStore((s) => s.browserPagesByWorkspace)
   const groupsByWorktree = useAppStore((s) => s.groupsByWorktree)
   const unifiedTabsByWorktree = useAppStore((s) => s.unifiedTabsByWorktree)
   const openFiles = useAppStore((s) => s.openFiles)
@@ -107,6 +114,8 @@ export function FloatingTerminalPanel({
   const normalizedInitialBoundsRef = useRef(false)
   const previousOpenRef = useRef(false)
   const pendingLastEditorCloseRef = useRef(false)
+  const pendingEditorCloseQueueRef = useRef<string[]>([])
+  const saveDialogFileIdRef = useRef<string | null>(null)
   const panelRef = useRef<HTMLDivElement>(null)
   const dragRef = useRef<{
     pointerId: number
@@ -228,6 +237,84 @@ export function FloatingTerminalPanel({
     handleSaveDialogCancel
   } = useTerminalSaveDialog({ openFiles, closeFile, markFileDirty })
 
+  const getNextQueuedEditorClose = useCallback((): string | null => {
+    while (pendingEditorCloseQueueRef.current.length > 0) {
+      const fileId = pendingEditorCloseQueueRef.current[0]
+      const file = useAppStore.getState().openFiles.find((candidate) => candidate.id === fileId)
+      if (!file) {
+        pendingEditorCloseQueueRef.current.shift()
+        continue
+      }
+      if (!file.isDirty) {
+        closeFile(fileId)
+        pendingEditorCloseQueueRef.current.shift()
+        continue
+      }
+      return fileId
+    }
+    return null
+  }, [closeFile])
+
+  const advanceEditorCloseQueue = useCallback(() => {
+    if (saveDialogFileIdRef.current !== null) {
+      return
+    }
+    const nextFileId = getNextQueuedEditorClose()
+    if (!nextFileId) {
+      return
+    }
+    // Why: useTerminalSaveDialog only stores one file id. Mark the next id as
+    // reserved before setting dialog state so same-tick bulk close requests
+    // cannot overwrite it with a later dirty tab.
+    saveDialogFileIdRef.current = nextFileId
+    requestCloseFile(nextFileId)
+  }, [getNextQueuedEditorClose, requestCloseFile])
+
+  const queueEditorCloseRequests = useCallback(
+    (fileIds: string[]) => {
+      pendingEditorCloseQueueRef.current = appendUniqueOpenFileIds(
+        pendingEditorCloseQueueRef.current,
+        fileIds,
+        new Set(useAppStore.getState().openFiles.map((file) => file.id))
+      )
+      advanceEditorCloseQueue()
+    },
+    [advanceEditorCloseQueue]
+  )
+
+  useEffect(() => {
+    saveDialogFileIdRef.current = saveDialogFileId
+    if (saveDialogFileId === null) {
+      advanceEditorCloseQueue()
+    }
+  }, [advanceEditorCloseQueue, saveDialogFileId])
+
+  const handleFloatingSaveDialogSave = useCallback(() => {
+    const fileId = saveDialogFileIdRef.current
+    if (fileId) {
+      pendingEditorCloseQueueRef.current = pendingEditorCloseQueueRef.current.filter(
+        (queuedId) => queuedId !== fileId
+      )
+    }
+    handleSaveDialogSave()
+  }, [handleSaveDialogSave])
+
+  const handleFloatingSaveDialogDiscard = useCallback(() => {
+    const fileId = saveDialogFileIdRef.current
+    if (fileId) {
+      pendingEditorCloseQueueRef.current = pendingEditorCloseQueueRef.current.filter(
+        (queuedId) => queuedId !== fileId
+      )
+    }
+    void Promise.resolve(handleSaveDialogDiscard())
+  }, [handleSaveDialogDiscard])
+
+  const handleFloatingSaveDialogCancel = useCallback(() => {
+    pendingEditorCloseQueueRef.current = []
+    pendingLastEditorCloseRef.current = false
+    handleSaveDialogCancel()
+  }, [handleSaveDialogCancel])
+
   useEffect(() => {
     if (!open || normalizedInitialBoundsRef.current || typeof window === 'undefined') {
       return
@@ -255,9 +342,24 @@ export function FloatingTerminalPanel({
     if (!opened || unifiedTabs.length > 0) {
       return
     }
-    const tab = createTab(FLOATING_TERMINAL_WORKTREE_ID)
-    focusTerminalTabSurface(tab.id)
-  }, [createTab, open, unifiedTabs.length])
+    void (async () => {
+      if (
+        await createWebRuntimeSessionTerminal({
+          worktreeId: FLOATING_TERMINAL_WORKTREE_ID,
+          targetGroupId: activeGroup?.id,
+          activate: true,
+          selectWorktree: false
+        })
+      ) {
+        return
+      }
+      const tab = createTab(FLOATING_TERMINAL_WORKTREE_ID, activeGroup?.id, undefined, {
+        activate: false
+      })
+      activateTab(tab.id)
+      focusTerminalTabSurface(tab.id)
+    })()
+  }, [activateTab, activeGroup, createTab, open, unifiedTabs.length])
 
   useEffect(() => {
     if (!open || !activeTerminalId) {
@@ -316,10 +418,27 @@ export function FloatingTerminalPanel({
         return
       }
       activateTab(item.id)
+      const runtimeEnvironmentId = useAppStore
+        .getState()
+        .settings?.activeRuntimeEnvironmentId?.trim()
       if (item.contentType === 'terminal') {
+        if (isWebRuntimeSessionActive(runtimeEnvironmentId)) {
+          void activateWebRuntimeSessionTab({
+            worktreeId: FLOATING_TERMINAL_WORKTREE_ID,
+            tabId: item.entityId,
+            environmentId: runtimeEnvironmentId
+          })
+        }
         setActiveTab(item.entityId)
         focusTerminalTabSurface(item.entityId)
       } else if (item.contentType === 'browser') {
+        if (isWebRuntimeSessionActive(runtimeEnvironmentId)) {
+          void activateWebRuntimeSessionTab({
+            worktreeId: FLOATING_TERMINAL_WORKTREE_ID,
+            tabId: item.id,
+            environmentId: runtimeEnvironmentId
+          })
+        }
         const workspace = useAppStore
           .getState()
           .browserTabsByWorktree[FLOATING_TERMINAL_WORKTREE_ID]?.find(
@@ -335,21 +454,47 @@ export function FloatingTerminalPanel({
 
   const createFloatingTerminalTab = useCallback(
     (shellOverride?: string) => {
-      const tab = createTab(FLOATING_TERMINAL_WORKTREE_ID, activeGroup?.id, shellOverride, {
-        activate: true
-      })
-      focusTerminalTabSurface(tab.id)
+      void (async () => {
+        if (
+          await createWebRuntimeSessionTerminal({
+            worktreeId: FLOATING_TERMINAL_WORKTREE_ID,
+            targetGroupId: activeGroup?.id,
+            command: shellOverride,
+            activate: true,
+            selectWorktree: false
+          })
+        ) {
+          return
+        }
+        const tab = createTab(FLOATING_TERMINAL_WORKTREE_ID, activeGroup?.id, shellOverride, {
+          activate: false
+        })
+        activateTab(tab.id)
+        focusTerminalTabSurface(tab.id)
+      })()
     },
-    [activeGroup, createTab]
+    [activateTab, activeGroup, createTab]
   )
 
   const createFloatingBrowserTab = useCallback(() => {
-    const url = browserDefaultUrl ?? 'about:blank'
-    createBrowserTab(FLOATING_TERMINAL_WORKTREE_ID, url, {
-      title: 'New Browser Tab',
-      focusAddressBar: true,
-      targetGroupId: activeGroup?.id
-    })
+    void (async () => {
+      const url = browserDefaultUrl ?? 'about:blank'
+      if (
+        await createWebRuntimeSessionBrowserTab({
+          worktreeId: FLOATING_TERMINAL_WORKTREE_ID,
+          url,
+          targetGroupId: activeGroup?.id,
+          selectWorktree: false
+        })
+      ) {
+        return
+      }
+      createBrowserTab(FLOATING_TERMINAL_WORKTREE_ID, url, {
+        title: 'New Browser Tab',
+        focusAddressBar: true,
+        targetGroupId: activeGroup?.id
+      })
+    })()
   }, [activeGroup, browserDefaultUrl, createBrowserTab])
 
   const createFloatingMarkdownTab = useCallback(() => {
@@ -375,43 +520,71 @@ export function FloatingTerminalPanel({
     })()
   }, [activeGroup, cwd, openFile, settings])
 
-  const closeFloatingItem = useCallback(
-    (visibleId: string) => {
+  const closeFloatingItems = useCallback(
+    (visibleIds: string[]) => {
       const state = useAppStore.getState()
       const currentGroupTabs = activeGroup
         ? (state.unifiedTabsByWorktree[FLOATING_TERMINAL_WORKTREE_ID] ?? []).filter(
             (tab) => tab.groupId === activeGroup.id
           )
         : (state.unifiedTabsByWorktree[FLOATING_TERMINAL_WORKTREE_ID] ?? [])
-      const item = resolveGroupTabFromVisibleId(currentGroupTabs, visibleId)
-      if (!item) {
+      const items = visibleIds
+        .map((visibleId) => resolveGroupTabFromVisibleId(currentGroupTabs, visibleId))
+        .filter((item): item is Tab => item !== null)
+      if (items.length === 0) {
         return
       }
-      const isClosingLastTab = currentGroupTabs.length === 1
-      if (item.contentType === 'terminal') {
-        closeTab(item.entityId)
-      } else if (item.contentType === 'browser') {
-        destroyWorkspaceWebviews(browserPagesByWorkspace, item.entityId)
-        closeBrowserTab(item.entityId)
-      } else {
-        requestCloseFile(item.entityId)
-        if (state.openFiles.find((file) => file.id === item.entityId)?.isDirty) {
-          pendingLastEditorCloseRef.current = isClosingLastTab
-          return
+      const closingTabIds = new Set(items.map((item) => item.id))
+      const isClosingEveryVisibleTab = currentGroupTabs.every((tab) => closingTabIds.has(tab.id))
+      const dirtyEditorFileIds: string[] = []
+      let hasRuntimeSessionClose = false
+      const runtimeEnvironmentId = state.settings?.activeRuntimeEnvironmentId?.trim()
+      for (const item of items) {
+        if (
+          (item.contentType === 'terminal' || item.contentType === 'browser') &&
+          isWebRuntimeSessionActive(runtimeEnvironmentId)
+        ) {
+          // Why: paired web clients mirror host-owned tabs; ask the runtime to
+          // close the host tab instead of deleting the local mirror directly.
+          hasRuntimeSessionClose = true
+          void closeWebRuntimeSessionTab({
+            worktreeId: FLOATING_TERMINAL_WORKTREE_ID,
+            tabId: item.contentType === 'browser' ? item.id : item.entityId,
+            environmentId: runtimeEnvironmentId
+          })
+          continue
+        }
+        if (item.contentType === 'terminal') {
+          closeTab(item.entityId)
+        } else if (item.contentType === 'browser') {
+          destroyWorkspaceWebviews(state.browserPagesByWorkspace, item.entityId)
+          closeBrowserTab(item.entityId)
+        } else {
+          const file = state.openFiles.find((candidate) => candidate.id === item.entityId)
+          if (file?.isDirty) {
+            dirtyEditorFileIds.push(item.entityId)
+            continue
+          }
+          closeFile(item.entityId)
         }
       }
-      if (isClosingLastTab) {
+      if (dirtyEditorFileIds.length > 0) {
+        pendingLastEditorCloseRef.current = isClosingEveryVisibleTab
+        queueEditorCloseRequests(dirtyEditorFileIds)
+        return
+      }
+      if (isClosingEveryVisibleTab && !hasRuntimeSessionClose) {
         onOpenChange(false)
       }
     },
-    [
-      activeGroup,
-      browserPagesByWorkspace,
-      closeBrowserTab,
-      closeTab,
-      onOpenChange,
-      requestCloseFile
-    ]
+    [activeGroup, closeBrowserTab, closeFile, closeTab, onOpenChange, queueEditorCloseRequests]
+  )
+
+  const closeFloatingItem = useCallback(
+    (visibleId: string) => {
+      closeFloatingItems([visibleId])
+    },
+    [closeFloatingItems]
   )
 
   const closeOthers = useCallback(
@@ -426,13 +599,11 @@ export function FloatingTerminalPanel({
       if (!item) {
         return
       }
-      for (const tab of currentGroupTabs) {
-        if (tab.id !== item.id && !tab.isPinned) {
-          closeFloatingItem(tab.id)
-        }
-      }
+      closeFloatingItems(
+        currentGroupTabs.filter((tab) => tab.id !== item.id && !tab.isPinned).map((tab) => tab.id)
+      )
     },
-    [activeGroup, closeFloatingItem]
+    [activeGroup, closeFloatingItems]
   )
 
   const closeToRight = useCallback(
@@ -457,15 +628,31 @@ export function FloatingTerminalPanel({
         return
       }
       const tabById = new Map(currentGroupTabs.map((tab) => [tab.id, tab]))
-      for (const tabId of currentGroup.tabOrder.slice(index + 1)) {
-        const tab = tabById.get(tabId)
-        if (tab && !tab.isPinned) {
-          closeFloatingItem(tab.id)
-        }
-      }
+      closeFloatingItems(
+        currentGroup.tabOrder.slice(index + 1).filter((tabId) => {
+          const tab = tabById.get(tabId)
+          return tab ? !tab.isPinned : false
+        })
+      )
     },
-    [activeGroup, closeFloatingItem]
+    [activeGroup, closeFloatingItems]
   )
+
+  const closeAllFiles = useCallback(() => {
+    const state = useAppStore.getState()
+    const currentGroupTabs = activeGroup
+      ? (state.unifiedTabsByWorktree[FLOATING_TERMINAL_WORKTREE_ID] ?? []).filter(
+          (tab) => tab.groupId === activeGroup.id
+        )
+      : (state.unifiedTabsByWorktree[FLOATING_TERMINAL_WORKTREE_ID] ?? [])
+    closeFloatingItems(
+      currentGroupTabs
+        .filter(
+          (tab) => tab.contentType !== 'terminal' && tab.contentType !== 'browser' && !tab.isPinned
+        )
+        .map((tab) => tab.id)
+    )
+  }, [activeGroup, closeFloatingItems])
 
   const toggleMaximized = useCallback(() => {
     setMaximized((current) => {
@@ -596,21 +783,30 @@ export function FloatingTerminalPanel({
               onActivateBrowserTab={activateFloatingItem}
               onCloseBrowserTab={closeFloatingItem}
               onDuplicateBrowserTab={(browserTabId) => {
-                const source = browserTabs.find((tab) => tab.id === browserTabId)
-                if (!source) {
-                  return
-                }
-                createBrowserTab(FLOATING_TERMINAL_WORKTREE_ID, source.url, {
-                  title: source.title,
-                  sessionProfileId: source.sessionProfileId,
-                  targetGroupId: activeGroup?.id
-                })
+                void (async () => {
+                  const source = browserTabs.find((tab) => tab.id === browserTabId)
+                  if (!source) {
+                    return
+                  }
+                  if (
+                    await createWebRuntimeSessionBrowserTab({
+                      worktreeId: FLOATING_TERMINAL_WORKTREE_ID,
+                      url: source.url,
+                      profileId: source.sessionProfileId,
+                      targetGroupId: activeGroup?.id,
+                      selectWorktree: false
+                    })
+                  ) {
+                    return
+                  }
+                  createBrowserTab(FLOATING_TERMINAL_WORKTREE_ID, source.url, {
+                    title: source.title,
+                    sessionProfileId: source.sessionProfileId,
+                    targetGroupId: activeGroup?.id
+                  })
+                })()
               }}
-              onCloseAllFiles={() => {
-                for (const file of editorItems) {
-                  closeFloatingItem(file.tabId)
-                }
-              }}
+              onCloseAllFiles={closeAllFiles}
               onPinFile={pinFile}
               tabBarOrder={tabBarOrder}
             />
@@ -721,7 +917,7 @@ export function FloatingTerminalPanel({
         open={saveDialogFileId !== null}
         onOpenChange={(nextOpen) => {
           if (!nextOpen) {
-            handleSaveDialogCancel()
+            handleFloatingSaveDialogCancel()
           }
         }}
       >
@@ -735,13 +931,23 @@ export function FloatingTerminalPanel({
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="gap-2">
-            <Button type="button" variant="outline" size="sm" onClick={handleSaveDialogCancel}>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={handleFloatingSaveDialogCancel}
+            >
               Cancel
             </Button>
-            <Button type="button" variant="outline" size="sm" onClick={handleSaveDialogDiscard}>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={handleFloatingSaveDialogDiscard}
+            >
               Don&apos;t Save
             </Button>
-            <Button type="button" size="sm" onClick={handleSaveDialogSave}>
+            <Button type="button" size="sm" onClick={handleFloatingSaveDialogSave}>
               Save
             </Button>
           </DialogFooter>

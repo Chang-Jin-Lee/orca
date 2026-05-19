@@ -438,7 +438,7 @@ export const createBrowserSlice: StateCreator<AppState, [], [], BrowserSlice> = 
           ...s.tabBarOrderByWorktree,
           [worktreeId]: nextTabBarOrder
         },
-        activeBrowserTabId: shouldActivate ? workspaceId : s.activeBrowserTabId,
+        activeBrowserTabId: shouldUpdateGlobalActiveSurface ? workspaceId : s.activeBrowserTabId,
         activeBrowserTabIdByWorktree: {
           ...s.activeBrowserTabIdByWorktree,
           [worktreeId]: shouldActivate
