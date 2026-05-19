@@ -128,6 +128,25 @@ describe('agent interrupt inference', () => {
     entry = undefined
   })
 
+  it('does not infer Ctrl+C for Droid', () => {
+    vi.useFakeTimers()
+    let entry: AgentStatusEntry | undefined = makeEntry({ agentType: 'droid' })
+    const inferInterrupt = vi.fn()
+    const tracker = createAgentInterruptInference({
+      paneKey: PANE_KEY,
+      getStatusEntry: () => entry,
+      inferInterrupt,
+      now: () => 1_100
+    })
+
+    tracker.observeInputIntent('ctrl-c')
+    vi.advanceTimersByTime(500)
+
+    expect(inferInterrupt).not.toHaveBeenCalled()
+    tracker.dispose()
+    entry = undefined
+  })
+
   it.each(['opencode', 'copilot'] as const)(
     'infers immediately on double Escape for %s',
     (agentType) => {

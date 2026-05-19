@@ -317,6 +317,45 @@ describe('AgentHookServer listener replay', () => {
     }
   )
 
+  it('rejects Ctrl+C inference for Droid', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(1_000)
+    try {
+      const server = new AgentHookServer()
+      server.ingestRemote(
+        {
+          paneKey: PANE,
+          tabId: 'tab-1',
+          worktreeId: 'wt-1',
+          payload: { state: 'working', prompt: 'long task', agentType: 'droid' }
+        },
+        'conn-1'
+      )
+      const baseline = server.getStatusSnapshot()[0]
+
+      vi.setSystemTime(1_500)
+      const applied = server.inferInterrupt({
+        paneKey: PANE,
+        baselineUpdatedAt: baseline.receivedAt,
+        baselineStateStartedAt: baseline.stateStartedAt,
+        baselinePrompt: 'long task',
+        baselineAgentType: 'droid',
+        intent: 'ctrl-c'
+      })
+
+      expect(applied).toBe(false)
+      expect(server.getStatusSnapshot()).toEqual([
+        expect.objectContaining({
+          state: 'working',
+          prompt: 'long task',
+          agentType: 'droid'
+        })
+      ])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('does not let late same-turn working hooks resurrect an inferred interrupt', () => {
     vi.useFakeTimers()
     vi.setSystemTime(1_000)

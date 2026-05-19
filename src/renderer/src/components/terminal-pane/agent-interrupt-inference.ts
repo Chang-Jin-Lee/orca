@@ -49,6 +49,13 @@ function shouldFlushInterruptImmediately(
   )
 }
 
+function shouldIgnoreInterruptIntent(
+  agentType: AgentStatusEntry['agentType'],
+  intent: AgentInterruptInputIntent
+): boolean {
+  return agentType === 'droid' && intent === 'ctrl-c'
+}
+
 function isSameTurnBaseline(
   left: CapturedInterruptBaseline,
   right: CapturedInterruptBaseline
@@ -189,6 +196,10 @@ export function createAgentInterruptInference({
       }
       let baseline = captureBaseline(entry, intent)
       if (!baseline) {
+        clearPending()
+        return
+      }
+      if (shouldIgnoreInterruptIntent(baseline.agentType, intent)) {
         clearPending()
         return
       }

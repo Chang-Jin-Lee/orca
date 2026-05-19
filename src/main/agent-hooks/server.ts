@@ -311,6 +311,11 @@ export class AgentHookServer {
     }
     const payload = existing.payload
     const agentType: AgentType | undefined = payload.agentType
+    // Why: Droid's Ctrl+C does not interrupt the current turn; repeated Ctrl+C
+    // exits the CLI, which is handled by process/PTY lifecycle cleanup.
+    if (agentType === 'droid' && request.intent === 'ctrl-c') {
+      return false
+    }
     // Why: these agents use the first Escape as a TUI/editor cancel. A single
     // Escape can leave the turn running, so only a deliberate double Escape
     // may infer an interrupted turn.
