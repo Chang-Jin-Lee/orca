@@ -4,6 +4,46 @@
 
 A user reported that after reloading while Orca was updating, their workspaces did not load or were not interactable. The crash-report portion was a separate false positive caused by intentional Electron process teardown. The workspace symptom points at renderer startup state instead: persisted session state can be mounted against an incomplete worktree list.
 
+## Original User Report
+
+The report came from Orca `1.4.4` on macOS `25.4.0` arm64. The submitted crash report had:
+
+- report ID `58535131-6384-4d30-a3dc-75d9b590544d`;
+- reason `killed`;
+- exit code `15`;
+- submitted at `2026-05-19T19:26:41.784Z`;
+- Electron `41.5.0`;
+- Chrome `146.0.7680.216`.
+
+The user feedback was:
+
+```text
+reload while was updating and it crashes
+```
+
+The crash breadcrumbs showed repeated Claude agent state changes followed by two main-window reloads:
+
+```text
+2026-05-19T19:03:35.386Z agent_state_changed (agentType=claude, state=working)
+2026-05-19T19:04:09.363Z agent_state_changed (agentType=claude, state=done)
+2026-05-19T19:04:38.275Z agent_state_changed (agentType=claude, state=working)
+2026-05-19T19:04:55.528Z agent_state_changed (agentType=claude, state=working)
+2026-05-19T19:04:55.634Z agent_state_changed (agentType=claude, state=working)
+2026-05-19T19:05:05.455Z agent_state_changed (agentType=claude, state=working)
+2026-05-19T19:06:08.980Z agent_state_changed (agentType=claude, state=working)
+2026-05-19T19:06:09.118Z agent_state_changed (agentType=claude, state=working)
+2026-05-19T19:06:16.802Z agent_state_changed (agentType=claude, state=working)
+2026-05-19T19:07:06.856Z main_window_loaded
+2026-05-19T19:07:14.583Z main_window_loaded
+2026-05-19T19:08:17.053Z agent_state_changed (agentType=claude, state=working)
+2026-05-19T19:08:22.818Z agent_state_changed (agentType=claude, state=working)
+```
+
+Follow-up investigation separated this into two issues:
+
+- the crash dialog was likely caused by expected Electron process teardown during reload/update;
+- the user-visible "workspaces did not load / were not interactable" symptom likely came from session restore proceeding with incomplete worktree hydration.
+
 Orca startup restores state in this order:
 
 1. Load settings.
