@@ -1139,12 +1139,11 @@ export function connectPanePty(
         manager.markPaneHasComplexScriptOutput(pane.id)
       }
       recordTerminalOutput(pane.terminal)
-      // Why: the active split pane owns keyboard latency. Visible inactive
-      // panes still drain, but through the shared scheduler so a build log in
-      // another split cannot monopolize xterm writes while the user types.
-      const activePaneId = manager.getActivePane()?.id ?? pane.id
+      // Why: visibility is the right gate — split-pane layouts have multiple
+      // visible-but-inactive panes whose output the user is watching. Only
+      // hidden panes (background tabs) should be throttled.
       writeTerminalOutput(pane.terminal, data, {
-        foreground: deps.isVisibleRef.current && activePaneId === pane.id
+        foreground: deps.isVisibleRef.current
       })
 
       if (pendingStartupCommand) {

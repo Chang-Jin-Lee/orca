@@ -650,12 +650,6 @@ export function registerPtyHandlers(
   // large output and non-interactive output must still use the batcher.
   const INTERACTIVE_OUTPUT_WINDOW_MS = 100
   const INTERACTIVE_OUTPUT_MAX_CHARS = 1024
-  const PTY_IPC_CHUNK_CHARS = 64 * 1024
-  const PTY_MAX_IPC_CHUNKS_PER_FLUSH = 8
-
-  const sendPtyData = (id: string, data: string): void => {
-    mainWindow.webContents.send('pty:data', { id, data })
-  }
 
   const flushPendingData = (): void => {
     flushTimer = null
@@ -663,30 +657,10 @@ export function registerPtyHandlers(
       pendingData.clear()
       return
     }
-
-    let sentChunks = 0
-    while (pendingData.size > 0 && sentChunks < PTY_MAX_IPC_CHUNKS_PER_FLUSH) {
-      const entry = pendingData.entries().next().value
-      if (!entry) {
-        break
-      }
-      const [id, data] = entry
-      pendingData.delete(id)
-      if (data.length <= PTY_IPC_CHUNK_CHARS) {
-        sendPtyData(id, data)
-      } else {
-        sendPtyData(id, data.slice(0, PTY_IPC_CHUNK_CHARS))
-        // Why: a single noisy PTY can otherwise serialize megabytes of IPC in
-        // one main-process turn. Requeue the remainder behind other PTYs so
-        // active terminal redraws and control IPC keep getting turns.
-        pendingData.set(id, data.slice(PTY_IPC_CHUNK_CHARS))
-      }
-      sentChunks++
+    for (const [id, data] of pendingData) {
+      mainWindow.webContents.send('pty:data', { id, data })
     }
-
-    if (pendingData.size > 0) {
-      flushTimer = setTimeout(flushPendingData, PTY_BATCH_INTERVAL_MS)
-    }
+    pendingData.clear()
   }
 
   const clearFlushTimerIfIdle = (): void => {
@@ -740,7 +714,10 @@ export function registerPtyHandlers(
         clearFlushTimerIfIdle()
         // Why: agent TUIs redraw small prompt regions after every keystroke.
         // Waiting for the throughput batch timer adds visible input latency.
-        sendPtyData(payload.id, nextData)
+        mainWindow.webContents.send('pty:data', {
+          id: payload.id,
+          data: nextData
+        })
         return
       }
       pendingData.set(payload.id, nextData)
@@ -761,7 +738,7 @@ export function registerPtyHandlers(
         // tears down the terminal on pty:exit before the batch timer fires.
         const remaining = pendingData.get(payload.id)
         if (remaining) {
-          sendPtyData(payload.id, remaining)
+          mainWindow.webContents.send('pty:data', { id: payload.id, data: remaining })
           pendingData.delete(payload.id)
         }
         lastInputAtByPty.delete(payload.id)

@@ -31,7 +31,6 @@ export class DaemonClient {
   private streamSocket: Socket | null = null
   private connected = false
   private disconnectArmed = false
-  private disconnectGeneration = 0
   // Why: after a disconnect + reconnect (daemon respawn), a stale 'close'
   // event from the old sockets can fire. Without a generation check, that
   // event would tear down the fresh connection. Each doConnect() increments
@@ -75,20 +74,15 @@ export class DaemonClient {
 
   private async doConnect(): Promise<void> {
     const token = readFileSync(this.tokenPath, 'utf-8').trim()
-    const disconnectGeneration = this.disconnectGeneration
 
     try {
       // Sequential: control first, then stream
       this.controlSocket = await this.connectSocket()
-      this.assertConnectNotCancelled(disconnectGeneration)
       await this.sendHello(this.controlSocket, token, 'control')
-      this.assertConnectNotCancelled(disconnectGeneration)
       this.setupControlParser()
 
       this.streamSocket = await this.connectSocket()
-      this.assertConnectNotCancelled(disconnectGeneration)
       await this.sendHello(this.streamSocket, token, 'stream')
-      this.assertConnectNotCancelled(disconnectGeneration)
       this.setupStreamParser()
 
       this.connected = true
@@ -96,18 +90,11 @@ export class DaemonClient {
       this.connectionGeneration++
 
       const gen = this.connectionGeneration
-      this.controlSocket.on('close', (hadError) =>
-        this.handleDisconnect(gen, `control socket closed${hadError ? ' after error' : ''}`)
-      )
-      this.controlSocket.on('error', (error) =>
-        this.handleDisconnect(gen, `control socket error: ${error.message}`)
-      )
-      this.streamSocket.on('close', (hadError) =>
-        this.handleDisconnect(gen, `stream socket closed${hadError ? ' after error' : ''}`)
-      )
-      this.streamSocket.on('error', (error) =>
-        this.handleDisconnect(gen, `stream socket error: ${error.message}`)
-      )
+      const handleClose = () => this.handleDisconnect(gen)
+      this.controlSocket.on('close', handleClose)
+      this.controlSocket.on('error', handleClose)
+      this.streamSocket.on('close', handleClose)
+      this.streamSocket.on('error', handleClose)
     } catch (error) {
       this.controlSocket?.destroy()
       this.streamSocket?.destroy()
@@ -143,19 +130,14 @@ export class DaemonClient {
     })
   }
 
-  notify(type: string, payload: unknown): boolean {
+  notify(type: string, payload: unknown): void {
     if (!this.connected || !this.controlSocket) {
-      return false
+      return
     }
 
     const id = `${NOTIFY_PREFIX}${++this.requestCounter}`
     const msg = { id, type, ...(payload !== undefined ? { payload } : {}) }
-    try {
-      this.controlSocket.write(encodeNdjson(msg))
-      return true
-    } catch {
-      return false
-    }
+    this.controlSocket.write(encodeNdjson(msg))
   }
 
   onEvent(listener: (event: unknown) => void): () => void {
@@ -179,10 +161,8 @@ export class DaemonClient {
   }
 
   disconnect(): void {
-    this.disconnectGeneration++
     this.connected = false
     this.disconnectArmed = false
-    this.connectingPromise = null
 
     for (const [id, pending] of this.pendingRequests) {
       clearTimeout(pending.timer)
@@ -194,12 +174,6 @@ export class DaemonClient {
     this.streamSocket?.destroy()
     this.controlSocket = null
     this.streamSocket = null
-  }
-
-  private assertConnectNotCancelled(disconnectGeneration: number): void {
-    if (disconnectGeneration !== this.disconnectGeneration) {
-      throw new DaemonProtocolError('Connection cancelled')
-    }
   }
 
   private connectSocket(): Promise<Socket> {
@@ -233,11 +207,6 @@ export class DaemonClient {
       }
 
       let buffer = ''
-      const cleanup = (): void => {
-        socket.removeListener('data', onData)
-        socket.removeListener('error', onError)
-        socket.removeListener('close', onClose)
-      }
       const onData = (chunk: Buffer): void => {
         buffer += chunk.toString()
         const newlineIdx = buffer.indexOf('\n')
@@ -245,7 +214,7 @@ export class DaemonClient {
           return
         }
 
-        cleanup()
+        socket.removeListener('data', onData)
         const line = buffer.slice(0, newlineIdx)
         try {
           const response = JSON.parse(line) as HelloResponse
@@ -260,18 +229,8 @@ export class DaemonClient {
           reject(new DaemonProtocolError('Invalid hello response'))
         }
       }
-      const onError = (error: Error): void => {
-        cleanup()
-        reject(error)
-      }
-      const onClose = (): void => {
-        cleanup()
-        reject(new DaemonProtocolError('Connection closed during hello'))
-      }
 
       socket.on('data', onData)
-      socket.once('error', onError)
-      socket.once('close', onClose)
       socket.write(encodeNdjson(hello))
     })
   }
@@ -323,17 +282,12 @@ export class DaemonClient {
     this.streamSocket.on('data', (chunk) => parser.feed(chunk.toString()))
   }
 
-  private handleDisconnect(generation: number, reason: string): void {
+  private handleDisconnect(generation: number): void {
     if (!this.disconnectArmed || generation !== this.connectionGeneration) {
       return
     }
     this.disconnectArmed = false
     this.connected = false
-
-    console.warn('[daemon-client] disconnected', {
-      reason,
-      pendingRequests: this.pendingRequests.size
-    })
 
     for (const [id, pending] of this.pendingRequests) {
       clearTimeout(pending.timer)
