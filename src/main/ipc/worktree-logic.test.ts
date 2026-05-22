@@ -114,14 +114,26 @@ describe('ensurePathWithinWorkspace', () => {
 })
 
 describe('computeBranchName', () => {
-  it('prefixes with git username when branchPrefix is git-username and username is present', () => {
+  it('prefixes with GitHub username when branchPrefix is github-username and username is present', () => {
+    expect(computeBranchName('feature', { branchPrefix: 'github-username' }, 'jdoe')).toBe(
+      'jdoe/feature'
+    )
+  })
+
+  it('prefixes with Git author identity when branchPrefix is git-author and value is present', () => {
+    expect(computeBranchName('feature', { branchPrefix: 'git-author' }, 'Jane-Doe')).toBe(
+      'Jane-Doe/feature'
+    )
+  })
+
+  it('keeps the legacy git-username mode mapped to GitHub username behavior', () => {
     expect(computeBranchName('feature', { branchPrefix: 'git-username' }, 'jdoe')).toBe(
       'jdoe/feature'
     )
   })
 
-  it('returns bare name when branchPrefix is git-username but username is null', () => {
-    expect(computeBranchName('feature', { branchPrefix: 'git-username' }, null)).toBe('feature')
+  it('returns bare name when branchPrefix needs a resolved value but the value is null', () => {
+    expect(computeBranchName('feature', { branchPrefix: 'github-username' }, null)).toBe('feature')
   })
 
   it('prefixes with custom value when branchPrefix is custom', () => {

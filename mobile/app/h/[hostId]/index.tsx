@@ -427,7 +427,7 @@ export default function HostScreen() {
         setWorktreesLoaded(true)
 
         void requestClient
-          .sendRequest('repo.list')
+          .sendRequest('repo.list', { includeGitUsername: false })
           .then((repoResponse) => {
             if (clientRef.current !== requestClient || hostId !== requestHostId) return
             if (!repoResponse.ok) return

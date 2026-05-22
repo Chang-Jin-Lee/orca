@@ -385,7 +385,8 @@ const api = {
   },
 
   repos: {
-    list: (): Promise<unknown[]> => ipcRenderer.invoke('repos:list'),
+    list: (args?: { includeGitUsername?: boolean }): Promise<unknown[]> =>
+      ipcRenderer.invoke('repos:list', args),
 
     add: (args: { path: string; kind?: 'git' | 'folder' }): Promise<unknown> =>
       ipcRenderer.invoke('repos:add', args),
@@ -433,6 +434,9 @@ const api = {
 
     getGitUsername: (args: { repoId: string }): Promise<string> =>
       ipcRenderer.invoke('repos:getGitUsername', args),
+
+    getBranchPrefixValue: (args: { repoId: string; branchPrefix: string }): Promise<string> =>
+      ipcRenderer.invoke('repos:getBranchPrefixValue', args),
 
     getBaseRefDefault: (args: { repoId: string }): Promise<BaseRefDefaultResult> =>
       ipcRenderer.invoke('repos:getBaseRefDefault', args),

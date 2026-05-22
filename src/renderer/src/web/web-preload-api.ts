@@ -591,7 +591,7 @@ function createRuntimeEnvironmentsApi(): NonNullable<Partial<PreloadApi>['runtim
 
 function createReposApi(): NonNullable<Partial<PreloadApi>['repos']> {
   return {
-    list: async () => (await callRuntimeResult<{ repos: Repo[] }>('repo.list')).repos,
+    list: async (args) => (await callRuntimeResult<{ repos: Repo[] }>('repo.list', args)).repos,
     add: async ({ path, kind }) => callRuntimeResult('repo.add', { path, kind }),
     remove: async ({ repoId }) => {
       await callRuntimeResult('repo.rm', { repo: repoId })
@@ -626,6 +626,13 @@ function createReposApi(): NonNullable<Partial<PreloadApi>['repos']> {
     getGitUsername: async ({ repoId }) =>
       (await callRuntimeResult<{ username: string }>('repo.gitUsername', { repo: repoId }))
         .username,
+    getBranchPrefixValue: async ({ repoId, branchPrefix }) =>
+      (
+        await callRuntimeResult<{ value: string }>('repo.branchPrefixValue', {
+          repo: repoId,
+          branchPrefix
+        })
+      ).value,
     getBaseRefDefault: async ({ repoId }) =>
       callRuntimeResult('repo.baseRefDefault', { repo: repoId }),
     searchBaseRefs: async ({ repoId, query, limit }) =>

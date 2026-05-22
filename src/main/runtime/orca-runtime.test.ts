@@ -249,7 +249,12 @@ vi.mock('../git/repo', async (importOriginal) => {
     ...actual,
     getDefaultBaseRef: vi.fn().mockReturnValue('origin/main'),
     getBranchConflictKind: vi.fn().mockResolvedValue(null),
-    getGitUsername: vi.fn().mockReturnValue('')
+    getGitUsername: vi.fn().mockReturnValue(''),
+    getBranchPrefixValue: vi
+      .fn()
+      .mockImplementation((_repoPath: string, mode: string) =>
+        mode === 'github-username' ? '' : ''
+      )
   }
 })
 
@@ -977,7 +982,7 @@ describe('OrcaRuntimeService', () => {
       workspaceDir: '/tmp/workspaces',
       nestWorkspaces: false,
       refreshLocalBaseRefOnWorktreeCreate: false,
-      branchPrefix: 'git-username',
+      branchPrefix: 'github-username',
       branchPrefixCustom: ''
     })
     const getReposSpy = vi.spyOn(store, 'getRepos')

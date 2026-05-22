@@ -2925,7 +2925,7 @@ export default function MobileTasksScreen() {
 
   const loadRepos = useCallback(async (): Promise<RepoSummary[]> => {
     if (!client || connState !== 'connected') return []
-    const response = await client.sendRequest('repo.list')
+    const response = await client.sendRequest('repo.list', { includeGitUsername: false })
     if (!isSuccess(response)) {
       throw new Error(response.error.message)
     }

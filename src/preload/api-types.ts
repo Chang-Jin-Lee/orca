@@ -604,7 +604,7 @@ export type PreloadApi = {
     getConfig: () => E2EConfig
   }
   repos: {
-    list: () => Promise<Repo[]>
+    list: (args?: { includeGitUsername?: boolean }) => Promise<Repo[]>
     // Why: error union matches the IPC handler's return shape; renderer callers branch on `'error' in result`.
     add: (args: {
       path: string
@@ -645,6 +645,7 @@ export type PreloadApi = {
     }) => Promise<{ repo: Repo } | { error: string }>
     onCloneProgress: (callback: (data: { phase: string; percent: number }) => void) => () => void
     getGitUsername: (args: { repoId: string }) => Promise<string>
+    getBranchPrefixValue: (args: { repoId: string; branchPrefix: string }) => Promise<string>
     getBaseRefDefault: (args: { repoId: string }) => Promise<BaseRefDefaultResult>
     searchBaseRefs: (args: { repoId: string; query: string; limit?: number }) => Promise<string[]>
     searchBaseRefDetails: (args: {

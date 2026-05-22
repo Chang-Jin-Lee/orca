@@ -226,6 +226,7 @@ const MOBILE_RPC_METHOD_ALLOWLIST = new Set([
   'preflight.check',
   'preflight.detectAgents',
   'preflight.detectRemoteAgents',
+  'repo.branchPrefixValue',
   'repo.gitUsername',
   'repo.hooks',
   'repo.list',

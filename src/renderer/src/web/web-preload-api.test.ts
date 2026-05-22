@@ -217,4 +217,27 @@ describe('web repos preload API', () => {
       { timeoutMs: undefined }
     )
   })
+
+  it('routes branch prefix value lookup through the paired runtime', async () => {
+    const { api, storage } = await installApi('Linux')
+    storage.setItem(
+      WEB_RUNTIME_ENVIRONMENT_STORAGE_KEY,
+      JSON.stringify(makeStoredRuntimeEnvironment())
+    )
+    webRuntimeClientMocks.call.mockResolvedValueOnce({
+      ok: true,
+      result: { value: 'Remote-User' },
+      _meta: { runtimeId: 'runtime-1' }
+    })
+
+    await expect(
+      api.repos.getBranchPrefixValue({ repoId: 'repo-1', branchPrefix: 'git-author' })
+    ).resolves.toBe('Remote-User')
+
+    expect(webRuntimeClientMocks.call).toHaveBeenCalledWith(
+      'repo.branchPrefixValue',
+      { repo: 'repo-1', branchPrefix: 'git-author' },
+      { timeoutMs: undefined }
+    )
+  })
 })

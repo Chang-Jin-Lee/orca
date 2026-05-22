@@ -92,6 +92,7 @@ import {
   getRuntimeTargetIdentity
 } from './settings-load-performance'
 import { callRuntimeRpc, getActiveRuntimeTarget } from '../../runtime/runtime-rpc-client'
+import { branchPrefixModeNeedsResolvedValue } from '../../../../shared/branch-prefix'
 
 type SettingsNavTarget =
   | 'general'
@@ -259,7 +260,7 @@ function Settings(): React.JSX.Element {
     Array.from(new Set([DEFAULT_APP_FONT_FAMILY, ...getFallbackTerminalFonts()]))
   )
   const [activeSectionId, setActiveSectionId] = useState('general')
-  const [gitUsernameByRepoId, setGitUsernameByRepoId] = useState<Record<string, string>>({})
+  const [branchPrefixValueByKey, setBranchPrefixValueByKey] = useState<Record<string, string>>({})
   const [mountedSectionIds, setMountedSectionIds] = useState<Set<string>>(
     getInitialMountedSectionIds
   )
@@ -698,62 +699,73 @@ function Settings(): React.JSX.Element {
   const windowsTerminalCapabilities = useWindowsTerminalCapabilities(
     isWindows && neededSectionIds.has('terminal')
   )
-  const gitUsernameRepo = repos[0] && !isFolderRepo(repos[0]) ? repos[0] : null
-  const gitUsernameRepoId = gitUsernameRepo?.id
-  const hydratedGitUsername = gitUsernameRepo?.gitUsername
-  const cachedGitUsername =
-    gitUsernameRepoId !== undefined ? gitUsernameByRepoId[gitUsernameRepoId] : undefined
-  const displayedGitUsername = hydratedGitUsername ?? cachedGitUsername ?? ''
+  const branchPrefixRepo = repos[0] && !isFolderRepo(repos[0]) ? repos[0] : null
+  const branchPrefixRepoId = branchPrefixRepo?.id
+  const branchPrefixMode = settings?.branchPrefix
   const activeRuntimeEnvironmentId = settings?.activeRuntimeEnvironmentId
+  const branchPrefixCacheKey =
+    branchPrefixRepoId !== undefined && branchPrefixMode !== undefined
+      ? `${activeRuntimeEnvironmentId ?? 'local'}:${branchPrefixRepoId}:${branchPrefixMode}`
+      : undefined
+  const hydratedBranchPrefixValue =
+    branchPrefixMode === 'github-username' ? branchPrefixRepo?.gitUsername : undefined
+  const cachedBranchPrefixValue =
+    branchPrefixCacheKey !== undefined ? branchPrefixValueByKey[branchPrefixCacheKey] : undefined
+  const displayedBranchPrefixValue = hydratedBranchPrefixValue ?? cachedBranchPrefixValue ?? ''
 
   useEffect(() => {
     if (
-      settings?.branchPrefix !== 'git-username' ||
+      settings === null ||
+      !branchPrefixModeNeedsResolvedValue(settings.branchPrefix) ||
       !neededSectionIds.has('git') ||
-      gitUsernameRepoId === undefined ||
-      hydratedGitUsername !== undefined ||
-      cachedGitUsername !== undefined
+      branchPrefixRepoId === undefined ||
+      branchPrefixCacheKey === undefined ||
+      hydratedBranchPrefixValue !== undefined ||
+      cachedBranchPrefixValue !== undefined
     ) {
       return
     }
 
     let cancelled = false
-    const fetchGitUsername = async (): Promise<string> => {
+    const fetchBranchPrefixValue = async (): Promise<string> => {
       const target = getActiveRuntimeTarget({
         activeRuntimeEnvironmentId: activeRuntimeEnvironmentId ?? null
       })
       if (target.kind === 'local') {
-        return window.api.repos.getGitUsername({ repoId: gitUsernameRepoId })
+        return window.api.repos.getBranchPrefixValue({
+          repoId: branchPrefixRepoId,
+          branchPrefix: settings.branchPrefix
+        })
       }
-      const result = await callRuntimeRpc<{ username: string }>(
+      const result = await callRuntimeRpc<{ value: string }>(
         target,
-        'repo.gitUsername',
-        { repo: `id:${gitUsernameRepoId}` },
+        'repo.branchPrefixValue',
+        { repo: `id:${branchPrefixRepoId}`, branchPrefix: settings.branchPrefix },
         { timeoutMs: 15_000 }
       )
-      return result.username
+      return result.value
     }
-    // Why: repo listing is a startup path, so username probing stays lazy and
+    // Why: repo listing is a startup path, so prefix probing stays lazy and
     // only runs for the Git settings preview that actually displays it.
-    void fetchGitUsername()
-      .then((username) => {
+    void fetchBranchPrefixValue()
+      .then((value) => {
         if (cancelled) {
           return
         }
-        setGitUsernameByRepoId((previous) =>
-          previous[gitUsernameRepoId] === username
+        setBranchPrefixValueByKey((previous) =>
+          previous[branchPrefixCacheKey] === value
             ? previous
-            : { ...previous, [gitUsernameRepoId]: username }
+            : { ...previous, [branchPrefixCacheKey]: value }
         )
       })
       .catch((error) => {
-        console.error('Failed to fetch git username:', error)
+        console.error('Failed to fetch branch prefix value:', error)
         if (cancelled) {
           return
         }
-        setGitUsernameByRepoId((previous) =>
-          previous[gitUsernameRepoId] === undefined
-            ? { ...previous, [gitUsernameRepoId]: '' }
+        setBranchPrefixValueByKey((previous) =>
+          previous[branchPrefixCacheKey] === undefined
+            ? { ...previous, [branchPrefixCacheKey]: '' }
             : previous
         )
       })
@@ -762,12 +774,13 @@ function Settings(): React.JSX.Element {
       cancelled = true
     }
   }, [
-    cachedGitUsername,
+    cachedBranchPrefixValue,
     activeRuntimeEnvironmentId,
-    gitUsernameRepoId,
-    hydratedGitUsername,
+    branchPrefixCacheKey,
+    branchPrefixRepoId,
+    hydratedBranchPrefixValue,
     neededSectionIds,
-    settings?.branchPrefix
+    settings
   ])
 
   useEffect(() => {
@@ -1111,7 +1124,7 @@ function Settings(): React.JSX.Element {
                       <GitPane
                         settings={settings}
                         updateSettings={updateSettings}
-                        displayedGitUsername={displayedGitUsername}
+                        displayedBranchPrefixValue={displayedBranchPrefixValue}
                       />
                       <CommitMessageAiPane
                         settings={settings}

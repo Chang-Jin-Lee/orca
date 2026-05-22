@@ -262,7 +262,7 @@ export function NewWorktreeModal({
     void (async () => {
       try {
         const [repoResponse, settingsResponse, uiResponse] = await Promise.all([
-          client.sendRequest('repo.list'),
+          client.sendRequest('repo.list', { includeGitUsername: false }),
           client.sendRequest('settings.get'),
           client.sendRequest('ui.get')
         ])

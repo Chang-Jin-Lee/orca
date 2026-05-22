@@ -218,9 +218,12 @@ async function verifyRuntimeEnvironmentReachable(environmentId: string | null): 
   if (!environmentId) {
     return
   }
-  await callRuntimeRpc({ kind: 'environment', environmentId }, 'repo.list', undefined, {
-    timeoutMs: 15_000
-  })
+  await callRuntimeRpc(
+    { kind: 'environment', environmentId },
+    'repo.list',
+    { includeGitUsername: false },
+    { timeoutMs: 15_000 }
+  )
 }
 
 export const createSettingsSlice: StateCreator<AppState, [], [], SettingsSlice> = (set, get) => ({

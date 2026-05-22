@@ -6,37 +6,51 @@ import { GIT_PANE_SEARCH_ENTRIES } from './git-search'
 import { SearchableSetting } from './SearchableSetting'
 import { matchesSettingsSearch } from './settings-search'
 import { GitHubRateLimitPanel } from '../github/github-rate-limit-display'
+import {
+  BRANCH_PREFIX_MODES,
+  branchPrefixModeNeedsResolvedValue
+} from '../../../../shared/branch-prefix'
 
 export { GIT_PANE_SEARCH_ENTRIES }
 
 type GitPaneProps = {
   settings: GlobalSettings
   updateSettings: (updates: Partial<GlobalSettings>) => void
-  displayedGitUsername: string
+  displayedBranchPrefixValue: string
 }
 
 export function GitPane({
   settings,
   updateSettings,
-  displayedGitUsername
+  displayedBranchPrefixValue
 }: GitPaneProps): React.JSX.Element {
   const searchQuery = useAppStore((s) => s.settingsSearchQuery)
+  const branchPrefixLabels = {
+    'github-username': 'GitHub Username',
+    'git-author': 'Git Author',
+    custom: 'Custom',
+    none: 'None'
+  } as const
+  const resolvedPrefixPlaceholder =
+    settings.branchPrefix === 'github-username'
+      ? 'No GitHub username configured'
+      : 'No Git author configured'
 
   const visibleSections = [
     matchesSettingsSearch(searchQuery, {
       title: 'Branch Prefix',
       description: 'Prefix added to branch names when creating worktrees.',
-      keywords: ['branch naming', 'git username', 'custom']
+      keywords: ['branch naming', 'github username', 'git author', 'custom']
     }) ? (
       <SearchableSetting
         key="branch-prefix"
         title="Branch Prefix"
         description="Prefix added to branch names when creating worktrees."
-        keywords={['branch naming', 'git username', 'custom']}
+        keywords={['branch naming', 'github username', 'git author', 'custom']}
         className="space-y-3"
       >
         <div className="flex w-fit gap-1 rounded-md border border-border/50 p-1">
-          {(['git-username', 'custom', 'none'] as const).map((option) => (
+          {BRANCH_PREFIX_MODES.map((option) => (
             <button
               key={option}
               onClick={() => updateSettings({ branchPrefix: option })}
@@ -46,25 +60,26 @@ export function GitPane({
                   : 'text-muted-foreground hover:text-foreground'
               }`}
             >
-              {option === 'git-username' ? 'Git Username' : option === 'custom' ? 'Custom' : 'None'}
+              {branchPrefixLabels[option]}
             </button>
           ))}
         </div>
-        {(settings.branchPrefix === 'custom' || settings.branchPrefix === 'git-username') && (
+        {(settings.branchPrefix === 'custom' ||
+          branchPrefixModeNeedsResolvedValue(settings.branchPrefix)) && (
           <Input
             value={
-              settings.branchPrefix === 'git-username'
-                ? displayedGitUsername
+              branchPrefixModeNeedsResolvedValue(settings.branchPrefix)
+                ? displayedBranchPrefixValue
                 : settings.branchPrefixCustom
             }
             onChange={(e) => updateSettings({ branchPrefixCustom: e.target.value })}
             placeholder={
-              settings.branchPrefix === 'git-username'
-                ? 'No git username configured'
+              branchPrefixModeNeedsResolvedValue(settings.branchPrefix)
+                ? resolvedPrefixPlaceholder
                 : 'e.g. feature'
             }
             className="max-w-xs"
-            readOnly={settings.branchPrefix === 'git-username'}
+            readOnly={branchPrefixModeNeedsResolvedValue(settings.branchPrefix)}
           />
         )}
       </SearchableSetting>

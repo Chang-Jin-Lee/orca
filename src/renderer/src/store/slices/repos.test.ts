@@ -72,7 +72,7 @@ describe('repo slice runtime routing', () => {
     await store.getState().fetchRepos()
 
     expect(store.getState().repos).toEqual([localRepo])
-    expect(reposList).toHaveBeenCalled()
+    expect(reposList).toHaveBeenCalledWith({ includeGitUsername: false })
     expect(runtimeEnvironmentCall).not.toHaveBeenCalled()
   })
 
@@ -98,7 +98,7 @@ describe('repo slice runtime routing', () => {
     expect(runtimeEnvironmentCall).toHaveBeenCalledWith({
       selector: 'env-1',
       method: 'repo.list',
-      params: undefined,
+      params: { includeGitUsername: false },
       timeoutMs: 15_000
     })
     expect(reposList).not.toHaveBeenCalled()

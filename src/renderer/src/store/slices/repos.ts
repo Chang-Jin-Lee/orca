@@ -59,12 +59,12 @@ export const createRepoSlice: StateCreator<AppState, [], [], RepoSlice> = (set, 
       const target = getActiveRuntimeTarget(get().settings)
       const repos =
         target.kind === 'local'
-          ? ((await window.api.repos.list()) as Repo[])
+          ? ((await window.api.repos.list({ includeGitUsername: false })) as Repo[])
           : (
               await callRuntimeRpc<{ repos: Repo[] }>(
                 target,
                 'repo.list',
-                undefined,
+                { includeGitUsername: false },
                 // Why: remote environment fetches cross the network; keep the
                 // boot-time repo hydration bounded instead of inheriting an
                 // unbounded renderer promise.

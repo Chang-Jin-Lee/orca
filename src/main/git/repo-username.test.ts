@@ -18,6 +18,7 @@ describe('getGitUsername', () => {
   let gitConfig: Record<string, string>
   let originRemoteUrl: string | undefined
   let getGitUsername: typeof RepoModule.getGitUsername
+  let getGitAuthorPrefix: typeof RepoModule.getGitAuthorPrefix
 
   beforeEach(async () => {
     vi.resetModules()
@@ -43,10 +44,28 @@ describe('getGitUsername', () => {
       throw new Error(`unexpected git args: ${args.join(' ')}`)
     })
 
-    ;({ getGitUsername } = await import('./repo'))
+    ;({ getGitUsername, getGitAuthorPrefix } = await import('./repo'))
   })
 
-  it('prefers GitHub CLI login over the repo-local email fallback', () => {
+  it('prefers explicit GitHub user config over the GitHub CLI login', () => {
+    originRemoteUrl = 'https://github.com/stablyai/orca.git'
+    gitConfig['github.user'] = 'config-demo'
+    execSyncMock.mockImplementationOnce(() => 'gh-demo\n')
+
+    expect(getGitUsername('/repo')).toBe('config-demo')
+    expect(execSyncMock).not.toHaveBeenCalled()
+  })
+
+  it('uses explicit username config before probing the GitHub CLI login', () => {
+    originRemoteUrl = 'https://github.com/stablyai/orca.git'
+    gitConfig['user.username'] = 'repo-demo'
+    execSyncMock.mockImplementationOnce(() => 'gh-demo\n')
+
+    expect(getGitUsername('/repo')).toBe('repo-demo')
+    expect(execSyncMock).not.toHaveBeenCalled()
+  })
+
+  it('prefers GitHub CLI login over repo-local author identity', () => {
     originRemoteUrl = 'https://github.com/stablyai/orca.git'
     gitConfig['user.email'] = 'demo@example.com'
     gitConfig['user.name'] = 'Demo User'
@@ -56,12 +75,23 @@ describe('getGitUsername', () => {
     expect(execSyncMock).toHaveBeenCalledTimes(1)
   })
 
-  it('uses repo-local email before GitHub CLI for non-GitHub remotes', () => {
+  it('ignores repo-local author identity for non-GitHub remotes', () => {
     originRemoteUrl = 'https://gitlab.com/stablyai/orca.git'
     gitConfig['user.email'] = 'demo@example.com'
+    gitConfig['user.name'] = 'Demo User'
     execSyncMock.mockImplementationOnce(() => 'gh-demo\n')
 
-    expect(getGitUsername('/repo')).toBe('demo')
+    expect(getGitUsername('/repo')).toBe('')
+    expect(execSyncMock).not.toHaveBeenCalled()
+  })
+
+  it('resolves repo-local author identity only for git-author prefixes', () => {
+    originRemoteUrl = 'https://gitlab.com/stablyai/orca.git'
+    gitConfig['user.email'] = 'demo@example.com'
+    gitConfig['user.name'] = 'Demo User'
+    execSyncMock.mockImplementationOnce(() => 'gh-demo\n')
+
+    expect(getGitAuthorPrefix('/repo')).toBe('Demo-User')
     expect(execSyncMock).not.toHaveBeenCalled()
   })
 

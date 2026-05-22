@@ -6,6 +6,7 @@ import { gitExecFileSync, gitExecFileAsync } from './runner'
 import type { BaseRefSearchResult } from '../../shared/types'
 import { buildHostedRemoteFileUrl, parseHostedRemote } from './hosted-remote-url'
 import { normalizeGitUsername } from './git-username'
+import type { BranchPrefixMode } from '../../shared/branch-prefix'
 
 const GH_LOGIN_TIMEOUT_MS = 2500
 
@@ -181,6 +182,8 @@ function getGhLogin(): string {
 function getGhLoginForGitHubRemote(path: string): string {
   const remoteUrl = getRemoteUrl(path)
   if (parseHostedRemote(remoteUrl ?? '')?.provider !== 'github') {
+    // Why: a local `gh` account is only a valid branch-prefix identity for
+    // GitHub repos; using it for GitLab/Bitbucket remotes leaks the wrong host.
     return ''
   }
 
@@ -188,18 +191,34 @@ function getGhLoginForGitHubRemote(path: string): string {
 }
 
 /**
- * Get the best username-style branch prefix for the repo.
+ * Get the GitHub/explicit username-style branch prefix for the repo.
  */
 export function getGitUsername(path: string): string {
+  // Why: this powers the "GitHub Username" branch prefix. `user.email` and
+  // `user.name` are commit author identity, not hosted-account usernames.
   return normalizeGitUsername(
     getGitConfigValue(path, 'github.user') ||
       getGitConfigValue(path, 'user.username') ||
-      // Why: `gh` only reports a GitHub identity. For GitLab/Bitbucket/self-hosted
-      // repos, prefer repo-local git config instead of leaking a GitHub username.
-      getGhLoginForGitHubRemote(path) ||
-      getGitConfigValue(path, 'user.email').split('@')[0] ||
-      getGitConfigValue(path, 'user.name')
+      getGhLoginForGitHubRemote(path)
   )
+}
+
+export function getGitAuthorPrefix(path: string): string {
+  // Why: author-derived prefixes are opt-in and deliberately separate from
+  // "GitHub Username" so display names/emails do not masquerade as logins.
+  return normalizeGitUsername(
+    getGitConfigValue(path, 'user.name') || getGitConfigValue(path, 'user.email')
+  )
+}
+
+export function getBranchPrefixValue(path: string, mode: BranchPrefixMode): string {
+  if (mode === 'github-username') {
+    return getGitUsername(path)
+  }
+  if (mode === 'git-author') {
+    return getGitAuthorPrefix(path)
+  }
+  return ''
 }
 
 function hasGitRef(path: string, ref: string): boolean {

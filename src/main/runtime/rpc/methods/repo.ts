@@ -6,6 +6,14 @@ const RepoSelector = z.object({
   repo: requiredString('Missing repo selector')
 })
 
+const RepoBranchPrefix = RepoSelector.extend({
+  branchPrefix: requiredString('Missing branch prefix mode')
+})
+
+const RepoList = z.object({
+  includeGitUsername: z.boolean().optional()
+})
+
 const RepoPath = z.object({
   path: requiredString('Missing repo path'),
   kind: z.enum(['git', 'folder']).optional()
@@ -65,14 +73,23 @@ const RepoSparsePresetSave = RepoSelector.extend({
 export const REPO_METHODS: RpcMethod[] = [
   defineMethod({
     name: 'repo.list',
-    params: null,
-    handler: (_params, { runtime }) => ({ repos: runtime.listRepos() })
+    params: RepoList,
+    handler: (params, { runtime }) => ({
+      repos: runtime.listRepos({ includeGitUsername: params.includeGitUsername !== false })
+    })
   }),
   defineMethod({
     name: 'repo.gitUsername',
     params: RepoSelector,
     handler: async (params, { runtime }) => ({
       username: await runtime.getRepoGitUsername(params.repo)
+    })
+  }),
+  defineMethod({
+    name: 'repo.branchPrefixValue',
+    params: RepoBranchPrefix,
+    handler: async (params, { runtime }) => ({
+      value: await runtime.getRepoBranchPrefixValue(params.repo, params.branchPrefix)
     })
   }),
   defineMethod({

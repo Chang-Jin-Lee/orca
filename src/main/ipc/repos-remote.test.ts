@@ -107,7 +107,54 @@ describe('repos:getGitUsername', () => {
     registerRepoHandlers(mockWindow as never, mockStore as never)
   })
 
-  it('uses the same SSH username config order as remote worktree creation', async () => {
+  it('uses explicit SSH username config for remote GitHub username previews', async () => {
+    mockStore.getRepo.mockReturnValue({
+      id: 'repo-ssh',
+      path: '/remote/repo',
+      displayName: 'ssh',
+      badgeColor: '#000',
+      addedAt: 0,
+      kind: 'git',
+      connectionId: 'conn-1'
+    })
+    mockGitProvider.exec.mockImplementation(async (args: string[]) => {
+      if (args[0] === 'config' && args[1] === '--get') {
+        const valueByKey: Record<string, string> = {
+          'user.username': 'remote-login',
+          'user.email': 'remote-user@example.com',
+          'user.name': 'Remote User'
+        }
+        const value = valueByKey[args[2]]
+        if (value) {
+          return { stdout: `${value}\n`, stderr: '' }
+        }
+      }
+      throw new Error(`unexpected git args: ${args.join(' ')}`)
+    })
+
+    const username = await handlers.get('repos:getGitUsername')!(null, { repoId: 'repo-ssh' })
+
+    expect(username).toBe('remote-login')
+    expect(mockStore.getRepo).toHaveBeenCalledWith('repo-ssh', { includeGitUsername: false })
+    expect(mockGitProvider.exec).toHaveBeenCalledWith(
+      ['config', '--get', 'github.user'],
+      '/remote/repo'
+    )
+    expect(mockGitProvider.exec).toHaveBeenCalledWith(
+      ['config', '--get', 'user.username'],
+      '/remote/repo'
+    )
+    expect(mockGitProvider.exec).not.toHaveBeenCalledWith(
+      ['config', '--get', 'user.email'],
+      '/remote/repo'
+    )
+    expect(mockGitProvider.exec).not.toHaveBeenCalledWith(
+      ['config', '--get', 'user.name'],
+      '/remote/repo'
+    )
+  })
+
+  it('uses repo-local author identity only for remote git-author previews', async () => {
     mockStore.getRepo.mockReturnValue({
       id: 'repo-ssh',
       path: '/remote/repo',
@@ -131,16 +178,23 @@ describe('repos:getGitUsername', () => {
       throw new Error(`unexpected git args: ${args.join(' ')}`)
     })
 
-    const username = await handlers.get('repos:getGitUsername')!(null, { repoId: 'repo-ssh' })
+    const value = await handlers.get('repos:getBranchPrefixValue')!(null, {
+      repoId: 'repo-ssh',
+      branchPrefix: 'git-author'
+    })
 
-    expect(username).toBe('remote-user')
+    expect(value).toBe('Remote-User')
     expect(mockStore.getRepo).toHaveBeenCalledWith('repo-ssh', { includeGitUsername: false })
     expect(mockGitProvider.exec).toHaveBeenCalledWith(
-      ['config', '--get', 'user.email'],
+      ['config', '--get', 'user.name'],
       '/remote/repo'
     )
     expect(mockGitProvider.exec).not.toHaveBeenCalledWith(
-      ['config', '--get', 'user.name'],
+      ['config', '--get', 'user.username'],
+      '/remote/repo'
+    )
+    expect(mockGitProvider.exec).not.toHaveBeenCalledWith(
+      ['config', '--get', 'user.email'],
       '/remote/repo'
     )
   })

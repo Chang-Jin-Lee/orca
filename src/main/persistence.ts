@@ -89,6 +89,7 @@ import {
   normalizePersistedWorkspaceStatuses,
   normalizeWorkspaceStatuses
 } from '../shared/workspace-statuses'
+import { normalizeBranchPrefixMode } from '../shared/branch-prefix'
 
 function encrypt(plaintext: string): string {
   if (!plaintext || !safeStorage.isEncryptionAvailable()) {
@@ -1407,6 +1408,10 @@ export class Store {
           parsed.settings?.primarySelectionMiddleClickPasteDefaultedForLinux === true
         const primarySelectionDefaultedForTerminalDefaults =
           parsed.settings?.primarySelectionMiddleClickPasteDefaultedForTerminalDefaults === true
+        const persistedBranchPrefix = parsed.settings?.branchPrefix as unknown
+        if (persistedBranchPrefix === 'git-username') {
+          this.loadNeedsSave = true
+        }
         const primarySelectionPlatformDefaultEnabled =
           defaults.settings.primarySelectionMiddleClickPaste === true
         const primarySelectionAlreadyDefaultedForPlatform =
@@ -1426,6 +1431,7 @@ export class Store {
           settings: {
             ...defaults.settings,
             ...parsed.settings,
+            branchPrefix: normalizeBranchPrefixMode(parsed.settings?.branchPrefix),
             // Why: v1.3.42 renamed the cosmetic sidekick setting to pet. Carry
             // the old persisted flag forward once so enabled users don't lose it.
             experimentalPet:
@@ -1972,7 +1978,8 @@ export class Store {
         | 'kind'
         | 'issueSourcePreference'
       >
-    >
+    >,
+    options: RepoHydrationOptions = { includeGitUsername: false }
   ): Repo | null {
     const repo = this.state.repos.find((r) => r.id === id)
     if (!repo) {
@@ -1991,7 +1998,7 @@ export class Store {
       Object.assign(repo, updates)
     }
     this.scheduleSave()
-    return this.hydrateRepo(repo)
+    return this.hydrateRepo(repo, options)
   }
 
   private hydrateRepo(
@@ -2335,6 +2342,9 @@ export class Store {
 
   updateSettings(updates: Partial<GlobalSettings>): GlobalSettings {
     const sanitizedUpdates = { ...updates }
+    if ('branchPrefix' in updates) {
+      sanitizedUpdates.branchPrefix = normalizeBranchPrefixMode(updates.branchPrefix)
+    }
     if ('terminalQuickCommands' in updates) {
       sanitizedUpdates.terminalQuickCommands = normalizeTerminalQuickCommands(
         updates.terminalQuickCommands

@@ -7,6 +7,7 @@ import path from 'path'
 import {
   getDefaultBaseRef,
   getBranchConflictKind,
+  getGitAuthorPrefix,
   getGitUsername,
   getRemoteCount,
   parseAndFilterSearchRefDetails,
@@ -92,7 +93,7 @@ describe('getGitUsername', () => {
     rmSync(binDir, { recursive: true, force: true })
   })
 
-  it('prefers the GitHub CLI login over the git email local-part', () => {
+  it('prefers the GitHub CLI login over git author identity', () => {
     installFakeGh(binDir, 'gh-login-wins')
     git(tmpDir, ['remote', 'add', 'origin', 'https://github.com/stablyai/orca.git'])
     git(tmpDir, ['config', 'user.email', 'email-local@example.com'])
@@ -104,7 +105,7 @@ describe('getGitUsername', () => {
     expect(username).toBe('gh-login-wins')
   })
 
-  it('uses the git email local-part before GitHub CLI for non-GitHub remotes', () => {
+  it('ignores git author identity for non-GitHub username prefixes', () => {
     installFakeGh(binDir, 'gh-login-ignored')
     git(tmpDir, ['remote', 'add', 'origin', 'https://gitlab.com/stablyai/orca.git'])
     git(tmpDir, ['config', 'user.email', 'email-local@example.com'])
@@ -112,7 +113,19 @@ describe('getGitUsername', () => {
 
     const username = getGitUsername(tmpDir)
 
-    expect(username).toBe('email-local')
+    expect(username).toBe('')
+  })
+
+  it('keeps git author identity available for git-author prefixes', () => {
+    installFakeGh(binDir, 'gh-login-ignored')
+    git(tmpDir, ['remote', 'add', 'origin', 'https://gitlab.com/stablyai/orca.git'])
+    git(tmpDir, ['config', 'user.email', 'email-local@example.com'])
+    git(tmpDir, ['config', 'user.name', 'Brennan Benson'])
+    process.env.PATH = originalPath ? `${binDir}${path.delimiter}${originalPath}` : binDir
+
+    const prefix = getGitAuthorPrefix(tmpDir)
+
+    expect(prefix).toBe('Brennan-Benson')
   })
 })
 

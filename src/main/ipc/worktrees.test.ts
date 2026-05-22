@@ -10,6 +10,7 @@ const {
   addSparseWorktreeMock,
   removeWorktreeMock,
   getGitUsernameMock,
+  getBranchPrefixValueMock,
   getDefaultBaseRefMock,
   getDefaultRemoteMock,
   getBranchConflictKindMock,
@@ -43,6 +44,7 @@ const {
   addSparseWorktreeMock: vi.fn(),
   removeWorktreeMock: vi.fn(),
   getGitUsernameMock: vi.fn(),
+  getBranchPrefixValueMock: vi.fn(),
   getDefaultBaseRefMock: vi.fn(),
   getDefaultRemoteMock: vi.fn(),
   getBranchConflictKindMock: vi.fn(),
@@ -91,6 +93,7 @@ vi.mock('../git/runner', () => ({
 
 vi.mock('../git/repo', () => ({
   getGitUsername: getGitUsernameMock,
+  getBranchPrefixValue: getBranchPrefixValueMock,
   getDefaultBaseRef: getDefaultBaseRefMock,
   getDefaultRemote: getDefaultRemoteMock,
   getBranchConflictKind: getBranchConflictKindMock
@@ -217,6 +220,7 @@ describe('registerWorktreeHandlers', () => {
       addSparseWorktreeMock,
       removeWorktreeMock,
       getGitUsernameMock,
+      getBranchPrefixValueMock,
       getDefaultBaseRefMock,
       getDefaultRemoteMock,
       getBranchConflictKindMock,
@@ -294,6 +298,9 @@ describe('registerWorktreeHandlers', () => {
     store.setWorktreeMeta.mockReturnValue({})
     store.getAllWorktreeLineage.mockReturnValue({})
     getGitUsernameMock.mockReturnValue('')
+    getBranchPrefixValueMock.mockImplementation((_repoPath: string, mode: string) =>
+      mode === 'github-username' ? getGitUsernameMock() : ''
+    )
     getDefaultBaseRefMock.mockReturnValue('origin/main')
     getDefaultRemoteMock.mockResolvedValue('origin')
     getBranchConflictKindMock.mockResolvedValue(null)
@@ -452,7 +459,7 @@ describe('registerWorktreeHandlers', () => {
 
   it('uses branchNameOverride for the git branch while keeping the sanitized worktree path', async () => {
     store.getSettings.mockReturnValue({
-      branchPrefix: 'git-username',
+      branchPrefix: 'github-username',
       branchPrefixCustom: '',
       nestWorkspaces: false,
       refreshLocalBaseRefOnWorktreeCreate: false,
@@ -1072,7 +1079,7 @@ describe('registerWorktreeHandlers', () => {
     })
   })
 
-  it('uses remote email before user.name for SSH git-username branch prefixes', async () => {
+  it('uses explicit remote username config for SSH GitHub username branch prefixes', async () => {
     const repo = {
       id: 'repo-ssh',
       path: '/remote/repo',
@@ -1086,6 +1093,7 @@ describe('registerWorktreeHandlers', () => {
       exec: vi.fn().mockImplementation(async (args: string[]) => {
         if (args[0] === 'config' && args[1] === '--get') {
           const valueByKey: Record<string, string> = {
+            'user.username': 'brennanb2025',
             'user.email': 'brennankbenson@gmail.com',
             'user.name': 'brennanb2025'
           }
@@ -1106,7 +1114,7 @@ describe('registerWorktreeHandlers', () => {
         {
           path: '/remote/improve-dashboard',
           head: 'abc123',
-          branch: 'refs/heads/brennankbenson/improve-dashboard',
+          branch: 'refs/heads/brennanb2025/improve-dashboard',
           isBare: false,
           isMainWorktree: false
         }
@@ -1119,7 +1127,7 @@ describe('registerWorktreeHandlers', () => {
     store.getRepos.mockReturnValue([repo])
     store.getRepo.mockReturnValue(repo)
     store.getSettings.mockReturnValue({
-      branchPrefix: 'git-username',
+      branchPrefix: 'github-username',
       branchPrefixCustom: '',
       nestWorkspaces: false,
       refreshLocalBaseRefOnWorktreeCreate: false,
@@ -1136,11 +1144,16 @@ describe('registerWorktreeHandlers', () => {
 
     expect(provider.addWorktree).toHaveBeenCalledWith(
       '/remote/repo',
-      'brennankbenson/improve-dashboard',
+      'brennanb2025/improve-dashboard',
       '/remote/repo/../improve-dashboard',
       { base: 'origin/main' }
     )
-    expect(provider.exec).toHaveBeenCalledWith(['config', '--get', 'user.email'], '/remote/repo')
+    expect(provider.exec).toHaveBeenCalledWith(['config', '--get', 'github.user'], '/remote/repo')
+    expect(provider.exec).toHaveBeenCalledWith(['config', '--get', 'user.username'], '/remote/repo')
+    expect(provider.exec).not.toHaveBeenCalledWith(
+      ['config', '--get', 'user.email'],
+      '/remote/repo'
+    )
     expect(provider.exec).not.toHaveBeenCalledWith(['config', '--get', 'user.name'], '/remote/repo')
   })
 

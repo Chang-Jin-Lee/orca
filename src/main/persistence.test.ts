@@ -232,7 +232,7 @@ describe('Store', () => {
   it('returns default settings when no data file exists', async () => {
     const store = await createStore()
     const settings = store.getSettings()
-    expect(settings.branchPrefix).toBe('git-username')
+    expect(settings.branchPrefix).toBe('github-username')
     expect(settings.refreshLocalBaseRefOnWorktreeCreate).toBe(false)
     expect(settings.theme).toBe('system')
     expect(settings.appFontFamily).toBe('Geist')
@@ -1464,7 +1464,7 @@ describe('Store', () => {
     expect(updated.terminalFontSize).toBe(16)
     expect(updated.terminalFontWeight).toBe(600)
     // Other fields preserved
-    expect(updated.branchPrefix).toBe('git-username')
+    expect(updated.branchPrefix).toBe('github-username')
   })
 
   it('updateSettings normalizes open-in applications', async () => {

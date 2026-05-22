@@ -9,6 +9,40 @@ function makeRequest(method: string, params?: unknown): RpcRequest {
 }
 
 describe('repo RPC methods', () => {
+  it('lists repos with git usernames by default', async () => {
+    const runtime = {
+      getRuntimeId: () => 'test-runtime',
+      listRepos: vi.fn().mockReturnValue([{ id: 'repo-1', gitUsername: 'demo' }])
+    } as unknown as OrcaRuntimeService
+    const dispatcher = new RpcDispatcher({ runtime, methods: REPO_METHODS })
+
+    const response = await dispatcher.dispatch(makeRequest('repo.list'))
+
+    expect(runtime.listRepos).toHaveBeenCalledWith({ includeGitUsername: true })
+    expect(response).toMatchObject({
+      ok: true,
+      result: { repos: [{ id: 'repo-1', gitUsername: 'demo' }] }
+    })
+  })
+
+  it('lets internal clients list repos without git usernames', async () => {
+    const runtime = {
+      getRuntimeId: () => 'test-runtime',
+      listRepos: vi.fn().mockReturnValue([{ id: 'repo-1' }])
+    } as unknown as OrcaRuntimeService
+    const dispatcher = new RpcDispatcher({ runtime, methods: REPO_METHODS })
+
+    const response = await dispatcher.dispatch(
+      makeRequest('repo.list', { includeGitUsername: false })
+    )
+
+    expect(runtime.listRepos).toHaveBeenCalledWith({ includeGitUsername: false })
+    expect(response).toMatchObject({
+      ok: true,
+      result: { repos: [{ id: 'repo-1' }] }
+    })
+  })
+
   it('routes git username lookup to the runtime server', async () => {
     const runtime = {
       getRuntimeId: () => 'test-runtime',
@@ -22,6 +56,27 @@ describe('repo RPC methods', () => {
     expect(response).toMatchObject({
       ok: true,
       result: { username: 'remote-user' }
+    })
+  })
+
+  it('routes branch prefix value lookup to the runtime server', async () => {
+    const runtime = {
+      getRuntimeId: () => 'test-runtime',
+      getRepoBranchPrefixValue: vi.fn().mockResolvedValue('Remote-User')
+    } as unknown as OrcaRuntimeService
+    const dispatcher = new RpcDispatcher({ runtime, methods: REPO_METHODS })
+
+    const response = await dispatcher.dispatch(
+      makeRequest('repo.branchPrefixValue', {
+        repo: 'repo-1',
+        branchPrefix: 'git-author'
+      })
+    )
+
+    expect(runtime.getRepoBranchPrefixValue).toHaveBeenCalledWith('repo-1', 'git-author')
+    expect(response).toMatchObject({
+      ok: true,
+      result: { value: 'Remote-User' }
     })
   })
 
