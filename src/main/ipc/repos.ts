@@ -706,7 +706,7 @@ export function registerRepoHandlers(mainWindow: BrowserWindow, store: Store): v
   )
 
   ipcMain.handle('repos:getGitUsername', async (_event, args: { repoId: string }) => {
-    const repo = store.getRepo(args.repoId)
+    const repo = store.getRepo(args.repoId, { includeGitUsername: false })
     if (!repo || isFolderRepo(repo)) {
       return ''
     }

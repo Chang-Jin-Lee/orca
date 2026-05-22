@@ -305,7 +305,7 @@ describe('Store', () => {
     })
 
     const store = await createStore()
-    const repos = store.getRepos()
+    const repos = store.getRepos({ includeGitUsername: true })
     expect(repos).toHaveLength(1)
     expect(repos[0].id).toBe('r1')
     expect(repos[0].gitUsername).toBe('testuser')
@@ -1287,17 +1287,28 @@ describe('Store', () => {
     const fetched = store.getRepo('r1')
     expect(fetched).toBeDefined()
     expect(fetched!.displayName).toBe('test')
-    expect(fetched!.gitUsername).toBe('testuser')
+    expect(fetched!.gitUsername).toBeUndefined()
   })
 
-  it('can read repos without hydrating git username', async () => {
+  it('hydrates git username when explicitly requested', async () => {
+    const store = await createStore()
+    store.addRepo(makeRepo())
+
+    const fetched = store.getRepo('r1', { includeGitUsername: true })
+    const repos = store.getRepos({ includeGitUsername: true })
+
+    expect(fetched!.gitUsername).toBe('testuser')
+    expect(repos[0].gitUsername).toBe('testuser')
+  })
+
+  it('reads repos without hydrating git username by default', async () => {
     const store = await createStore()
     const { getGitUsername } = await import('./git/repo')
     vi.mocked(getGitUsername).mockClear()
     store.addRepo(makeRepo())
 
-    const fetched = store.getRepo('r1', { includeGitUsername: false })
-    const repos = store.getRepos({ includeGitUsername: false })
+    const fetched = store.getRepo('r1')
+    const repos = store.getRepos()
 
     expect(fetched).toMatchObject({ id: 'r1', displayName: 'test' })
     expect(fetched!.gitUsername).toBeUndefined()

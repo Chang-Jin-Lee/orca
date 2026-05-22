@@ -258,6 +258,7 @@ function Settings(): React.JSX.Element {
     Array.from(new Set([DEFAULT_APP_FONT_FAMILY, ...getFallbackTerminalFonts()]))
   )
   const [activeSectionId, setActiveSectionId] = useState('general')
+  const [gitUsernameByRepoId, setGitUsernameByRepoId] = useState<Record<string, string>>({})
   const [mountedSectionIds, setMountedSectionIds] = useState<Set<string>>(
     getInitialMountedSectionIds
   )
@@ -434,7 +435,6 @@ function Settings(): React.JSX.Element {
     applyDocumentTheme(theme)
   }, [])
 
-  const displayedGitUsername = repos[0]?.gitUsername ?? ''
   const runtimeEnvironmentsSearchEntry = isWebClient
     ? WEB_RUNTIME_ENVIRONMENTS_SEARCH_ENTRY
     : RUNTIME_ENVIRONMENTS_SEARCH_ENTRY
@@ -697,6 +697,61 @@ function Settings(): React.JSX.Element {
   const windowsTerminalCapabilities = useWindowsTerminalCapabilities(
     isWindows && neededSectionIds.has('terminal')
   )
+  const gitUsernameRepo = repos[0] && !isFolderRepo(repos[0]) ? repos[0] : null
+  const gitUsernameRepoId = gitUsernameRepo?.id
+  const hydratedGitUsername = gitUsernameRepo?.gitUsername
+  const cachedGitUsername =
+    gitUsernameRepoId !== undefined ? gitUsernameByRepoId[gitUsernameRepoId] : undefined
+  const displayedGitUsername = hydratedGitUsername ?? cachedGitUsername ?? ''
+
+  useEffect(() => {
+    if (
+      settings?.branchPrefix !== 'git-username' ||
+      !neededSectionIds.has('git') ||
+      gitUsernameRepoId === undefined ||
+      hydratedGitUsername !== undefined ||
+      cachedGitUsername !== undefined
+    ) {
+      return
+    }
+
+    let cancelled = false
+    // Why: repo listing is a startup path, so username probing stays lazy and
+    // only runs for the Git settings preview that actually displays it.
+    void window.api.repos
+      .getGitUsername({ repoId: gitUsernameRepoId })
+      .then((username) => {
+        if (cancelled) {
+          return
+        }
+        setGitUsernameByRepoId((previous) =>
+          previous[gitUsernameRepoId] === username
+            ? previous
+            : { ...previous, [gitUsernameRepoId]: username }
+        )
+      })
+      .catch((error) => {
+        console.error('Failed to fetch git username:', error)
+        if (cancelled) {
+          return
+        }
+        setGitUsernameByRepoId((previous) =>
+          previous[gitUsernameRepoId] === undefined
+            ? { ...previous, [gitUsernameRepoId]: '' }
+            : previous
+        )
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [
+    cachedGitUsername,
+    gitUsernameRepoId,
+    hydratedGitUsername,
+    neededSectionIds,
+    settings?.branchPrefix
+  ])
 
   useEffect(() => {
     setMountedSectionIds((previous) => {

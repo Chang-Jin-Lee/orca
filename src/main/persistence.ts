@@ -1883,21 +1883,22 @@ export class Store {
 
   // ── Repos ──────────────────────────────────────────────────────────
 
-  getRepos(options: RepoHydrationOptions = {}): Repo[] {
+  getRepos(options: RepoHydrationOptions = { includeGitUsername: false }): Repo[] {
     return this.state.repos.map((repo) => this.hydrateRepo(repo, options))
   }
 
   /**
-   * O(1) read of the persisted repo count. Use this when you only need the
-   * count (e.g. cohort-classifier) — `getRepos()` hydrates each repo and
-   * may run a synchronous git subprocess via `getGitUsername()`, which is
-   * wasteful when the caller only reads `.length`.
+   * O(1) read of the persisted repo count. Use this when you only need the count
+   * (e.g. cohort-classifier) instead of allocating hydrated repo objects.
    */
   getRepoCount(): number {
     return this.state.repos.length
   }
 
-  getRepo(id: string, options: RepoHydrationOptions = {}): Repo | undefined {
+  getRepo(
+    id: string,
+    options: RepoHydrationOptions = { includeGitUsername: false }
+  ): Repo | undefined {
     const repo = this.state.repos.find((r) => r.id === id)
     return repo ? this.hydrateRepo(repo, options) : undefined
   }
@@ -1993,8 +1994,11 @@ export class Store {
     return this.hydrateRepo(repo)
   }
 
-  private hydrateRepo(repo: Repo, options: RepoHydrationOptions = {}): Repo {
-    const { includeGitUsername = true } = options
+  private hydrateRepo(
+    repo: Repo,
+    options: RepoHydrationOptions = { includeGitUsername: false }
+  ): Repo {
+    const { includeGitUsername = false } = options
     const gitUsername =
       !includeGitUsername || isFolderRepo(repo)
         ? ''
