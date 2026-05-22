@@ -2,6 +2,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import type { ReactNode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Repo, Worktree, WorktreeCardProperty } from '../../../../shared/types'
+import { getWorkspaceQuickActionKind } from './worktree-card-quick-action'
 
 const fetchHostedReviewForBranch = vi.fn()
 const fetchIssue = vi.fn()
@@ -120,17 +121,17 @@ describe('WorktreeCard quick actions', () => {
     expect(markup).toContain('data-workspace-board-preserve-open=""')
   })
 
-  it('shows delete as the top-right quick action for an inactive workspace', async () => {
+  it('does not show delete as an inactive workspace quick action', async () => {
     const { default: WorktreeCard } = await import('./WorktreeCard')
 
     const markup = renderToStaticMarkup(
       <WorktreeCard worktree={makeWorktree()} repo={makeRepo()} isActive={false} />
     )
 
-    expect(markup).toContain('aria-label="Delete workspace"')
+    expect(markup).not.toContain('aria-label="Delete workspace"')
   })
 
-  it('shows sleep as the top-right quick action for a workspace with live activity', async () => {
+  it('does not show sleep by default for a workspace with live activity', async () => {
     const { default: WorktreeCard } = await import('./WorktreeCard')
     const worktree = makeWorktree()
     tabsByWorktree = { [worktree.id]: [{ id: 'tab-1' }] }
@@ -140,6 +141,29 @@ describe('WorktreeCard quick actions', () => {
       <WorktreeCard worktree={worktree} repo={makeRepo()} isActive={false} />
     )
 
-    expect(markup).toContain('aria-label="Sleep workspace"')
+    expect(markup).not.toContain('aria-label="Sleep workspace"')
+  })
+})
+
+describe('getWorkspaceQuickActionKind', () => {
+  it('only returns sleep when a workspace has live activity and the modifier is held', () => {
+    expect(
+      getWorkspaceQuickActionKind({
+        hasActiveActivity: false,
+        isSleepQuickActionModifierPressed: true
+      })
+    ).toBeNull()
+    expect(
+      getWorkspaceQuickActionKind({
+        hasActiveActivity: true,
+        isSleepQuickActionModifierPressed: false
+      })
+    ).toBeNull()
+    expect(
+      getWorkspaceQuickActionKind({
+        hasActiveActivity: true,
+        isSleepQuickActionModifierPressed: true
+      })
+    ).toBe('sleep')
   })
 })

@@ -1,21 +1,13 @@
-export type WorktreeCardQuickActionKind = 'sleep' | 'delete' | null
+export type WorktreeCardQuickActionKind = 'sleep' | null
 
 export function getWorkspaceQuickActionKind({
   hasActiveActivity,
-  isDeletable,
-  isInactive,
-  isMacOptionPressed
+  isSleepQuickActionModifierPressed
 }: {
   hasActiveActivity: boolean
-  isDeletable: boolean
-  isInactive: boolean
-  isMacOptionPressed: boolean
+  isSleepQuickActionModifierPressed: boolean
 }): WorktreeCardQuickActionKind {
-  if (isInactive) {
-    return isDeletable ? 'delete' : null
-  }
-  if (hasActiveActivity) {
-    return isMacOptionPressed && isDeletable ? 'delete' : 'sleep'
-  }
-  return null
+  // Why: Sleep is a fast-path for frequent users, but keeping it modifier-gated
+  // avoids adding persistent chrome to every active workspace row.
+  return hasActiveActivity && isSleepQuickActionModifierPressed ? 'sleep' : null
 }

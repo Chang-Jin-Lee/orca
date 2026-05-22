@@ -14,7 +14,6 @@ import {
   Moon,
   Server,
   ServerOff,
-  Trash2,
   Workflow
 } from 'lucide-react'
 import CacheTimer from './CacheTimer'
@@ -45,7 +44,6 @@ import { writeWorkspaceDragData } from './workspace-status'
 import { getWorktreeCardPrDisplay } from './worktree-card-pr-display'
 import { getWorkspacePortsByWorktreeId } from '@/lib/workspace-port-groups'
 import { hasActiveWorkspaceActivity } from '@/lib/worktree-activity-state'
-import { runWorktreeDelete } from './delete-worktree-flow'
 import { runSleepWorktree } from './sleep-worktree-flow'
 import { getWorkspaceQuickActionKind } from './worktree-card-quick-action'
 
@@ -160,17 +158,13 @@ const WorktreeCard = React.memo(function WorktreeCard({
   })
   const isSshDisconnected = sshStatus != null && sshStatus !== 'connected'
   const [showDisconnectedDialog, setShowDisconnectedDialog] = useState(false)
-  const [isMacOptionPressed, setIsMacOptionPressed] = useState(false)
+  const [isSleepQuickActionModifierPressed, setIsSleepQuickActionModifierPressed] = useState(false)
 
   useEffect(() => {
-    const isMac = navigator.userAgent.includes('Mac')
-    if (!isMac) {
-      return
-    }
     const handleKeyChange = (event: KeyboardEvent): void => {
-      setIsMacOptionPressed(event.altKey)
+      setIsSleepQuickActionModifierPressed(event.altKey)
     }
-    const handleWindowBlur = (): void => setIsMacOptionPressed(false)
+    const handleWindowBlur = (): void => setIsSleepQuickActionModifierPressed(false)
     window.addEventListener('keydown', handleKeyChange, true)
     window.addEventListener('keyup', handleKeyChange, true)
     window.addEventListener('blur', handleWindowBlur)
@@ -406,9 +400,7 @@ const WorktreeCard = React.memo(function WorktreeCard({
   )
   const quickActionKind = getWorkspaceQuickActionKind({
     hasActiveActivity,
-    isDeletable: !worktree.isMainWorktree && !isFolder,
-    isInactive: !hasActiveActivity,
-    isMacOptionPressed
+    isSleepQuickActionModifierPressed
   })
   const handleWorkspaceQuickAction = useCallback(
     (event: React.MouseEvent<HTMLButtonElement>) => {
@@ -416,18 +408,11 @@ const WorktreeCard = React.memo(function WorktreeCard({
       event.stopPropagation()
       if (quickActionKind === 'sleep') {
         void runSleepWorktree(worktree.id)
-      } else if (quickActionKind === 'delete') {
-        runWorktreeDelete(worktree.id)
       }
     },
     [quickActionKind, worktree.id]
   )
-  const quickActionLabel =
-    quickActionKind === 'sleep'
-      ? 'Sleep workspace'
-      : quickActionKind === 'delete'
-        ? 'Delete workspace'
-        : ''
+  const quickActionLabel = quickActionKind === 'sleep' ? 'Sleep workspace' : ''
 
   const unreadTooltip = worktree.isUnread ? 'Mark read' : 'Mark unread'
   const childWorkspaceLabel = `${lineageChildCount} child ${
@@ -698,21 +683,15 @@ const WorktreeCard = React.memo(function WorktreeCard({
                     className={cn(
                       'inline-flex size-4 items-center justify-center rounded bg-transparent opacity-0 transition-colors transition-opacity',
                       'group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100',
-                      quickActionKind === 'delete'
-                        ? 'text-muted-foreground hover:bg-transparent hover:text-foreground focus-visible:bg-transparent focus-visible:text-foreground'
-                        : 'text-muted-foreground hover:bg-transparent hover:text-foreground focus-visible:bg-transparent focus-visible:text-foreground'
+                      'text-muted-foreground hover:bg-transparent hover:text-foreground focus-visible:bg-transparent focus-visible:text-foreground'
                     )}
                     aria-label={quickActionLabel}
                   >
-                    {quickActionKind === 'delete' ? (
-                      <Trash2 className="size-3.5" />
-                    ) : (
-                      <Moon className="size-3.5" />
-                    )}
+                    <Moon className="size-3.5" />
                   </button>
                 </TooltipTrigger>
                 <TooltipContent side="right" sideOffset={8}>
-                  {quickActionKind === 'delete' ? 'Delete workspace' : 'Sleep workspace'}
+                  Sleep workspace
                 </TooltipContent>
               </Tooltip>
             </div>
