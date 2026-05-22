@@ -184,6 +184,8 @@ export function ShortcutBindingRow({
         onKeyDown={handleRecordKeyDown}
         className={cn(
           'mt-2 h-8 w-full justify-start px-2.5 text-xs lg:mt-0 lg:w-40',
+          !recording &&
+            'border-border/70 bg-background/60 text-foreground/80 shadow-none hover:border-border hover:bg-accent/70 hover:text-foreground dark:text-foreground dark:shadow-xs',
           recording && 'border-ring bg-accent text-accent-foreground ring-[3px] ring-ring/30'
         )}
       >
