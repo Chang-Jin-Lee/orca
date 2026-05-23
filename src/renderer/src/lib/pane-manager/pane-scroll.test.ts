@@ -23,6 +23,8 @@ function createTerminal(args: {
   }
   return {
     buffer: { active },
+    cols: 80,
+    rows: 24,
     // Why: restoreScrollStateNow guards on terminal.element to avoid calling
     // scroll APIs after WebGL teardown. Stub a truthy element so these tests
     // exercise the live restore path.

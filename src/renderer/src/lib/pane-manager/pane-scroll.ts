@@ -1,5 +1,6 @@
 import type { Terminal } from '@xterm/xterm'
 import type { ScrollState } from './pane-manager-types'
+import { captureViewportAnchor, resolveViewportAnchorLine } from './pane-scroll-viewport-anchor'
 
 const terminalOutputEpochs = new WeakMap<Terminal, number>()
 const deferredScrollRestores = new WeakMap<
@@ -47,8 +48,13 @@ export function captureScrollState(terminal: Terminal): ScrollState {
     wasAtBottom,
     viewportY,
     baseY: buf.baseY,
-    // Why: xterm markers track the same buffer line through resize reflow;
-    // a numeric viewport line alone can point at different content afterward.
+    // Why: xterm markers stay tied to numeric buffer rows during width
+    // reflow. A content anchor lets restore find the same logical line after
+    // split panes change cols and the row number no longer points at it.
+    viewportAnchor:
+      !wasAtBottom && buf.type === 'normal' ? captureViewportAnchor(terminal) : undefined,
+    // Why: markers are still a useful fallback for non-reflowing changes
+    // and scrollback trim, but content anchors win when cols change.
     firstVisibleLineMarker:
       !wasAtBottom && buf.type === 'normal'
         ? terminal.registerMarker?.(viewportY - (buf.baseY + buf.cursorY))
@@ -138,7 +144,11 @@ function restoreScrollStateNow(terminal: Terminal, state: ScrollState): void {
     state.firstVisibleLineMarker && !state.firstVisibleLineMarker.isDisposed
       ? state.firstVisibleLineMarker.line
       : -1
-  const targetLine = Math.min(markerLine >= 0 ? markerLine : state.viewportY, buf.baseY)
+  const anchorLine = resolveViewportAnchorLine(terminal, state)
+  const targetLine = Math.min(
+    anchorLine ?? (markerLine >= 0 ? markerLine : state.viewportY),
+    buf.baseY
+  )
   state.viewportY = targetLine
   // Why: deferred rAF/timeout restores re-invoke this function after xterm
   // reflow settles; keep the marker alive so each call consults the live
