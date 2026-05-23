@@ -1,3 +1,4 @@
+/* eslint-disable max-lines -- Why: PaneManager owns the imperative split tree, renderer state, and drag callbacks; splitting it would make lifecycle ordering harder to audit. */
 import type {
   PaneManagerOptions,
   PaneStyleOptions,
@@ -29,6 +30,7 @@ import {
   setPaneGpuRenderingState,
   suspendPaneRendering
 } from './pane-rendering-control'
+import { schedulePaneRendererRecovery } from './pane-renderer-recovery'
 import type { TerminalLeafId } from '../../../../shared/stable-pane-id'
 import { PaneIdentityRegistry } from './pane-identity-registry'
 import { closeManagedPane, splitManagedPane } from './pane-split-close'
@@ -231,6 +233,14 @@ export class PaneManager {
 
   setPaneGpuRendering(paneId: number, enabled: boolean): void {
     setPaneGpuRenderingState(this.panes, paneId, enabled)
+  }
+
+  recoverPaneRenderer(paneId: number, options?: { delayMs?: number }): void {
+    const pane = this.panes.get(paneId)
+    if (!pane) {
+      return
+    }
+    schedulePaneRendererRecovery(pane, options)
   }
 
   setTerminalGpuAcceleration(mode: PaneManagerOptions['terminalGpuAcceleration']): void {

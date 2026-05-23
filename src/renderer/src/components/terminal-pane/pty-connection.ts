@@ -63,6 +63,8 @@ const PTY_CONNECT_DIAG_LIMIT = 200
 const AGENT_TASK_COMPLETE_NOTIFICATION_GRACE_MS = 250
 const AGENT_TASK_COMPLETE_NOTIFICATION_MAX_WAIT_MS = 1000
 const AGENT_TASK_COMPLETE_NOTIFICATION_DETAIL_MAX_AGE_MS = 10_000
+const AGENT_RENDERER_RECOVERY_WORKING_DELAY_MS = 180
+const AGENT_RENDERER_RECOVERY_IDLE_DELAY_MS = 320
 const HIDDEN_TERMINAL_METADATA_FLUSH_MS = 100
 let codexRestartNoticePresenceSource: Record<
   string,
@@ -563,6 +565,23 @@ export function connectPanePty(
     }
   }
 
+  const scheduleAgentRendererRecovery = (
+    state: ParsedAgentStatusPayload['state'] | 'title-working' | 'title-idle'
+  ): void => {
+    if (!deps.isVisibleRef.current) {
+      return
+    }
+    // Why: Slack reports matched silent WebGL glyph-atlas corruption after
+    // agent submit/settle; rebuilding around agent state edges mirrors the
+    // user workaround (navigation/GPU toggle) without touching hidden panes.
+    manager.recoverPaneRenderer(pane.id, {
+      delayMs:
+        state === 'working' || state === 'title-working'
+          ? AGENT_RENDERER_RECOVERY_WORKING_DELAY_MS
+          : AGENT_RENDERER_RECOVERY_IDLE_DELAY_MS
+    })
+  }
+
   const applyAgentStatusNow = (payload: ParsedAgentStatusPayload): void => {
     // Why: capture the store snapshot once so the title lookup and the
     // setAgentStatus call observe the same state. Re-reading getState()
@@ -572,6 +591,14 @@ export function connectPanePty(
     const currentState = useAppStore.getState()
     const title = currentState.runtimePaneTitlesByTabId?.[deps.tabId]?.[pane.id]
     currentState.setAgentStatus(cacheKey, payload, title)
+    if (
+      payload.state === 'working' ||
+      payload.state === 'done' ||
+      payload.state === 'waiting' ||
+      payload.state === 'blocked'
+    ) {
+      scheduleAgentRendererRecovery(payload.state)
+    }
     if (syncAgentTaskCompleteNotificationEnabled()) {
       agentCompletionCoordinator.observeHookStatus(payload)
     }
@@ -814,6 +841,7 @@ export function connectPanePty(
   // notification below; main still keeps a 5 s per-worktree dedupe as the
   // final guard.
   const onAgentBecameIdle = (title: string): void => {
+    scheduleAgentRendererRecovery('title-idle')
     // Why: only start the prompt-cache countdown for Claude agents — other
     // agents have different (or no) prompt-caching semantics and showing a
     // timer for them would be misleading.
@@ -833,6 +861,7 @@ export function connectPanePty(
     }
   }
   const onAgentBecameWorking = (): void => {
+    scheduleAgentRendererRecovery('title-working')
     if (syncAgentTaskCompleteNotificationEnabled()) {
       agentCompletionCoordinator.observeTitleWorking()
     }

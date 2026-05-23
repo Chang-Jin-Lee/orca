@@ -25,6 +25,7 @@ import {
 import { buildDefaultTerminalOptions } from './pane-terminal-options'
 import { ENABLE_WEBGL_RENDERER, attachWebgl, disposeWebgl } from './pane-webgl-renderer'
 import { shouldFocusTerminalFromPanePointerDown } from './pane-pointer-focus'
+import { cancelPaneRendererRecovery } from './pane-renderer-recovery'
 
 // ---------------------------------------------------------------------------
 // Pane creation, terminal open/close, addon management
@@ -289,6 +290,7 @@ export function disposePane(
   pane: ManagedPaneInternal,
   panes: Map<number, ManagedPaneInternal>
 ): void {
+  cancelPaneRendererRecovery(pane)
   detachPaneFitResizeObserver(pane)
   if (pane.compositionHandler) {
     pane.terminal.element?.removeEventListener('compositionstart', pane.compositionHandler, true)
