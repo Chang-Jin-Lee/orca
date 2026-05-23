@@ -68,6 +68,8 @@ type TerminalOutputSchedulerDebugSnapshot = {
   flushWriteCount: number
   scheduledDrainCount: number
   drainWrites: number[]
+  queuedChars: number
+  maxQueuedChars: number
 }
 
 type StressWorktree = {
@@ -118,7 +120,9 @@ const emit = () => {
   process.stdout.write('\\x1b]9999;' + JSON.stringify(payload) + '\\x07')
   process.stdout.write('\\r\\x1b[2K' + spinner + ' codex ' + id + ' thinking ' + seq + ' ' + 'x'.repeat(${payloadChars}) + '\\n')
 }
-setTimeout(() => setInterval(emit, ${intervalMs}), 250)
+// Why: keep the ready marker in the terminal tail long enough for Playwright
+// to observe it before high-volume background output starts.
+setTimeout(() => setInterval(emit, ${intervalMs}), 1500)
 `
 }
 
@@ -149,7 +153,18 @@ const emit = () => {
   process.stdout.write('\\x1b]9999;' + JSON.stringify(payload) + '\\x07')
   process.stdout.write('\\r\\x1b[2K' + spinner + ' real codex ' + id + ' active ' + seq + ' ' + 'x'.repeat(${payloadChars}) + '\\n')
 }
-const heartbeat = setInterval(emit, ${intervalMs})
+// Why: keep the ready marker in the terminal tail long enough for Playwright
+// to observe it before high-volume background output starts.
+let heartbeat = null
+const heartbeatDelay = setTimeout(() => {
+  heartbeat = setInterval(emit, ${intervalMs})
+}, 1500)
+const clearHeartbeat = () => {
+  clearTimeout(heartbeatDelay)
+  if (heartbeat !== null) {
+    clearInterval(heartbeat)
+  }
+}
 
 const progressPrefix = 'ORCA_REAL_CODEX_PROGRESS_${runId}_' + id
 const progressProgram =
@@ -173,13 +188,13 @@ const child = spawn(
 )
 
 child.on('error', (error) => {
-  clearInterval(heartbeat)
+  clearHeartbeat()
   console.error('BG_CODEX_ERROR_${runId}_' + id + ' ' + error.message)
   process.exit(1)
 })
 
 child.on('exit', (code, signal) => {
-  clearInterval(heartbeat)
+  clearHeartbeat()
   process.stdout.write(
     'BG_CODEX_EXIT_${runId}_' + id + ' ' + (code === null ? signal : code) + '\\n'
   )

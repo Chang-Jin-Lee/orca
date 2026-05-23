@@ -24,6 +24,8 @@ type SchedulerDebugSnapshot = {
   flushWriteCount: number
   scheduledDrainCount: number
   drainWrites: number[]
+  queuedChars: number
+  maxQueuedChars: number
 }
 
 type SchedulerDebugWindow = Window & {

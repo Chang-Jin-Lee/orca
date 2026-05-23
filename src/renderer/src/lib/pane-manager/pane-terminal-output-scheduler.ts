@@ -9,23 +9,26 @@ type TerminalOutputBeforeWrite = (data: string) => void
 type QueueEntry = {
   terminal: TerminalOutputTarget
   chunks: string[]
+  queuedChars: number
   beforeWrite?: TerminalOutputBeforeWrite
 }
 
 const BACKGROUND_FLUSH_DELAY_MS = 100
 const BACKGROUND_DRAIN_INTERVAL_MS = 50
 const BACKGROUND_CHUNK_CHARS = 16 * 1024
-const MAX_WRITES_PER_DRAIN = 1
+const BASE_WRITES_PER_DRAIN = 1
+const CATCH_UP_WRITES_PER_DRAIN = 2
+const CATCH_UP_BACKLOG_CHARS = 128 * 1024
 const PARSE_SETTLE_TIMEOUT_MS = 250
 
 const queuedByTerminal = new Map<TerminalOutputTarget, QueueEntry>()
 let drainTimer: ReturnType<typeof setTimeout> | null = null
+let totalQueuedChars = 0
 const debugEnabled = e2eConfig.exposeStore
 
 // Why no lossy queue cap: dropping raw terminal bytes can corrupt parser state
-// (half an escape sequence, missed mode reset, wrong scrollback). A pathological
-// background producer can still consume memory/CPU; preserving terminal
-// correctness means that case needs adaptive/backpressure work, not truncation.
+// (half an escape sequence, missed mode reset, wrong scrollback). When hidden
+// agents build a real backlog, use a bounded catch-up budget instead.
 
 type TerminalOutputSchedulerDebugSnapshot = {
   backgroundEnqueueCount: number
@@ -34,6 +37,8 @@ type TerminalOutputSchedulerDebugSnapshot = {
   flushWriteCount: number
   scheduledDrainCount: number
   drainWrites: number[]
+  queuedChars: number
+  maxQueuedChars: number
 }
 
 type TerminalOutputSchedulerDebugApi = {
@@ -47,7 +52,9 @@ const debugState: TerminalOutputSchedulerDebugSnapshot = {
   backgroundWriteCount: 0,
   flushWriteCount: 0,
   scheduledDrainCount: 0,
-  drainWrites: []
+  drainWrites: [],
+  queuedChars: 0,
+  maxQueuedChars: 0
 }
 
 function resetDebugState(): void {
@@ -57,6 +64,16 @@ function resetDebugState(): void {
   debugState.flushWriteCount = 0
   debugState.scheduledDrainCount = 0
   debugState.drainWrites = []
+  debugState.queuedChars = totalQueuedChars
+  debugState.maxQueuedChars = totalQueuedChars
+}
+
+function recordQueuedChars(): void {
+  if (!debugEnabled) {
+    return
+  }
+  debugState.queuedChars = totalQueuedChars
+  debugState.maxQueuedChars = Math.max(debugState.maxQueuedChars, totalQueuedChars)
 }
 
 function exposeDebugApi(): void {
@@ -87,6 +104,12 @@ function scheduleDrain(delayMs: number): void {
   drainTimer = setTimeout(drainQueuedOutput, delayMs)
 }
 
+function maxWritesForCurrentBacklog(): number {
+  return totalQueuedChars >= CATCH_UP_BACKLOG_CHARS
+    ? CATCH_UP_WRITES_PER_DRAIN
+    : BASE_WRITES_PER_DRAIN
+}
+
 function takeQueuedChunk(entry: QueueEntry, limit: number): string {
   let remaining = limit
   let data = ''
@@ -105,7 +128,17 @@ function takeQueuedChunk(entry: QueueEntry, limit: number): string {
     remaining = 0
   }
 
+  entry.queuedChars -= data.length
+  totalQueuedChars -= data.length
+  recordQueuedChars()
   return data
+}
+
+function dropQueuedEntry(entry: QueueEntry): void {
+  totalQueuedChars -= entry.queuedChars
+  entry.queuedChars = 0
+  entry.chunks.length = 0
+  recordQueuedChars()
 }
 
 function writeQueuedChunk(entry: QueueEntry): boolean {
@@ -120,7 +153,7 @@ function writeQueuedChunk(entry: QueueEntry): boolean {
     // Why: pane.terminal.dispose() can race with a queued late-arriving PTY ping;
     // a write to a disposed terminal throws. Drop the entry rather than crashing
     // the scheduler for other panes still draining.
-    entry.chunks.length = 0
+    dropQueuedEntry(entry)
     return false
   }
   return true
@@ -129,8 +162,9 @@ function writeQueuedChunk(entry: QueueEntry): boolean {
 function drainQueuedOutput(): void {
   drainTimer = null
   let writes = 0
+  const maxWrites = maxWritesForCurrentBacklog()
 
-  while (queuedByTerminal.size > 0 && writes < MAX_WRITES_PER_DRAIN) {
+  while (queuedByTerminal.size > 0 && writes < maxWrites) {
     const entry = queuedByTerminal.values().next().value
     if (!entry) {
       break
@@ -178,12 +212,15 @@ export function writeTerminalOutput(
 
   let entry = queuedByTerminal.get(terminal)
   if (!entry) {
-    entry = { terminal, chunks: [], beforeWrite: options.beforeWrite }
+    entry = { terminal, chunks: [], queuedChars: 0, beforeWrite: options.beforeWrite }
     queuedByTerminal.set(terminal, entry)
   } else {
     entry.beforeWrite = options.beforeWrite
   }
   entry.chunks.push(data)
+  entry.queuedChars += data.length
+  totalQueuedChars += data.length
+  recordQueuedChars()
   if (debugEnabled) {
     debugState.backgroundEnqueueCount++
   }
@@ -213,6 +250,7 @@ export function flushTerminalOutput(terminal: TerminalOutputTarget): void {
       // Why: pane.terminal.dispose() can race with a queued late-arriving PTY ping;
       // a write to a disposed terminal throws. Drop the entry rather than crashing
       // the scheduler for other panes still draining.
+      dropQueuedEntry(entry)
       return
     }
     data = takeQueuedChunk(entry, BACKGROUND_CHUNK_CHARS)
@@ -246,7 +284,12 @@ export function waitForTerminalOutputParsed(terminal: TerminalOutputTarget): Pro
 
 export function discardTerminalOutput(terminal: TerminalOutputTarget): void {
   exposeDebugApi()
+  const entry = queuedByTerminal.get(terminal)
+  if (!entry) {
+    return
+  }
   queuedByTerminal.delete(terminal)
+  dropQueuedEntry(entry)
 }
 
 exposeDebugApi()

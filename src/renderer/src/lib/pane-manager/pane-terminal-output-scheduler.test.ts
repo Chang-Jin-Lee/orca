@@ -97,6 +97,27 @@ describe('pane terminal output scheduler', () => {
     expect(terminals[2].write).toHaveBeenCalledWith('pane-2')
   })
 
+  it('uses a bounded catch-up budget when hidden output builds a backlog', async () => {
+    vi.useFakeTimers()
+    const { writeTerminalOutput } = await loadScheduler()
+    const terminals = [createTerminal(), createTerminal(), createTerminal()]
+    const largeChunk = 'x'.repeat(80 * 1024)
+
+    terminals.forEach((terminal) => {
+      writeTerminalOutput(terminal, largeChunk, { foreground: false })
+    })
+
+    vi.advanceTimersByTime(100)
+    expect(terminals[0].write).toHaveBeenCalledTimes(1)
+    expect(terminals[1].write).toHaveBeenCalledTimes(1)
+    expect(terminals[2].write).not.toHaveBeenCalled()
+
+    vi.advanceTimersByTime(50)
+    expect(terminals[0].write).toHaveBeenCalledTimes(2)
+    expect(terminals[1].write).toHaveBeenCalledTimes(1)
+    expect(terminals[2].write).toHaveBeenCalledTimes(1)
+  })
+
   it('rotates terminals with remaining backlog behind untouched queued terminals', async () => {
     vi.useFakeTimers()
     const { writeTerminalOutput } = await loadScheduler()
