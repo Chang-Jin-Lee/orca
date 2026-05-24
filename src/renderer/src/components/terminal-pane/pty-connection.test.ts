@@ -218,7 +218,14 @@ function createPane(paneId: number) {
     terminal: {
       cols: 120,
       rows: 40,
+      modes: {
+        bracketedPasteMode: false
+      },
+      options: {
+        ignoreBracketedPasteMode: false
+      },
       write: vi.fn(),
+      paste: vi.fn(),
       onData: vi.fn(() => ({ dispose: vi.fn() })),
       onResize: vi.fn(() => ({ dispose: vi.fn() })),
       onTitleChange: vi.fn(() => ({ dispose: vi.fn() })),
@@ -779,6 +786,35 @@ describe('connectPanePty', () => {
     })
   })
 
+  it('marks bracketed paste as stale after acknowledged Ctrl+C input', async () => {
+    const { connectPanePty } = await import('./pty-connection')
+    const { pasteTerminalText } = await import('./terminal-bracketed-paste')
+    const transport = createMockTransport()
+    transportFactoryQueue.push(transport)
+    const pane = createPane(1)
+    pane.terminal.modes.bracketedPasteMode = true
+    const observedIgnoreValues: (boolean | undefined)[] = []
+    pane.terminal.paste.mockImplementation(() => {
+      observedIgnoreValues.push(pane.terminal.options.ignoreBracketedPasteMode)
+    })
+    let onDataHandler: ((data: string) => void) | null = null
+    pane.terminal.onData = vi.fn(((handler: (data: string) => void) => {
+      onDataHandler = handler
+      return { dispose: vi.fn() }
+    }) as typeof pane.terminal.onData)
+
+    connectPanePty(pane as never, createManager(1) as never, createDeps() as never)
+    if (!onDataHandler) {
+      throw new Error('expected onData handler to be registered')
+    }
+    ;(onDataHandler as unknown as (data: string) => void)('\x03')
+    await flushAsyncTicks()
+    pasteTerminalText(pane.terminal as never, 'a69ce28e1d092e0c8825cd1a109ac36409962bc1')
+
+    expect(observedIgnoreValues).toEqual([true])
+    expect(pane.terminal.options.ignoreBracketedPasteMode).toBe(false)
+  })
+
   it('infers captured Ctrl+C even when xterm emits an enhanced keyboard sequence', async () => {
     const { connectPanePty } = await import('./pty-connection')
     const transport = createMockTransport()
@@ -1249,6 +1285,133 @@ describe('connectPanePty', () => {
     replayingPanesRef.current.delete(1)
     ;(onDataHandler as (data: string) => void)('a')
     expect(transport.sendInput).toHaveBeenCalledWith('a')
+  })
+
+  it('does not enumerate every worktree tab for ordinary input without Codex restart notices', async () => {
+    const { connectPanePty } = await import('./pty-connection')
+
+    const transport = createMockTransport('pty-live')
+    transportFactoryQueue.push(transport)
+    mockStoreState = {
+      ...mockStoreState,
+      tabsByWorktree: new Proxy(
+        {
+          'wt-1': [{ id: 'tab-1', ptyId: 'pty-live' }],
+          'wt-2': [{ id: 'tab-2', ptyId: 'pty-other' }]
+        },
+        {
+          ownKeys() {
+            throw new Error('tabsByWorktree should not be enumerated')
+          }
+        }
+      ),
+      codexRestartNoticeByPtyId: {}
+    }
+
+    const pane = createPane(1)
+    let onDataHandler: ((data: string) => void) | null = null
+    pane.terminal.onData = vi.fn(((handler: (data: string) => void) => {
+      onDataHandler = handler
+      return { dispose: vi.fn() }
+    }) as typeof pane.terminal.onData)
+    const manager = createManager(1)
+    const deps = createDeps()
+
+    connectPanePty(pane as never, manager as never, deps as never)
+
+    expect(onDataHandler).toBeDefined()
+    if (!onDataHandler) {
+      throw new Error('expected onData handler to be registered')
+    }
+    ;(onDataHandler as (data: string) => void)('a')
+
+    expect(transport.sendInput).toHaveBeenCalledWith('a')
+  })
+
+  it('uses the current worktree tab for Codex stale fallback without enumerating all worktrees', async () => {
+    const { connectPanePty } = await import('./pty-connection')
+
+    const transport = createMockTransport(null)
+    transportFactoryQueue.push(transport)
+    mockStoreState = {
+      ...mockStoreState,
+      tabsByWorktree: new Proxy(
+        {
+          'wt-1': [{ id: 'tab-1', ptyId: 'pty-live' }],
+          'wt-2': [{ id: 'tab-2', ptyId: 'pty-other' }]
+        },
+        {
+          ownKeys() {
+            throw new Error('tabsByWorktree should not be enumerated')
+          }
+        }
+      ),
+      codexRestartNoticeByPtyId: {
+        'pty-other': { previousAccountLabel: 'A', nextAccountLabel: 'B' }
+      }
+    }
+
+    const pane = createPane(1)
+    let onDataHandler: ((data: string) => void) | null = null
+    pane.terminal.onData = vi.fn(((handler: (data: string) => void) => {
+      onDataHandler = handler
+      return { dispose: vi.fn() }
+    }) as typeof pane.terminal.onData)
+    const manager = createManager(1)
+    const deps = createDeps()
+
+    connectPanePty(pane as never, manager as never, deps as never)
+
+    expect(onDataHandler).toBeDefined()
+    if (!onDataHandler) {
+      throw new Error('expected onData handler to be registered')
+    }
+    ;(onDataHandler as (data: string) => void)('a')
+
+    expect(transport.sendInput).toHaveBeenCalledWith('a')
+  })
+
+  it('blocks stale Codex fallback input from the current worktree tab without enumerating all worktrees', async () => {
+    const { connectPanePty } = await import('./pty-connection')
+
+    const transport = createMockTransport(null)
+    transportFactoryQueue.push(transport)
+    mockStoreState = {
+      ...mockStoreState,
+      tabsByWorktree: new Proxy(
+        {
+          'wt-1': [{ id: 'tab-1', ptyId: 'pty-live' }],
+          'wt-2': [{ id: 'tab-2', ptyId: 'pty-other' }]
+        },
+        {
+          ownKeys() {
+            throw new Error('tabsByWorktree should not be enumerated')
+          }
+        }
+      ),
+      codexRestartNoticeByPtyId: {
+        'pty-live': { previousAccountLabel: 'A', nextAccountLabel: 'B' }
+      }
+    }
+
+    const pane = createPane(1)
+    let onDataHandler: ((data: string) => void) | null = null
+    pane.terminal.onData = vi.fn(((handler: (data: string) => void) => {
+      onDataHandler = handler
+      return { dispose: vi.fn() }
+    }) as typeof pane.terminal.onData)
+    const manager = createManager(1)
+    const deps = createDeps()
+
+    connectPanePty(pane as never, manager as never, deps as never)
+
+    expect(onDataHandler).toBeDefined()
+    if (!onDataHandler) {
+      throw new Error('expected onData handler to be registered')
+    }
+    ;(onDataHandler as (data: string) => void)('a')
+
+    expect(transport.sendInput).not.toHaveBeenCalled()
   })
 
   it('blocks input to stale Codex panes until they restart', async () => {
@@ -2031,7 +2194,10 @@ describe('connectPanePty', () => {
     expect(capturedDataCallback.current).not.toBeNull()
     capturedDataCallback.current?.('visible split output\r\n')
 
-    expect(pane.terminal.write).toHaveBeenCalledWith('visible split output\r\n')
+    expect(pane.terminal.write).toHaveBeenCalledWith(
+      'visible split output\r\n',
+      expect.any(Function)
+    )
   })
 
   it('marks panes that receive Arabic output for DOM rendering', async () => {
@@ -2054,7 +2220,10 @@ describe('connectPanePty', () => {
     capturedDataCallback.current?.('Arabic: السلام عليكم\r\n')
 
     expect(manager.markPaneHasComplexScriptOutput).toHaveBeenCalledWith(1)
-    expect(pane.terminal.write).toHaveBeenCalledWith('Arabic: السلام عليكم\r\n')
+    expect(pane.terminal.write).toHaveBeenCalledWith(
+      'Arabic: السلام عليكم\r\n',
+      expect.any(Function)
+    )
   })
 
   it('keeps panes on WebGL for terminal UI drawing glyphs', async () => {
@@ -2078,7 +2247,8 @@ describe('connectPanePty', () => {
 
     expect(manager.markPaneHasComplexScriptOutput).not.toHaveBeenCalled()
     expect(pane.terminal.write).toHaveBeenCalledWith(
-      '⠋ Working ├─ file.ts █ progress \uE0B0 prompt\r\n'
+      '⠋ Working ├─ file.ts █ progress \uE0B0 prompt\r\n',
+      expect.any(Function)
     )
   })
 

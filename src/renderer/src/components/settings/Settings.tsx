@@ -14,6 +14,8 @@ import {
   Lock,
   MousePointerClick,
   Network,
+  PanelsTopLeft,
+  Play,
   ShieldCheck,
   Palette,
   Server,
@@ -40,12 +42,14 @@ import { AppearancePane, APPEARANCE_PANE_SEARCH_ENTRIES } from './AppearancePane
 import { InputPane, INPUT_PANE_SEARCH_ENTRIES } from './InputPane'
 import { ShortcutsPane, SHORTCUTS_PANE_SEARCH_ENTRIES } from './ShortcutsPane'
 import { TerminalPane } from './TerminalPane'
+import { FloatingWorkspacePane } from './FloatingWorkspacePane'
 import { useGhosttyImport } from './useGhosttyImport'
 import { Button } from '../ui/button'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip'
 import ghosttyIcon from '../../../../../resources/ghostty.svg'
 import { RepositoryPane, getRepositoryPaneSearchEntries } from './RepositoryPane'
 import { getTerminalPaneSearchEntries } from './terminal-search'
+import { FLOATING_WORKSPACE_SEARCH_ENTRIES } from './floating-workspace-search'
 import { GitPane, GIT_PANE_SEARCH_ENTRIES } from './GitPane'
 import { CommitMessageAiPane } from './CommitMessageAiPane'
 import { COMMIT_MESSAGE_AI_PANE_SEARCH_ENTRIES } from './commit-message-ai-search'
@@ -62,6 +66,8 @@ import { StatsPane, STATS_PANE_SEARCH_ENTRIES } from '../stats/StatsPane'
 import { IntegrationsPane, INTEGRATIONS_PANE_SEARCH_ENTRIES } from './IntegrationsPane'
 import { TasksPane } from './TasksPane'
 import { TASKS_PANE_SEARCH_ENTRIES } from './tasks-search'
+import { QuickCommandsPane } from './QuickCommandsPane'
+import { QUICK_COMMANDS_PANE_SEARCH_ENTRIES } from './quick-commands-search'
 import {
   DeveloperPermissionsPane,
   DEVELOPER_PERMISSIONS_PANE_SEARCH_ENTRIES
@@ -79,6 +85,9 @@ import { SettingsSidebar } from './SettingsSidebar'
 import { ActiveSettingsSectionProvider, SettingsSection } from './SettingsSection'
 import { matchesSettingsSearch, type SettingsSearchEntry } from './settings-search'
 import { checkRuntimeHooks } from '@/runtime/runtime-hooks-client'
+import { useWindowsTerminalCapabilities } from '@/lib/windows-terminal-capabilities'
+import { getShortcutPlatform } from '@/lib/shortcut-platform'
+import { keybindingMatchesAction } from '../../../../shared/keybindings'
 import {
   deriveNeededRepoIds,
   deriveNeededSectionIds,
@@ -95,7 +104,9 @@ type SettingsNavTarget =
   | 'tasks'
   | 'appearance'
   | 'input'
+  | 'floating-workspace'
   | 'terminal'
+  | 'quick-commands'
   | 'notifications'
   | 'computer-use'
   | 'developer-permissions'
@@ -104,6 +115,7 @@ type SettingsNavTarget =
   | 'shortcuts'
   | 'stats'
   | 'ssh'
+  | 'privacy'
   | 'experimental'
   | 'agents'
   | 'orchestration'
@@ -208,9 +220,11 @@ function isWebClientLocation(): boolean {
 
 function Settings(): React.JSX.Element {
   const settings = useAppStore((s) => s.settings)
+  const keybindings = useAppStore((s) => s.keybindings)
   const updateSettings = useAppStore((s) => s.updateSettings)
   const switchRuntimeEnvironment = useAppStore((s) => s.switchRuntimeEnvironment)
   const fetchSettings = useAppStore((s) => s.fetchSettings)
+  const fetchKeybindings = useAppStore((s) => s.fetchKeybindings)
   const closeSettingsPage = useAppStore((s) => s.closeSettingsPage)
   const repos = useAppStore((s) => s.repos)
   const updateRepo = useAppStore((s) => s.updateRepo)
@@ -244,8 +258,6 @@ function Settings(): React.JSX.Element {
   // the import trigger as a headerAction. The modal itself still lives inside
   // TerminalPane, driven by this shared state.
   const ghostty = useGhosttyImport(updateSettings, settings)
-  const [wslAvailable, setWslAvailable] = useState(false)
-  const [pwshAvailable, setPwshAvailable] = useState(false)
   const [fontSuggestions, setFontSuggestions] = useState<string[]>(
     Array.from(new Set([DEFAULT_APP_FONT_FAMILY, ...getFallbackTerminalFonts()]))
   )
@@ -265,7 +277,6 @@ function Settings(): React.JSX.Element {
   const contentScrollRef = useRef<HTMLDivElement | null>(null)
   const searchInputRef = useRef<HTMLInputElement | null>(null)
   const terminalFontsLoadedRef = useRef(false)
-  const terminalCapabilitiesLoadedRef = useRef(false)
   const pendingNavSectionRef = useRef<string | null>(null)
   const pendingScrollTargetRef = useRef<string | null>(null)
   const repoHooksRequestSeqRef = useRef(0)
@@ -297,7 +308,8 @@ function Settings(): React.JSX.Element {
 
   useEffect(() => {
     fetchSettings()
-  }, [fetchSettings])
+    fetchKeybindings()
+  }, [fetchKeybindings, fetchSettings])
 
   const runtimeTargetIdentity = getRuntimeTargetIdentity(settings)
 
@@ -357,13 +369,10 @@ function Settings(): React.JSX.Element {
 
   useEffect(() => {
     const handleFindShortcut = (event: KeyboardEvent): void => {
-      if (event.defaultPrevented || event.altKey || event.shiftKey) {
+      if (event.defaultPrevented) {
         return
       }
-      // Why: Cmd on Mac, Ctrl elsewhere — matches the rest of the app's
-      // mod-key convention (see App.tsx) and aligns with platform Find norms.
-      const mod = isMac ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey
-      if (!mod || event.key.toLowerCase() !== 'f') {
+      if (!keybindingMatchesAction('settings.search', event, getShortcutPlatform(), keybindings)) {
         return
       }
       const input = searchInputRef.current
@@ -377,7 +386,7 @@ function Settings(): React.JSX.Element {
 
     document.addEventListener('keydown', handleFindShortcut)
     return () => document.removeEventListener('keydown', handleFindShortcut)
-  }, [isMac])
+  }, [keybindings])
 
   useEffect(
     () => () => {
@@ -489,6 +498,14 @@ function Settings(): React.JSX.Element {
         group: 'workflows'
       },
       {
+        id: 'floating-workspace',
+        title: 'Floating Workspace',
+        description: 'Global terminal, browser, and markdown tabs.',
+        icon: PanelsTopLeft,
+        searchEntries: FLOATING_WORKSPACE_SEARCH_ENTRIES,
+        group: 'workflows'
+      },
+      {
         id: 'appearance',
         title: 'Appearance',
         description: 'Theme, zoom, app font, sidebars, and status bar.',
@@ -507,9 +524,17 @@ function Settings(): React.JSX.Element {
       {
         id: 'terminal',
         title: 'Terminal',
-        description: 'Shells, terminal appearance, quick commands, and pane behavior.',
+        description: 'Shells, terminal appearance, and pane behavior.',
         icon: SquareTerminal,
         searchEntries: terminalPaneSearchEntries,
+        group: 'workflows'
+      },
+      {
+        id: 'quick-commands',
+        title: 'Quick Commands',
+        description: 'Saved terminal commands, scoped globally or per project.',
+        icon: Play,
+        searchEntries: QUICK_COMMANDS_PANE_SEARCH_ENTRIES,
         group: 'workflows'
       },
       ...(showDesktopOnlySettings
@@ -567,8 +592,7 @@ function Settings(): React.JSX.Element {
               description: 'Control terminals and agents from your phone.',
               icon: Smartphone,
               searchEntries: MOBILE_SETTINGS_PANE_SEARCH_ENTRIES,
-              group: 'remote',
-              badge: 'Beta'
+              group: 'remote'
             },
             {
               id: 'computer-use' as const,
@@ -658,7 +682,10 @@ function Settings(): React.JSX.Element {
       navSections.filter((section) =>
         section.id === 'git' && hasUnsavedCommitPromptChanges
           ? true
-          : matchesSettingsSearch(settingsSearchQuery, section.searchEntries)
+          : matchesSettingsSearch(settingsSearchQuery, [
+              { title: section.title, description: section.description },
+              ...section.searchEntries
+            ])
       ),
     [hasUnsavedCommitPromptChanges, navSections, settingsSearchQuery]
   )
@@ -677,6 +704,9 @@ function Settings(): React.JSX.Element {
         visibleSectionIds
       }),
     [activeSectionId, mountedSectionIds, navSections, settingsSearchQuery, visibleSectionIds]
+  )
+  const windowsTerminalCapabilities = useWindowsTerminalCapabilities(
+    isWindows && neededSectionIds.has('terminal')
   )
 
   useEffect(() => {
@@ -721,34 +751,6 @@ function Settings(): React.JSX.Element {
       stale = true
     }
   }, [neededSectionIds])
-
-  useEffect(() => {
-    if (!isWindows) {
-      setWslAvailable(false)
-      setPwshAvailable(false)
-      terminalCapabilitiesLoadedRef.current = true
-      return
-    }
-    if (!neededSectionIds.has('terminal') || terminalCapabilitiesLoadedRef.current) {
-      return
-    }
-
-    let stale = false
-    terminalCapabilitiesLoadedRef.current = true
-    void window.api.wsl.isAvailable().then((available) => {
-      if (!stale) {
-        setWslAvailable(available)
-      }
-    })
-    void window.api.pwsh.isAvailable().then((available) => {
-      if (!stale) {
-        setPwshAvailable(available)
-      }
-    })
-    return () => {
-      stale = true
-    }
-  }, [isWindows, neededSectionIds])
 
   const neededRepoIds = useMemo(
     () => deriveNeededRepoIds(repos, neededSectionIds),
@@ -915,9 +917,20 @@ function Settings(): React.JSX.Element {
       if (container) {
         container.scrollTo({ top: 0 })
       }
+      if (settingsSearchQuery.trim() !== '') {
+        // Why: sidebar search is a discovery tool. Once a user selects a
+        // section from the filtered results, show the actual pane instead of
+        // keeping another matching pane rendered by the stale query.
+        setSettingsSearchQuery('')
+      }
       setActiveSectionId(sectionId)
     },
-    [activeSectionId, confirmDiscardCommitPromptChanges]
+    [
+      activeSectionId,
+      confirmDiscardCommitPromptChanges,
+      setSettingsSearchQuery,
+      settingsSearchQuery
+    ]
   )
 
   const openComputerUseFromBrowser = useCallback(async () => {
@@ -972,7 +985,7 @@ function Settings(): React.JSX.Element {
 
       <div className="flex min-h-0 flex-1 flex-col">
         <div ref={contentScrollRef} className="min-h-0 flex-1 overflow-y-auto scrollbar-sleek">
-          <div className="flex w-full max-w-5xl flex-col gap-10 px-8 py-10">
+          <div className="flex w-full max-w-4xl flex-col gap-10 px-8 pb-24 pt-10">
             {visibleNavSections.length === 0 ? (
               <div className="flex min-h-[24rem] items-center justify-center rounded-2xl border border-dashed border-border/60 bg-card/30 text-sm text-muted-foreground">
                 No settings found for &quot;{settingsSearchQuery.trim()}&quot;
@@ -1061,9 +1074,20 @@ function Settings(): React.JSX.Element {
                 </SettingsSection>
 
                 <SettingsSection
+                  id="floating-workspace"
+                  title="Floating Workspace"
+                  description="Global terminal, browser, and markdown tabs."
+                  searchEntries={FLOATING_WORKSPACE_SEARCH_ENTRIES}
+                >
+                  {isSectionMounted('floating-workspace') ? (
+                    <FloatingWorkspacePane settings={settings} updateSettings={updateSettings} />
+                  ) : null}
+                </SettingsSection>
+
+                <SettingsSection
                   id="terminal"
                   title="Terminal"
-                  description="Shells, terminal appearance, quick commands, and pane behavior."
+                  description="Shells, terminal appearance, and pane behavior."
                   searchEntries={terminalPaneSearchEntries}
                   headerAction={
                     <Button
@@ -1088,9 +1112,20 @@ function Settings(): React.JSX.Element {
                       scrollbackMode={scrollbackMode}
                       setScrollbackMode={setScrollbackMode}
                       ghostty={ghostty}
-                      wslAvailable={wslAvailable}
-                      pwshAvailable={pwshAvailable}
+                      wslAvailable={windowsTerminalCapabilities.wslAvailable}
+                      pwshAvailable={windowsTerminalCapabilities.pwshAvailable}
                     />
+                  ) : null}
+                </SettingsSection>
+
+                <SettingsSection
+                  id="quick-commands"
+                  title="Quick Commands"
+                  description="Saved terminal commands, scoped globally or per project."
+                  searchEntries={QUICK_COMMANDS_PANE_SEARCH_ENTRIES}
+                >
+                  {isSectionMounted('quick-commands') ? (
+                    <QuickCommandsPane settings={settings} updateSettings={updateSettings} />
                   ) : null}
                 </SettingsSection>
 
@@ -1316,7 +1351,7 @@ function Settings(): React.JSX.Element {
                     <SettingsSection
                       key={repo.id}
                       id={repoSectionId}
-                      title={repo.displayName}
+                      title={`Project Settings > ${repo.displayName}`}
                       description={repo.path}
                       searchEntries={getRepositoryPaneSearchEntries(repo)}
                     >
@@ -1325,6 +1360,7 @@ function Settings(): React.JSX.Element {
                           repo={repo}
                           yamlHooks={repoHooksState?.hooks ?? null}
                           hasHooksFile={repoHooksState?.hasHooks ?? false}
+                          hooksInspectionReady={Boolean(repoHooksState)}
                           mayNeedUpdate={repoHooksState?.mayNeedUpdate ?? false}
                           updateRepo={updateRepo}
                           removeRepo={removeRepo}

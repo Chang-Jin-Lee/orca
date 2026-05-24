@@ -1,7 +1,7 @@
 /* eslint-disable max-lines */
 import type { SshRemotePtyLease, SshTarget } from './ssh-types'
 import type { Automation, AutomationRun } from './automations-types'
-import type { WorkspaceSource } from './telemetry-events'
+import type { WorkspaceSource } from './workspace-source'
 import type { GitHubProjectSettings } from './github-project-types'
 import type {
   AgentStatusState,
@@ -14,10 +14,12 @@ import type { GitLabProjectSettings } from './gitlab-types'
 import type { TaskProvider } from './task-providers'
 import type { FeatureTipId } from './feature-tips'
 import type { GitBranchChangeStatus } from './git-status-types'
+import type { KeybindingOverrides, TerminalShortcutPolicy } from './keybindings'
+import type { RepoIcon } from './repo-icon'
 
 // Re-exported for backward compat with renderer call sites that import
 // `WorkspaceCreateTelemetrySource` from '../../../shared/types'.
-export type { WorkspaceSource as WorkspaceCreateTelemetrySource } from './telemetry-events'
+export type { WorkspaceSource as WorkspaceCreateTelemetrySource } from './workspace-source'
 export type { TaskProvider } from './task-providers'
 export type {
   GitBranchChangeStatus,
@@ -67,12 +69,14 @@ export type RepoKind = 'git' | 'folder'
  * - `'origin'`: explicit origin. Same precedence.
  */
 export type IssueSourcePreference = 'upstream' | 'origin' | 'auto'
+export type ExternalWorktreeVisibility = 'hide' | 'show'
 
 export type Repo = {
   id: string
   path: string
   displayName: string
   badgeColor: string
+  repoIcon?: RepoIcon | null
   addedAt: number
   kind?: RepoKind
   gitUsername?: string
@@ -84,6 +88,12 @@ export type Repo = {
    *  identically to `'auto'`; writers leave it undefined on creation so
    *  existing persisted records stay forward-compatible. */
   issueSourcePreference?: IssueSourcePreference
+  /** Controls whether worktrees Orca did not create appear in the sidebar. */
+  externalWorktreeVisibility?: ExternalWorktreeVisibility
+  /** True when the repo predates hidden-by-default external worktrees. */
+  externalWorktreeVisibilityLegacy?: boolean
+  /** One-shot guard for the optional existing-user visibility prompt. */
+  externalWorktreeVisibilityPromptDismissedAt?: number
   /** Paths (relative to the primary checkout) that should be symlinked into
    *  newly created worktrees of this repo. Consumed only when the global
    *  `experimentalWorktreeSymlinks` flag is on — the per-repo list is the
@@ -167,6 +177,8 @@ export type Worktree = {
   isUnread: boolean
   isPinned: boolean
   sortOrder: number
+  /** User-authored sidebar ordering. Higher values render earlier in Manual sort. */
+  manualOrder?: number
   lastActivityAt: number
   /** Set once when Orca creates the worktree. Absent for worktrees discovered
    *  on disk or persisted before this field existed. Used by the sidebar to
@@ -194,6 +206,8 @@ export type GitPushTarget = {
   remoteName: string
   branchName: string
   remoteUrl?: string
+  /** True when Orca added this remote while preparing a fork-PR worktree. */
+  remoteCreated?: boolean
 }
 
 // ─── Worktree metadata (persisted user-authored fields only) ─────────
@@ -213,6 +227,8 @@ export type WorktreeMeta = {
   isUnread: boolean
   isPinned: boolean
   sortOrder: number
+  /** User-authored sidebar ordering. Higher values render earlier in Manual sort. */
+  manualOrder?: number
   lastActivityAt: number
   /** See {@link Worktree.createdAt}. Persisted to orca-data.json. */
   createdAt?: number
@@ -223,11 +239,35 @@ export type WorktreeMeta = {
   sparsePresetId?: string
   /** Intended create base for stale-base probes. Persisted metadata, not UI drift state. */
   baseRef?: string
+  /** True when Orca checked out a pre-existing local branch that delete must not prune. */
+  preserveBranchOnDelete?: boolean
   /** See {@link Worktree.pushTarget}. Persisted so refreshed worktree lists keep the target. */
   pushTarget?: GitPushTarget
+  /** Explicit marker stamped when Orca creates the worktree. */
+  orcaCreatedAt?: number
+  orcaCreationSource?: 'desktop' | 'runtime' | 'cli' | 'ssh'
+  /** Workspace layout active when Orca created the worktree. */
+  orcaCreationWorkspaceLayout?: OrcaWorkspaceLayout
   /** User-assigned workspace board status for manual sidebar organization. */
   workspaceStatus?: WorkspaceStatus
   diffComments?: DiffComment[]
+}
+
+export type WorktreeOwnership = 'orca-managed' | 'external' | 'unknown-legacy'
+
+export type DetectedWorktreeListSource = 'git' | 'metadata-fallback' | 'session-fallback'
+
+export type DetectedWorktree = Worktree & {
+  ownership: WorktreeOwnership
+  selectedCheckout: boolean
+  visible: boolean
+}
+
+export type DetectedWorktreeListResult = {
+  repoId: string
+  authoritative: boolean
+  source: DetectedWorktreeListSource
+  worktrees: DetectedWorktree[]
 }
 
 export type WorktreeLineageOrigin = 'orchestration' | 'cli' | 'manual'
@@ -521,7 +561,7 @@ export type PersistedOpenFile = {
   worktreeId: string
   language: string
   isPreview?: boolean
-  runtimeEnvironmentId?: string
+  runtimeEnvironmentId?: string | null
 }
 
 export type WorkspaceSessionState = {
@@ -635,10 +675,13 @@ export type GitHubPRRefreshAlias = {
   repoPath: string
   branch: string
   worktreeId?: string
+  connectionId?: string | null
+  linkedPRNumber?: number | null
+  fallbackPRNumber?: number | null
+  fallbackPRSource?: 'explicit' | 'pr-cache' | 'hosted-review' | null
 }
 
 export type GitHubPRRefreshCandidate = GitHubPRRefreshAlias & {
-  linkedPRNumber?: number | null
   repoKind: RepoKind
   repoId: string
   isBare?: boolean
@@ -664,6 +707,7 @@ type GitHubPRRefreshEventBase = {
   sequence: number
   reason: GitHubPRRefreshReason
   aliases: GitHubPRRefreshAlias[]
+  requestStartedAt?: number
 }
 
 export type GitHubPRRefreshEvent =
@@ -1242,8 +1286,11 @@ export type CreateWorktreeArgs = {
   linkedIssue?: number
   linkedPR?: number
   linkedLinearIssue?: string
+  linkedGitLabIssue?: number
+  linkedGitLabMR?: number
   pushTarget?: GitPushTarget
   workspaceStatus?: WorkspaceStatus
+  manualOrder?: number
   /** Agent selected in the create surface. Omitted for blank-shell creates. */
   createdWithAgent?: TuiAgent
   /** Telemetry-only: which UI surface initiated this create. Threaded from
@@ -1338,6 +1385,18 @@ export type NotificationSettings = {
   agentTaskComplete: boolean
   terminalBell: boolean
   suppressWhenFocused: boolean
+  customSoundId:
+    | 'system'
+    | 'two-tone'
+    | 'bong'
+    | 'thump'
+    | 'blip'
+    | 'sonar'
+    | 'blop'
+    | 'ding'
+    | 'clack'
+    | 'beep'
+    | 'custom'
   customSoundPath: string | null
   customSoundVolume: number
 }
@@ -1496,11 +1555,13 @@ export type SourceControlViewMode = 'list' | 'tree'
 
 export type FloatingTerminalCwdRequest = {
   path?: string
+  requireTrusted?: boolean
 }
 
 export type GlobalSettings = {
   workspaceDir: string
   nestWorkspaces: boolean
+  workspaceDirHistory?: OrcaWorkspaceLayout[]
   refreshLocalBaseRefOnWorktreeCreate: boolean
   branchPrefix: 'git-username' | 'custom' | 'none'
   branchPrefixCustom: string
@@ -1512,10 +1573,16 @@ export type GlobalSettings = {
   editorMinimapEnabled: boolean
   /** Whether local markdown review note controls and the review panel are shown. */
   markdownReviewToolsEnabled: boolean
-  /** Why: mirrors X11 primary-selection muscle memory without mutating the
-   *  normal system clipboard; Linux enables it by default, other platforms
-   *  leave middle-click semantics unchanged unless the user opts in. */
+  /** Why: mirrors terminal selection-paste muscle memory without mutating the
+   *  normal system clipboard; Linux and macOS enable it by default, Windows
+   *  leaves middle-click semantics unchanged unless the user opts in. */
   primarySelectionMiddleClickPaste?: boolean
+  /** One-shot migration guard for turning the Linux default on for profiles
+   *  that persisted the earlier off-by-default value. */
+  primarySelectionMiddleClickPasteDefaultedForLinux?: boolean
+  /** One-shot migration guard for widening the terminal-style default to
+   *  Linux/macOS while preserving later explicit opt-outs. */
+  primarySelectionMiddleClickPasteDefaultedForTerminalDefaults?: boolean
   terminalFontSize: number
   terminalFontFamily: string
   terminalFontWeight: number
@@ -1601,22 +1668,37 @@ export type GlobalSettings = {
    *  left sidebar free of its button entirely. Hiding the button here also
    *  removes it from keyboard navigation. */
   showTasksButton: boolean
+  /** Why: Orca Mobile remains reachable from the toolbox; this only controls
+   *  whether the top-level sidebar shortcut is shown. */
+  showMobileButton?: boolean
   /** Controls how Ctrl+Tab chooses the next visible tab. Optional for
    *  profiles saved before this setting existed; readers default to MRU. */
   ctrlTabOrderMode?: CtrlTabOrderMode
-  /** Why: Floating Terminal is the default global shell surface so users can
-   *  reach a terminal outside repo/worktree context immediately. */
+  /** Why: Orca-first preserves fast workspace/app control from agent TUIs.
+   *  Terminal-first is opt-in for users who want shell/TUI bindings to win. */
+  terminalShortcutPolicy?: TerminalShortcutPolicy
+  /** Why: Floating Workspace is the default global surface so users can
+   *  reach terminal, browser, and markdown tabs outside repo/worktree context. */
   floatingTerminalEnabled: boolean
   /** One-shot migration flag for the default-on rollout. Before this field
-   *  landed, the floating terminal defaulted off and many profiles persisted
+   *  landed, the floating workspace defaulted off and many profiles persisted
    *  that inherited false. Once migrated, an explicit off choice sticks. */
   floatingTerminalDefaultedForAllUsers?: boolean
-  /** Where new Floating Terminal tabs start. Defaults to '~' so the visible
-   *  setting matches the shell-oriented directory users expect. */
+  /** Where new Floating Workspace terminal tabs start. Empty or '~' means
+   *  the user's home directory; markdown notes use Orca's app-owned
+   *  floating workspace under Electron userData. */
   floatingTerminalCwd: string
-  /** Where the Floating Terminal toggle is shown. Defaults to the floating
+  /** Picker-approved Floating Workspace directories that may be reauthorized
+   *  across restarts. Renderer-provided text alone must not populate this. */
+  floatingTerminalTrustedCwds?: string[]
+  /** One-shot migration marker for legacy floating workspace cwd trust grants. */
+  floatingTerminalCwdMigratedToAppWorkspace?: boolean
+  /** Where the Floating Workspace toggle is shown. Defaults to the floating
    *  button for discoverability. */
   floatingTerminalTriggerLocation: FloatingTerminalTriggerLocation
+  /** Legacy pre-file-backed keyboard shortcut overrides. New writes go to
+   *  ~/.orca/keybindings.json; main migrates this once when present. */
+  keybindings?: KeybindingOverrides
   diffDefaultView: 'inline' | 'side-by-side'
   combinedDiffFileTreeVisibleByDefault: boolean
   notifications: NotificationSettings
@@ -1790,6 +1872,11 @@ export type GlobalSettings = {
   voice?: VoiceSettings
 }
 
+export type OrcaWorkspaceLayout = {
+  path: string
+  nestWorkspaces: boolean
+}
+
 export type CommitMessageAiModelCapability = {
   id: string
   label: string
@@ -1841,6 +1928,8 @@ export type NotificationEventSource = 'agent-task-complete' | 'terminal-bell' | 
 
 export type NotificationDispatchRequest = {
   source: NotificationEventSource
+  /** Why: useful for fast native failures, but macOS can still drop notifications after 'show'. */
+  requireDisplayConfirmation?: boolean
   worktreeId?: string
   /** Stable `${tabId}:${leafId}` terminal pane key for click-to-focus routing. */
   paneKey?: string
@@ -1861,7 +1950,13 @@ export type NotificationDispatchRequest = {
 export type NotificationDispatchResult = {
   delivered: boolean
   /** Present when delivered is false. Tells the caller why delivery was skipped. */
-  reason?: 'disabled' | 'source-disabled' | 'suppressed-focus' | 'cooldown' | 'not-supported'
+  reason?:
+    | 'disabled'
+    | 'source-disabled'
+    | 'suppressed-focus'
+    | 'cooldown'
+    | 'not-supported'
+    | 'not-displayed'
 }
 
 export type NotificationSoundResult = {
@@ -1914,7 +2009,7 @@ export type OnboardingChecklistState = {
 export type OnboardingState = {
   closedAt: number | null
   outcome: OnboardingOutcome | null
-  // Sentinel `-1` = not started; `1..4` = highest wizard step the user
+  // Sentinel `-1` = not started; `1..5` = highest wizard step the user
   // finished. Kept as `number` (not a literal union) because callers clamp
   // via `Math.max`/`Math.min` against arbitrary numerics.
   lastCompletedStep: number
@@ -1932,9 +2027,13 @@ export type WorktreeCardProperty =
   | 'unread'
   // Legacy persisted preference. CI status is now represented by linked PR metadata.
   | 'ci'
+  // GitHub issue metadata shown on workspace cards.
   | 'issue'
+  // Linear issue metadata shown on workspace cards.
+  | 'linear-issue'
   | 'pr'
   | 'comment'
+  | 'ports'
   // Why: inline list of agent activity rendered directly inside each
   // workspace card when the experimental agent-activity feature is on. On by
   // default (see DEFAULT_WORKTREE_CARD_PROPERTIES in shared/constants.ts) —
@@ -1943,13 +2042,21 @@ export type WorktreeCardProperty =
   // view options.
   | 'inline-agents'
 
-export type StatusBarItem = 'claude' | 'codex' | 'gemini' | 'opencode-go' | 'ssh' | 'resource-usage'
+export type StatusBarItem =
+  | 'claude'
+  | 'codex'
+  | 'gemini'
+  | 'opencode-go'
+  | 'ssh'
+  | 'resource-usage'
+  | 'ports'
 export type FloatingTerminalTriggerLocation = 'floating-button' | 'status-bar'
 
 export type TaskResumeState = {
   githubMode?: 'items' | 'project'
   githubItemsPreset?: TaskViewPresetId | null
   githubItemsQuery?: string
+  githubProjectHiddenFieldIdsByView?: Record<string, string[]>
   linearPreset?: 'assigned' | 'created' | 'all' | 'completed'
   linearQuery?: string
 }
@@ -1960,13 +2067,19 @@ export type PersistedUIState = {
   sidebarWidth: number
   rightSidebarWidth: number
   groupBy: 'none' | 'workspace-status' | 'repo' | 'pr-status'
-  sortBy: 'name' | 'smart' | 'recent' | 'repo'
+  sortBy: 'name' | 'smart' | 'recent' | 'repo' | 'manual'
+  /** Deprecated; the Active only filter is retired and ignored on hydration. */
   showActiveOnly: boolean
+  /** Hide sleeping/inactive workspaces from workspace navigation. Off by default. */
+  hideSleepingWorkspaces?: boolean
+  /** Deprecated legacy positive-form setting. Ignored on hydration. */
+  showSleepingWorkspaces?: boolean
+  /** Deprecated legacy name used by a short-lived build. Ignored on hydration. */
+  showInactiveWorkspaces?: boolean
   /** Hide the repo's original checked-out branch from workspace navigation
    *  (sidebar and Cmd+J jump palette). Folder-mode repos are unaffected —
    *  the predicate in visible-worktrees.ts excludes worktrees with an empty
-   *  branch. Lives alongside showActiveOnly because both are user-facing
-   *  sidebar filters reached through the same dropdown. */
+   *  branch. */
   hideDefaultBranchWorkspace: boolean
   filterRepoIds: string[]
   collapsedGroups: string[]
@@ -1988,6 +2101,8 @@ export type PersistedUIState = {
   /** One-shot migration flag for the old default blue/violet/emerald status
    *  visuals. Once stamped, valid user-authored colors/icons are preserved. */
   _workspaceStatusesDefaultVisualsMigrated?: boolean
+  /** One-shot migration flag for adding the default-on Ports status item. */
+  _portsStatusBarDefaultAdded?: boolean
   statusBarItems: StatusBarItem[]
   statusBarVisible: boolean
   dismissedUpdateVersion: string | null
@@ -2043,6 +2158,10 @@ export type PersistedUIState = {
    *  stamped on every prior load and so is permanently dirty for the
    *  prior-RC opt-out cohort the widened migration is meant to reach. */
   _inlineAgentsDefaultedForAllUsers?: boolean
+  /** One-shot migration flag for card properties that were split out after
+   *  the original metadata toggles shipped. Set once so later deliberate
+   *  unchecks of Linear issue and Ports stick across restarts. */
+  _expandedWorktreeCardPropertiesDefaulted?: boolean
   /** Snapshot of totalAgentsSpawned captured the first time we see the current
    *  app version. Why: the nag threshold counts agents spawned *since the
    *  user's last update* so a fresh install or new release does not trigger
@@ -2060,6 +2179,7 @@ export type PersistedUIState = {
    *  suppress the nag — no further thresholds, no notifications. */
   starNagCompleted?: boolean
   trustedOrcaHooks?: PersistedTrustedOrcaHooks
+  setupScriptPromptDismissedRepoIds?: string[]
   /** Whether the experimental pet overlay is currently visible. Separate
    *  from the experimentalPet settings flag so "Hide pet" from the
    *  status-bar menu is a reversible dismiss (re-show without re-enabling the

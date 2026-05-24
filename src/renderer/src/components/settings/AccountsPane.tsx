@@ -28,6 +28,7 @@ import {
 import { SearchableSetting } from './SearchableSetting'
 import { matchesSettingsSearch } from './settings-search'
 import { markLiveCodexSessionsForRestart } from '@/lib/codex-session-restart'
+import { getLocalPreflightContext } from '@/lib/local-preflight-context'
 import {
   Dialog,
   DialogContent,
@@ -111,6 +112,8 @@ function getClaudeAccountErrorDescription(error: unknown): string {
 export function AccountsPane({ settings, updateSettings }: AccountsPaneProps): React.JSX.Element {
   const searchQuery = useAppStore((s) => s.settingsSearchQuery)
   const fetchSettings = useAppStore((s) => s.fetchSettings)
+  const localPreflightContext = useAppStore(getLocalPreflightContext)
+  const activeWslDistro = localPreflightContext?.wslDistro?.trim() || null
 
   const [codexAccounts, setCodexAccounts] = useState<CodexRateLimitAccountsState>({
     accounts: [],
@@ -261,7 +264,7 @@ export function AccountsPane({ settings, updateSettings }: AccountsPaneProps): R
           title="Claude Accounts"
           description="Optional account switcher for the shared Claude auth files."
           keywords={['claude', 'account', 'rate limit', 'status bar', 'quota']}
-          className="space-y-3 px-1 py-2"
+          className="space-y-3 py-2"
         >
           <div className="flex items-center justify-between gap-3">
             <div className="space-y-0.5">
@@ -422,6 +425,12 @@ export function AccountsPane({ settings, updateSettings }: AccountsPaneProps): R
             Optional. Orca can use your normal Codex login; add accounts only if you want quick
             switching in Orca.
           </p>
+          {activeWslDistro ? (
+            <p className="text-xs text-muted-foreground">
+              WSL terminals use the Codex login inside {activeWslDistro}. Managed Codex account
+              switching applies to host terminals.
+            </p>
+          ) : null}
           <p className="text-xs text-muted-foreground">
             Each account keeps its own local sign-in context in Orca. Account auth stays on this
             device.
@@ -441,7 +450,7 @@ export function AccountsPane({ settings, updateSettings }: AccountsPaneProps): R
             entry.description ?? '',
             ...(entry.keywords ?? [])
           ])}
-          className="space-y-3 px-1 py-2"
+          className="space-y-3 py-2"
         >
           {/* Why: Settings deep-links can target this subsection directly from
           the status-bar account switcher. Keeping a stable DOM anchor here
@@ -451,7 +460,9 @@ export function AccountsPane({ settings, updateSettings }: AccountsPaneProps): R
             <div className="space-y-0.5">
               <Label>Accounts</Label>
               <p className="text-xs text-muted-foreground">
-                Add a Codex account to use it in Orca.
+                {activeWslDistro
+                  ? `Use codex login in ${activeWslDistro} to change the WSL Codex account.`
+                  : 'Add a Codex account to use it in Orca.'}
               </p>
             </div>
             <Button
@@ -474,8 +485,9 @@ export function AccountsPane({ settings, updateSettings }: AccountsPaneProps): R
 
           {codexAccounts.accounts.length === 0 ? (
             <div className="rounded-md border border-dashed border-border/70 px-3 py-4 text-xs text-muted-foreground">
-              No managed Codex accounts yet. Orca will use your system default Codex login until you
-              add one here.
+              {activeWslDistro
+                ? `No managed host Codex accounts yet. WSL terminals will use the Codex login in ${activeWslDistro}.`
+                : 'No managed Codex accounts yet. Orca will use your system default Codex login until you add one here.'}
             </div>
           ) : (
             <div className="space-y-2">
@@ -632,7 +644,7 @@ export function AccountsPane({ settings, updateSettings }: AccountsPaneProps): R
             'rate limit',
             'status bar'
           ]}
-          className="flex items-center justify-between gap-4 px-1 py-2"
+          className="flex items-center justify-between gap-4 py-2"
         >
           <div className="space-y-0.5">
             <Label>Use Gemini CLI credentials (experimental)</Label>

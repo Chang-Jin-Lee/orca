@@ -17,6 +17,7 @@ import { getLinkedWorkItemSuggestedName } from '@/lib/new-workspace'
 import type { LinkedWorkItemSummary } from '@/lib/new-workspace'
 import { sortWorktreesSmart } from '@/components/sidebar/smart-sort'
 import { isDefaultBranchWorkspace } from '@/components/sidebar/visible-worktrees'
+import { isInactiveWorkspace } from '@/lib/worktree-activity-state'
 import { orderEmptyQueryWorktrees } from '@/lib/order-empty-query-worktrees'
 import StatusIndicator from '@/components/sidebar/StatusIndicator'
 import { cn } from '@/lib/utils'
@@ -29,6 +30,13 @@ import {
   type PaletteSearchResult
 } from '@/lib/worktree-palette-search'
 import {
+  CREATE_WORKTREE_ITEM_ID,
+  createWorktreePaletteRequestGuard,
+  getNextWorktreePaletteSelection,
+  getWorktreePaletteCreateActionState
+} from '@/lib/worktree-palette-create-action'
+import { getWorkspacePortsByWorktreeId } from '@/lib/workspace-port-groups'
+import {
   isBlankBrowserUrl,
   searchBrowserPages,
   type BrowserPaletteSearchResult,
@@ -38,6 +46,7 @@ import {
   ORCA_BROWSER_FOCUS_REQUEST_EVENT,
   queueBrowserFocusRequest
 } from '@/components/browser-pane/browser-focus'
+import { RepoBadgeMark } from '@/components/repo/RepoBadgeLabel'
 import type { BrowserPage, BrowserWorkspace, Worktree } from '../../../shared/types'
 import { isGitRepoKind } from '../../../shared/repo-kind'
 
@@ -168,7 +177,9 @@ export default function WorktreeJumpPalette(): React.JSX.Element | null {
   const browserPagesByWorkspace = useAppStore((s) => s.browserPagesByWorkspace)
   const sshConnectionStates = useAppStore((s) => s.sshConnectionStates)
   const hideDefaultBranchWorkspace = useAppStore((s) => s.hideDefaultBranchWorkspace)
+  const showSleepingWorkspaces = useAppStore((s) => s.showSleepingWorkspaces)
   const lastVisitedAtByWorktreeId = useAppStore((s) => s.lastVisitedAtByWorktreeId)
+  const workspacePortScan = useAppStore((s) => s.workspacePortScan?.result ?? null)
 
   const [query, setQuery] = useState('')
   const deferredQuery = useDeferredValue(query)
@@ -181,15 +192,17 @@ export default function WorktreeJumpPalette(): React.JSX.Element | null {
   const skipRestoreFocusRef = useRef(false)
   const prevQueryRef = useRef('')
   const listRef = useRef<HTMLDivElement>(null)
+  const createLookupGuard = useMemo(() => createWorktreePaletteRequestGuard(), [])
+  const preserveCreateLookupOnCloseRef = useRef(false)
 
   const repoMap = useMemo(() => new Map(repos.map((r) => [r.id, r])), [repos])
-  const canCreateWorktree = useMemo(() => repos.some((repo) => isGitRepoKind(repo)), [repos])
+  const canCreateWorktree = repos.length > 0
 
   const hasQuery = deferredQuery.trim().length > 0
 
-  // Why: keep the jump palette aligned with the sidebar. If the user
-  // opted to hide the default-branch workspace, surfacing it here via
-  // Cmd+J would reintroduce the entry they asked to remove.
+  // Why: keep the jump palette aligned with the sidebar. Surfacing hidden
+  // default-branch or sleeping workspaces here would reintroduce entries the
+  // user asked the workspace navigation surfaces to omit.
   // Drift warning: this check must stay in lockstep with the sidebar's
   // filter in computeVisibleWorktreeIds (visible-worktrees.ts). Both
   // surfaces share isDefaultBranchWorkspace so the predicate can't drift,
@@ -205,9 +218,22 @@ export default function WorktreeJumpPalette(): React.JSX.Element | null {
         if (hideDefaultBranchWorkspace && isDefaultBranchWorkspace(worktree)) {
           return false
         }
+        if (
+          !showSleepingWorkspaces &&
+          isInactiveWorkspace(worktree.id, tabsByWorktree, ptyIdsByTabId, browserTabsByWorktree)
+        ) {
+          return false
+        }
         return true
       }),
-    [allWorktrees, hideDefaultBranchWorkspace]
+    [
+      allWorktrees,
+      browserTabsByWorktree,
+      hideDefaultBranchWorkspace,
+      ptyIdsByTabId,
+      showSleepingWorkspaces,
+      tabsByWorktree
+    ]
   )
 
   // Why: empty-query rows use focus-recency (lastVisitedAtByWorktreeId) with
@@ -302,8 +328,16 @@ export default function WorktreeJumpPalette(): React.JSX.Element | null {
   )
 
   const worktreeMatches = useMemo(
-    () => searchWorktrees(sortedWorktrees, deferredQuery.trim(), repoMap, prCache, issueCache),
-    [sortedWorktrees, deferredQuery, repoMap, prCache, issueCache]
+    () =>
+      searchWorktrees(
+        sortedWorktrees,
+        deferredQuery.trim(),
+        repoMap,
+        prCache,
+        issueCache,
+        getWorkspacePortsByWorktreeId(workspacePortScan)
+      ),
+    [sortedWorktrees, deferredQuery, repoMap, prCache, issueCache, workspacePortScan]
   )
 
   const browserPageEntries = useMemo<SearchableBrowserPage[]>(() => {
@@ -417,7 +451,7 @@ export default function WorktreeJumpPalette(): React.JSX.Element | null {
         entries.push({
           id: '__header_worktrees__',
           type: 'section-header',
-          label: hasQuery ? 'Worktrees' : 'Recent Worktrees'
+          label: hasQuery ? 'Workspaces' : 'Recent Workspaces'
         })
       }
       entries.push(...visibleWorktreeItems)
@@ -425,7 +459,7 @@ export default function WorktreeJumpPalette(): React.JSX.Element | null {
         entries.push({
           id: '__hint_worktree_cap__',
           type: 'hint',
-          label: `Type to see all ${worktreeItems.length} worktrees`
+          label: `Type to see all ${worktreeItems.length} workspaces`
         })
       }
     }
@@ -448,9 +482,17 @@ export default function WorktreeJumpPalette(): React.JSX.Element | null {
     [listEntries]
   )
 
-  const createWorktreeName = deferredQuery.trim()
-  const showCreateAction =
-    canCreateWorktree && createWorktreeName.length > 0 && worktreeItems.length === 0
+  const selectableItemIds = useMemo(() => selectableItems.map((item) => item.id), [selectableItems])
+
+  const { createWorktreeName, showCreateAction } = useMemo(
+    () =>
+      getWorktreePaletteCreateActionState({
+        canCreateWorktree,
+        query: deferredQuery,
+        selectableItemIds
+      }),
+    [canCreateWorktree, deferredQuery, selectableItemIds]
+  )
 
   const isLoading = repos.length > 0 && Object.keys(worktreesByRepo).length === 0
   // Why: empty-state / "has any worktrees?" uses the full visible list
@@ -462,6 +504,7 @@ export default function WorktreeJumpPalette(): React.JSX.Element | null {
 
   useEffect(() => {
     if (visible && !wasVisibleRef.current) {
+      createLookupGuard.invalidate()
       previousWorktreeIdRef.current = activeWorktreeId
       previousActiveTabTypeRef.current = activeTabType
       previousBrowserPageIdRef.current =
@@ -485,8 +528,25 @@ export default function WorktreeJumpPalette(): React.JSX.Element | null {
       setSelectedItemId('')
     }
 
+    if (!visible && wasVisibleRef.current) {
+      if (preserveCreateLookupOnCloseRef.current) {
+        // Why: create intentionally closes the palette before GH resolves;
+        // reopening still invalidates the pending lookup above.
+        preserveCreateLookupOnCloseRef.current = false
+      } else {
+        createLookupGuard.invalidate()
+      }
+    }
+
     wasVisibleRef.current = visible
-  }, [activeBrowserTabId, activeTabType, activeWorktreeId, browserTabsByWorktree, visible])
+  }, [
+    activeBrowserTabId,
+    activeTabType,
+    activeWorktreeId,
+    browserTabsByWorktree,
+    createLookupGuard,
+    visible
+  ])
 
   useEffect(() => {
     if (!visible) {
@@ -495,34 +555,22 @@ export default function WorktreeJumpPalette(): React.JSX.Element | null {
     const queryChanged = deferredQuery !== prevQueryRef.current
     prevQueryRef.current = deferredQuery
 
-    const firstSelectableId = showCreateAction ? '__create_worktree__' : null
-
+    const nextSelectedItemId = getNextWorktreePaletteSelection({
+      currentSelectedItemId: selectedItemId,
+      queryChanged,
+      selectableItemIds,
+      showCreateAction
+    })
     if (queryChanged) {
-      if (selectableItems.length > 0) {
-        setSelectedItemId(selectableItems[0].id)
-      } else {
-        setSelectedItemId(firstSelectableId ?? '')
-      }
+      setSelectedItemId(nextSelectedItemId)
       listRef.current?.scrollTo(0, 0)
       return
     }
 
-    if (selectableItems.length === 0) {
-      setSelectedItemId(firstSelectableId ?? '')
-      return
+    if (nextSelectedItemId !== selectedItemId) {
+      setSelectedItemId(nextSelectedItemId)
     }
-
-    if (selectedItemId === '__create_worktree__' && showCreateAction) {
-      return
-    }
-
-    if (
-      !selectableItems.some((item) => item.id === selectedItemId) &&
-      selectedItemId !== firstSelectableId
-    ) {
-      setSelectedItemId(firstSelectableId ?? selectableItems[0].id)
-    }
-  }, [deferredQuery, selectedItemId, showCreateAction, visible, selectableItems])
+  }, [deferredQuery, selectedItemId, showCreateAction, visible, selectableItemIds])
 
   const focusFallbackSurface = useCallback(() => {
     requestAnimationFrame(() => {
@@ -582,7 +630,7 @@ export default function WorktreeJumpPalette(): React.JSX.Element | null {
     (worktreeId: string) => {
       const worktree = findWorktreeById(useAppStore.getState().worktreesByRepo, worktreeId)
       if (!worktree) {
-        toast.error('Worktree no longer exists')
+        toast.error('Workspace no longer exists')
         return
       }
       activateAndRevealWorktree(worktreeId)
@@ -608,7 +656,7 @@ export default function WorktreeJumpPalette(): React.JSX.Element | null {
       const { worktree, workspace, page } = selection
       const activated = activateAndRevealWorktree(worktree.id)
       if (!activated) {
-        toast.error('Worktree no longer exists')
+        toast.error('Workspace no longer exists')
         return
       }
 
@@ -684,6 +732,8 @@ export default function WorktreeJumpPalette(): React.JSX.Element | null {
       // Why: awaiting inside the user gesture would leave the palette open
       // indefinitely on slow networks. Close immediately and populate the
       // composer once the lookup returns.
+      const lookupToken = createLookupGuard.start()
+      preserveCreateLookupOnCloseRef.current = true
       closeModal()
       void window.api.gh
         .workItemByOwnerRepo({
@@ -695,6 +745,9 @@ export default function WorktreeJumpPalette(): React.JSX.Element | null {
           type: ghLink.type
         })
         .then((item) => {
+          if (!createLookupGuard.isCurrent(lookupToken)) {
+            return
+          }
           const data: Record<string, unknown> = { initialRepoId: repoForLookup.id }
           if (item) {
             const linkedWorkItem: LinkedWorkItemSummary = {
@@ -714,6 +767,9 @@ export default function WorktreeJumpPalette(): React.JSX.Element | null {
           )
         })
         .catch(() => {
+          if (!createLookupGuard.isCurrent(lookupToken)) {
+            return
+          }
           queueMicrotask(() =>
             openModal('new-workspace-composer', {
               initialRepoId: repoForLookup.id,
@@ -745,10 +801,15 @@ export default function WorktreeJumpPalette(): React.JSX.Element | null {
         return
       }
 
+      const lookupToken = createLookupGuard.start()
+      preserveCreateLookupOnCloseRef.current = true
       closeModal()
       void window.api.gh
         .workItem({ repoPath: repoForLookup.path, repoId: repoForLookup.id, number: ghNumber })
         .then((item) => {
+          if (!createLookupGuard.isCurrent(lookupToken)) {
+            return
+          }
           const data: Record<string, unknown> = { initialRepoId: repoForLookup.id }
           if (item) {
             const linkedWorkItem: LinkedWorkItemSummary = {
@@ -767,6 +828,9 @@ export default function WorktreeJumpPalette(): React.JSX.Element | null {
           )
         })
         .catch(() => {
+          if (!createLookupGuard.isCurrent(lookupToken)) {
+            return
+          }
           queueMicrotask(() =>
             openModal('new-workspace-composer', {
               initialRepoId: repoForLookup.id,
@@ -780,7 +844,7 @@ export default function WorktreeJumpPalette(): React.JSX.Element | null {
 
     // Case 3: plain name — open composer prefilled.
     openComposer(trimmed ? { prefilledName: trimmed } : {})
-  }, [allWorktrees, closeModal, createWorktreeName, openModal, repoMap])
+  }, [allWorktrees, closeModal, createLookupGuard, createWorktreeName, openModal, repoMap])
 
   const handleCloseAutoFocus = useCallback((e: Event) => {
     e.preventDefault()
@@ -796,7 +860,7 @@ export default function WorktreeJumpPalette(): React.JSX.Element | null {
     if ((hasAnyWorktrees || hasAnyBrowserPages) && hasQuery) {
       return {
         title: 'No results match your search',
-        subtitle: 'Try a name, branch, repo, comment, PR, page title, or URL.'
+        subtitle: 'Try a name, branch, repo, port, comment, PR, page title, or URL.'
       }
     }
     // Why: empty-query rows exclude the current worktree, so a single-worktree
@@ -964,8 +1028,8 @@ export default function WorktreeJumpPalette(): React.JSX.Element | null {
                             </span>
                           </div>
                           {entry.match.supportingText && (
-                            <div className="mt-1.5 flex min-w-0 items-start gap-2 text-[12px] leading-5 text-muted-foreground/88">
-                              <span className="shrink-0 rounded-full border border-border/45 bg-background/45 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-[0.12em] text-muted-foreground/75">
+                            <div className="mt-1.5 flex min-w-0 items-center gap-2 text-[12px] leading-5 text-muted-foreground/88">
+                              <span className="inline-flex h-[18px] shrink-0 items-center rounded border border-border bg-foreground/[0.04] px-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
                                 {entry.match.supportingText.label}
                               </span>
                               <span className="truncate">
@@ -980,15 +1044,7 @@ export default function WorktreeJumpPalette(): React.JSX.Element | null {
                         <div className="flex shrink-0 flex-col items-end gap-1.5">
                           {repoName && (
                             <span className="inline-flex max-w-[180px] items-center gap-1.5 rounded-md border border-border bg-muted px-2 py-1 text-[11px] font-semibold leading-none text-foreground">
-                              <span
-                                aria-hidden="true"
-                                className="size-1.5 shrink-0 rounded-full"
-                                style={
-                                  repo?.badgeColor
-                                    ? { backgroundColor: repo.badgeColor }
-                                    : undefined
-                                }
-                              />
+                              <RepoBadgeMark color={repo?.badgeColor} />
                               <span className="truncate">
                                 {entry.match.repoRange ? (
                                   <HighlightedText
@@ -1062,15 +1118,7 @@ export default function WorktreeJumpPalette(): React.JSX.Element | null {
                       <div className="flex shrink-0 flex-col items-end gap-1.5">
                         {browserRepoName && (
                           <span className="inline-flex max-w-[180px] items-center gap-1.5 rounded-md border border-border bg-muted px-2 py-1 text-[11px] font-semibold leading-none text-foreground">
-                            <span
-                              aria-hidden="true"
-                              className="size-1.5 shrink-0 rounded-full"
-                              style={
-                                browserRepo?.badgeColor
-                                  ? { backgroundColor: browserRepo.badgeColor }
-                                  : undefined
-                              }
-                            />
+                            <RepoBadgeMark color={browserRepo?.badgeColor} />
                             <span className="truncate">
                               <HighlightedText
                                 text={browserRepoName}
@@ -1090,16 +1138,16 @@ export default function WorktreeJumpPalette(): React.JSX.Element | null {
               // auto-select it before our effect promotes the first real match
               // when the query only matches browser pages.
               <CommandItem
-                value="__create_worktree__"
+                value={CREATE_WORKTREE_ITEM_ID}
                 onSelect={handleCreateWorktree}
-                className="group mx-0.5 mt-1 flex cursor-pointer items-center gap-3 rounded-lg border border-transparent px-3 py-1.5 text-left outline-none transition-[background-color,border-color,box-shadow] data-[selected=true]:border-border data-[selected=true]:bg-neutral-100 data-[selected=true]:text-foreground dark:data-[selected=true]:bg-neutral-800"
+                className="group mx-0.5 mt-1 flex cursor-pointer items-center gap-3 rounded-lg border border-transparent px-3 py-1.5 text-left outline-none transition-[background-color,border-color,box-shadow] data-[selected=true]:border-border data-[selected=true]:bg-accent data-[selected=true]:text-foreground"
               >
                 <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-dashed border-border/60 bg-muted/25 text-muted-foreground/70">
                   <Plus size={13} aria-hidden="true" />
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="text-[14px] font-semibold tracking-[-0.01em] text-foreground">
-                    {`Create worktree "${createWorktreeName}"`}
+                    {`Create workspace "${createWorktreeName}"`}
                   </div>
                 </div>
               </CommandItem>
@@ -1119,8 +1167,8 @@ export default function WorktreeJumpPalette(): React.JSX.Element | null {
       </div>
       <div aria-live="polite" className="sr-only">
         {deferredQuery.trim()
-          ? `${resultCount} results found${showCreateAction ? ', create new worktree action available' : ''}`
-          : `${resultCount} items available${showCreateAction ? ', create new worktree action available' : ''}`}
+          ? `${resultCount} results found${showCreateAction ? ', create workspace action available' : ''}`
+          : `${resultCount} items available${showCreateAction ? ', create workspace action available' : ''}`}
       </div>
     </CommandDialog>
   )

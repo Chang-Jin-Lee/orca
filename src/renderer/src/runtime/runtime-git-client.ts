@@ -230,65 +230,112 @@ export async function getRuntimeGitCommitCompare(
 }
 
 export async function getRuntimeGitUpstreamStatus(
-  context: RuntimeGitContext
+  context: RuntimeGitContext,
+  pushTarget?: GitPushTarget
 ): Promise<GitUpstreamStatus> {
   const target = getActiveRuntimeTarget(context.settings)
   if (target.kind === 'local' || !context.worktreeId) {
     return window.api.git.upstreamStatus({
       worktreePath: context.worktreePath,
-      connectionId: context.connectionId
+      connectionId: context.connectionId,
+      ...(pushTarget ? { pushTarget } : {})
     })
   }
   return callRuntimeRpc<GitUpstreamStatus>(
     target,
     'git.upstreamStatus',
-    { worktree: context.worktreeId },
+    { worktree: context.worktreeId, ...(pushTarget ? { pushTarget } : {}) },
     { timeoutMs: 15_000 }
   )
 }
 
-export async function fetchRuntimeGit(context: RuntimeGitContext): Promise<void> {
+export async function fetchRuntimeGit(
+  context: RuntimeGitContext,
+  pushTarget?: GitPushTarget
+): Promise<void> {
   const target = getActiveRuntimeTarget(context.settings)
   if (target.kind === 'local' || !context.worktreeId) {
     await window.api.git.fetch({
       worktreePath: context.worktreePath,
-      connectionId: context.connectionId
+      connectionId: context.connectionId,
+      ...(pushTarget ? { pushTarget } : {})
     })
     return
   }
-  await callRuntimeRpc(target, 'git.fetch', { worktree: context.worktreeId }, { timeoutMs: 30_000 })
+  await callRuntimeRpc(
+    target,
+    'git.fetch',
+    { worktree: context.worktreeId, ...(pushTarget ? { pushTarget } : {}) },
+    { timeoutMs: 30_000 }
+  )
 }
 
-export async function pullRuntimeGit(context: RuntimeGitContext): Promise<void> {
+export async function pullRuntimeGit(
+  context: RuntimeGitContext,
+  pushTarget?: GitPushTarget
+): Promise<void> {
   const target = getActiveRuntimeTarget(context.settings)
   if (target.kind === 'local' || !context.worktreeId) {
     await window.api.git.pull({
       worktreePath: context.worktreePath,
-      connectionId: context.connectionId
+      connectionId: context.connectionId,
+      ...(pushTarget ? { pushTarget } : {})
     })
     return
   }
-  await callRuntimeRpc(target, 'git.pull', { worktree: context.worktreeId }, { timeoutMs: 30_000 })
+  await callRuntimeRpc(
+    target,
+    'git.pull',
+    { worktree: context.worktreeId, ...(pushTarget ? { pushTarget } : {}) },
+    { timeoutMs: 30_000 }
+  )
 }
 
-export async function pushRuntimeGit(
+export async function rebaseRuntimeGitFromBase(
   context: RuntimeGitContext,
-  args: { publish?: boolean; pushTarget?: GitPushTarget } = {}
+  baseRef: string
 ): Promise<void> {
   const target = getActiveRuntimeTarget(context.settings)
   if (target.kind === 'local' || !context.worktreeId) {
-    await window.api.git.push({
+    await window.api.git.rebaseFromBase({
       worktreePath: context.worktreePath,
-      publish: args.publish,
-      pushTarget: args.pushTarget,
+      baseRef,
       connectionId: context.connectionId
     })
     return
   }
   await callRuntimeRpc(
     target,
+    'git.rebaseFromBase',
+    { worktree: context.worktreeId, baseRef },
+    { timeoutMs: 30_000 }
+  )
+}
+
+export async function pushRuntimeGit(
+  context: RuntimeGitContext,
+  args: { publish?: boolean; pushTarget?: GitPushTarget; forceWithLease?: boolean } = {}
+): Promise<void> {
+  const target = getActiveRuntimeTarget(context.settings)
+  if (target.kind === 'local' || !context.worktreeId) {
+    await window.api.git.push({
+      worktreePath: context.worktreePath,
+      connectionId: context.connectionId,
+      ...(args.publish !== undefined ? { publish: args.publish } : {}),
+      ...(args.pushTarget !== undefined ? { pushTarget: args.pushTarget } : {}),
+      ...(args.forceWithLease !== undefined ? { forceWithLease: args.forceWithLease } : {})
+    })
+    return
+  }
+  await callRuntimeRpc(
+    target,
     'git.push',
-    { worktree: context.worktreeId, publish: args.publish, pushTarget: args.pushTarget },
+    {
+      worktree: context.worktreeId,
+      ...(args.publish !== undefined ? { publish: args.publish } : {}),
+      ...(args.pushTarget !== undefined ? { pushTarget: args.pushTarget } : {}),
+      ...(args.forceWithLease !== undefined ? { forceWithLease: args.forceWithLease } : {})
+    },
     { timeoutMs: 30_000 }
   )
 }

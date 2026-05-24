@@ -26,9 +26,11 @@ import { inspectRuntimeTerminalProcess } from '@/runtime/runtime-terminal-inspec
 import {
   discardTerminalOutput,
   flushTerminalOutput,
+  suppressTerminalCursorUntilOutputSettles,
   waitForTerminalOutputParsed,
   writeTerminalOutput
 } from '@/lib/pane-manager/pane-terminal-output-scheduler'
+import { isLocalNativeWindowsPty } from '@/lib/pane-manager/windows-pty-compatibility'
 import { recordTerminalOutput } from '@/lib/pane-manager/pane-scroll'
 import { makePaneKey } from '../../../../shared/stable-pane-id'
 import { createTerminalCommandLifecycle } from './terminal-command-lifecycle'
@@ -45,6 +47,10 @@ import {
   type AgentInterruptInputIntent
 } from '../../../../shared/agent-interrupt-intent'
 import { createAgentCompletionCoordinator } from './agent-completion-coordinator'
+import {
+  markTerminalBracketedPasteInterrupted,
+  observeTerminalBracketedPasteModeOutput
+} from './terminal-bracketed-paste'
 
 const pendingSpawnByPaneKey = new Map<string, Promise<string | null>>()
 const SSH_SESSION_EXPIRED_ERROR = 'SSH_SESSION_EXPIRED'
@@ -53,6 +59,11 @@ const PTY_CONNECT_DIAG_LIMIT = 200
 const AGENT_TASK_COMPLETE_NOTIFICATION_GRACE_MS = 250
 const AGENT_TASK_COMPLETE_NOTIFICATION_MAX_WAIT_MS = 1000
 const AGENT_TASK_COMPLETE_NOTIFICATION_DETAIL_MAX_AGE_MS = 10_000
+let codexRestartNoticePresenceSource: Record<
+  string,
+  { previousAccountLabel: string; nextAccountLabel: string }
+> | null = null
+let codexRestartNoticePresence = false
 
 function isAgentTaskCompleteNotificationEnabled(): boolean {
   const notifications = useAppStore.getState().settings?.notifications
@@ -95,6 +106,16 @@ function isSshSessionExpiredError(err: unknown): boolean {
 
 function isRemoteRuntimePtyId(ptyId: string | null | undefined): boolean {
   return typeof ptyId === 'string' && ptyId.startsWith(REMOTE_PTY_ID_PREFIX)
+}
+
+function hasCodexRestartNotices(
+  noticesByPtyId: Record<string, { previousAccountLabel: string; nextAccountLabel: string }>
+): boolean {
+  if (codexRestartNoticePresenceSource !== noticesByPtyId) {
+    codexRestartNoticePresenceSource = noticesByPtyId
+    codexRestartNoticePresence = Object.keys(noticesByPtyId).length > 0
+  }
+  return codexRestartNoticePresence
 }
 
 function sshPromptConnectOutcomeForStatus(
@@ -145,15 +166,21 @@ async function waitForSshConnection(connectionId: string): Promise<SshConnectRes
   return promise
 }
 
-function isCodexPaneStale(args: { tabId: string; panePtyId: string | null }): boolean {
+function isCodexPaneStale(args: {
+  tabId: string
+  worktreeId: string
+  panePtyId: string | null
+}): boolean {
   const state = useAppStore.getState()
   const { codexRestartNoticeByPtyId } = state
+  if (!hasCodexRestartNotices(codexRestartNoticeByPtyId)) {
+    return false
+  }
   if (args.panePtyId && codexRestartNoticeByPtyId[args.panePtyId]) {
     return true
   }
 
-  const tabs = Object.values(state.tabsByWorktree ?? {}).flat()
-  const tab = tabs.find((entry) => entry.id === args.tabId)
+  const tab = (state.tabsByWorktree[args.worktreeId] ?? []).find((entry) => entry.id === args.tabId)
   if (tab?.ptyId && codexRestartNoticeByPtyId[tab.ptyId]) {
     return true
   }
@@ -367,6 +394,14 @@ export function connectPanePty(
     if (intent && inputMatchesIntent(intent, data)) {
       interruptInference.observeInputIntent(intent)
       observeTitleOnlyInterrupt()
+    }
+  }
+  const observeAcceptedTerminalInput = (
+    data: string,
+    intent: AgentInterruptInputIntent | null = null
+  ): void => {
+    if (intent === 'ctrl-c' || data === '\x03') {
+      markTerminalBracketedPasteInterrupted(pane.terminal)
     }
   }
   let pendingTerminalInputWrite: Promise<void> | null = null
@@ -685,8 +720,10 @@ export function connectPanePty(
       AGENT_TASK_COMPLETE_NOTIFICATION_MAX_WAIT_MS
     )
   }
-  agentTaskCompleteSettingsUnsubscribe = useAppStore.subscribe(() => {
-    syncAgentTaskCompleteNotificationEnabled()
+  agentTaskCompleteSettingsUnsubscribe = useAppStore.subscribe((state, previousState) => {
+    if (state.settings?.notifications !== previousState?.settings?.notifications) {
+      syncAgentTaskCompleteNotificationEnabled()
+    }
   })
 
   // ─── Agent task-complete: OS notification, not tab attention ──────────
@@ -764,6 +801,12 @@ export function connectPanePty(
   const connectionId = repo?.connectionId ?? null
   const tab = (state.tabsByWorktree[deps.worktreeId] ?? []).find((t) => t.id === deps.tabId)
   const shellOverride = tab?.shellOverride
+  const shouldSuppressForegroundCursor = isLocalNativeWindowsPty({
+    userAgent: navigator.userAgent,
+    connectionId,
+    cwd: deps.cwd,
+    shellOverride
+  })
 
   const restoredPtyIdForTransport =
     deps.restoredLeafId && deps.restoredPtyIdByLeafId
@@ -838,7 +881,13 @@ export function connectPanePty(
     // still says the pane is stale. Fall back to the tab's persisted PTY ID so
     // the block still holds during reconnect races before the live transport has
     // updated its local PTY binding.
-    if (isCodexPaneStale({ tabId: deps.tabId, panePtyId: currentPtyId })) {
+    if (
+      isCodexPaneStale({
+        tabId: deps.tabId,
+        worktreeId: deps.worktreeId,
+        panePtyId: currentPtyId
+      })
+    ) {
       clearPendingTerminalInputIntent()
       return
     }
@@ -859,6 +908,12 @@ export function connectPanePty(
     // auto-replies never count as interaction.
     deps.clearTerminalTabUnread(deps.tabId)
     deps.clearWorktreeUnread(deps.worktreeId)
+    if (shouldSuppressForegroundCursor) {
+      // Why: native Windows ConPTY can leave the old visual cursor painted
+      // until the shell echoes the next frame; other PTY hosts should keep
+      // normal cursor visibility when commands intentionally produce no echo.
+      suppressTerminalCursorUntilOutputSettles(pane.terminal)
+    }
     const intent = pendingTerminalInputIntent
     // Why: real xterm can deliver the terminal byte even when our DOM keydown
     // listener missed the press. Exact Ctrl+C/Escape bytes are still safe to
@@ -871,6 +926,7 @@ export function connectPanePty(
         .sendInputAccepted(data)
         .then((accepted) => {
           if (accepted) {
+            observeAcceptedTerminalInput(data, acknowledgedIntent)
             interruptInference.observeInputIntent(acknowledgedIntent)
             observeTitleOnlyInterrupt()
           }
@@ -882,11 +938,14 @@ export function connectPanePty(
       return
     }
     if (intent) {
-      transport.sendInput(data)
+      if (transport.sendInput(data)) {
+        observeAcceptedTerminalInput(data, intent)
+      }
       clearPendingTerminalInputIntent()
       return
     }
     if (transport.sendInput(data)) {
+      observeAcceptedTerminalInput(data)
       observeSentTerminalInputIntent(data)
     } else {
       clearPendingTerminalInputIntent()
@@ -1127,16 +1186,22 @@ export function connectPanePty(
     }
 
     const dataCallback = (data: string): void => {
+      observeTerminalBracketedPasteModeOutput(pane.terminal, data)
       commandLifecycle.handlePtyData(data)
-      if (terminalOutputPrefersDomRenderer(data)) {
-        manager.markPaneHasComplexScriptOutput(pane.id)
-      }
-      recordTerminalOutput(pane.terminal)
       // Why: visibility is the right gate — split-pane layouts have multiple
       // visible-but-inactive panes whose output the user is watching. Only
       // hidden panes (background tabs) should be throttled.
       writeTerminalOutput(pane.terminal, data, {
-        foreground: deps.isVisibleRef.current
+        foreground: deps.isVisibleRef.current,
+        beforeWrite: (chunk) => {
+          // Why: hidden tab output is coalesced by the scheduler. Run per-byte
+          // renderer checks at the xterm write boundary so background PTY bursts
+          // do not spend foreground event-loop time scanning bytes we will delay.
+          if (terminalOutputPrefersDomRenderer(chunk)) {
+            manager.markPaneHasComplexScriptOutput(pane.id)
+          }
+          recordTerminalOutput(pane.terminal)
+        }
       })
 
       if (pendingStartupCommand) {

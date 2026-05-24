@@ -12,7 +12,7 @@ import {
   applyPaneOpacity,
   applyRootBackground
 } from './pane-divider'
-import { createDragReorderState, hideDropOverlay, handlePaneDrop } from './pane-drag-reorder'
+import { cancelActivePaneDrag, createDragReorderState, handlePaneDrop } from './pane-drag-reorder'
 import { createPaneDOM, openTerminal, setLigaturesEnabled, disposePane } from './pane-lifecycle'
 import { shouldFollowMouseFocus } from './focus-follows-mouse'
 import {
@@ -257,7 +257,7 @@ export class PaneManager {
 
   destroy(): void {
     this.destroyed = true
-    hideDropOverlay(this.dragState)
+    cancelActivePaneDrag(this.dragState)
     for (const pane of this.panes.values()) {
       disposePane(pane, this.panes)
     }
@@ -335,7 +335,8 @@ export class PaneManager {
         applyPaneOpacity(this.panes.values(), this.activePaneId, this.styleOptions),
       applyDividerStyles: () => applyDividerStyles(this.root, this.styleOptions),
       refitPanesUnder: (el: HTMLElement) => refitPanesUnder(el, this.panes),
-      onLayoutChanged: this.options.onLayoutChanged
+      onLayoutChanged: this.options.onLayoutChanged,
+      onDragActiveChange: this.options.onPaneDragActiveChange
     }
   }
 }

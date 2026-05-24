@@ -19,6 +19,8 @@ import { killAllPty } from './ipc/pty'
 import { initDaemonPtyProvider, disconnectDaemon } from './daemon/daemon-init'
 import { closeAllWatchers } from './ipc/filesystem-watcher'
 import { registerCoreHandlers } from './ipc/register-core-handlers'
+import { initObservability, shutdownObservability } from './observability'
+import { startSpan } from './observability/tracer'
 import { registerMobileHandlers } from './ipc/mobile'
 import { initTelemetry, shutdownTelemetry, trackAppOpenedOnce } from './telemetry/client'
 import { runManagedHookInstallers } from './agent-hooks/install-telemetry'
@@ -30,7 +32,11 @@ import { OrcaRuntimeService } from './runtime/orca-runtime'
 import { OrcaRuntimeRpcServer } from './runtime/runtime-rpc'
 import { awaitRuntimeFileWatcherUnsubscribes } from './runtime/orca-runtime-files'
 import { clearRuntimeMetadataIfOwned } from './runtime/runtime-metadata'
-import { registerAppMenu, rebuildAppMenu } from './menu/register-app-menu'
+import {
+  getNextDefaultOnAppearanceSettingValue,
+  registerAppMenu,
+  rebuildAppMenu
+} from './menu/register-app-menu'
 import { checkForUpdatesFromMenu, isQuittingForUpdate } from './updater'
 import {
   configureDevUserDataPath,
@@ -73,7 +79,6 @@ import {
 import { AgentBrowserBridge } from './browser/agent-browser-bridge'
 import { browserManager } from './browser/browser-manager'
 import { setUnreadDockBadgeCount } from './dock/unread-badge'
-import { registerFeatureWallFirstAgentTour } from './feature-wall/first-agent-tour'
 import { AutomationService } from './automations/service'
 import { AgentAwakeService } from './agent-awake-service'
 import {
@@ -86,7 +91,13 @@ import {
   shouldRecoverRendererAfterProcessGone,
   type ExpectedTeardownScope
 } from './crash-reporting/process-gone-classification'
+import {
+  advanceSyntheticTitleSpinnerEntries,
+  type SyntheticTitleSpinnerEntry
+} from './synthetic-title-spinner'
+import { shouldSendSyntheticTitleFrame } from './synthetic-title-visibility'
 import { isCrashReportReason } from '../shared/crash-reporting'
+import { KeybindingService } from './keybindings/keybinding-service'
 
 let mainWindow: BrowserWindow | null = null
 /** Whether a manual app.quit() (Cmd+Q, etc.) is in progress. Shared with the
@@ -109,10 +120,10 @@ let starNag: StarNagService | null = null
 let agentAwakeService: AgentAwakeService | null = null
 let crashReports: CrashReportStore | null = null
 let unsubscribeAgentAwakeStatusChanges: (() => void) | null = null
-let disposeFeatureWallFirstAgentTour: (() => void) | null = null
 let watcherShutdownPromise: Promise<void> | null = null
 let watcherShutdownDone = false
 let automations: AutomationService | null = null
+let keybindings: KeybindingService | null = null
 let expectedRendererReload: { webContentsId: number; until: number } | null = null
 const isServeMode = process.argv.includes('--serve')
 const devInstanceIdentity = getDevInstanceIdentity(is.dev)
@@ -307,6 +318,9 @@ function openMainWindow(): BrowserWindow {
       'Claude runtime auth service must be initialized before opening the main window'
     )
   }
+  if (!keybindings) {
+    throw new Error('Keybinding service must be initialized before opening the main window')
+  }
 
   // Why: Chromium's BrowserWindow constructor resets the userData DACL to a
   // Protected DACL. Grant explicit Full Control ACEs on all existing children
@@ -352,7 +366,14 @@ function openMainWindow(): BrowserWindow {
         expectedTeardown: getExpectedTeardownScope(webContentsId)
       }),
     deferLoad: true,
-    title: devInstanceIdentity.name
+    title: devInstanceIdentity.name,
+    getKeybindings: () => keybindings?.getOverrides(),
+    onBeforeReload: ({ ignoreCache, webContentsId }) => {
+      if (mainWindow?.webContents.id === webContentsId) {
+        markExpectedRendererReload(webContentsId)
+      }
+      recordCrashBreadcrumb('manual_reload_requested', { ignoreCache })
+    }
   })
   recordCrashBreadcrumb('main_window_created')
 
@@ -392,7 +413,8 @@ function openMainWindow(): BrowserWindow {
       prepareForClaudeLaunch: () => claudeRuntimeAuth!.prepareForClaudeLaunch()
     },
     agentAwakeService ?? undefined,
-    crashReports ?? undefined
+    crashReports ?? undefined,
+    keybindings
   )
   automations.setWebContents(window.webContents)
   automations.start()
@@ -426,21 +448,23 @@ function openMainWindow(): BrowserWindow {
     // window recreations instead of stacking on top of stale listeners.
     agentHookServer.setListener(null)
     setMigrationUnsupportedPtyListener(null)
-    // Why: any running synthesized-title spinner intervals would fire into a
-    // destroyed webContents; stop them all here instead of deferring to
-    // per-pane teardown, which may never run for restored-but-never-torn-down
-    // panes when the window goes away. stopSyntheticTitleSpinner deletes only
-    // the current entry, which the Map iterator handles safely.
-    for (const paneKey of syntheticTitleSpinnerByPaneKey.keys()) {
-      stopSyntheticTitleSpinner(paneKey)
-    }
+    // Why: any running synthesized-title spinner timer would fire into a
+    // destroyed webContents; stop it here instead of deferring to per-pane
+    // teardown, which may never run for restored-but-never-torn-down panes
+    // when the window goes away.
+    stopAllSyntheticTitleSpinners()
   })
   mainWindow = window
+  window.on('show', resumeSyntheticTitleSpinnerTimer)
+  window.on('restore', resumeSyntheticTitleSpinnerTimer)
+  window.on('hide', stopSyntheticTitleSpinnerTimer)
+  window.on('minimize', stopSyntheticTitleSpinnerTimer)
   agentHookServer.setListener(
     ({ paneKey, tabId, worktreeId, connectionId, payload, receivedAt, stateStartedAt }) => {
       if (mainWindow?.isDestroyed()) {
         return
       }
+      const orchestration = runtime?.getAgentStatusOrchestrationContextForPaneKey(paneKey)
       mainWindow?.webContents.send('agentStatus:set', {
         ...payload,
         paneKey,
@@ -448,7 +472,8 @@ function openMainWindow(): BrowserWindow {
         worktreeId,
         connectionId,
         receivedAt,
-        stateStartedAt
+        stateStartedAt,
+        ...(orchestration ? { orchestration } : {})
       })
       recordCrashBreadcrumb('agent_state_changed', {
         agentType: payload.agentType ?? 'unknown',
@@ -531,6 +556,25 @@ function recordProcessGoneCrash(
     return
   }
   recentCrashKeys.set(key, now)
+  const span = startSpan('electron.process_gone', {
+    attributes: {
+      'crash.source': source,
+      'crash.process_type': processType,
+      'crash.reason': reason,
+      ...(exitCode !== null ? { 'crash.exit_code': exitCode } : {}),
+      'app.version': app.getVersion(),
+      platform: process.platform,
+      osRelease: os.release(),
+      arch: process.arch,
+      electronVersion: process.versions.electron,
+      chromeVersion: process.versions.chrome,
+      details,
+      breadcrumbs: getCrashBreadcrumbSnapshot()
+    }
+  })
+  // Why: renderer/child crashes belong in the local trace lane so the
+  // diagnostic bundle has the same process-gone signal as the startup prompt.
+  span.fail(`${source} process gone: ${processType} ${reason} (${exitCode ?? 'unknown'})`)
   void crashReports
     .record({
       source,
@@ -619,8 +663,9 @@ const SYNTHETIC_TITLE_PROFILES: Record<string, SyntheticTitleProfile> = {
 
 const syntheticTitleSpinnerByPaneKey = new Map<
   string,
-  { timer: ReturnType<typeof setInterval>; frame: number; profile: SyntheticTitleProfile }
+  SyntheticTitleSpinnerEntry<SyntheticTitleProfile>
 >()
+let syntheticTitleSpinnerTimer: ReturnType<typeof setInterval> | null = null
 
 type ServeOptions = {
   json: boolean
@@ -733,27 +778,105 @@ function installServeSignalHandlers(): void {
   process.once('SIGTERM', quit)
 }
 
-// Why: on PTY teardown the paneKey→ptyId mapping is dropped, so the spinner
-// interval would keep firing but sendSyntheticTitle would no-op forever.
-// Stop the interval explicitly so the process doesn't carry a timer per dead
-// pane.
+// Why: on PTY teardown the paneKey mapping is dropped, so the spinner tick
+// would keep firing but sendSyntheticTitle would no-op forever. Drop the
+// entry explicitly so the shared timer shuts down once no panes are active.
 registerPaneKeyTeardownListener((paneKey) => {
   stopSyntheticTitleSpinner(paneKey)
 })
 
-function sendSyntheticTitle(ptyId: string, data: string): void {
+function sendSyntheticTitle(ptyId: string, data: string, options: { force?: boolean } = {}): void {
   if (!mainWindow || mainWindow.isDestroyed()) {
+    return
+  }
+  // Why: repeated working-spinner frames are decorative and can arrive every
+  // 80ms per agent. Final/permission frames are forced because they drive BEL.
+  if (
+    !shouldSendSyntheticTitleFrame({
+      force: options.force === true,
+      windowVisible: isSyntheticTitleWindowVisible()
+    })
+  ) {
     return
   }
   mainWindow.webContents.send('pty:data', { id: ptyId, data })
 }
 
+function isSyntheticTitleWindowVisible(): boolean {
+  return (
+    mainWindow !== null &&
+    !mainWindow.isDestroyed() &&
+    mainWindow.isVisible() &&
+    !mainWindow.isMinimized()
+  )
+}
+
+function canSendDecorativeSyntheticTitle(): boolean {
+  return shouldSendSyntheticTitleFrame({
+    force: false,
+    windowVisible: isSyntheticTitleWindowVisible()
+  })
+}
+
 function stopSyntheticTitleSpinner(paneKey: string): void {
-  const entry = syntheticTitleSpinnerByPaneKey.get(paneKey)
-  if (entry) {
-    clearInterval(entry.timer)
-    syntheticTitleSpinnerByPaneKey.delete(paneKey)
+  if (syntheticTitleSpinnerByPaneKey.delete(paneKey)) {
+    stopSyntheticTitleSpinnerTimerIfIdle()
   }
+}
+
+function stopAllSyntheticTitleSpinners(): void {
+  syntheticTitleSpinnerByPaneKey.clear()
+  stopSyntheticTitleSpinnerTimer()
+}
+
+function stopSyntheticTitleSpinnerTimer(): void {
+  if (!syntheticTitleSpinnerTimer) {
+    return
+  }
+  clearInterval(syntheticTitleSpinnerTimer)
+  syntheticTitleSpinnerTimer = null
+}
+
+function stopSyntheticTitleSpinnerTimerIfIdle(): void {
+  if (syntheticTitleSpinnerByPaneKey.size === 0) {
+    stopSyntheticTitleSpinnerTimer()
+  }
+}
+
+function tickSyntheticTitleSpinners(): void {
+  if (!canSendDecorativeSyntheticTitle()) {
+    stopSyntheticTitleSpinnerTimer()
+    return
+  }
+  const ticks = advanceSyntheticTitleSpinnerEntries({
+    entries: syntheticTitleSpinnerByPaneKey,
+    frameCount: SPINNER_FRAMES.length,
+    getPtyIdForPaneKey
+  })
+  for (const tick of ticks) {
+    sendSyntheticTitle(
+      tick.ptyId,
+      `\x1b]0;${SPINNER_FRAMES[tick.frame]} ${tick.profile.workingLabel}\x07`
+    )
+  }
+  stopSyntheticTitleSpinnerTimerIfIdle()
+}
+
+function ensureSyntheticTitleSpinnerTimer(): void {
+  if (
+    syntheticTitleSpinnerTimer ||
+    syntheticTitleSpinnerByPaneKey.size === 0 ||
+    !canSendDecorativeSyntheticTitle()
+  ) {
+    return
+  }
+  // Why: a single process timer covers all synthesized title spinners; per-pane
+  // intervals multiplied idle wakeups when several retained agents were working.
+  syntheticTitleSpinnerTimer = setInterval(tickSyntheticTitleSpinners, SPINNER_INTERVAL_MS)
+}
+
+function resumeSyntheticTitleSpinnerTimer(): void {
+  ensureSyntheticTitleSpinnerTimer()
 }
 
 function driveSyntheticTitleFromHook(
@@ -779,23 +902,8 @@ function driveSyntheticTitleFromHook(
       existing.profile = profile
       return
     }
-    const timer = setInterval(() => {
-      const ptyIdNow = getPtyIdForPaneKey(paneKey)
-      if (!ptyIdNow) {
-        stopSyntheticTitleSpinner(paneKey)
-        return
-      }
-      const cur = syntheticTitleSpinnerByPaneKey.get(paneKey)
-      if (!cur) {
-        return
-      }
-      cur.frame = (cur.frame + 1) % SPINNER_FRAMES.length
-      sendSyntheticTitle(
-        ptyIdNow,
-        `\x1b]0;${SPINNER_FRAMES[cur.frame]} ${cur.profile.workingLabel}\x07`
-      )
-    }, SPINNER_INTERVAL_MS)
-    syntheticTitleSpinnerByPaneKey.set(paneKey, { timer, frame, profile })
+    syntheticTitleSpinnerByPaneKey.set(paneKey, { frame, profile })
+    ensureSyntheticTitleSpinnerTimer()
     return
   }
   // Why: leaving the spinner running after a `blocked`/`waiting`/`done` event
@@ -811,7 +919,7 @@ function driveSyntheticTitleFromHook(
   stopSyntheticTitleSpinner(paneKey)
   const label =
     state === 'blocked' || state === 'waiting' ? profile.permissionLabel : profile.idleLabel
-  sendSyntheticTitle(ptyId, `\x1b]0;${label}\x07\x07`)
+  sendSyntheticTitle(ptyId, `\x1b]0;${label}\x07\x07`, { force: true })
 }
 
 app.whenReady().then(async () => {
@@ -840,6 +948,13 @@ app.whenReady().then(async () => {
   // the Store reference, seeds common props, and resets per-session burst
   // caps. Actual transport initialization is still gated by both flags.
   initTelemetry(store)
+  // Why: the error-tracking lane (telemetry-error-tracking.md) is its own
+  // composition root — independent of product telemetry — and must
+  // initialize before any IPC handler / runtime span is created so the
+  // tracer's active sink is populated at the moment the first span fires.
+  // Honors DO_NOT_TRACK / ORCA_TELEMETRY_DISABLED / ORCA_DIAGNOSTICS_DISABLED
+  // / CI internally; those gates do not need to be re-checked here.
+  initObservability()
   // Why: cohort-classifier reads the repo count synchronously at every emit
   // for cohort-extended events. The Store has been sync-loaded above, and
   // this init runs before any IPC handler is registered and before any
@@ -860,6 +975,11 @@ app.whenReady().then(async () => {
   rateLimits.setCodexHomePathResolver(() => codexRuntimeHome!.prepareForRateLimitFetch())
   rateLimits.setClaudeAuthPreparationResolver(() => claudeRuntimeAuth!.prepareForRateLimitFetch())
   rateLimits.setSettingsResolver(() => store!.getSettings())
+  keybindings = new KeybindingService({
+    homePath: app.getPath('home'),
+    getLegacyOverrides: () => store!.getSettings().keybindings
+  })
+  browserManager.setSettingsResolver(() => ({ keybindings: keybindings?.getOverrides() }))
   rateLimits.setInactiveClaudeAccountsResolver(() => {
     const settings = store!.getSettings()
     return settings.claudeManagedAccounts
@@ -890,10 +1010,6 @@ app.whenReady().then(async () => {
     // must resolve CODEX_HOME through the runtime-home service.
     prepareForCodexLaunch: prepareCodexRuntimeHomeForLaunch,
     prepareForClaudeLaunch: () => claudeRuntimeAuth!.prepareForClaudeLaunch()
-  })
-  disposeFeatureWallFirstAgentTour = registerFeatureWallFirstAgentTour({
-    stats,
-    getWindow: () => mainWindow
   })
   starNag = new StarNagService(store, stats)
   starNag.start()
@@ -985,11 +1101,14 @@ app.whenReady().then(async () => {
         return
       }
       const current = store.getSettings()
-      store.updateSettings({ [key]: !current[key] })
+      // Why: these appearance settings are default-on for older profiles, so
+      // a missing persisted value must toggle from visible -> hidden.
+      const next = getNextDefaultOnAppearanceSettingValue(current[key])
+      store.updateSettings({ [key]: next })
       // Why: settings:get returns the current snapshot; renderer tracks
       // settings through window.api.settings.get(). Push the new value so
       // the sidebar/titlebar re-render without waiting for a round-trip.
-      mainWindow?.webContents.send('settings:changed', { [key]: !current[key] })
+      mainWindow?.webContents.send('settings:changed', { [key]: next })
       rebuildAppMenu()
     },
     getAppearanceState: () => {
@@ -997,10 +1116,12 @@ app.whenReady().then(async () => {
       const ui = store?.getUI()
       return {
         showTasksButton: settings?.showTasksButton !== false,
+        showMobileButton: settings?.showMobileButton !== false,
         showTitlebarAppName: settings?.showTitlebarAppName !== false,
         statusBarVisible: ui?.statusBarVisible !== false
       }
-    }
+    },
+    getKeybindings: () => keybindings?.getOverrides()
   })
   // Why: E2E tests launch parallel Electron instances that would all race to
   // bind the default fixed port, crashing on EADDRINUSE. Port 0 lets the OS
@@ -1123,8 +1244,6 @@ app.on('before-quit', () => {
   unsubscribeAgentAwakeStatusChanges = null
   agentAwakeService?.dispose()
   agentAwakeService = null
-  disposeFeatureWallFirstAgentTour?.()
-  disposeFeatureWallFirstAgentTour = null
   // Why: PTY cleanup is deferred to will-quit so the renderer has a chance to
   // capture terminal scrollback buffers before PTY exit events race in and
   // unmount TerminalPane components (removing their capture callbacks).
@@ -1199,6 +1318,7 @@ app.on('will-quit', (e) => {
     // quit chain.
     Promise.allSettled([disconnectDaemon(), rpcStopAndClear, watcherShutdown])
       .then(() => shutdownTelemetry())
+      .then(() => shutdownObservability())
       .catch(() => {
         /* swallow — telemetry must never prevent app.quit() */
       })

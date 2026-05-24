@@ -14,6 +14,9 @@ export const MAX_PARKED_WEBVIEWS = 6
 let hiddenContainer: HTMLDivElement | null = null
 const DRAG_LISTENER_KEY = '__orcaBrowserPaneDragListeners'
 let dragListenersAttached = false
+let nativeDragPassthroughRelease: (() => void) | null = null
+const dragPassthroughTokens = new Set<symbol>()
+const dragPassthroughPreviousPointerEvents = new Map<Electron.WebviewTag, string>()
 
 type DragListenerRegistry = {
   dragstart: () => void
@@ -39,6 +42,8 @@ function removeDragListeners(): void {
   window.removeEventListener('drop', existingListeners.drop, true)
   delete listenerHost[DRAG_LISTENER_KEY]
   dragListenersAttached = false
+  nativeDragPassthroughRelease?.()
+  nativeDragPassthroughRelease = null
 }
 
 function ensureDragListeners(): void {
@@ -79,10 +84,64 @@ export function getHiddenContainer(): HTMLDivElement {
   return hiddenContainer
 }
 
-export function setWebviewsDragPassthrough(passthrough: boolean): void {
+function applyWebviewsDragPassthrough(): void {
+  const passthrough = dragPassthroughTokens.size > 0
   for (const webview of webviewRegistry.values()) {
-    webview.style.pointerEvents = passthrough ? 'none' : ''
+    if (passthrough) {
+      if (!dragPassthroughPreviousPointerEvents.has(webview)) {
+        dragPassthroughPreviousPointerEvents.set(webview, webview.style.pointerEvents)
+      }
+      webview.style.pointerEvents = 'none'
+      continue
+    }
+
+    const previous = dragPassthroughPreviousPointerEvents.get(webview)
+    if (previous !== undefined) {
+      webview.style.pointerEvents = previous
+      dragPassthroughPreviousPointerEvents.delete(webview)
+    }
   }
+}
+
+export function acquireWebviewsDragPassthrough(): () => void {
+  // Why: renderer-owned pointer drags (dnd-kit tab drags, terminal pane
+  // reorders) do not emit HTML dragstart/dragend, but Electron webviews can
+  // still steal the pointer stream unless they are temporarily transparent.
+  const token = Symbol('webview-drag-passthrough')
+  let released = false
+  dragPassthroughTokens.add(token)
+  applyWebviewsDragPassthrough()
+
+  return () => {
+    if (released) {
+      return
+    }
+    released = true
+    dragPassthroughTokens.delete(token)
+    applyWebviewsDragPassthrough()
+  }
+}
+
+export function setWebviewsDragPassthrough(passthrough: boolean): void {
+  if (passthrough) {
+    if (!nativeDragPassthroughRelease) {
+      nativeDragPassthroughRelease = acquireWebviewsDragPassthrough()
+    }
+    return
+  }
+
+  nativeDragPassthroughRelease?.()
+  nativeDragPassthroughRelease = null
+}
+
+function applyCurrentDragPassthroughToWebview(webview: Electron.WebviewTag): void {
+  if (dragPassthroughTokens.size === 0) {
+    return
+  }
+  if (!dragPassthroughPreviousPointerEvents.has(webview)) {
+    dragPassthroughPreviousPointerEvents.set(webview, webview.style.pointerEvents)
+  }
+  webview.style.pointerEvents = 'none'
 }
 
 export function registerPersistentWebview(
@@ -90,10 +149,15 @@ export function registerPersistentWebview(
   webview: Electron.WebviewTag
 ): void {
   webviewRegistry.set(browserTabId, webview)
+  applyCurrentDragPassthroughToWebview(webview)
   ensureDragListeners()
 }
 
 export function unregisterPersistentWebview(browserTabId: string): void {
+  const webview = webviewRegistry.get(browserTabId)
+  if (webview) {
+    dragPassthroughPreviousPointerEvents.delete(webview)
+  }
   webviewRegistry.delete(browserTabId)
   if (webviewRegistry.size === 0) {
     removeDragListeners()

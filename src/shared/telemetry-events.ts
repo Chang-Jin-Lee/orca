@@ -15,6 +15,9 @@
 
 import { z } from 'zod'
 import { FEATURE_WALL_MAX_DWELL_MS } from './feature-wall-telemetry'
+import { FEATURE_WALL_EXIT_ACTIONS, FEATURE_WALL_TOUR_DEPTH_STEPS } from './feature-wall-tour-depth'
+import { SETUP_SCRIPT_IMPORT_PROVIDERS } from './setup-script-import-providers'
+import { WORKSPACE_SOURCE_VALUES, type WorkspaceSource } from './workspace-source'
 
 import { AGENT_HOOK_TARGETS } from './agent-hook-types'
 import { ONBOARDING_FINAL_STEP } from './constants'
@@ -111,6 +114,9 @@ export const addRepoExistingWorkspaceSourceSchema = z.enum([
 ])
 export type AddRepoExistingWorkspaceSource = z.infer<typeof addRepoExistingWorkspaceSourceSchema>
 
+export const setupScriptImportProviderSchema = z.enum(SETUP_SCRIPT_IMPORT_PROVIDERS)
+export type SetupScriptImportProviderTelemetry = z.infer<typeof setupScriptImportProviderSchema>
+
 // Deliberately a separate enum from `errorClassSchema` (PTY-spawn taxonomy):
 // different domain — this one buckets git/filesystem failures thrown by
 // `createLocalWorktree` / `createRemoteWorktree`. Merging the two would lock
@@ -125,15 +131,8 @@ export const workspaceCreateErrorClassSchema = z.enum([
 ])
 export type WorkspaceCreateErrorClass = z.infer<typeof workspaceCreateErrorClassSchema>
 
-export const workspaceSourceSchema = z.enum([
-  'command_palette',
-  'sidebar',
-  'shortcut',
-  'drag_drop',
-  'onboarding',
-  'unknown'
-])
-export type WorkspaceSource = z.infer<typeof workspaceSourceSchema>
+export const workspaceSourceSchema = z.enum(WORKSPACE_SOURCE_VALUES)
+export type { WorkspaceSource }
 
 export const launchSourceSchema = z.enum([
   'command_palette',
@@ -147,6 +146,7 @@ export const launchSourceSchema = z.enum([
   'diff_notes_send',
   'notes_send',
   'conflict_resolution',
+  'source_control_recovery',
   'unknown'
 ])
 export type LaunchSource = z.infer<typeof launchSourceSchema>
@@ -170,8 +170,23 @@ export const featureWallTileIdSchema = z.enum([
 ])
 export type FeatureWallTileIdTelemetry = z.infer<typeof featureWallTileIdSchema>
 
-export const featureWallOpenSourceSchema = z.enum(['help_menu', 'popup', 'unknown'])
+export const featureWallOpenSourceSchema = z.enum(['help_menu', 'popup', 'onboarding', 'unknown'])
 export type FeatureWallOpenSourceTelemetry = z.infer<typeof featureWallOpenSourceSchema>
+
+export const featureWallWorkflowIdSchema = z.enum([
+  'tasks',
+  'workspaces',
+  'agents-orchestration',
+  'workbench',
+  'review'
+])
+export type FeatureWallWorkflowIdTelemetry = z.infer<typeof featureWallWorkflowIdSchema>
+
+export const featureWallTourDepthStepSchema = z.enum(FEATURE_WALL_TOUR_DEPTH_STEPS)
+export type FeatureWallTourDepthStepTelemetry = z.infer<typeof featureWallTourDepthStepSchema>
+
+export const featureWallExitActionSchema = z.enum(FEATURE_WALL_EXIT_ACTIONS)
+export type FeatureWallExitActionTelemetry = z.infer<typeof featureWallExitActionSchema>
 
 // `env_var` is deliberately absent — env-var and CI paths override consent at
 // runtime only (see consent.ts); they never mutate `optedIn` and therefore
@@ -283,7 +298,15 @@ const featureWallOpenedSchema = z
   .strict()
 const featureWallClosedSchema = z
   .object({
-    dwell_ms: z.number().int().min(0).max(FEATURE_WALL_MAX_DWELL_MS)
+    dwell_ms: z.number().int().min(0).max(FEATURE_WALL_MAX_DWELL_MS),
+    source: featureWallOpenSourceSchema.optional(),
+    exit_action: featureWallExitActionSchema.optional(),
+    furthest_step: featureWallTourDepthStepSchema.optional(),
+    last_group_id: featureWallWorkflowIdSchema.optional(),
+    visited_workflow_count: z.number().int().min(0).max(5).optional(),
+    visited_substep_count: z.number().int().min(0).max(9).optional(),
+    completed_workflow_count: z.number().int().min(0).max(5).optional(),
+    completed_substep_count: z.number().int().min(0).max(9).optional()
   })
   .strict()
 const featureWallTileFocusedSchema = z
@@ -294,6 +317,26 @@ const featureWallTileFocusedSchema = z
 const featureWallTileClickedSchema = z
   .object({
     tile_id: featureWallTileIdSchema
+  })
+  .strict()
+const featureWallGroupSelectedSchema = z
+  .object({
+    group_id: featureWallWorkflowIdSchema,
+    source: featureWallOpenSourceSchema
+  })
+  .strict()
+const featureWallFeatureSelectedSchema = z
+  .object({
+    group_id: featureWallWorkflowIdSchema,
+    tile_id: featureWallTileIdSchema,
+    source: featureWallOpenSourceSchema
+  })
+  .strict()
+const featureWallDocsClickedSchema = z
+  .object({
+    group_id: featureWallWorkflowIdSchema,
+    tile_id: featureWallTileIdSchema,
+    source: featureWallOpenSourceSchema
   })
   .strict()
 
@@ -336,6 +379,57 @@ const workspaceCreateFailedSchema = z
     nth_repo_added: nthRepoAddedSchema
   })
   .strict()
+
+const setupScriptPromptModeSchema = z.enum(['import_available', 'configure_needed'])
+const setupScriptCountBucketSchema = z.enum(['0', '1', '2-3', '4+'])
+const setupScriptPromptContextSchema = {
+  mode: setupScriptPromptModeSchema,
+  // Why: cohort injection probes top-level ZodObject shapes; superRefine
+  // keeps that path while still rejecting impossible mode/provider pairs.
+  provider: setupScriptImportProviderSchema.optional(),
+  file_count_bucket: setupScriptCountBucketSchema,
+  unsupported_field_count_bucket: setupScriptCountBucketSchema,
+  has_shared_hooks: z.boolean(),
+  nth_repo_added: nthRepoAddedSchema
+} as const
+
+type SetupScriptPromptContextTelemetry = {
+  mode: z.infer<typeof setupScriptPromptModeSchema>
+  provider?: z.infer<typeof setupScriptImportProviderSchema>
+}
+
+function validateSetupScriptPromptProvider(
+  props: SetupScriptPromptContextTelemetry,
+  ctx: z.RefinementCtx
+): void {
+  if (props.mode === 'import_available' && props.provider === undefined) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['provider'],
+      message: 'provider is required when setup import is available'
+    })
+  }
+  if (props.mode === 'configure_needed' && props.provider !== undefined) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['provider'],
+      message: 'provider is only valid when setup import is available'
+    })
+  }
+}
+// Why: setup-import telemetry is for a retention cohort, not debugging a
+// user's repo, so it carries only closed enums and count buckets.
+const setupScriptPromptShownSchema = z
+  .object(setupScriptPromptContextSchema)
+  .strict()
+  .superRefine(validateSetupScriptPromptProvider)
+const setupScriptPromptActionSchema = z
+  .object({
+    ...setupScriptPromptContextSchema,
+    action: z.enum(['import_completed', 'import_failed', 'configure_clicked', 'dismissed'])
+  })
+  .strict()
+  .superRefine(validateSetupScriptPromptProvider)
 
 // Managed-hook installer per-agent label. Distinct from `AGENT_KIND_VALUES`:
 // hook installation only targets the agents in `AGENT_HOOK_TARGETS` and the
@@ -392,9 +486,12 @@ const onboardingValueKindSchema = z.enum([
   'agent',
   'theme',
   'notifications',
+  'agent_setup',
   'integrations',
+  'tour',
   'repo'
 ])
+const onboardingTourOutcomeSchema = z.enum(['skipped_intro', 'started_partial', 'completed_inline'])
 const onboardingTaskSourcesGithubStatusSchema = z.enum([
   'connected',
   'not_authenticated',
@@ -491,7 +588,11 @@ const onboardingStartedSchema = z
   .object({ resumed_from_step: onboardingStepSchema.optional(), cohort: cohortSchema })
   .strict()
 const onboardingStepViewedSchema = z
-  .object({ step: onboardingStepSchema, cohort: cohortSchema })
+  .object({
+    step: onboardingStepSchema,
+    value_kind: onboardingValueKindSchema,
+    cohort: cohortSchema
+  })
   .strict()
 const onboardingStepCompletedSchema = z
   .object({
@@ -505,11 +606,62 @@ const onboardingStepCompletedSchema = z
 const onboardingStepSkippedSchema = z
   .object({
     step: onboardingStepSchema,
+    value_kind: onboardingValueKindSchema,
     duration_ms: z.number().int().nonnegative().optional(),
     advanced_via: advancedViaSchema,
     cohort: cohortSchema
   })
   .strict()
+type OnboardingTourOutcomeTelemetry = {
+  outcome: z.infer<typeof onboardingTourOutcomeSchema>
+  tour_dwell_ms?: number
+  furthest_step?: z.infer<typeof featureWallTourDepthStepSchema>
+  visited_workflow_count?: number
+  visited_substep_count?: number
+  completed_workflow_count?: number
+  completed_substep_count?: number
+}
+
+function validateOnboardingTourOutcome(
+  props: OnboardingTourOutcomeTelemetry,
+  ctx: z.RefinementCtx
+): void {
+  if (props.outcome !== 'skipped_intro') {
+    return
+  }
+  for (const key of [
+    'tour_dwell_ms',
+    'furthest_step',
+    'visited_workflow_count',
+    'visited_substep_count',
+    'completed_workflow_count',
+    'completed_substep_count'
+  ] as const) {
+    if (props[key] !== undefined) {
+      ctx.addIssue({
+        code: 'custom',
+        path: [key],
+        message: `${key} is only valid after the inline tour starts`
+      })
+    }
+  }
+}
+
+const onboardingTourOutcomeEventSchema = z
+  .object({
+    outcome: onboardingTourOutcomeSchema,
+    intro_duration_ms: z.number().int().min(0).max(FEATURE_WALL_MAX_DWELL_MS).optional(),
+    tour_dwell_ms: z.number().int().min(0).max(FEATURE_WALL_MAX_DWELL_MS).optional(),
+    furthest_step: featureWallTourDepthStepSchema.optional(),
+    visited_workflow_count: z.number().int().min(0).max(5).optional(),
+    visited_substep_count: z.number().int().min(0).max(9).optional(),
+    completed_workflow_count: z.number().int().min(0).max(5).optional(),
+    completed_substep_count: z.number().int().min(0).max(9).optional(),
+    advanced_via: advancedViaSchema,
+    cohort: cohortSchema
+  })
+  .strict()
+  .superRefine(validateOnboardingTourOutcome)
 const onboardingStep4PathClickedSchema = z
   .object({ path: onboardingPathSchema, cohort: cohortSchema })
   .strict()
@@ -748,6 +900,8 @@ export const eventSchemas = {
   add_repo_existing_workspaces_detected: addRepoExistingWorkspacesDetectedSchema,
   workspace_created: workspaceCreatedSchema,
   workspace_create_failed: workspaceCreateFailedSchema,
+  setup_script_prompt_shown: setupScriptPromptShownSchema,
+  setup_script_prompt_action: setupScriptPromptActionSchema,
 
   agent_started: agentStartedSchema,
   agent_error: agentErrorSchema,
@@ -763,11 +917,15 @@ export const eventSchemas = {
   feature_wall_closed: featureWallClosedSchema,
   feature_wall_tile_focused: featureWallTileFocusedSchema,
   feature_wall_tile_clicked: featureWallTileClickedSchema,
+  feature_wall_group_selected: featureWallGroupSelectedSchema,
+  feature_wall_feature_selected: featureWallFeatureSelectedSchema,
+  feature_wall_docs_clicked: featureWallDocsClickedSchema,
 
   onboarding_started: onboardingStartedSchema,
   onboarding_step_viewed: onboardingStepViewedSchema,
   onboarding_step_completed: onboardingStepCompletedSchema,
   onboarding_step_skipped: onboardingStepSkippedSchema,
+  onboarding_tour_outcome: onboardingTourOutcomeEventSchema,
   onboarding_step4_path_clicked: onboardingStep4PathClickedSchema,
   onboarding_step4_path_failed: onboardingStep4PathFailedSchema,
   onboarding_task_sources_snapshot: onboardingTaskSourcesSnapshotSchema,
@@ -830,6 +988,8 @@ type _CohortExtendedRoster =
   | 'add_repo_existing_workspaces_detected'
   | 'workspace_created'
   | 'workspace_create_failed'
+  | 'setup_script_prompt_shown'
+  | 'setup_script_prompt_action'
   | 'agent_started'
   | 'agent_error'
 // Why: `z.object({}).strict()` infers a string index signature, which would
@@ -876,6 +1036,7 @@ type _OnboardingCohortRoster =
   | 'onboarding_step_viewed'
   | 'onboarding_step_completed'
   | 'onboarding_step_skipped'
+  | 'onboarding_tour_outcome'
   | 'onboarding_step4_path_clicked'
   | 'onboarding_step4_path_failed'
   | 'onboarding_task_sources_snapshot'

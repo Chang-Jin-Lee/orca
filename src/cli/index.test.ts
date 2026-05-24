@@ -923,7 +923,7 @@ describe('orca cli worktree awareness', () => {
     })
   })
 
-  it('forces the visible terminal path for interactive Codex startup commands', async () => {
+  it('keeps interactive Codex startup commands backgrounded unless focus is explicit', async () => {
     queueFixtures(
       callMock,
       okFixture('req_terminal_create', {
@@ -1144,7 +1144,7 @@ describe('orca cli worktree awareness', () => {
     })
   })
 
-  it('forces the visible terminal path for Codex prompts after global options', async () => {
+  it('keeps Codex prompts after global options backgrounded unless focus is explicit', async () => {
     queueFixtures(
       callMock,
       okFixture('req_terminal_create', {
@@ -1179,6 +1179,80 @@ describe('orca cli worktree awareness', () => {
       focus: false,
       rendererBacked: true,
       activate: false
+    })
+  })
+
+  it('keeps interactive Claude startup commands backgrounded unless focus is explicit', async () => {
+    queueFixtures(
+      callMock,
+      okFixture('req_terminal_create', {
+        terminal: {
+          handle: 'term_1',
+          worktreeId: 'repo-1::/tmp/repo/feature',
+          title: 'Claude'
+        }
+      })
+    )
+    vi.spyOn(console, 'log').mockImplementation(() => {})
+
+    await main(
+      [
+        'terminal',
+        'create',
+        '--worktree',
+        'path:/tmp/repo/feature',
+        '--title',
+        'Claude',
+        '--command',
+        'claude',
+        '--json'
+      ],
+      '/tmp/repo'
+    )
+
+    expect(callMock).toHaveBeenCalledWith('terminal.create', {
+      worktree: 'path:/tmp/repo/feature',
+      command: 'claude',
+      title: 'Claude',
+      focus: false,
+      rendererBacked: true,
+      activate: false
+    })
+  })
+
+  it('keeps Claude print commands on the background terminal path', async () => {
+    queueFixtures(
+      callMock,
+      okFixture('req_terminal_create', {
+        terminal: {
+          handle: 'term_1',
+          worktreeId: 'repo-1::/tmp/repo/feature',
+          title: 'Claude print'
+        }
+      })
+    )
+    vi.spyOn(console, 'log').mockImplementation(() => {})
+
+    await main(
+      [
+        'terminal',
+        'create',
+        '--worktree',
+        'path:/tmp/repo/feature',
+        '--title',
+        'Claude print',
+        '--command',
+        'claude -p "summarize"',
+        '--json'
+      ],
+      '/tmp/repo'
+    )
+
+    expect(callMock).toHaveBeenCalledWith('terminal.create', {
+      worktree: 'path:/tmp/repo/feature',
+      command: 'claude -p "summarize"',
+      title: 'Claude print',
+      focus: false
     })
   })
 
@@ -1379,6 +1453,47 @@ describe('orca cli worktree awareness', () => {
       title: undefined,
       focus: false
     })
+  })
+
+  it('exits nonzero when terminal wait returns an unsatisfied blocked result', async () => {
+    process.env.ORCA_TERMINAL_HANDLE = 'term_worker'
+    callMock.mockResolvedValueOnce({
+      id: 'req_terminal_wait',
+      ok: true,
+      result: {
+        wait: {
+          handle: 'term_worker',
+          condition: 'tui-idle',
+          satisfied: false,
+          status: 'running',
+          exitCode: null,
+          blockedReason: 'codex-cwd-prompt'
+        }
+      },
+      _meta: {
+        runtimeId: 'runtime-1'
+      }
+    })
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
+    const priorExitCode = process.exitCode
+
+    await main(['terminal', 'wait', '--terminal', 'term_worker', '--for', 'tui-idle'], '/tmp/repo')
+
+    expect(callMock).toHaveBeenCalledWith(
+      'terminal.wait',
+      {
+        terminal: 'term_worker',
+        for: 'tui-idle',
+        timeoutMs: undefined
+      },
+      {
+        timeoutMs: 300000
+      }
+    )
+    expect(logSpy.mock.calls.flat().join('\n')).toContain('blockedReason: codex-cwd-prompt')
+    expect(process.exitCode).toBe(1)
+
+    process.exitCode = priorExitCode
   })
 
   it('does not force remote Codex terminal creates through a local renderer path', async () => {

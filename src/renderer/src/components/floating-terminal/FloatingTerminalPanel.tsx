@@ -3,6 +3,7 @@
  * handling in one surface so the floating worktree does not drift from the
  * main tab model while still keeping the DOM-mounted panes local. */
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { FileText, Globe, TerminalSquare } from 'lucide-react'
 import { toast } from 'sonner'
 import BrowserPane from '@/components/browser-pane/BrowserPane'
 import TabBar from '@/components/tab-bar/TabBar'
@@ -21,7 +22,13 @@ import { useTerminalSaveDialog } from '@/components/terminal/useTerminalSaveDial
 import { appendUniqueOpenFileIds } from '@/components/terminal/unsaved-close-queue'
 import { getConnectionId } from '@/lib/connection-context'
 import { createUntitledMarkdownFile } from '@/lib/create-untitled-markdown'
+import { detectLanguage } from '@/lib/language-detect'
 import { focusTerminalTabSurface } from '@/lib/focus-terminal-tab-surface'
+import { isOrcaCliAvailableOnPath } from '@/lib/agent-skill-cli-prerequisite'
+import {
+  isFloatingWorkspacePanelShortcut,
+  isFloatingWorkspaceTerminalInputTarget
+} from '@/lib/floating-workspace-terminal-actions'
 import { extractIpcErrorMessage } from '@/lib/ipc-error'
 import {
   ORCHESTRATION_SETUP_DISMISSED_STORAGE_KEY,
@@ -61,6 +68,7 @@ const EMPTY_TERMINAL_TABS: TerminalTab[] = []
 const EMPTY_BROWSER_TABS: BrowserTabState[] = []
 const EMPTY_GROUPS: TabGroup[] = []
 const EMPTY_UNIFIED_TABS: Tab[] = []
+const LOCAL_RUNTIME_SETTINGS = { activeRuntimeEnvironmentId: null } as const
 
 const EditorPanel = lazy(() => import('@/components/editor/EditorPanel'))
 
@@ -71,6 +79,7 @@ type FloatingTerminalPanelProps = {
 
 const FLOATING_TERMINAL_NO_DRAG_SELECTOR =
   'button,input,textarea,select,[role="menuitem"],[data-testid="sortable-tab"],[data-floating-terminal-no-drag]'
+const FLOATING_TERMINAL_SHORTCUT_SURFACE_SELECTOR = '[data-floating-terminal-shortcut-surface]'
 
 function isFloatingTerminalDragTarget(target: EventTarget): boolean {
   return !(target instanceof HTMLElement && target.closest(FLOATING_TERMINAL_NO_DRAG_SELECTOR))
@@ -100,10 +109,10 @@ export function FloatingTerminalPanel({
   const pinFile = useAppStore((s) => s.pinFile)
   const openFile = useAppStore((s) => s.openFile)
   const browserDefaultUrl = useAppStore((s) => s.browserDefaultUrl)
-  const settings = useAppStore((s) => s.settings)
-  const floatingTerminalCwd = useAppStore((s) => s.settings?.floatingTerminalCwd ?? '~')
+  const floatingTerminalCwd = useAppStore((s) => s.settings?.floatingTerminalCwd ?? '')
 
   const [cwd, setCwd] = useState<string | null>(null)
+  const [markdownCwd, setMarkdownCwd] = useState<string | null>(null)
   const [bounds, setBounds] = useState(() => getDefaultFloatingTerminalBounds())
   const [maximized, setMaximized] = useState(false)
   const [orchestrationDialogOpen, setOrchestrationDialogOpen] = useState(false)
@@ -112,8 +121,6 @@ export function FloatingTerminalPanel({
   )
   const restoreBoundsRef = useRef<FloatingTerminalPanelBounds | null>(null)
   const normalizedInitialBoundsRef = useRef(false)
-  const previousOpenRef = useRef(false)
-  const pendingLastEditorCloseRef = useRef(false)
   const pendingEditorCloseQueueRef = useRef<string[]>([])
   const saveDialogFileIdRef = useRef<string | null>(null)
   const panelRef = useRef<HTMLDivElement>(null)
@@ -311,7 +318,6 @@ export function FloatingTerminalPanel({
 
   const handleFloatingSaveDialogCancel = useCallback(() => {
     pendingEditorCloseQueueRef.current = []
-    pendingLastEditorCloseRef.current = false
     handleSaveDialogCancel()
   }, [handleSaveDialogCancel])
 
@@ -335,31 +341,8 @@ export function FloatingTerminalPanel({
   }, [floatingTerminalCwd])
 
   useEffect(() => {
-    const opened = open && !previousOpenRef.current
-    previousOpenRef.current = open
-    // Why: zero renderable tabs only means "bootstrap" when the panel is newly
-    // opened. Later zero-tab states are intentional closes or PTY exits.
-    if (!opened || unifiedTabs.length > 0) {
-      return
-    }
-    void (async () => {
-      if (
-        await createWebRuntimeSessionTerminal({
-          worktreeId: FLOATING_TERMINAL_WORKTREE_ID,
-          targetGroupId: activeGroup?.id,
-          activate: true,
-          selectWorktree: false
-        })
-      ) {
-        return
-      }
-      const tab = createTab(FLOATING_TERMINAL_WORKTREE_ID, activeGroup?.id, undefined, {
-        activate: false
-      })
-      activateTab(tab.id)
-      focusTerminalTabSurface(tab.id)
-    })()
-  }, [activateTab, activeGroup, createTab, open, unifiedTabs.length])
+    void window.api.app.getFloatingMarkdownDirectory().then(setMarkdownCwd)
+  }, [])
 
   useEffect(() => {
     if (!open || !activeTerminalId) {
@@ -367,16 +350,6 @@ export function FloatingTerminalPanel({
     }
     focusTerminalTabSurface(activeTerminalId)
   }, [activeTerminalId, open])
-
-  useEffect(() => {
-    if (!open || saveDialogFileId !== null || !pendingLastEditorCloseRef.current) {
-      return
-    }
-    if (unifiedTabs.length === 0) {
-      pendingLastEditorCloseRef.current = false
-      onOpenChange(false)
-    }
-  }, [onOpenChange, open, saveDialogFileId, unifiedTabs.length])
 
   const refreshOrchestrationSetupVisibility = useCallback(async (): Promise<void> => {
     if (isOrchestrationSetupDismissed()) {
@@ -389,7 +362,7 @@ export function FloatingTerminalPanel({
     }
     try {
       const status = await window.api.cli.getInstallStatus()
-      setShowOrchestrationSetup(status.state !== 'installed')
+      setShowOrchestrationSetup(!isOrcaCliAvailableOnPath(status))
     } catch {
       setShowOrchestrationSetup(true)
     }
@@ -498,16 +471,16 @@ export function FloatingTerminalPanel({
   }, [activeGroup, browserDefaultUrl, createBrowserTab])
 
   const createFloatingMarkdownTab = useCallback(() => {
-    if (!cwd) {
+    if (!markdownCwd) {
       return
     }
     void (async () => {
       try {
         const fileInfo = await createUntitledMarkdownFile(
-          cwd,
+          markdownCwd,
           FLOATING_TERMINAL_WORKTREE_ID,
           getConnectionId(FLOATING_TERMINAL_WORKTREE_ID) ?? undefined,
-          settings
+          LOCAL_RUNTIME_SETTINGS
         )
         openFile(fileInfo, {
           preview: false,
@@ -518,7 +491,35 @@ export function FloatingTerminalPanel({
         toast.error(extractIpcErrorMessage(err, 'Failed to create untitled markdown file.'))
       }
     })()
-  }, [activeGroup, cwd, openFile, settings])
+  }, [activeGroup, markdownCwd, openFile])
+
+  const openFloatingMarkdownTab = useCallback(() => {
+    void (async () => {
+      try {
+        const document = await window.api.app.pickFloatingMarkdownDocument()
+        if (!document) {
+          return
+        }
+        openFile(
+          {
+            filePath: document.filePath,
+            relativePath: document.relativePath,
+            worktreeId: FLOATING_TERMINAL_WORKTREE_ID,
+            language: detectLanguage(document.relativePath),
+            mode: 'edit',
+            runtimeEnvironmentId: null
+          },
+          {
+            preview: false,
+            targetGroupId: activeGroup?.id,
+            suppressActiveRuntimeFallback: true
+          }
+        )
+      } catch (err) {
+        toast.error(extractIpcErrorMessage(err, 'Failed to open markdown file.'))
+      }
+    })()
+  }, [activeGroup, openFile])
 
   const closeFloatingItems = useCallback(
     (visibleIds: string[]) => {
@@ -534,10 +535,7 @@ export function FloatingTerminalPanel({
       if (items.length === 0) {
         return
       }
-      const closingTabIds = new Set(items.map((item) => item.id))
-      const isClosingEveryVisibleTab = currentGroupTabs.every((tab) => closingTabIds.has(tab.id))
       const dirtyEditorFileIds: string[] = []
-      let hasRuntimeSessionClose = false
       const runtimeEnvironmentId = state.settings?.activeRuntimeEnvironmentId?.trim()
       for (const item of items) {
         if (
@@ -546,7 +544,6 @@ export function FloatingTerminalPanel({
         ) {
           // Why: paired web clients mirror host-owned tabs; ask the runtime to
           // close the host tab instead of deleting the local mirror directly.
-          hasRuntimeSessionClose = true
           void closeWebRuntimeSessionTab({
             worktreeId: FLOATING_TERMINAL_WORKTREE_ID,
             tabId: item.contentType === 'browser' ? item.id : item.entityId,
@@ -569,15 +566,10 @@ export function FloatingTerminalPanel({
         }
       }
       if (dirtyEditorFileIds.length > 0) {
-        pendingLastEditorCloseRef.current = isClosingEveryVisibleTab
         queueEditorCloseRequests(dirtyEditorFileIds)
-        return
-      }
-      if (isClosingEveryVisibleTab && !hasRuntimeSessionClose) {
-        onOpenChange(false)
       }
     },
-    [activeGroup, closeBrowserTab, closeFile, closeTab, onOpenChange, queueEditorCloseRequests]
+    [activeGroup, closeBrowserTab, closeFile, closeTab, queueEditorCloseRequests]
   )
 
   const closeFloatingItem = useCallback(
@@ -654,6 +646,90 @@ export function FloatingTerminalPanel({
     )
   }, [activeGroup, closeFloatingItems])
 
+  const focusPanelForShortcuts = useCallback(() => {
+    const active = document.activeElement
+    if (
+      active instanceof HTMLElement &&
+      active.closest('[data-floating-terminal-panel]') !== null
+    ) {
+      // Why: dragging the titlebar while xterm/editor already has focus should
+      // not steal the typing target just to keep panel shortcuts scoped.
+      return
+    }
+    panelRef.current?.focus({ preventScroll: true })
+  }, [])
+
+  const setFloatingTerminalInputFocused = useCallback((target: EventTarget | null): void => {
+    window.api.ui.setFloatingTerminalInputFocused(isFloatingWorkspaceTerminalInputTarget(target))
+  }, [])
+
+  const handleShortcutSurfaceKeyDown = useCallback(
+    (event: React.KeyboardEvent<HTMLDivElement>) => {
+      if (!open || event.defaultPrevented || event.repeat) {
+        return
+      }
+      const target = event.target
+      if (
+        !(target instanceof HTMLElement) ||
+        (target !== panelRef.current &&
+          target.closest(FLOATING_TERMINAL_SHORTCUT_SURFACE_SELECTOR) === null)
+      ) {
+        return
+      }
+
+      if (
+        !isFloatingWorkspacePanelShortcut(
+          event,
+          navigator.userAgent.includes('Mac'),
+          panelRef.current
+        )
+      ) {
+        return
+      }
+
+      const key = event.key.toLowerCase()
+      if (!event.shiftKey && key === 't') {
+        event.preventDefault()
+        createFloatingTerminalTab()
+        return
+      }
+      if (event.shiftKey && key === 'b') {
+        event.preventDefault()
+        createFloatingBrowserTab()
+        return
+      }
+      if (event.shiftKey && key === 'm') {
+        event.preventDefault()
+        createFloatingMarkdownTab()
+        return
+      }
+      if (!event.shiftKey && key === 'w') {
+        event.preventDefault()
+        if (activeTab) {
+          closeFloatingItem(activeTab.id)
+        } else {
+          onOpenChange(false)
+        }
+      }
+    },
+    [
+      activeTab,
+      closeFloatingItem,
+      createFloatingBrowserTab,
+      createFloatingMarkdownTab,
+      createFloatingTerminalTab,
+      onOpenChange,
+      open
+    ]
+  )
+
+  useEffect(() => {
+    if (!open) {
+      window.api.ui.setFloatingTerminalInputFocused(false)
+    }
+    return () => window.api.ui.setFloatingTerminalInputFocused(false)
+  }, [open])
+
   const toggleMaximized = useCallback(() => {
     setMaximized((current) => {
       if (current) {
@@ -678,6 +754,9 @@ export function FloatingTerminalPanel({
     if (!isFloatingTerminalDragTarget(target)) {
       return
     }
+    // Why: clicking the draggable titlebar should make the floating workspace
+    // own shortcuts even when the main app is still on Landing.
+    focusPanelForShortcuts()
     dragRef.current = {
       pointerId: event.pointerId,
       startX: event.clientX,
@@ -727,6 +806,7 @@ export function FloatingTerminalPanel({
       ref={panelRef}
       data-floating-terminal-panel
       aria-hidden={!open}
+      tabIndex={-1}
       className={`fixed z-50 flex min-h-[280px] min-w-[420px] overflow-hidden rounded-lg border border-border bg-card text-card-foreground shadow-[0_10px_24px_rgba(0,0,0,0.18)] ${open ? 'opacity-100' : 'invisible pointer-events-none opacity-0'}`}
       style={{
         visibility: open ? 'visible' : 'hidden',
@@ -744,10 +824,14 @@ export function FloatingTerminalPanel({
           clampFloatingTerminalBounds({ ...prev, width: rect.width, height: rect.height })
         )
       }}
+      onFocusCapture={(event) => setFloatingTerminalInputFocused(event.target)}
+      onBlurCapture={(event) => setFloatingTerminalInputFocused(event.relatedTarget)}
+      onKeyDownCapture={handleShortcutSurfaceKeyDown}
     >
       <div className="flex min-h-0 flex-1 flex-col">
         <div
           className="flex h-9 shrink-0 cursor-grab items-center border-b border-border bg-[var(--bg-titlebar,var(--card))] active:cursor-grabbing"
+          data-floating-terminal-shortcut-surface
           onPointerDown={handleDragStart}
           onPointerMove={handleDragMove}
           onPointerUp={handleDragEnd}
@@ -768,6 +852,7 @@ export function FloatingTerminalPanel({
               onNewTerminalWithShell={createFloatingTerminalTab}
               onNewBrowserTab={createFloatingBrowserTab}
               onNewFileTab={createFloatingMarkdownTab}
+              onOpenFileTab={openFloatingMarkdownTab}
               onSetCustomTitle={setTabCustomTitle}
               onSetTabColor={setTabColor}
               onTogglePaneExpand={(tabId) =>
@@ -869,6 +954,16 @@ export function FloatingTerminalPanel({
               </Suspense>
             </div>
           ) : null}
+          {unifiedTabs.length === 0 ? (
+            <FloatingTerminalEmptyState
+              onNewTerminal={() => createFloatingTerminalTab()}
+              onNewMarkdown={createFloatingMarkdownTab}
+              onOpenMarkdown={openFloatingMarkdownTab}
+              onNewBrowser={createFloatingBrowserTab}
+              onClose={() => onOpenChange(false)}
+              onFocusPanel={focusPanelForShortcuts}
+            />
+          ) : null}
         </div>
       </div>
       {showOrchestrationSetup && activeTabType === 'terminal' ? (
@@ -953,6 +1048,77 @@ export function FloatingTerminalPanel({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+    </div>
+  )
+}
+
+function FloatingTerminalEmptyState({
+  onNewTerminal,
+  onNewMarkdown,
+  onOpenMarkdown,
+  onNewBrowser,
+  onClose,
+  onFocusPanel
+}: {
+  onNewTerminal: () => void
+  onNewMarkdown: () => void
+  onOpenMarkdown: () => void
+  onNewBrowser: () => void
+  onClose: () => void
+  onFocusPanel: () => void
+}): React.JSX.Element {
+  return (
+    <div
+      className="absolute inset-0 flex items-center justify-center"
+      data-floating-terminal-shortcut-surface
+      onPointerDown={onFocusPanel}
+    >
+      <div className="flex w-[230px] flex-col items-center gap-1.5" data-floating-terminal-no-drag>
+        <Button
+          type="button"
+          variant="ghost"
+          className="h-8 justify-center gap-2.5 rounded-md px-3 text-sm font-normal text-muted-foreground hover:bg-muted/40 hover:text-foreground"
+          onClick={onNewTerminal}
+        >
+          <TerminalSquare className="size-3.5 opacity-80" />
+          New Terminal
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          className="h-8 justify-center gap-2.5 rounded-md px-3 text-sm font-normal text-muted-foreground hover:bg-muted/40 hover:text-foreground"
+          onClick={onNewBrowser}
+        >
+          <Globe className="size-3.5 opacity-80" />
+          New Browser
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          className="h-8 justify-center gap-2.5 rounded-md px-3 text-sm font-normal text-muted-foreground hover:bg-muted/40 hover:text-foreground"
+          onClick={onNewMarkdown}
+        >
+          <FileText className="size-3.5 opacity-80" />
+          New Markdown Note
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          className="h-8 justify-center gap-2.5 rounded-md px-3 text-sm font-normal text-muted-foreground hover:bg-muted/40 hover:text-foreground"
+          onClick={onOpenMarkdown}
+        >
+          <FileText className="size-3.5 opacity-80" />
+          Open Markdown Note
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          className="h-8 justify-center gap-2.5 rounded-md px-3 text-sm font-normal text-muted-foreground hover:bg-muted/40 hover:text-foreground"
+          onClick={onClose}
+        >
+          Minimize
+        </Button>
+      </div>
     </div>
   )
 }

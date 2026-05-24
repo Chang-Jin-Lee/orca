@@ -3,6 +3,7 @@ import { useEffect, useRef } from 'react'
 import type { IDisposable, Terminal } from '@xterm/xterm'
 import { PaneManager } from '@/lib/pane-manager/pane-manager'
 import { resolveTerminalCursorInactiveStyle } from '@/lib/pane-manager/pane-terminal-options'
+import { buildWindowsPtyCompatibilityOptions } from '@/lib/pane-manager/windows-pty-compatibility'
 import { useAppStore } from '@/store'
 import {
   createFilePathLinkProvider,
@@ -42,6 +43,7 @@ import { resolveEffectiveTerminalAppearance } from '@/lib/terminal-theme'
 import { connectPanePty } from './pty-connection'
 import type { PtyTransport } from './pty-transport'
 import { getRemoteRuntimePtyEnvironmentId } from '@/runtime/runtime-terminal-stream'
+import { getConnectionId } from '@/lib/connection-context'
 import { isPaneReplaying, type ReplayingPanesRef } from './replay-guard'
 import { fitAndFocusPanes, fitPanes } from './pane-helpers'
 import { registerRuntimeTerminalTab, scheduleRuntimeGraphSync } from '@/runtime/sync-runtime-graph'
@@ -57,6 +59,7 @@ import {
   type SplitTerminalPaneDetail,
   type CloseTerminalPaneDetail
 } from '@/constants/terminal'
+import { acquireWebviewsDragPassthrough } from '../browser-pane/webview-registry'
 
 type UseTerminalPaneLifecycleDeps = {
   tabId: string
@@ -433,6 +436,8 @@ export function useTerminalPaneLifecycle({
     const fileOpenLinkHint = getTerminalFileOpenHint()
     const urlOpenLinkHint = getTerminalUrlOpenHint()
 
+    let releaseWebviewDragPassthrough: (() => void) | null = null
+
     const manager = new PaneManager(container, {
       // Why: `spawnHints` carries the resolved cwd from Cmd+D / context-menu
       // Split actions so the new PTY inherits the source pane's live cwd.
@@ -779,11 +784,31 @@ export function useTerminalPaneLifecycle({
           persistLayoutSnapshot()
         }
       },
+      onPaneDragActiveChange: (active) => {
+        if (active) {
+          releaseWebviewDragPassthrough?.()
+          releaseWebviewDragPassthrough = acquireWebviewsDragPassthrough()
+          return
+        }
+        releaseWebviewDragPassthrough?.()
+        releaseWebviewDragPassthrough = null
+      },
       terminalOptions: () => {
         const currentSettings = settingsRef.current
         const terminalFontWeights = resolveTerminalFontWeights(currentSettings?.terminalFontWeight)
         const cursorStyle = currentSettings?.terminalCursorStyle ?? 'bar'
+        const storeState = useAppStore.getState()
+        const currentTab = storeState.tabsByWorktree[worktreeId]?.find(
+          (candidate) => candidate.id === tabId
+        )
+        const windowsPtyCompatibilityOptions = buildWindowsPtyCompatibilityOptions({
+          userAgent: navigator.userAgent,
+          connectionId: getConnectionId(worktreeId),
+          cwd: startupCwd,
+          shellOverride: currentTab?.shellOverride
+        })
         return {
+          ...windowsPtyCompatibilityOptions,
           fontSize: currentSettings?.terminalFontSize ?? 14,
           fontFamily: buildFontFamily(currentSettings?.terminalFontFamily ?? ''),
           fontWeight: terminalFontWeights.fontWeight,
@@ -1076,6 +1101,8 @@ export function useTerminalPaneLifecycle({
       panePtyBindings.clear()
       paneTransports.clear()
       manager.destroy()
+      releaseWebviewDragPassthrough?.()
+      releaseWebviewDragPassthrough = null
       managerRef.current = null
       if (e2eConfig.exposeStore) {
         window.__paneManagers?.delete(tabId)

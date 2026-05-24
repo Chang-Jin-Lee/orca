@@ -3,12 +3,12 @@ import type { SettingsSearchEntry } from './settings-search'
 export const GENERAL_WORKSPACE_SEARCH_ENTRIES: SettingsSearchEntry[] = [
   {
     title: 'Workspace Directory',
-    description: 'Root directory where worktree folders are created.',
+    description: 'Root directory where workspace folders are created.',
     keywords: ['workspace', 'folder', 'path', 'worktree']
   },
   {
     title: 'Nest Workspaces',
-    description: 'Create worktrees inside a repo-named subfolder.',
+    description: 'Create workspaces inside a repo-named subfolder.',
     keywords: ['nested', 'subfolder', 'directory']
   },
   {
@@ -23,7 +23,7 @@ export const GENERAL_WORKSPACE_SEARCH_ENTRIES: SettingsSearchEntry[] = [
   },
   {
     title: 'Open In Menu',
-    description: 'Add custom launchers to the worktree Open in menu.',
+    description: 'Add custom launchers to the workspace Open in menu.',
     keywords: ['open in', 'editor', 'launcher', 'cursor', 'zed', 'command', 'vscode']
   }
 ]

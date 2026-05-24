@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   Columns2,
   Copy,
@@ -21,6 +21,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { CLOSE_ALL_CONTEXT_MENUS_EVENT } from '../tab-bar/SortableTab'
+import { useShortcutLabel } from '@/hooks/useShortcutLabel'
 import EditorViewToggle, {
   CSV_VIEW_MODE_METADATA,
   NOTEBOOK_VIEW_MODE_METADATA
@@ -28,7 +29,6 @@ import EditorViewToggle, {
 import type { EditorToggleValue } from './EditorViewToggle'
 import type { EditorHeaderOpenFileState } from './editor-header'
 import { getEditorHeaderCopyState } from './editor-header'
-import { getMarkdownPreviewShortcutLabel } from './markdown-preview-controls'
 import { DiffNotesSendMenu } from './DiffNotesSendMenu'
 
 const isMac = navigator.userAgent.includes('Mac')
@@ -40,7 +40,6 @@ const revealLabel = isMac
   : isLinux
     ? 'Open Containing Folder'
     : 'Reveal in File Explorer'
-const markdownPreviewShortcutLabel = getMarkdownPreviewShortcutLabel(isMac)
 
 type EditorPanelHeaderProps = {
   activeFile: OpenFile
@@ -108,6 +107,11 @@ export function EditorPanelHeader({
   const headerCopyState = getEditorHeaderCopyState(activeFile)
   const diffComments = useAppStore((s) => s.getDiffComments(activeFile.worktreeId))
   const activeGroupId = useAppStore((s) => s.activeGroupIdByWorktree[activeFile.worktreeId])
+  const fileDiffComments = useMemo(
+    () => diffComments.filter((comment) => comment.filePath === activeFile.relativePath),
+    [activeFile.relativePath, diffComments]
+  )
+  const markdownPreviewShortcutLabel = useShortcutLabel('editor.markdownPreview')
 
   useEffect(() => {
     const closeMenu = (): void => setPathMenuOpen(false)
@@ -208,14 +212,17 @@ export function EditorPanelHeader({
           </Tooltip>
         </TooltipProvider>
       )}
-      {isSingleDiff && diffComments.length > 0 && (
+      {isSingleDiff && fileDiffComments.length > 0 && (
         <DiffNotesSendMenu
           worktreeId={activeFile.worktreeId}
           groupId={activeGroupId ?? activeFile.worktreeId}
           comments={diffComments}
           filePath={activeFile.relativePath}
           showFileScope
-          triggerClassName="p-1 flex-shrink-0"
+          triggerLabel="AI notes"
+          triggerCount={fileDiffComments.length}
+          triggerClassName="h-6 shrink-0 gap-1 rounded-full border border-border/70 bg-muted/40 px-2 text-[11px] font-medium leading-none text-foreground/80 hover:bg-accent hover:text-foreground"
+          iconClassName="size-3"
         />
       )}
       {canOpenPreviewToSide && (
