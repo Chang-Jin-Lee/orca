@@ -754,6 +754,27 @@ test.describe('Terminal Panes', () => {
     await expect(orcaPage.locator('.pane-title-text', { hasText: title })).toHaveCount(1)
   })
 
+  test('Set Title remove button hover stays transparent', async ({ orcaPage }) => {
+    const title = `Remove hover title ${Date.now()}`
+
+    await setPaneTitleFromTerminalMenu(orcaPage, title)
+    const removeButton = orcaPage.getByRole('button', { name: `Remove pane title: ${title}` })
+    await orcaPage.locator('.pane-title-bar', { hasText: title }).hover()
+    await removeButton.hover()
+    await expect(orcaPage.getByText('Remove title', { exact: true })).toBeVisible()
+
+    const hoverStyle = await removeButton.evaluate((element) => {
+      const style = getComputedStyle(element)
+      return {
+        backgroundColor: style.backgroundColor,
+        opacity: style.opacity
+      }
+    })
+
+    expect(hoverStyle.backgroundColor).toBe('rgba(0, 0, 0, 0)')
+    expect(Number(hoverStyle.opacity)).toBeGreaterThan(0.9)
+  })
+
   test('Set Title stays pane-local during agent title churn', async ({ orcaPage }) => {
     const worktreeId = (await getActiveWorktreeId(orcaPage))!
     const tabId = (await getActiveTabId(orcaPage))!
