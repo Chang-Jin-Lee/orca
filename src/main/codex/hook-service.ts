@@ -1,5 +1,5 @@
 /* eslint-disable max-lines -- Why: getStatus + install + remove all share the managed-command and trust-key derivation. Splitting would hide that the three operations must agree on group index, event label, and command bytes. */
-import { existsSync } from 'fs'
+import { existsSync, readFileSync, unlinkSync } from 'fs'
 import { join } from 'path'
 import type { SFTPWrapper } from 'ssh2'
 import type { AgentHookInstallState, AgentHookInstallStatus } from '../../shared/agent-hook-types'
@@ -32,6 +32,7 @@ import {
   removeHookTrustEntries,
   upsertHookTrustEntriesInContent,
   upsertHookTrustEntries,
+  writeConfigAtomically,
   type CodexEventLabel,
   type CodexHookTrustState,
   type CodexTrustEntry
@@ -80,6 +81,10 @@ const CODEX_HOOK_EVENT_LABEL: Record<string, CodexEventLabel> = {
   PostCompact: 'post_compact'
 }
 
+const LEGACY_ORCA_PROFILE_NAME = 'orca-agent-status'
+const LEGACY_ORCA_PROFILE_BLOCK_START = '# BEGIN ORCA AGENT STATUS HOOKS'
+const LEGACY_ORCA_PROFILE_BLOCK_END = '# END ORCA AGENT STATUS HOOKS'
+
 function getManagedScriptFileName(): string {
   return process.platform === 'win32' ? 'codex-hook.cmd' : 'codex-hook.sh'
 }
@@ -98,6 +103,10 @@ function getSystemConfigPath(): string {
 
 function getSystemCodexConfigTomlPath(): string {
   return join(getSystemCodexHomePath(), 'config.toml')
+}
+
+function getLegacyCodexProfileTomlPath(): string {
+  return join(getSystemCodexHomePath(), `${LEGACY_ORCA_PROFILE_NAME}.config.toml`)
 }
 
 function collectManagedTrustEntries(
@@ -398,6 +407,44 @@ function cleanupLegacySystemManagedHooks(): void {
   removeMatchingTrustEntries(getSystemCodexConfigTomlPath(), trustEntries)
 }
 
+function stripLegacyManagedProfileBlock(content: string): string {
+  const start = content.indexOf(LEGACY_ORCA_PROFILE_BLOCK_START)
+  if (start === -1) {
+    return content
+  }
+  const endMarker = content.indexOf(LEGACY_ORCA_PROFILE_BLOCK_END, start)
+  const end = endMarker === -1 ? content.length : endMarker + LEGACY_ORCA_PROFILE_BLOCK_END.length
+  const before = content.slice(0, start).replace(/[ \t]*(?:\r?\n)*$/, '')
+  const after = content.slice(end).replace(/^(?:\r?\n)+/, '')
+  if (!before) {
+    return after
+  }
+  if (!after) {
+    return before.endsWith('\n') ? before : `${before}\n`
+  }
+  return `${before}\n\n${after}`
+}
+
+function cleanupLegacyCodexProfileHooks(): void {
+  const profilePath = getLegacyCodexProfileTomlPath()
+  if (!existsSync(profilePath)) {
+    return
+  }
+
+  const existing = readFileSync(profilePath, 'utf-8')
+  const next = stripLegacyManagedProfileBlock(existing)
+  if (next === existing) {
+    return
+  }
+  // Why: #2778 wrote Orca hooks into a Codex profile file. Runtime CODEX_HOME
+  // supersedes that representation, so remove only Orca's marked block.
+  if (next.trim().length === 0) {
+    unlinkSync(profilePath)
+  } else {
+    writeConfigAtomically(profilePath, next)
+  }
+}
+
 function getManagedScript(target: 'local' | 'posix' = 'local'): string {
   if (target === 'local' && process.platform === 'win32') {
     return [
@@ -661,8 +708,9 @@ export class CodexHookService {
     }
     try {
       cleanupLegacySystemManagedHooks()
+      cleanupLegacyCodexProfileHooks()
     } catch (error) {
-      console.warn('[codex-hook-service] failed to clean legacy system hooks', error)
+      console.warn('[codex-hook-service] failed to clean legacy Codex hooks', error)
     }
     return this.getStatus()
   }
@@ -851,8 +899,9 @@ export class CodexHookService {
 
     try {
       cleanupLegacySystemManagedHooks()
+      cleanupLegacyCodexProfileHooks()
     } catch (error) {
-      console.warn('[codex-hook-service] failed to clean legacy system hooks', error)
+      console.warn('[codex-hook-service] failed to clean legacy Codex hooks', error)
     }
 
     return this.getStatus()

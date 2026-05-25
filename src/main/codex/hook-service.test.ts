@@ -441,6 +441,57 @@ describe('CodexHookService', () => {
     expect(systemToml).not.toContain(':session_start:0:0')
   })
 
+  it('removes the legacy Orca Codex profile file when it only contains managed hooks', () => {
+    const systemCodexHome = join(tmpHome, '.codex')
+    const profilePath = join(systemCodexHome, 'orca-agent-status.config.toml')
+    mkdirSync(systemCodexHome, { recursive: true })
+    writeFileSync(
+      profilePath,
+      [
+        '# BEGIN ORCA AGENT STATUS HOOKS',
+        '[[hooks.PermissionRequest]]',
+        '[[hooks.PermissionRequest.hooks]]',
+        'type = "command"',
+        'command = "codex-hook"',
+        '# END ORCA AGENT STATUS HOOKS',
+        ''
+      ].join('\n'),
+      'utf-8'
+    )
+
+    expect(new CodexHookService().install().state).toBe('installed')
+
+    expect(existsSync(profilePath)).toBe(false)
+  })
+
+  it('removes only the legacy Orca block from a user-edited Codex profile file', () => {
+    const systemCodexHome = join(tmpHome, '.codex')
+    const profilePath = join(systemCodexHome, 'orca-agent-status.config.toml')
+    mkdirSync(systemCodexHome, { recursive: true })
+    writeFileSync(
+      profilePath,
+      [
+        'model = "gpt-5.5"',
+        '',
+        '# BEGIN ORCA AGENT STATUS HOOKS',
+        '[[hooks.PermissionRequest]]',
+        '[[hooks.PermissionRequest.hooks]]',
+        'type = "command"',
+        'command = "codex-hook"',
+        '# END ORCA AGENT STATUS HOOKS',
+        ''
+      ].join('\n'),
+      'utf-8'
+    )
+
+    expect(new CodexHookService().install().state).toBe('installed')
+
+    const profileConfig = readFileSync(profilePath, 'utf-8')
+    expect(profileConfig).toContain('model = "gpt-5.5"')
+    expect(profileConfig).not.toContain('ORCA AGENT STATUS HOOKS')
+    expect(profileConfig).not.toContain('codex-hook')
+  })
+
   it('mirrors system Codex config while preserving runtime hook trust on hook install', () => {
     const systemCodexHome = join(tmpHome, '.codex')
     mkdirSync(systemCodexHome, { recursive: true })
