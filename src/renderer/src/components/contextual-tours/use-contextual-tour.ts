@@ -18,6 +18,7 @@ export function useContextualTour(
 ): void {
   const requestContextualTour = useAppStore((s) => s.requestContextualTour)
   const cancelContextualTour = useAppStore((s) => s.cancelContextualTour)
+  const recordFeatureInteraction = useAppStore((s) => s.recordFeatureInteraction)
   const persistedUIReady = useAppStore((s) => s.persistedUIReady)
   const activeModal = useAppStore((s) => s.activeModal)
   const activeContextualTourId = useAppStore((s) => s.activeContextualTourId)
@@ -28,6 +29,12 @@ export function useContextualTour(
   const contextualToursBlockingSurfaceVisible = useAppStore(
     (s) => s.contextualToursBlockingSurfaceVisible
   )
+
+  useEffect(() => {
+    if (enabled && persistedUIReady) {
+      recordFeatureInteraction(id)
+    }
+  }, [enabled, id, persistedUIReady, recordFeatureInteraction])
 
   useEffect(() => {
     // Why: a tour can be registered by multiple surfaces; an inactive sibling

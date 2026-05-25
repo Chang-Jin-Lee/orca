@@ -28,6 +28,11 @@ import {
 } from '../../../../shared/workspace-cleanup'
 import { normalizeFeatureTipIds, type FeatureTipId } from '../../../../shared/feature-tips'
 import {
+  normalizeFeatureInteractions,
+  type FeatureInteractionId,
+  type FeatureInteractionState
+} from '../../../../shared/feature-interactions'
+import {
   getContextualTour,
   normalizeContextualTourIds,
   type ContextualTourId
@@ -455,6 +460,8 @@ export type UISlice = {
   closeModal: () => void
   featureTipsSeenIds: FeatureTipId[]
   markFeatureTipsSeen: (ids: FeatureTipId[]) => void
+  featureInteractions: FeatureInteractionState
+  recordFeatureInteraction: (id: FeatureInteractionId) => void
   contextualToursSeenIds: ContextualTourId[]
   activeContextualTourId: ContextualTourId | null
   activeContextualTourStepIndex: number
@@ -905,6 +912,24 @@ export const createUISlice: StateCreator<AppState, [], [], UISlice> = (set, get)
       const next = [...current]
       window.api.ui.set({ featureTipsSeenIds: next }).catch(console.error)
       return { featureTipsSeenIds: next }
+    }),
+  featureInteractions: {},
+  recordFeatureInteraction: (id) =>
+    set((s) => {
+      if (!s.persistedUIReady) {
+        return s
+      }
+      if (s.featureInteractions[id]) {
+        return s
+      }
+      const next: FeatureInteractionState = {
+        ...s.featureInteractions,
+        [id]: { firstInteractedAt: Date.now() }
+      }
+      if (typeof window !== 'undefined') {
+        window.api.ui.set({ featureInteractions: next }).catch(console.error)
+      }
+      return { featureInteractions: next }
     }),
   contextualToursSeenIds: [],
   activeContextualTourId: null,
@@ -1372,6 +1397,7 @@ export const createUISlice: StateCreator<AppState, [], [], UISlice> = (set, get)
         browserKagiSessionLink: normalizeKagiSessionLink(ui.browserKagiSessionLink ?? ''),
         taskResumeState: sanitizeTaskResumeState(ui.taskResumeState),
         featureTipsSeenIds: normalizeFeatureTipIds(ui.featureTipsSeenIds),
+        featureInteractions: normalizeFeatureInteractions(ui.featureInteractions),
         contextualToursSeenIds: normalizeContextualTourIds(ui.contextualToursSeenIds),
         trustedOrcaHooks: filterTrustedOrcaHooksToValidRepos(
           ui.trustedOrcaHooks ?? {},

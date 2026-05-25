@@ -12,6 +12,7 @@ import { createUISlice } from './ui'
 import { createWorktreeNavHistorySlice } from './worktree-nav-history'
 import type { AppState } from '../types'
 import type { ContextualTourId } from '../../../../shared/contextual-tours'
+import type { FeatureInteractionState } from '../../../../shared/feature-interactions'
 
 afterEach(() => {
   vi.restoreAllMocks()
@@ -759,6 +760,75 @@ describe('createUISlice feature tips', () => {
     )
 
     expect(store.getState().featureTipsSeenIds).toEqual(['voice-dictation'])
+  })
+})
+
+describe('createUISlice feature interactions', () => {
+  it('normalizes persisted feature interaction records during hydration', () => {
+    const store = createUIStore()
+
+    store.getState().hydratePersistedUI(
+      makePersistedUI({
+        featureInteractions: {
+          tasks: { firstInteractedAt: 100 },
+          browser: { firstInteractedAt: Number.NaN },
+          unknown: { firstInteractedAt: 200 }
+        } as unknown as FeatureInteractionState
+      })
+    )
+
+    expect(store.getState().featureInteractions).toEqual({
+      tasks: { firstInteractedAt: 100 }
+    })
+  })
+
+  it('records a feature interaction once and persists it', () => {
+    const setMock = vi.fn(() => Promise.resolve())
+    vi.stubGlobal('window', {
+      api: {
+        ui: {
+          set: setMock
+        }
+      }
+    })
+    const now = 1_700_000_000_000
+    vi.useFakeTimers()
+    vi.setSystemTime(now)
+
+    try {
+      const store = createUIStore()
+      store.getState().hydratePersistedUI(makePersistedUI())
+      setMock.mockClear()
+
+      store.getState().recordFeatureInteraction('tasks')
+      store.getState().recordFeatureInteraction('tasks')
+
+      const expected: FeatureInteractionState = {
+        tasks: { firstInteractedAt: now }
+      }
+      expect(store.getState().featureInteractions).toEqual(expected)
+      expect(setMock).toHaveBeenCalledTimes(1)
+      expect(setMock).toHaveBeenCalledWith({ featureInteractions: expected })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('does not record interactions before persisted UI has hydrated', () => {
+    const setMock = vi.fn(() => Promise.resolve())
+    vi.stubGlobal('window', {
+      api: {
+        ui: {
+          set: setMock
+        }
+      }
+    })
+    const store = createUIStore()
+
+    store.getState().recordFeatureInteraction('tasks')
+
+    expect(store.getState().featureInteractions).toEqual({})
+    expect(setMock).not.toHaveBeenCalled()
   })
 })
 

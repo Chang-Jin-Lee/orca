@@ -379,6 +379,7 @@ export function getDefaultUIState(): PersistedUIState {
     acknowledgedAgentsByPaneKey: {},
     workspaceCleanup: { dismissals: {} },
     featureTipsSeenIds: [],
+    featureInteractions: {},
     contextualToursSeenIds: []
   }
 }

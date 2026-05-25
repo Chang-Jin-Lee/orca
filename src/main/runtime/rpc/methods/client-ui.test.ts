@@ -154,7 +154,12 @@ describe('client UI RPC methods', () => {
             classifierVersion: 2
           }
         }
-      }
+      },
+      featureTipsSeenIds: ['voice-dictation'],
+      featureInteractions: {
+        tasks: { firstInteractedAt: 100 }
+      },
+      contextualToursSeenIds: ['tasks']
     }
     const runtime = {
       getRuntimeId: () => 'test-runtime',
@@ -181,7 +186,12 @@ describe('client UI RPC methods', () => {
             classifierVersion: 2
           }
         }
-      }
+      },
+      featureTipsSeenIds: ['voice-dictation'],
+      featureInteractions: {
+        tasks: { firstInteractedAt: 100 }
+      },
+      contextualToursSeenIds: ['tasks']
     }
     const response = await dispatcher.dispatch(makeRequest('ui.set', payload))
 
@@ -198,6 +208,25 @@ describe('client UI RPC methods', () => {
 
     const response = await dispatcher.dispatch(
       makeRequest('ui.set', { showActiveOnly: 'yes', unknownField: true })
+    )
+
+    expect(response).toMatchObject({ ok: false, error: { code: 'invalid_argument' } })
+    expect(runtime.updateUIState).not.toHaveBeenCalled()
+  })
+
+  it('rejects unknown feature interaction ids', async () => {
+    const runtime = {
+      getRuntimeId: () => 'test-runtime',
+      updateUIState: vi.fn()
+    } as unknown as OrcaRuntimeService
+    const dispatcher = new RpcDispatcher({ runtime, methods: CLIENT_UI_METHODS })
+
+    const response = await dispatcher.dispatch(
+      makeRequest('ui.set', {
+        featureInteractions: {
+          unknown: { firstInteractedAt: 100 }
+        }
+      })
     )
 
     expect(response).toMatchObject({ ok: false, error: { code: 'invalid_argument' } })

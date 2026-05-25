@@ -304,6 +304,7 @@ function App(): React.JSX.Element {
   const activeView = useAppStore((s) => s.activeView)
   const activeModal = useAppStore((s) => s.activeModal)
   const featureTipsSeenIds = useAppStore((s) => s.featureTipsSeenIds)
+  const featureInteractions = useAppStore((s) => s.featureInteractions)
   const activeWorktreeId = useAppStore((s) => s.activeWorktreeId)
   // Why: App swaps the sidebar between workspace and landing layouts when the
   // active workspace is slept/deleted. Keep virtualized scroll memory above
@@ -466,6 +467,7 @@ function App(): React.JSX.Element {
     const featureTipsDecision = getFeatureTipsAppOpenDecision({
       activeModal,
       featureTipsSeenIds,
+      featureInteractions,
       onboarding,
       persistedUIReady,
       promptedThisSession: featureTipsPromptedThisSessionRef.current,
@@ -489,7 +491,15 @@ function App(): React.JSX.Element {
     // on the next launch just because the user never clicked a dismiss button.
     actions.markFeatureTipsSeen([featureTipsDecision.tipId])
     actions.openModal('feature-tips', { source: 'app_open', tipId: featureTipsDecision.tipId })
-  }, [activeModal, actions, featureTipsSeenIds, onboarding, persistedUIReady, settings])
+  }, [
+    activeModal,
+    actions,
+    featureInteractions,
+    featureTipsSeenIds,
+    onboarding,
+    persistedUIReady,
+    settings
+  ])
 
   useEffect(() => {
     if (activeView !== 'settings' || !shouldShowOnboarding(onboarding)) {
