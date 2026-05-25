@@ -492,6 +492,109 @@ describe('CodexHookService', () => {
     expect(profileConfig).not.toContain('codex-hook')
   })
 
+  it('cleans duplicate Codex hook representations while keeping status hooks in runtime CODEX_HOME', () => {
+    const systemCodexHome = join(tmpHome, '.codex')
+    const systemHooksPath = join(systemCodexHome, 'hooks.json')
+    const systemTomlPath = join(systemCodexHome, 'config.toml')
+    const legacyProfilePath = join(systemCodexHome, 'orca-agent-status.config.toml')
+    const legacyScriptPath = join(
+      tmpHome,
+      '.orca',
+      'agent-hooks',
+      process.platform === 'win32' ? 'codex-hook.cmd' : 'codex-hook.sh'
+    )
+    const legacyCommand =
+      process.platform === 'win32' ? legacyScriptPath : wrapPosixHookCommand(legacyScriptPath)
+    const userCommand = 'user-stop-hook'
+    mkdirSync(systemCodexHome, { recursive: true })
+    writeFileSync(
+      systemHooksPath,
+      `${JSON.stringify(
+        {
+          hooks: {
+            Stop: [
+              { hooks: [{ type: 'command', command: userCommand }] },
+              { hooks: [{ type: 'command', command: legacyCommand }] }
+            ],
+            SessionStart: [{ hooks: [{ type: 'command', command: legacyCommand }] }]
+          }
+        },
+        null,
+        2
+      )}\n`,
+      'utf-8'
+    )
+    writeFileSync(
+      systemTomlPath,
+      upsertHookTrustEntriesInContent(
+        ['model = "system-model"', '', '[features]', 'codex_hooks = true', ''].join('\n'),
+        [
+          {
+            sourcePath: systemHooksPath,
+            eventLabel: 'stop',
+            groupIndex: 0,
+            handlerIndex: 0,
+            command: userCommand
+          },
+          {
+            sourcePath: systemHooksPath,
+            eventLabel: 'session_start',
+            groupIndex: 0,
+            handlerIndex: 0,
+            command: legacyCommand
+          }
+        ]
+      ),
+      'utf-8'
+    )
+    writeFileSync(
+      legacyProfilePath,
+      [
+        '# BEGIN ORCA AGENT STATUS HOOKS',
+        '[[hooks.PermissionRequest]]',
+        '[[hooks.PermissionRequest.hooks]]',
+        'type = "command"',
+        'command = "codex-hook"',
+        '# END ORCA AGENT STATUS HOOKS',
+        ''
+      ].join('\n'),
+      'utf-8'
+    )
+
+    const service = new CodexHookService()
+    expect(service.install().state).toBe('installed')
+
+    const managedCodexHome = join(userDataDir, 'codex-runtime-home', 'home')
+    const managedHooksPath = join(managedCodexHome, 'hooks.json')
+    const runtimeHooks = JSON.parse(readFileSync(managedHooksPath, 'utf-8')) as {
+      hooks: Record<string, { hooks?: { command?: string }[] }[]>
+    }
+    const stopCommands =
+      runtimeHooks.hooks.Stop?.flatMap(
+        (definition) => definition.hooks?.map((hook) => hook.command ?? '') ?? []
+      ) ?? []
+    expect(stopCommands).toContain(userCommand)
+    expect(stopCommands.some((command) => command.includes('codex-hook'))).toBe(true)
+    expect(runtimeHooks.hooks.PermissionRequest?.[0]?.hooks?.[0]?.command).toContain('codex-hook')
+
+    const runtimeToml = readFileSync(join(managedCodexHome, 'config.toml'), 'utf-8')
+    expect(runtimeToml).toContain('[features]\nhooks = true')
+    expect(runtimeToml).not.toContain('codex_hooks')
+    expect(runtimeToml).toContain(hookTrustHeader(`${managedHooksPath}:stop:0:0`))
+    expect(runtimeToml).toContain(hookTrustHeader(`${managedHooksPath}:permission_request:0:0`))
+
+    const systemHooks = JSON.parse(readFileSync(systemHooksPath, 'utf-8')) as {
+      hooks: Record<string, { hooks?: { command?: string }[] }[]>
+    }
+    expect(systemHooks.hooks.Stop).toEqual([{ hooks: [{ type: 'command', command: userCommand }] }])
+    expect(systemHooks.hooks.SessionStart).toBeUndefined()
+    const systemToml = readFileSync(systemTomlPath, 'utf-8')
+    expect(systemToml).toContain('codex_hooks = true')
+    expect(systemToml).not.toContain(':session_start:0:0')
+    expect(existsSync(legacyProfilePath)).toBe(false)
+    expect(service.getStatus().state).toBe('installed')
+  })
+
   it('mirrors system Codex config while preserving runtime hook trust on hook install', () => {
     const systemCodexHome = join(tmpHome, '.codex')
     mkdirSync(systemCodexHome, { recursive: true })
