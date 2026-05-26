@@ -22,6 +22,7 @@ import {
   getSystemCodexHomePath,
   syncSystemCodexResourcesIntoManagedHome
 } from '../codex/codex-home-paths'
+import { syncSystemCodexSessionsIntoManagedHome } from '../codex/codex-session-bridge'
 import { syncSystemConfigIntoManagedCodexHome } from '../codex/codex-config-mirror'
 
 type CodexAuthIdentity = {
@@ -83,6 +84,7 @@ export class CodexRuntimeHomeService {
     this.syncForCurrentSelection()
     syncSystemCodexResourcesIntoManagedHome()
     syncSystemConfigIntoManagedCodexHome()
+    syncSystemCodexSessionsIntoManagedHome()
     return this.getRuntimeHomePath()
   }
 

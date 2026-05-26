@@ -585,6 +585,59 @@ describe('CodexRuntimeHomeService', () => {
     expect(readFileSync(runtimeProfilePath, 'utf-8')).toBe('profile\n')
   })
 
+  it('bridges system Codex sessions before launch without replacing runtime sessions', async () => {
+    const systemMissingRuntimeSessionPath = join(
+      getSystemCodexHomePath(),
+      'sessions',
+      '2026',
+      '05',
+      '26',
+      'rollout-old.jsonl'
+    )
+    const systemConflictSessionPath = join(
+      getSystemCodexHomePath(),
+      'sessions',
+      '2026',
+      '05',
+      '26',
+      'rollout-conflict.jsonl'
+    )
+    const runtimeConflictSessionPath = join(
+      getRuntimeCodexHomePath(),
+      'sessions',
+      '2026',
+      '05',
+      '26',
+      'rollout-conflict.jsonl'
+    )
+    mkdirSync(join(getSystemCodexHomePath(), 'sessions', '2026', '05', '26'), { recursive: true })
+    mkdirSync(join(getRuntimeCodexHomePath(), 'sessions', '2026', '05', '26'), {
+      recursive: true
+    })
+    writeFileSync(systemMissingRuntimeSessionPath, '{"id":"old"}\n', 'utf-8')
+    writeFileSync(systemConflictSessionPath, '{"id":"system-conflict"}\n', 'utf-8')
+    writeFileSync(runtimeConflictSessionPath, '{"id":"runtime-conflict"}\n', 'utf-8')
+    writeFileSync(join(getSystemCodexHomePath(), 'state_5.sqlite'), 'sqlite\n', 'utf-8')
+    const store = createStore(createSettings())
+    const { CodexRuntimeHomeService } = await import('./runtime-home-service')
+    const service = new CodexRuntimeHomeService(store as never)
+
+    service.prepareForCodexLaunch()
+
+    const runtimeMissingSessionPath = join(
+      getRuntimeCodexHomePath(),
+      'sessions',
+      '2026',
+      '05',
+      '26',
+      'rollout-old.jsonl'
+    )
+    expect(readFileSync(runtimeMissingSessionPath, 'utf-8')).toBe('{"id":"old"}\n')
+    expectResourceLinkedOrCopied(runtimeMissingSessionPath, systemMissingRuntimeSessionPath)
+    expect(readFileSync(runtimeConflictSessionPath, 'utf-8')).toBe('{"id":"runtime-conflict"}\n')
+    expect(existsSync(join(getRuntimeCodexHomePath(), 'state_5.sqlite'))).toBe(false)
+  })
+
   it('does not replace runtime-owned Codex files while linking user resources', async () => {
     const systemCodexHome = getSystemCodexHomePath()
     mkdirSync(join(systemCodexHome, 'sessions'), { recursive: true })
