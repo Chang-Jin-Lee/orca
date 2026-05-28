@@ -77,6 +77,7 @@ import {
   getActiveStickyHeaderIndex,
   getActiveStickyHeaderIndexForScroll,
   getPreviousStickyHeaderIndex,
+  GROUP_HEADER_ROW_HEIGHT,
   getStickyHeaderIndexes,
   getVirtualRowTransform,
   shouldUseHeaderTopSpacing,
@@ -162,6 +163,9 @@ type ProjectGroupDeleteDialogState = {
 // terminal title changes) trigger score recalculations.
 const SORT_SETTLE_MS = 3_000
 const USER_SCROLL_MEASUREMENT_ADJUSTMENT_SUPPRESS_MS = 500
+const WORKTREE_REVEAL_TOP_CLEARANCE = 6
+export const WORKTREE_SIDEBAR_REVEAL_TOP_INSET =
+  GROUP_HEADER_ROW_HEIGHT + WORKTREE_REVEAL_TOP_CLEARANCE
 const WORKTREE_SIDEBAR_SCROLL_STYLE: React.CSSProperties = {
   // Why: TanStack Virtual owns scroll correction. Native browser anchoring can
   // fight virtual row measurement/remounts and produce visible jumps.
@@ -253,12 +257,14 @@ function getMountedWorktreeBounds(
 
 export function getScrollTopToRevealBounds(
   container: HTMLElement,
-  bounds: Pick<VirtualItemBounds, 'start' | 'end'>
+  bounds: Pick<VirtualItemBounds, 'start' | 'end'>,
+  topInset = 0
 ): number | null {
-  const viewportTop = container.scrollTop
-  const viewportBottom = viewportTop + container.clientHeight
+  const viewportTopInset = Math.max(0, Math.min(container.clientHeight, topInset))
+  const viewportTop = container.scrollTop + viewportTopInset
+  const viewportBottom = container.scrollTop + container.clientHeight
   if (bounds.start < viewportTop) {
-    return bounds.start
+    return bounds.start - viewportTopInset
   }
   if (bounds.end > viewportBottom) {
     return bounds.end - container.clientHeight
@@ -275,7 +281,11 @@ function revealMountedWorktreeElement(
   if (!bounds) {
     return false
   }
-  const nextScrollTop = getScrollTopToRevealBounds(container, bounds)
+  const nextScrollTop = getScrollTopToRevealBounds(
+    container,
+    bounds,
+    WORKTREE_SIDEBAR_REVEAL_TOP_INSET
+  )
   if (nextScrollTop !== null) {
     container.scrollTo({ top: Math.max(0, nextScrollTop), behavior })
   }
@@ -955,6 +965,9 @@ const VirtualizedWorktreeViewport = React.memo(function VirtualizedWorktreeViewp
     }, []),
     overscan: 10,
     gap: 6,
+    // Why: the active sticky group header is rendered inside the virtual list,
+    // so TanStack's scroll math needs the same top inset as the exact DOM reveal.
+    scrollPaddingStart: WORKTREE_SIDEBAR_REVEAL_TOP_INSET,
     isScrollingResetDelay: USER_SCROLL_MEASUREMENT_ADJUSTMENT_SUPPRESS_MS,
     // Why: the sidebar rows are rich cards. Flushing their React render inside
     // TanStack's native scroll listener can make wheel input wait on card work;
