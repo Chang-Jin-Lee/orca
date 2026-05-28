@@ -657,7 +657,6 @@ export function registerSshHandlers(
   })
 
   async function doConnect(targetId: string): Promise<SshConnectionState> {
-    clearRelayStateOverride(targetId)
     const target = sshStore!.getTarget(targetId)
     if (!target) {
       throw new Error(`SSH target "${targetId}" not found`)
@@ -665,10 +664,15 @@ export function registerSshHandlers(
 
     const existingSession = activeSessions.get(targetId)
     const existingState = connectionManager!.getState(targetId)
+    const existingMux = existingSession?.getMux()
     if (
       existingSession?.getState() === 'ready' &&
       existingState?.status === 'connected' &&
-      connectionManager!.getConnection(targetId)
+      connectionManager!.getConnection(targetId) &&
+      existingMux &&
+      !existingMux.isDisposed() &&
+      !relayStateOverrides.has(targetId) &&
+      !relayLostBackoff.has(targetId)
     ) {
       // Why: BrowserWindow reactivation reruns renderer startup, which calls
       // ssh:connect for already-live targets. Treat that as a refresh instead
@@ -677,6 +681,7 @@ export function registerSshHandlers(
       return existingState
     }
 
+    clearRelayStateOverride(targetId)
     let conn
     // Why: dispose any existing session to avoid leaking the old multiplexer,
     // providers, and timers. This handles double-connect (user clicks connect

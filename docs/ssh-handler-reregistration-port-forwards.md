@@ -2,17 +2,17 @@
 
 ## Problem
 
-Issue #2932 reports that macOS window reactivation can re-run
+Issue #2932 reported that macOS window reactivation can re-run
 `attachMainWindowServices`, which calls `registerSshHandlers` again
-([src/main/window/attach-main-window-services.ts:83](/Users/jinwoohong/orca/workspaces/orca/bug-re-registering-ssh-handlers-strands-existing/src/main/window/attach-main-window-services.ts:83)).
+([src/main/window/attach-main-window-services.ts:83](src/main/window/attach-main-window-services.ts:83)).
 
-`registerSshHandlers` removes and re-adds IPC handlers, but also replaces the
-module-level `connectionManager` and `portForwardManager`
-([src/main/ipc/ssh.ts:438](/Users/jinwoohong/orca/workspaces/orca/bug-re-registering-ssh-handlers-strands-existing/src/main/ipc/ssh.ts:438),
-[src/main/ipc/ssh.ts:439](/Users/jinwoohong/orca/workspaces/orca/bug-re-registering-ssh-handlers-strands-existing/src/main/ipc/ssh.ts:439)).
+Before this change, `registerSshHandlers` removed and re-added IPC handlers but
+also replaced the module-level `connectionManager` and `portForwardManager`
+([src/main/ipc/ssh.ts:438](src/main/ipc/ssh.ts:438),
+[src/main/ipc/ssh.ts:439](src/main/ipc/ssh.ts:439)).
 `activeSessions` remains module-global
-([src/main/ipc/ssh.ts:63](/Users/jinwoohong/orca/workspaces/orca/bug-re-registering-ssh-handlers-strands-existing/src/main/ipc/ssh.ts:63)),
-so live relay sessions keep references to the old port-forward manager while
+([src/main/ipc/ssh.ts:63](src/main/ipc/ssh.ts:63)),
+so live relay sessions kept references to the old port-forward manager while
 new IPC handlers read a fresh empty one.
 
 The visible failure is:
@@ -35,15 +35,15 @@ SSH handler registration mixes two lifetimes:
   listeners, relay lost backoff, reset/connect in-flight maps.
 - Window-lifetime callback state: `getMainWindow` and renderer IPC handlers.
 
-On re-registration, the code preserves `activeSessions` but replaces the
+The previous re-registration path preserved `activeSessions` but replaced the
 managers that sessions and IPC handlers must share. Port-forward IPC operations
-use `portForwardManager` ([src/main/ipc/ssh.ts:992](/Users/jinwoohong/orca/workspaces/orca/bug-re-registering-ssh-handlers-strands-existing/src/main/ipc/ssh.ts:992),
-[src/main/ipc/ssh.ts:1047](/Users/jinwoohong/orca/workspaces/orca/bug-re-registering-ssh-handlers-strands-existing/src/main/ipc/ssh.ts:1047),
-[src/main/ipc/ssh.ts:1056](/Users/jinwoohong/orca/workspaces/orca/bug-re-registering-ssh-handlers-strands-existing/src/main/ipc/ssh.ts:1056)),
+use `portForwardManager` ([src/main/ipc/ssh.ts:992](src/main/ipc/ssh.ts:992),
+[src/main/ipc/ssh.ts:1047](src/main/ipc/ssh.ts:1047),
+[src/main/ipc/ssh.ts:1056](src/main/ipc/ssh.ts:1056)),
 and disconnect/terminate cleanup also uses that variable
-([src/main/ipc/ssh.ts:750](/Users/jinwoohong/orca/workspaces/orca/bug-re-registering-ssh-handlers-strands-existing/src/main/ipc/ssh.ts:750),
-[src/main/ipc/ssh.ts:814](/Users/jinwoohong/orca/workspaces/orca/bug-re-registering-ssh-handlers-strands-existing/src/main/ipc/ssh.ts:814)).
-After replacement, those operations no longer target the manager that owns the
+([src/main/ipc/ssh.ts:750](src/main/ipc/ssh.ts:750),
+[src/main/ipc/ssh.ts:814](src/main/ipc/ssh.ts:814)).
+After replacement, those operations no longer targeted the manager that owns the
 live local servers. Replacing `connectionManager` also strands the live
 `SshConnection` objects: existing relay sessions still hold their current
 connection, but new IPC handlers and `getSshConnectionManager()` see an empty
@@ -134,8 +134,10 @@ manager.
   PTY events, detected-port events, advertised URL refreshes, relay-loss state
   changes, and terminal relay errors must use the newest `getMainWindow`.
 - Disconnect after re-registration must release old local ports.
-- Reconnect/double-connect after re-registration must await old port teardown
-  before restoring forwards.
+- `ssh:connect` after window reactivation must be idempotent when the existing
+  session is already ready and healthy: return the connected state without
+  tearing down forwards. Explicit reset/reconnect or non-ready replacement paths
+  must still await old port teardown before restoring forwards.
 - `getSshConnectionManager()` consumers must continue to see live connections
   after re-registration.
 - Test isolation must not depend on module-singleton state leaking between
@@ -165,9 +167,9 @@ manager.
 - Electron/SSH validation: use an existing SSH target such as `openclaw 2` if
   available in the running app, add a disposable local port forward, trigger
   window/service re-registration by closing and reopening the main window on
-  macOS, then verify the forward remains listed and removable. If the running
-  app cannot safely expose this state, validate through IPC/unit tests and
-  capture the nearest SSH settings/connection state.
+  macOS, then verify the forward remains listed and removable. IPC/unit tests
+  are supporting evidence only; if the golden path cannot be exercised safely,
+  halt before PR and report the missing evidence.
 
 ## UI Quality Bar
 

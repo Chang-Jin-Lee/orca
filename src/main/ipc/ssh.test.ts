@@ -495,6 +495,64 @@ describe('SSH IPC handlers', () => {
     }
   })
 
+  it('rebuilds instead of reusing a ready session while relay loss is pending', async () => {
+    vi.useFakeTimers()
+    const target: SshTarget = {
+      id: 'ssh-1',
+      label: 'Server',
+      host: 'example.com',
+      port: 22,
+      username: 'deploy'
+    }
+    const conn = {}
+    mockSshStore.getTarget.mockReturnValue(target)
+    mockConnectionManager.connect.mockResolvedValue(conn)
+    mockConnectionManager.getConnection.mockReturnValue(conn)
+    mockConnectionManager.getState.mockReturnValue({
+      targetId: 'ssh-1',
+      status: 'connected',
+      error: null,
+      reconnectAttempt: 0
+    })
+
+    try {
+      await handlers.get('ssh:connect')!(null, { targetId: 'ssh-1' })
+      const onDispose = mockMux.onDispose.mock.calls[0]?.[0] as
+        | ((reason: 'shutdown' | 'connection_lost') => void)
+        | undefined
+
+      onDispose?.('connection_lost')
+
+      expect(handlers.get('ssh:getState')!(null, { targetId: 'ssh-1' })).toEqual({
+        targetId: 'ssh-1',
+        status: 'reconnecting',
+        error: 'Relay channel lost. Reconnecting...',
+        reconnectAttempt: 1
+      })
+
+      mockDeployAndLaunchRelay.mockClear()
+      mockPortForwardManager.removeAllForwards.mockClear()
+
+      await expect(handlers.get('ssh:connect')!(null, { targetId: 'ssh-1' })).resolves.toEqual({
+        targetId: 'ssh-1',
+        status: 'connected',
+        error: null,
+        reconnectAttempt: 0
+      })
+
+      expect(mockPortForwardManager.removeAllForwards).toHaveBeenCalledWith('ssh-1')
+      expect(mockDeployAndLaunchRelay).toHaveBeenCalled()
+      expect(handlers.get('ssh:getState')!(null, { targetId: 'ssh-1' })).toEqual({
+        targetId: 'ssh-1',
+        status: 'connected',
+        error: null,
+        reconnectAttempt: 0
+      })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('forwards remote PTY events into the runtime', async () => {
     const runtime = {
       onPtyData: vi.fn(),
