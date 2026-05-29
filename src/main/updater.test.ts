@@ -860,6 +860,39 @@ describe('updater', () => {
     })
   })
 
+  it('preserves user initiation when a manual auto-download emits an error before rejecting', async () => {
+    autoUpdaterMock.checkForUpdates.mockImplementation(() => {
+      autoUpdaterMock.emit('checking-for-update')
+      queueMicrotask(() => {
+        autoUpdaterMock.emit('update-available', { version: '1.0.61' })
+      })
+      return Promise.resolve(undefined)
+    })
+    autoUpdaterMock.downloadUpdate.mockImplementation(() => {
+      autoUpdaterMock.emit('error', new Error('disk full'))
+      return Promise.reject(new Error('disk full'))
+    })
+
+    const sendMock = vi.fn()
+    const mainWindow = { webContents: { send: sendMock } }
+
+    const { setupAutoUpdater, checkForUpdatesFromMenu } = await import('./updater')
+
+    setupAutoUpdater(mainWindow as never, { getLastUpdateCheckAt: () => Date.now() })
+    checkForUpdatesFromMenu()
+
+    await vi.waitFor(() => {
+      const errorStatuses = sendMock.mock.calls
+        .filter(([channel]) => channel === 'updater:status')
+        .map(([, status]) => status)
+        .filter(
+          (status) => typeof status === 'object' && status !== null && status.state === 'error'
+        )
+
+      expect(errorStatuses).toEqual([{ state: 'error', message: 'disk full', userInitiated: true }])
+    })
+  })
+
   it('surfaces automatic download failures against the cached update version', async () => {
     autoUpdaterMock.checkForUpdates.mockImplementation(() => {
       autoUpdaterMock.emit('checking-for-update')

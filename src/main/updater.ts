@@ -1050,12 +1050,15 @@ function startAvailableUpdateDownload(): void {
     return
   }
   activeDownloadVersion = targetVersion
+  // Why: electron-updater can emit 'error' before downloadUpdate() rejects; the
+  // catch must not recompute intent from the error status written by the event.
+  const downloadUserInitiated = getCurrentActionableUpdateUserInitiated()
   beginMacUpdateDownload()
   getAutoUpdater()
     .downloadUpdate()
     .catch((err) => {
       clearActiveUpdateDownload(targetVersion)
-      sendErrorStatus(String(err?.message ?? err), getCurrentActionableUpdateUserInitiated())
+      sendErrorStatus(String(err?.message ?? err), downloadUserInitiated)
     })
 }
 
