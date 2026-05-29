@@ -395,6 +395,39 @@ describe('buildRows project grouping order', () => {
     ])
   })
 
+  it('keeps the main workspace first inside its project group', () => {
+    const main = {
+      ...wA,
+      id: 'wt-a-main',
+      displayName: 'main',
+      isMainWorktree: true
+    }
+    const freshChild = {
+      ...wA,
+      id: 'wt-a-fresh-child',
+      displayName: 'fresh-child',
+      isMainWorktree: false
+    }
+    const rows = buildRows(
+      'repo',
+      [freshChild, wB, main],
+      map,
+      null,
+      new Set(),
+      undefined,
+      undefined,
+      'visible-worktree-order'
+    )
+
+    expect(rows).toMatchObject([
+      { type: 'header', key: 'repo:repo-a' },
+      { type: 'item', worktree: { id: 'wt-a-main' } },
+      { type: 'item', worktree: { id: 'wt-a-fresh-child' } },
+      { type: 'header', key: 'repo:repo-b' },
+      { type: 'item', worktree: { id: 'wt-b' } }
+    ])
+  })
+
   it('keeps repoOrder for manual project group ordering', () => {
     const repoOrder = new Map([
       [repoB.id, 0],
