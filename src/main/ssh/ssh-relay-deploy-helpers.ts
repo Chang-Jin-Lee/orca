@@ -11,6 +11,8 @@ export { uploadFile, uploadDirectory, mkdirSftp } from './sftp-upload'
 
 // ── Sentinel detection ────────────────────────────────────────────────
 
+const MAX_RELAY_STARTUP_BUFFER_BYTES = 64 * 1024
+
 export function waitForSentinel(channel: ClientChannel): Promise<MultiplexerTransport> {
   return new Promise<MultiplexerTransport>((resolve, reject) => {
     let sentinelReceived = false
@@ -65,11 +67,10 @@ export function waitForSentinel(channel: ClientChannel): Promise<MultiplexerTran
       }
     })
 
-    const MAX_BUFFER_CAP = 64 * 1024
     channel.stderr.on('data', (data: Buffer) => {
       stderrOutput += data.toString('utf-8')
-      if (stderrOutput.length > MAX_BUFFER_CAP) {
-        stderrOutput = stderrOutput.slice(-MAX_BUFFER_CAP)
+      if (stderrOutput.length > MAX_RELAY_STARTUP_BUFFER_BYTES) {
+        stderrOutput = stderrOutput.slice(-MAX_RELAY_STARTUP_BUFFER_BYTES)
       }
     })
 
@@ -154,6 +155,14 @@ export function waitForSentinel(channel: ClientChannel): Promise<MultiplexerTran
             cb(data)
           }
         }
+        return
+      }
+
+      if (bufferedStdout.length + data.length > MAX_RELAY_STARTUP_BUFFER_BYTES) {
+        // Why: before the sentinel, stdout is untrusted startup noise; cap it
+        // like stderr so a broken remote cannot grow memory until timeout.
+        failOrClose(new Error('Relay startup output exceeded 64 KiB before ready sentinel'))
+        channel.close()
         return
       }
 

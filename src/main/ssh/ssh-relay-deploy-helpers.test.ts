@@ -109,6 +109,28 @@ describe('waitForSentinel', () => {
       expect(err).not.toBeInstanceOf(RelayVersionMismatchError)
     })
   })
+
+  it('rejects and closes the channel when pre-sentinel stdout exceeds the startup buffer cap', async () => {
+    const channel = createMockChannel()
+    const transportPromise = waitForSentinel(channel)
+
+    channel.emit('data', Buffer.alloc(65 * 1024, 'a'))
+
+    const outcome = await Promise.race([
+      transportPromise.then(
+        () => 'resolved',
+        (err: Error) => `rejected:${err.message}`
+      ),
+      new Promise<string>((resolve) => setTimeout(() => resolve('pending'), 0))
+    ])
+    if (outcome === 'pending') {
+      channel.emit('close')
+      await transportPromise.catch(() => {})
+    }
+
+    expect(outcome).toContain('Relay startup output exceeded')
+    expect(channel.close).toHaveBeenCalledTimes(1)
+  })
 })
 
 describe('execCommand', () => {
