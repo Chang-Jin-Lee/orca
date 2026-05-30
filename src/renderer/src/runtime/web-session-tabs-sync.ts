@@ -489,6 +489,7 @@ function buildTerminalUnifiedTab(tab: TerminalTab, groupId: string): Tab {
     worktreeId: tab.worktreeId,
     contentType: 'terminal',
     label: tab.title,
+    ...(tab.generatedTitle?.trim() ? { generatedLabel: tab.generatedTitle.trim() } : {}),
     customLabel: tab.customTitle,
     color: tab.color,
     sortOrder: tab.sortOrder,
@@ -1125,6 +1126,7 @@ function terminalTabEqual(a: TerminalTab, b: TerminalTab): boolean {
     a.worktreeId === b.worktreeId &&
     a.title === b.title &&
     a.defaultTitle === b.defaultTitle &&
+    a.generatedTitle === b.generatedTitle &&
     a.customTitle === b.customTitle &&
     a.color === b.color &&
     a.sortOrder === b.sortOrder &&
