@@ -131,6 +131,28 @@ describe('waitForSentinel', () => {
     expect(outcome).toContain('Relay startup output exceeded')
     expect(channel.close).toHaveBeenCalledTimes(1)
   })
+
+  it('does not count same-chunk post-sentinel payload against the startup buffer cap', async () => {
+    const channel = createMockChannel()
+    const transportPromise = waitForSentinel(channel)
+    const postSentinelPayload = Buffer.alloc(70 * 1024, 'b')
+
+    channel.emit(
+      'data',
+      Buffer.concat([
+        Buffer.alloc(64 * 1024, 'a'),
+        Buffer.from(RELAY_SENTINEL),
+        postSentinelPayload
+      ])
+    )
+
+    const transport = await transportPromise
+    const chunks: Buffer[] = []
+    transport.onData((chunk) => chunks.push(chunk))
+
+    expect(Buffer.concat(chunks)).toEqual(postSentinelPayload)
+    expect(channel.close).not.toHaveBeenCalled()
+  })
 })
 
 describe('execCommand', () => {

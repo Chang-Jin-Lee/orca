@@ -12,13 +12,14 @@ export { uploadFile, uploadDirectory, mkdirSftp } from './sftp-upload'
 // ── Sentinel detection ────────────────────────────────────────────────
 
 const MAX_RELAY_STARTUP_BUFFER_BYTES = 64 * 1024
+const RELAY_SENTINEL_BUFFER = Buffer.from(RELAY_SENTINEL, 'utf-8')
 
 export function waitForSentinel(channel: ClientChannel): Promise<MultiplexerTransport> {
   return new Promise<MultiplexerTransport>((resolve, reject) => {
     let sentinelReceived = false
     let settled = false
     let stderrOutput = ''
-    let bufferedStdout = Buffer.alloc(0)
+    let bufferedStdout: Buffer = Buffer.alloc(0)
     let closedAfterSentinel = false
     // Why: ssh2 fires 'exit' BEFORE 'close' with the remote exit code.
     // Capturing it here lets us translate exit-42 (relay handshake mismatch)
@@ -99,6 +100,13 @@ export function waitForSentinel(channel: ClientChannel): Promise<MultiplexerTran
       notifyClosed()
     }
 
+    const failStartupOutputCap = (): void => {
+      // Why: before the sentinel, stdout is untrusted startup noise; cap it
+      // like stderr so a broken remote cannot grow memory until timeout.
+      failOrClose(new Error('Relay startup output exceeded 64 KiB before ready sentinel'))
+      channel.close()
+    }
+
     // Why: SSH channel streams emit `error` when the remote host disappears.
     // Unhandled EventEmitter errors are process-fatal, so convert them into
     // startup rejection before the sentinel and transport close after it.
@@ -158,25 +166,31 @@ export function waitForSentinel(channel: ClientChannel): Promise<MultiplexerTran
         return
       }
 
-      if (bufferedStdout.length + data.length > MAX_RELAY_STARTUP_BUFFER_BYTES) {
-        // Why: before the sentinel, stdout is untrusted startup noise; cap it
-        // like stderr so a broken remote cannot grow memory until timeout.
-        failOrClose(new Error('Relay startup output exceeded 64 KiB before ready sentinel'))
-        channel.close()
+      const searchableDataLength = Math.max(
+        0,
+        MAX_RELAY_STARTUP_BUFFER_BYTES - bufferedStdout.length + RELAY_SENTINEL_BUFFER.length
+      )
+      const searchableData = data.subarray(0, searchableDataLength)
+      // Why: search only far enough to accept a sentinel at the cap boundary;
+      // bytes after the sentinel are framed relay data and may be large.
+      const startupStdout =
+        bufferedStdout.length === 0
+          ? searchableData
+          : Buffer.concat([bufferedStdout, searchableData])
+      const sentinelIdx = startupStdout.indexOf(RELAY_SENTINEL_BUFFER)
+
+      if (sentinelIdx > MAX_RELAY_STARTUP_BUFFER_BYTES) {
+        failStartupOutputCap()
         return
       }
-
-      bufferedStdout = Buffer.concat([bufferedStdout, data])
-      const text = bufferedStdout.toString('utf-8')
-      const sentinelIdx = text.indexOf(RELAY_SENTINEL)
 
       if (sentinelIdx !== -1) {
         sentinelReceived = true
         cancelTimers()
 
-        const afterSentinel = bufferedStdout.subarray(
-          Buffer.byteLength(text.substring(0, sentinelIdx + RELAY_SENTINEL.length), 'utf-8')
-        )
+        const afterSentinelOffset =
+          sentinelIdx + RELAY_SENTINEL_BUFFER.length - bufferedStdout.length
+        const afterSentinel = data.subarray(Math.max(0, afterSentinelOffset))
 
         if (afterSentinel.length > 0) {
           pendingAfterSentinel = afterSentinel
@@ -209,7 +223,15 @@ export function waitForSentinel(channel: ClientChannel): Promise<MultiplexerTran
         }
 
         resolve(transport)
+        return
       }
+
+      if (bufferedStdout.length + data.length > MAX_RELAY_STARTUP_BUFFER_BYTES) {
+        failStartupOutputCap()
+        return
+      }
+
+      bufferedStdout = bufferedStdout.length === 0 ? data : Buffer.concat([bufferedStdout, data])
     })
   })
 }
