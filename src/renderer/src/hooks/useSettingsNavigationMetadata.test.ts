@@ -23,26 +23,26 @@ function ids(args: { isMac?: boolean; isWindows?: boolean; isWebClient?: boolean
 }
 
 describe('settings navigation metadata', () => {
-  it('keeps AI capability panes near the top on desktop', () => {
+  it('puts AI capability panes at the top on desktop', () => {
     expect(ids().slice(0, 8)).toEqual([
-      'general',
       'agents',
       'accounts',
-      'integrations',
       'orchestration',
       'computer-use',
       'voice',
+      'general',
+      'integrations',
       'git'
     ])
   })
 
-  it('keeps orchestration near the top on web while hiding desktop-only capability panes', () => {
+  it('puts web-safe AI capability panes at the top while hiding desktop-only panes', () => {
     expect(ids({ isWebClient: true }).slice(0, 6)).toEqual([
-      'general',
       'agents',
       'accounts',
-      'integrations',
       'orchestration',
+      'general',
+      'integrations',
       'git'
     ])
   })

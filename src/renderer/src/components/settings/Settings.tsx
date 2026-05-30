@@ -67,8 +67,8 @@ import {
 } from './settings-load-performance'
 
 const SETTINGS_NAV_GROUPS = [
-  { id: 'setup', title: 'Set Up' },
   { id: 'capabilities', title: 'AI Capabilities' },
+  { id: 'setup', title: 'Set Up' },
   { id: 'workflows', title: 'Workflows' },
   { id: 'interface', title: 'Interface' },
   { id: 'remote', title: 'Remote Access' },
@@ -755,17 +755,6 @@ function Settings(): React.JSX.Element {
             ) : (
               <ActiveSettingsSectionProvider value={activeSectionId}>
                 <SettingsSection
-                  id="general"
-                  title="General"
-                  description="Workspace defaults, app setup, and maintenance."
-                  searchEntries={getSectionSearchEntries('general')}
-                >
-                  {isSectionMounted('general') ? (
-                    <GeneralPane settings={settings} updateSettings={updateSettings} />
-                  ) : null}
-                </SettingsSection>
-
-                <SettingsSection
                   id="agents"
                   title="Agents"
                   description="Manage AI agents, set a default, and customize commands."
@@ -798,15 +787,6 @@ function Settings(): React.JSX.Element {
                       wslCapabilitiesLoading={windowsTerminalCapabilities.isLoading}
                     />
                   ) : null}
-                </SettingsSection>
-
-                <SettingsSection
-                  id="integrations"
-                  title="Integrations"
-                  description="Connect GitHub, GitLab, Linear, and source-hosting services."
-                  searchEntries={getSectionSearchEntries('integrations')}
-                >
-                  {isSectionMounted('integrations') ? <IntegrationsPane /> : null}
                 </SettingsSection>
 
                 <SettingsSection
@@ -866,6 +846,26 @@ function Settings(): React.JSX.Element {
                     </SettingsSection>
                   </>
                 ) : null}
+
+                <SettingsSection
+                  id="general"
+                  title="General"
+                  description="Workspace defaults, app setup, and maintenance."
+                  searchEntries={getSectionSearchEntries('general')}
+                >
+                  {isSectionMounted('general') ? (
+                    <GeneralPane settings={settings} updateSettings={updateSettings} />
+                  ) : null}
+                </SettingsSection>
+
+                <SettingsSection
+                  id="integrations"
+                  title="Integrations"
+                  description="Connect GitHub, GitLab, Linear, and source-hosting services."
+                  searchEntries={getSectionSearchEntries('integrations')}
+                >
+                  {isSectionMounted('integrations') ? <IntegrationsPane /> : null}
+                </SettingsSection>
 
                 <SettingsSection
                   id="git"

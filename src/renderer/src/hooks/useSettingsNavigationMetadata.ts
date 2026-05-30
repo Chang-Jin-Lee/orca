@@ -93,20 +93,12 @@ export function buildSettingsNavigationMetadata({
 
   return [
     {
-      id: 'general',
-      title: 'General',
-      description: 'Workspace defaults, app setup, and maintenance.',
-      icon: SlidersHorizontal,
-      searchEntries: GENERAL_PANE_SEARCH_ENTRIES,
-      group: 'setup'
-    },
-    {
       id: 'agents',
       title: 'Agents',
       description: 'Manage AI agents, set a default, and customize commands.',
       icon: Bot,
       searchEntries: AGENTS_PANE_SEARCH_ENTRIES,
-      group: 'setup'
+      group: 'capabilities'
     },
     {
       id: 'accounts',
@@ -114,16 +106,8 @@ export function buildSettingsNavigationMetadata({
       description: 'Optional account switching for Claude, Codex, Gemini, and OpenCode Go.',
       icon: UserCog,
       searchEntries: ACCOUNTS_PANE_SEARCH_ENTRIES,
-      group: 'setup',
+      group: 'capabilities',
       badge: 'Optional'
-    },
-    {
-      id: 'integrations',
-      title: 'Integrations',
-      description: 'Connect GitHub, GitLab, Linear, and source-hosting services.',
-      icon: Blocks,
-      searchEntries: INTEGRATIONS_PANE_SEARCH_ENTRIES,
-      group: 'setup'
     },
     {
       id: 'orchestration',
@@ -155,6 +139,22 @@ export function buildSettingsNavigationMetadata({
           }
         ]
       : []),
+    {
+      id: 'general',
+      title: 'General',
+      description: 'Workspace defaults, app setup, and maintenance.',
+      icon: SlidersHorizontal,
+      searchEntries: GENERAL_PANE_SEARCH_ENTRIES,
+      group: 'setup'
+    },
+    {
+      id: 'integrations',
+      title: 'Integrations',
+      description: 'Connect GitHub, GitLab, Linear, and source-hosting services.',
+      icon: Blocks,
+      searchEntries: INTEGRATIONS_PANE_SEARCH_ENTRIES,
+      group: 'setup'
+    },
     {
       id: 'git',
       title: 'Git & Source Control',
