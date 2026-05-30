@@ -276,7 +276,13 @@ export class GitHandler {
         ['ls-files', '-z', '--', ...chunk.map((p) => this.literalPathspec(p))],
         worktreePath
       )
-      trackedPathSpecs.push(...stdout.split('\0').filter(Boolean))
+      // Why: selecting a tracked directory can expand to more child paths than
+      // V8 allows as function arguments.
+      for (const trackedPath of stdout.split('\0')) {
+        if (trackedPath) {
+          trackedPathSpecs.push(trackedPath)
+        }
+      }
     }
 
     const trackedPaths = filePaths.filter((filePath) =>

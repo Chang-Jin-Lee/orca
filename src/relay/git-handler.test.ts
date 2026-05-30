@@ -17,17 +17,18 @@ import {
   type MockDispatcher,
   type RelayDispatcher
 } from './git-handler-test-setup'
+import type { GitExec } from './git-handler-ops'
 
 describe('GitHandler', () => {
   let dispatcher: MockDispatcher
   let tmpDir: string
+  let handler: GitHandler
 
   beforeEach(() => {
     tmpDir = mkdtempSync(path.join(tmpdir(), 'relay-git-'))
     dispatcher = createMockDispatcher()
     const ctx = new RelayContext()
-    // eslint-disable-next-line no-new
-    new GitHandler(dispatcher as unknown as RelayDispatcher, ctx)
+    handler = new GitHandler(dispatcher as unknown as RelayDispatcher, ctx)
   })
 
   afterEach(async () => {
@@ -496,6 +497,32 @@ describe('GitHandler', () => {
       await expect(fs.readFile(path.join(tmpDir, 'a.txt'), 'utf-8')).resolves.toBe('a')
       await expect(fs.readFile(path.join(tmpDir, 'b.txt'), 'utf-8')).resolves.toBe('b')
       await expect(fs.access(path.join(tmpDir, 'new.txt'))).rejects.toThrow()
+    })
+
+    it('bulk discards a tracked directory with a very large tracked child list', async () => {
+      const trackedOutput = `${Array.from(
+        { length: 130_000 },
+        (_, index) => `src/generated/file-${index}.ts`
+      ).join('\0')}\0`
+      const git = vi.fn<GitExec>(async (args) => {
+        if (args[0] === 'ls-files') {
+          return { stdout: trackedOutput, stderr: '' }
+        }
+        return { stdout: '', stderr: '' }
+      })
+      ;(handler as unknown as { git: GitExec }).git = git
+
+      await expect(
+        dispatcher.callRequest('git.bulkDiscard', {
+          worktreePath: tmpDir,
+          filePaths: ['src']
+        })
+      ).resolves.toBeUndefined()
+
+      expect(git).toHaveBeenCalledWith(
+        ['restore', '--worktree', '--source=HEAD', '--', ':(literal)src'],
+        tmpDir
+      )
     })
 
     it('rejects path traversal', async () => {
