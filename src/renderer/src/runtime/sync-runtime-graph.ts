@@ -347,7 +347,8 @@ function buildRuntimeMobileTabsProjection(tabsByWorktree: AppState['tabsByWorktr
                 id: tab.id,
                 title: tab.title,
                 generatedTitle: tab.generatedTitle,
-                customTitle: tab.customTitle
+                customTitle: tab.customTitle,
+                launchAgent: tab.launchAgent
               }))
             )
           }
@@ -1027,6 +1028,7 @@ function buildMobileTerminalSurfaceTabs(
       ptyId,
       ...(terminalTheme ? { terminalTheme } : {}),
       ...(agentStatus ? { agentStatus } : {}),
+      ...(terminal.launchAgent ? { launchAgent: terminal.launchAgent } : {}),
       parentLayout,
       isActive: isDesktopTabActive && leafId === activeLeafId
     }

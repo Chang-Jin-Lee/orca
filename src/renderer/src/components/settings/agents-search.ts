@@ -23,6 +23,8 @@ export const AGENTS_PANE_SEARCH_ENTRIES: SettingsSearchEntry[] = [
       'agent',
       'default',
       'claude',
+      'openclaude',
+      'open claude',
       'codex',
       'opencode',
       'pi',
@@ -60,6 +62,11 @@ export const AGENTS_PANE_SEARCH_ENTRIES: SettingsSearchEntry[] = [
       'hide',
       'show'
     ]
+  },
+  {
+    title: 'Agent Location',
+    description: 'Choose whether installed agents are detected on this device or in WSL.',
+    keywords: ['agent', 'location', 'windows', 'wsl', 'linux', 'detect', 'installed', 'path']
   },
   {
     title: AGENT_STATUS_HOOKS_TITLE,
