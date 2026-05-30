@@ -10,8 +10,8 @@ describe('getDefaultSettings', () => {
     expect(getDefaultSettings('/tmp').sourceControlViewMode).toBe('list')
   })
 
-  it('enables first-work branch auto-renaming by default for new settings', () => {
-    expect(getDefaultSettings('/tmp').autoRenameBranchFromWork).toBe(true)
+  it('keeps first-work branch auto-renaming off by default for new settings', () => {
+    expect(getDefaultSettings('/tmp').autoRenameBranchFromWork).toBe(false)
   })
 
   it('enables separate light terminal theme by default', () => {
