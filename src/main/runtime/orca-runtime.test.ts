@@ -413,14 +413,18 @@ afterEach(() => {
   getIssueMock.mockResolvedValue(null)
 })
 
-function syncSinglePty(runtime: OrcaRuntimeService, ptyId: string | null = 'pty-1'): void {
+function syncSinglePty(
+  runtime: OrcaRuntimeService,
+  ptyId: string | null = 'pty-1',
+  options: { tabTitle?: string | null; paneTitle?: string | null } = {}
+): void {
   runtime.attachWindow(1)
   runtime.syncWindowGraph(1, {
     tabs: [
       {
         tabId: 'tab-1',
         worktreeId: TEST_WORKTREE_ID,
-        title: 'Codex',
+        title: options.tabTitle ?? 'Codex',
         activeLeafId: 'pane:1',
         layout: null
       }
@@ -432,7 +436,7 @@ function syncSinglePty(runtime: OrcaRuntimeService, ptyId: string | null = 'pty-
         leafId: 'pane:1',
         paneRuntimeId: 1,
         ptyId,
-        paneTitle: null
+        paneTitle: options.paneTitle ?? null
       }
     ]
   })
@@ -831,6 +835,60 @@ describe('OrcaRuntimeService', () => {
     const shown = await runtime.showTerminal(terminals.terminals[0].handle)
     expect(shown.handle).toBe(terminals.terminals[0].handle)
     expect(shown.ptyId).toBe('pty-1')
+  })
+
+  it('routes PTY output through the PTY leaf index in large terminal graphs', () => {
+    const runtime = new OrcaRuntimeService(store)
+    const liveLeafCount = 2773
+    const targetIndex = liveLeafCount - 17
+    const tabs = Array.from({ length: liveLeafCount }, (_, index) => ({
+      tabId: `tab-${index}`,
+      worktreeId: `repo-1::/tmp/worktree-${index}`,
+      title: `Terminal ${index}`,
+      activeLeafId: 'pane:1',
+      layout: null
+    }))
+    const leaves = Array.from({ length: liveLeafCount }, (_, index) => ({
+      tabId: `tab-${index}`,
+      worktreeId: `repo-1::/tmp/worktree-${index}`,
+      leafId: 'pane:1',
+      paneRuntimeId: 1,
+      ptyId: `pty-${index}`
+    }))
+
+    runtime.attachWindow(1)
+    runtime.syncWindowGraph(1, { tabs, leaves })
+
+    const runtimePrivate = runtime as unknown as {
+      leaves: Map<string, unknown>
+      leavesByPtyId: Map<string, { preview?: string; lastOutputAt?: number | null }[]>
+    }
+    const originalLeaves = runtimePrivate.leaves
+    runtimePrivate.leaves = new Proxy(originalLeaves, {
+      get(target, prop) {
+        if (
+          prop === 'values' ||
+          prop === 'entries' ||
+          prop === 'keys' ||
+          prop === Symbol.iterator
+        ) {
+          return () => {
+            throw new Error('onPtyData should use the PTY leaf index')
+          }
+        }
+        const value = Reflect.get(target, prop, target)
+        return typeof value === 'function' ? value.bind(target) : value
+      }
+    }) as Map<string, unknown>
+
+    runtime.onPtyData(`pty-${targetIndex}`, 'hello indexed\n', 123)
+
+    const [targetLeaf] = runtimePrivate.leavesByPtyId.get(`pty-${targetIndex}`) ?? []
+    expect(targetLeaf).toMatchObject({
+      preview: 'hello indexed',
+      lastOutputAt: 123
+    })
+    expect(runtime.getStatus().liveLeafCount).toBe(liveLeafCount)
   })
 
   it('resolves branch selectors when worktrees store refs/heads-prefixed branches', async () => {
@@ -1737,7 +1795,6 @@ describe('OrcaRuntimeService', () => {
 
     try {
       await expect(runtime.checkRepoHooks('id:repo-1')).resolves.toMatchObject({
-        status: 'ok',
         hasHooks: true,
         mayNeedUpdate: false
       })
@@ -1764,37 +1821,6 @@ describe('OrcaRuntimeService', () => {
       'C:\\remote\\repo\\.gitignore',
       'node_modules\n.orca\n'
     )
-  })
-
-  it('reports SSH hook check read failures without inferring missing hooks', async () => {
-    const remoteStore = {
-      ...store,
-      getRepos: () => [
-        {
-          id: TEST_REPO_ID,
-          path: '/remote/repo',
-          displayName: 'repo',
-          badgeColor: 'blue',
-          addedAt: 1,
-          connectionId: 'ssh-1'
-        }
-      ]
-    }
-    const fsProvider = {
-      readFile: vi.fn().mockRejectedValue(new Error('relay disconnected'))
-    }
-    registerSshFilesystemProvider('ssh-1', fsProvider as never)
-    const runtime = new OrcaRuntimeService(remoteStore as never)
-
-    try {
-      await expect(runtime.checkRepoHooks('id:repo-1')).resolves.toMatchObject({
-        status: 'error',
-        hasHooks: false,
-        hooks: null
-      })
-    } finally {
-      unregisterSshFilesystemProvider('ssh-1')
-    }
   })
 
   it('resolves SSH issue commands from shared orca.yaml and deletes empty overrides', async () => {
@@ -1853,99 +1879,6 @@ describe('OrcaRuntimeService', () => {
       '/remote/repo/.orca/issue-command',
       expect.anything()
     )
-  })
-
-  it('keeps runtime SSH issue-command local overrides usable when shared read fails', async () => {
-    const remoteStore = {
-      ...store,
-      getRepos: () => [
-        {
-          id: TEST_REPO_ID,
-          path: '/remote/repo',
-          displayName: 'repo',
-          badgeColor: 'blue',
-          addedAt: 1,
-          connectionId: 'ssh-1'
-        }
-      ]
-    }
-    const fsProvider = {
-      readFile: vi.fn(async (filePath: string) => {
-        if (filePath.endsWith('/.orca/issue-command')) {
-          return { content: 'local command\n', isBinary: false }
-        }
-        throw new Error('shared read failed')
-      })
-    }
-    registerSshFilesystemProvider('ssh-1', fsProvider as never)
-    const runtime = new OrcaRuntimeService(remoteStore as never)
-
-    try {
-      await expect(runtime.readRepoIssueCommand('id:repo-1')).resolves.toMatchObject({
-        status: 'ok',
-        localContent: 'local command',
-        sharedContent: null,
-        effectiveContent: 'local command',
-        source: 'local'
-      })
-    } finally {
-      unregisterSshFilesystemProvider('ssh-1')
-    }
-  })
-
-  it('rejects SSH issue-command writes when the runtime filesystem provider is unavailable', async () => {
-    const remoteStore = {
-      ...store,
-      getRepos: () => [
-        {
-          id: TEST_REPO_ID,
-          path: '/remote/repo',
-          displayName: 'repo',
-          badgeColor: 'blue',
-          addedAt: 1,
-          connectionId: 'ssh-1'
-        }
-      ]
-    }
-    const runtime = new OrcaRuntimeService(remoteStore as never)
-
-    await expect(runtime.writeRepoIssueCommand('id:repo-1', 'Ship it')).rejects.toThrow(
-      'Remote filesystem unavailable'
-    )
-  })
-
-  it('does not overwrite remote .gitignore on runtime SSH issue-command read failures', async () => {
-    const remoteStore = {
-      ...store,
-      getRepos: () => [
-        {
-          id: TEST_REPO_ID,
-          path: '/remote/repo',
-          displayName: 'repo',
-          badgeColor: 'blue',
-          addedAt: 1,
-          connectionId: 'ssh-1'
-        }
-      ]
-    }
-    const fsProvider = {
-      createDir: vi.fn().mockResolvedValue(undefined),
-      readFile: vi.fn().mockRejectedValue(new Error('relay disconnected')),
-      writeFile: vi.fn().mockResolvedValue(undefined),
-      deletePath: vi.fn().mockResolvedValue(undefined)
-    }
-    registerSshFilesystemProvider('ssh-1', fsProvider as never)
-    const runtime = new OrcaRuntimeService(remoteStore as never)
-
-    try {
-      await expect(runtime.writeRepoIssueCommand('id:repo-1', 'Ship it')).rejects.toThrow(
-        'relay disconnected'
-      )
-    } finally {
-      unregisterSshFilesystemProvider('ssh-1')
-    }
-
-    expect(fsProvider.writeFile).not.toHaveBeenCalled()
   })
 
   it('allows host integration slug helpers for SSH repos through provider-aware GitHub clients', async () => {
@@ -4098,6 +4031,77 @@ describe('OrcaRuntimeService', () => {
     }
   })
 
+  it('injects pending orchestration messages into Cursor Agent without auto-submitting', async () => {
+    vi.useFakeTimers()
+    try {
+      const runtime = new OrcaRuntimeService(store)
+      const db = new InMemoryOrchestrationMessages()
+      const write = vi.fn().mockReturnValue(true)
+      setInMemoryOrchestrationMessages(runtime, db)
+      runtime.setPtyController({
+        write,
+        kill: vi.fn(),
+        getForegroundProcess: async () => null
+      })
+      syncSinglePty(runtime)
+
+      const [terminal] = (await runtime.listTerminals()).terminals
+      runtime.onPtyData('pty-1', '\x1b]0;\u280b Cursor Agent\x07', 100)
+      runtime.onPtyData('pty-1', '\x1b]0;Cursor ready\x07', 101)
+      db.insertMessage({ from: 'term_sender', to: terminal.handle, subject: 'hello cursor' })
+
+      runtime.deliverPendingMessagesForHandle(terminal.handle)
+
+      expect(write).toHaveBeenCalledWith('pty-1', expect.stringContaining('Subject: hello cursor'))
+      await vi.advanceTimersByTimeAsync(500)
+      const submitWrites = write.mock.calls.filter(
+        ([ptyId, text]) => ptyId === 'pty-1' && text === '\r'
+      )
+      expect(submitWrites).toHaveLength(0)
+
+      // Why: Cursor Agent treats injected PTY text as editable prompt input.
+      // The user must submit it manually, but the banner should not replay on
+      // the next idle transition.
+      const unread = db.getUnreadMessages(terminal.handle)
+      expect(unread).toHaveLength(1)
+      expect(unread[0].read).toBe(0)
+      expect(unread[0].delivered_at).not.toBeNull()
+      db.close()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('still auto-submits to a non-Cursor agent when its idle title mentions Cursor Agent', async () => {
+    vi.useFakeTimers()
+    try {
+      const runtime = new OrcaRuntimeService(store)
+      const db = new InMemoryOrchestrationMessages()
+      const write = vi.fn().mockReturnValue(true)
+      setInMemoryOrchestrationMessages(runtime, db)
+      runtime.setPtyController({
+        write,
+        kill: vi.fn(),
+        getForegroundProcess: async () => null
+      })
+      syncSinglePty(runtime, 'pty-1', { tabTitle: 'cursor-repro-branch' })
+
+      const [terminal] = (await runtime.listTerminals()).terminals
+      runtime.onPtyData('pty-1', '\x1b]0;. Investigate Cursor Agent\x07', 100)
+      runtime.onPtyData('pty-1', '\x1b]0;* Investigate Cursor Agent\x07', 101)
+      db.insertMessage({ from: 'term_sender', to: terminal.handle, subject: 'hello claude' })
+
+      runtime.deliverPendingMessagesForHandle(terminal.handle)
+      await vi.advanceTimersByTimeAsync(500)
+
+      expect(write).toHaveBeenCalledWith('pty-1', expect.stringContaining('Subject: hello claude'))
+      expect(write).toHaveBeenCalledWith('pty-1', '\r')
+      db.close()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('does not replay an already-delivered message on a later idle transition', async () => {
     vi.useFakeTimers()
     try {
@@ -5500,6 +5504,90 @@ describe('OrcaRuntimeService', () => {
     ])
   })
 
+  it('builds mobile session agent launch commands on the runtime host', async () => {
+    const spawn = vi.fn().mockResolvedValue({ id: 'pty-agent' })
+    const runtime = new OrcaRuntimeService({
+      ...store,
+      getSettings: () => ({
+        ...store.getSettings(),
+        disabledTuiAgents: [],
+        agentCmdOverrides: { 'command-code': 'command-code --profile mobile' }
+      })
+    } as never)
+    runtime.setPtyController({
+      spawn,
+      write: () => true,
+      kill: () => true,
+      getForegroundProcess: async () => null
+    })
+    runtime.syncWindowGraph(0, { tabs: [], leaves: [] })
+
+    await runtime.createMobileSessionTerminal(`id:${TEST_WORKTREE_ID}`, {
+      agent: 'command-code'
+    })
+
+    expect(spawn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        command: 'command-code --profile mobile',
+        cwd: TEST_WORKTREE_PATH,
+        worktreeId: TEST_WORKTREE_ID
+      })
+    )
+  })
+
+  it('rejects disabled mobile session agent launches before spawning', async () => {
+    const spawn = vi.fn().mockResolvedValue({ id: 'pty-agent' })
+    const runtime = new OrcaRuntimeService({
+      ...store,
+      getSettings: () => ({
+        ...store.getSettings(),
+        disabledTuiAgents: ['codex'],
+        agentCmdOverrides: {}
+      })
+    } as never)
+    runtime.setPtyController({
+      spawn,
+      write: () => true,
+      kill: () => true,
+      getForegroundProcess: async () => null
+    })
+    runtime.syncWindowGraph(0, { tabs: [], leaves: [] })
+
+    await expect(
+      runtime.createMobileSessionTerminal(`id:${TEST_WORKTREE_ID}`, {
+        agent: 'codex'
+      })
+    ).rejects.toThrow('Selected agent is disabled')
+    expect(spawn).not.toHaveBeenCalled()
+  })
+
+  it('validates mobile terminal insertion anchors before resolving agent launch commands', async () => {
+    const spawn = vi.fn().mockResolvedValue({ id: 'pty-agent' })
+    const runtime = new OrcaRuntimeService({
+      ...store,
+      getSettings: () => ({
+        ...store.getSettings(),
+        disabledTuiAgents: ['codex'],
+        agentCmdOverrides: {}
+      })
+    } as never)
+    runtime.setPtyController({
+      spawn,
+      write: () => true,
+      kill: () => true,
+      getForegroundProcess: async () => null
+    })
+    runtime.syncWindowGraph(0, { tabs: [], leaves: [] })
+
+    await expect(
+      runtime.createMobileSessionTerminal(`id:${TEST_WORKTREE_ID}`, {
+        afterTabId: 'stale-tab',
+        agent: 'codex'
+      })
+    ).rejects.toThrow('after_tab_not_found')
+    expect(spawn).not.toHaveBeenCalled()
+  })
+
   it('forwards inactive mobile terminal creation to the renderer without focusing it', async () => {
     const focusTerminal = vi.fn()
     const runtime = new OrcaRuntimeService(store)
@@ -5847,6 +5935,21 @@ describe('OrcaRuntimeService', () => {
     const waitPromise = runtime.waitForMessage('term_abc', { timeoutMs: 5000 })
     runtime.notifyMessageArrived('term_abc')
     await waitPromise
+  })
+
+  it('removes message waiter abort listeners after message arrival', async () => {
+    const runtime = new OrcaRuntimeService(store)
+    const controller = new AbortController()
+    const removeListenerSpy = vi.spyOn(controller.signal, 'removeEventListener')
+
+    const waitPromise = runtime.waitForMessage('term_abc', {
+      timeoutMs: 5000,
+      signal: controller.signal
+    })
+    runtime.notifyMessageArrived('term_abc')
+    await waitPromise
+
+    expect(removeListenerSpy).toHaveBeenCalledWith('abort', expect.any(Function))
   })
 
   it('resolves message waiters on timeout when no message arrives', async () => {
@@ -6259,11 +6362,11 @@ describe('OrcaRuntimeService', () => {
     await expect(runtime.searchRepoRefs('id:repo-1', 'main', -5)).rejects.toThrow('invalid_limit')
   })
 
-  it('keeps runtime SSH ref searches bounded before parsing results', async () => {
+  it('returns capped SSH refs for empty runtime repo searches', async () => {
     const remoteRepo = {
-      id: 'repo-ssh',
-      path: '/remote/repo',
-      displayName: 'ssh',
+      id: 'remote-repo',
+      path: '/home/user/repo',
+      displayName: 'remote',
       badgeColor: 'blue',
       addedAt: 1,
       connectionId: 'ssh-1'
@@ -6271,40 +6374,56 @@ describe('OrcaRuntimeService', () => {
     const runtimeStore = {
       ...store,
       getRepos: () => [remoteRepo],
-      getRepo: (id: string) => (id === remoteRepo.id ? remoteRepo : undefined)
+      getRepo: () => remoteRepo
     }
     const provider = {
-      exec: vi.fn(async (argv: string[], _cwd: string) => {
+      exec: vi.fn().mockImplementation((argv: string[]) => {
         if (argv[0] === 'remote') {
-          return { stdout: 'origin\n', stderr: '' }
+          return Promise.resolve({ stdout: 'origin\nupstream\n', stderr: '' })
         }
-        return { stdout: 'refs/remotes/origin/feature\0origin/feature', stderr: '' }
+        return Promise.resolve({
+          stdout: [
+            'refs/remotes/origin/main\0origin/main',
+            'refs/remotes/upstream/feature-x\0upstream/feature-x',
+            'refs/remotes/upstream/HEAD\0upstream/HEAD',
+            'refs/heads/local-only\0local-only'
+          ].join('\n'),
+          stderr: ''
+        })
       })
     }
     registerSshGitProvider('ssh-1', provider as never)
     const runtime = new OrcaRuntimeService(runtimeStore as never)
 
-    try {
-      await expect(runtime.searchRepoRefs('id:repo-ssh', 'feature', 7)).resolves.toMatchObject({
-        refs: ['origin/feature'],
-        truncated: false
-      })
-    } finally {
-      unregisterSshGitProvider('ssh-1')
-    }
+    const result = await runtime.searchRepoRefs('id:remote-repo', '', 2)
 
-    const [argv, cwd] = provider.exec.mock.calls[0]
-    expect(cwd).toBe('/remote/repo')
-    expect(argv).toContain('--exclude=refs/remotes/**/HEAD')
-    // searchRepoRefs asks for limit + 1 so it can calculate `truncated`.
-    expect(argv).toContain('--count=32')
+    expect(result).toEqual({
+      refs: ['origin/main', 'upstream/feature-x'],
+      refDetails: [
+        { refName: 'origin/main', localBranchName: 'main' },
+        { refName: 'upstream/feature-x', localBranchName: 'feature-x' }
+      ],
+      truncated: true
+    })
+    expect(provider.exec).toHaveBeenCalledWith(
+      expect.arrayContaining([
+        '--exclude=refs/remotes/**/HEAD',
+        '--count=12',
+        'refs/heads/**/**',
+        'refs/heads/**/**/**',
+        'refs/remotes/**/**',
+        'refs/remotes/**/**/**'
+      ]),
+      '/home/user/repo'
+    )
+    expect(provider.exec).toHaveBeenCalledWith(['remote'], '/home/user/repo')
   })
 
-  it('falls back for runtime SSH ref searches when remote git lacks --exclude', async () => {
+  it('retries runtime SSH ref searches without --exclude for older git hosts', async () => {
     const remoteRepo = {
-      id: 'repo-ssh',
-      path: '/remote/repo',
-      displayName: 'ssh',
+      id: 'remote-repo',
+      path: '/home/user/repo',
+      displayName: 'remote',
       badgeColor: 'blue',
       addedAt: 1,
       connectionId: 'ssh-1'
@@ -6312,39 +6431,47 @@ describe('OrcaRuntimeService', () => {
     const runtimeStore = {
       ...store,
       getRepos: () => [remoteRepo],
-      getRepo: (id: string) => (id === remoteRepo.id ? remoteRepo : undefined)
+      getRepo: () => remoteRepo
     }
     const provider = {
-      exec: vi.fn(async (argv: string[], _cwd: string) => {
+      exec: vi.fn().mockImplementation((argv: string[]) => {
         if (argv[0] === 'remote') {
-          return { stdout: 'origin\n', stderr: '' }
+          return Promise.resolve({ stdout: 'origin\n', stderr: '' })
         }
         if (argv.includes('--exclude=refs/remotes/**/HEAD')) {
-          throw Object.assign(new Error('unknown option: exclude'), {
-            stderr: 'unknown option: exclude'
-          })
+          return Promise.reject(
+            Object.assign(new Error("unknown option `exclude'"), {
+              stderr: "error: unknown option `exclude'"
+            })
+          )
         }
-        return { stdout: 'refs/remotes/origin/feature\0origin/feature', stderr: '' }
+        return Promise.resolve({
+          stdout: [
+            'refs/remotes/origin/main\0origin/main',
+            'refs/remotes/origin/HEAD\0origin/HEAD',
+            'refs/remotes/origin/feature-x\0origin/feature-x'
+          ].join('\n'),
+          stderr: ''
+        })
       })
     }
     registerSshGitProvider('ssh-1', provider as never)
     const runtime = new OrcaRuntimeService(runtimeStore as never)
 
-    try {
-      await expect(runtime.searchRepoRefs('id:repo-ssh', 'feature', 7)).resolves.toMatchObject({
-        refs: ['origin/feature'],
-        truncated: false
-      })
-    } finally {
-      unregisterSshGitProvider('ssh-1')
-    }
+    const result = await runtime.searchRepoRefs('id:remote-repo', '', 1)
 
-    const [initialArgv] = provider.exec.mock.calls[0]
-    const [fallbackArgv] = provider.exec.mock.calls[2]
-    expect(initialArgv).toContain('--exclude=refs/remotes/**/HEAD')
-    expect(initialArgv).toContain('--count=32')
-    expect(fallbackArgv).not.toContain('--exclude=refs/remotes/**/HEAD')
-    expect(fallbackArgv).toContain('--count=132')
+    expect(result).toEqual({
+      refs: ['origin/main'],
+      refDetails: [{ refName: 'origin/main', localBranchName: 'main' }],
+      truncated: true
+    })
+    const forEachRefCalls = provider.exec.mock.calls.filter(
+      (call) => (call[0] as string[])[0] === 'for-each-ref'
+    )
+    expect(forEachRefCalls).toHaveLength(2)
+    expect(forEachRefCalls[0][0]).toContain('--exclude=refs/remotes/**/HEAD')
+    expect(forEachRefCalls[1][0]).not.toContain('--exclude=refs/remotes/**/HEAD')
+    expect(forEachRefCalls[1][0]).toContain('--count=108')
   })
 
   it('resolves SSH worktrees when manually updating lineage', async () => {

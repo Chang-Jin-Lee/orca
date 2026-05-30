@@ -507,8 +507,8 @@ export function buildSearchBaseRefsArgv(
           '--exclude=refs/remotes/**/HEAD'
         ]
       : []),
-    // Why: broad ref globs can match huge repos; cap git output before
-    // execFile/SSH buffers capture every matching ref.
+    // Why: empty Branch-tab searches use broad globs; cap git output before
+    // execFile/SSH buffers capture every ref in very large repositories.
     `--count=${candidateCount}`
   ]
   // Why: split on `/` so display-format queries (`upstream/main`) route
@@ -625,9 +625,6 @@ export async function searchBaseRefDetails(
     return []
   }
   const normalizedQuery = normalizeRefSearchQuery(query)
-  if (!normalizedQuery) {
-    return []
-  }
 
   try {
     // Why: argv (including the two-remote-glob rationale) lives in

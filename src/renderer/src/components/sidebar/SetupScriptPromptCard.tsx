@@ -3,6 +3,7 @@ import { toast } from 'sonner'
 import { useAppStore } from '@/store'
 import { track } from '@/lib/telemetry'
 import { getRepositoryLocalCommandsSectionId } from '@/components/settings/repository-settings-targets'
+import { useMountedRef } from '@/hooks/useMountedRef'
 import {
   buildImportedHookSettings,
   formatCandidateProvenance,
@@ -79,6 +80,7 @@ function SetupScriptPromptCard(): React.JSX.Element | null {
   const [isImporting, setIsImporting] = useState(false)
   const [inspectionRetryKey, setInspectionRetryKey] = useState(0)
   const trackedPromptKeysRef = useRef<Set<string>>(new Set())
+  const mountedRef = useMountedRef()
 
   const activeRepo = useMemo(
     () => repos.find((repo) => repo.id === activeRepoId) ?? null,
@@ -246,7 +248,9 @@ function SetupScriptPromptCard(): React.JSX.Element | null {
               editedBeforeSave
             })
           )
-          toast.error('Failed to save setup script')
+          if (mountedRef.current) {
+            toast.error('Failed to save setup script')
+          }
           return
         }
         track(
@@ -265,30 +269,34 @@ function SetupScriptPromptCard(): React.JSX.Element | null {
           // Why: the user has already reviewed the detected script in the
           // card; after saving, close the prompt instead of showing a second
           // confirmation panel.
+          if (mountedRef.current) {
+            setPromptState((current) =>
+              current?.repoId === activeRepo.id && current.status === 'ok'
+                ? { ...current, hasEffectiveSetup: true }
+                : current
+            )
+            showSavedInProjectSettingsToast({
+              onOpenSettings: () => openLocalCommandSettings(importedRepoId),
+              description: 'Orca will run this command each time a new worktree is created.'
+            })
+          }
+          return
+        }
+        if (mountedRef.current) {
           setPromptState((current) =>
             current?.repoId === activeRepo.id && current.status === 'ok'
               ? { ...current, hasEffectiveSetup: true }
               : current
           )
+          const skippedCount = candidate.unsupportedFields?.length ?? 0
           showSavedInProjectSettingsToast({
             onOpenSettings: () => openLocalCommandSettings(importedRepoId),
-            description: 'Orca will run this command each time a new worktree is created.'
+            description:
+              skippedCount > 0
+                ? `${skippedCount} unsupported field${skippedCount === 1 ? '' : 's'} skipped. Saved locally; move it to orca.yaml later to share it.`
+                : 'Move it to orca.yaml later to share it.'
           })
-          return
         }
-        setPromptState((current) =>
-          current?.repoId === activeRepo.id && current.status === 'ok'
-            ? { ...current, hasEffectiveSetup: true }
-            : current
-        )
-        const skippedCount = candidate.unsupportedFields?.length ?? 0
-        showSavedInProjectSettingsToast({
-          onOpenSettings: () => openLocalCommandSettings(importedRepoId),
-          description:
-            skippedCount > 0
-              ? `${skippedCount} unsupported field${skippedCount === 1 ? '' : 's'} skipped. Saved locally; move it to orca.yaml later to share it.`
-              : 'Move it to orca.yaml later to share it.'
-        })
       } catch (error) {
         track(
           'setup_script_prompt_action',
@@ -303,12 +311,16 @@ function SetupScriptPromptCard(): React.JSX.Element | null {
           })
         )
         console.warn('[setup-script-prompt] Failed to save setup script:', error)
-        toast.error('Failed to save setup script')
+        if (mountedRef.current) {
+          toast.error('Failed to save setup script')
+        }
       } finally {
-        setIsImporting(false)
+        if (mountedRef.current) {
+          setIsImporting(false)
+        }
       }
     },
-    [activeRepo, openLocalCommandSettings, updateRepo]
+    [activeRepo, mountedRef, openLocalCommandSettings, updateRepo]
   )
 
   const handleImport = useCallback(async () => {
