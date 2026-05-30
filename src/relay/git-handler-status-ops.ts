@@ -99,7 +99,11 @@ export async function getStatusOp(
       disableOptionalLocks: true
     })
     const parsed = parseStatusOutput(stdout)
-    entries.push(...parsed.entries)
+    // Why: SSH worktrees can report huge status sets; spreading into push can
+    // throw before entries reach the renderer.
+    for (const entry of parsed.entries) {
+      entries.push(entry)
+    }
     head = parsed.head
     branch = parsed.branch
     upstreamStatus = parsed.upstreamStatus
