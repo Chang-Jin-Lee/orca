@@ -37,7 +37,6 @@ import {
   ConflictingFilesSection,
   MergeConflictNotice,
   ChecksList,
-  isMutablePRConversationComment,
   PRCommentsList,
   PRTriageStrip
 } from './checks-panel-content'
@@ -51,9 +50,6 @@ import type {
   PRComment
 } from '../../../../shared/types'
 import { getConnectionId } from '@/lib/connection-context'
-import { openHttpLink } from '@/lib/http-link-routing'
-import { launchAgentInNewTab } from '@/lib/launch-agent-in-new-tab'
-import { focusTerminalTabSurface } from '@/lib/focus-terminal-tab-surface'
 import {
   buildResolvePullRequestConflictsPrompt,
   pickDefaultSourceControlAgent
@@ -70,8 +66,13 @@ import type {
 } from '../../../../shared/hosted-review'
 import { getHostedReviewCacheKey, refreshHostedReviewCard } from '@/store/slices/hosted-review'
 import { toast } from 'sonner'
-import { useConfirmationDialog } from '@/components/confirmation-dialog'
+import {
+  classifyHostedReview,
+  type HostedReviewClassificationOptions
+} from '../../../../shared/hosted-review-queue'
+import { hostedReviewSummaryFromGitHubPRInfo } from '../../../../shared/hosted-review-github'
 import { type ChecksPanelReview, gitHubPRToChecksPanelReview } from './checks-panel-review'
+import { hostedReviewSummaryFromGitLabInfo } from '../../../../shared/hosted-review-gitlab'
 import {
   checksPanelAsyncResultKey,
   checksPanelHostedReviewAsyncResultKey,
@@ -98,6 +99,16 @@ import { useMountedRef } from '@/hooks/useMountedRef'
 import { callRuntimeRpc, getActiveRuntimeTarget } from '@/runtime/runtime-rpc-client'
 import { gitLabPipelineJobsToPRChecks } from '../../../../shared/gitlab-pipeline-checks'
 import { getWorktreeGitIdentityDisplay } from '@/lib/worktree-git-identity-display'
+import { SourceControlAgentActionDialog } from './SourceControlAgentActionDialog'
+import {
+  normalizeSourceControlAiSettings,
+  resolveSourceControlActionRecipe
+} from '../../../../shared/source-control-ai'
+import {
+  setSourceControlActionDefault,
+  type SourceControlActionRecipe,
+  type SourceControlLaunchActionId
+} from '../../../../shared/source-control-ai-actions'
 
 const RUNTIME_SSH_STATUS_REFRESH_MS = 3000
 const GIT_STATUS_FAILURE_RETRY_MS = 3000
@@ -110,6 +121,13 @@ type HostedReviewCreationSnapshot = {
   data: HostedReviewCreationEligibility
 }
 
+type ChecksAgentComposerState = {
+  actionId: SourceControlLaunchActionId
+  title: string
+  description: string
+  prompt: string
+  launchSource: 'conflict_resolution' | 'task_page'
+}
 type ChecksPanelReviewHeaderProps = {
   review: ChecksPanelReview
   isRefreshing: boolean
@@ -270,6 +288,7 @@ export default function ChecksPanel(): React.JSX.Element {
   const activeWorktreeId = useAppStore((s) => s.activeWorktreeId)
   const repo = useRepoById(activeWorktree?.repoId ?? null)
   const settings = useAppStore((s) => s.settings)
+  const updateSettings = useAppStore((s) => s.updateSettings)
   const prCache = useAppStore((s) => s.prCache)
   const fetchPRForBranch = useAppStore((s) => s.fetchPRForBranch)
   const fetchHostedReviewForBranch = useAppStore((s) => s.fetchHostedReviewForBranch)
@@ -319,14 +338,18 @@ export default function ChecksPanel(): React.JSX.Element {
   const [checksLoading, setChecksLoading] = useState(false)
   const [comments, setComments] = useState<PRComment[]>([])
   const [commentsLoading, setCommentsLoading] = useState(false)
+  const [gitLabDetailsFetchedAt, setGitLabDetailsFetchedAt] = useState<number | null>(null)
   const [emptyRefreshing, setEmptyRefreshing] = useState(false)
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [conflictDetailsRefreshing, setConflictDetailsRefreshing] = useState(false)
   const [createPrDialogOpen, setCreatePrDialogOpen] = useState(false)
   const [createPrPushFirst, setCreatePrPushFirst] = useState(false)
   const [isPublishingBranch, setIsPublishingBranch] = useState(false)
-  const [isResolvingConflictsWithAI, setIsResolvingConflictsWithAI] = useState(false)
+  const isResolvingConflictsWithAI = false
   const [isFixingChecksWithAI, setIsFixingChecksWithAI] = useState(false)
+  const [agentComposerState, setAgentComposerState] = useState<ChecksAgentComposerState | null>(
+    null
+  )
   const [hostedReviewCreationSnapshot, setHostedReviewCreationSnapshot] =
     useState<HostedReviewCreationSnapshot | null>(null)
   const [gitStatusSnapshot, setGitStatusSnapshot] = useState<ChecksPanelGitStatusSnapshot | null>(
@@ -340,9 +363,28 @@ export default function ChecksPanel(): React.JSX.Element {
   const titleInputFocusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const pollIntervalRef = useRef(30_000) // start at 30s, backs off to 120s
   const mountedRef = useMountedRef()
-  const confirm = useConfirmationDialog()
   const prevChecksRef = useRef<string>('')
   const conflictSummaryRefreshKeyRef = useRef<string | null>(null)
+
+  const saveLaunchActionDefault = useCallback(
+    async (
+      actionId: SourceControlLaunchActionId,
+      recipe: SourceControlActionRecipe
+    ): Promise<void> => {
+      const latestSettings = useAppStore.getState().settings
+      const latestSourceControlAi = normalizeSourceControlAiSettings(
+        latestSettings?.sourceControlAi,
+        latestSettings?.commitMessageAi
+      )
+      await updateSettings({
+        sourceControlAi: {
+          ...latestSourceControlAi,
+          actions: setSourceControlActionDefault(latestSourceControlAi.actions, actionId, recipe)
+        }
+      })
+    },
+    [updateSettings]
+  )
   const asyncResultKeyRef = useRef<string>('')
   const refreshRequestKeyRef = useRef<string | null>(null)
   const refreshContextKeyRef = useRef<string | null>(null)
@@ -404,14 +446,14 @@ export default function ChecksPanel(): React.JSX.Element {
     setChecksLoading(false)
     setComments([])
     setCommentsLoading(false)
+    setGitLabDetailsFetchedAt(null)
     setIsRefreshing(false)
     setEmptyRefreshing(false)
     setConflictDetailsRefreshing(false)
     setCreatePrDialogOpen(false)
     setCreatePrPushFirst(false)
     setIsPublishingBranch(false)
-    setIsResolvingConflictsWithAI(false)
-    setIsFixingChecksWithAI(false)
+    setAgentComposerState(null)
     setHostedReviewCreationSnapshot(null)
     setGitStatusSnapshot(null)
     setGitStatusRefreshNonce((value) => value + 1)
@@ -987,6 +1029,7 @@ export default function ChecksPanel(): React.JSX.Element {
         const result = gitLabPipelineJobsToPRChecks(details?.pipelineJobs ?? [])
         setChecks(result)
         setComments(gitLabMRCommentsToPRComments(details?.comments))
+        setGitLabDetailsFetchedAt(Date.now())
         const signature = JSON.stringify(result.map((c) => `${c.name}:${c.status}:${c.conclusion}`))
         pollIntervalRef.current =
           signature === prevChecksRef.current
@@ -1000,6 +1043,7 @@ export default function ChecksPanel(): React.JSX.Element {
         console.warn('Failed to fetch GitLab MR checks:', err)
         setChecks([])
         setComments([])
+        setGitLabDetailsFetchedAt(null)
       } finally {
         if (isCurrentAsyncResult(requestKey)) {
           setChecksLoading(false)
@@ -1731,57 +1775,6 @@ export default function ChecksPanel(): React.JSX.Element {
     ]
   )
 
-  const handleEditComment = useCallback(
-    async (comment: PRComment, body: string): Promise<boolean> => {
-      if (!pr?.prRepo || !isMutablePRConversationComment(comment)) {
-        return false
-      }
-      const result = await window.api.gh.updateIssueCommentBySlug({
-        owner: pr.prRepo.owner,
-        repo: pr.prRepo.repo,
-        commentId: comment.id,
-        body
-      })
-      if (!result.ok) {
-        toast.error(result.error.message)
-        return false
-      }
-      setComments((prev) =>
-        prev.map((entry) => (entry.id === comment.id ? { ...entry, body } : entry))
-      )
-      return true
-    },
-    [pr?.prRepo]
-  )
-
-  const handleDeleteComment = useCallback(
-    async (comment: PRComment): Promise<void> => {
-      if (!pr?.prRepo || !isMutablePRConversationComment(comment)) {
-        return
-      }
-      const confirmed = await confirm({
-        title: 'Delete comment?',
-        description: 'This will permanently remove the comment from the PR.',
-        confirmLabel: 'Delete',
-        confirmVariant: 'destructive'
-      })
-      if (!confirmed) {
-        return
-      }
-      const result = await window.api.gh.deleteIssueCommentBySlug({
-        owner: pr.prRepo.owner,
-        repo: pr.prRepo.repo,
-        commentId: comment.id
-      })
-      if (!result.ok) {
-        toast.error(result.error.message)
-        return
-      }
-      setComments((prev) => prev.filter((entry) => entry.id !== comment.id))
-    },
-    [pr?.prRepo, confirm]
-  )
-
   const handleReplyToComment = useCallback(
     async (comment: PRComment, body: string) => {
       if (!repo || !prNumber || !pr?.prRepo) {
@@ -1835,68 +1828,23 @@ export default function ChecksPanel(): React.JSX.Element {
   // not a local MERGE_HEAD, so the prompt must tell the agent how to reproduce
   // the merge locally instead of reusing the live Source Control conflict prompt.
   const handleResolveConflictsWithAI = useCallback(async (): Promise<void> => {
-    if (isResolvingConflictsWithAI || !activeWorktreeId || !activeConflictReview) {
+    if (!activeWorktreeId || !activeConflictReview) {
       return
     }
-    const requestKey = stateRequestKey
     const conflictFiles = activeConflictReview.conflictSummary?.files ?? []
-    setIsResolvingConflictsWithAI(true)
-    try {
-      const connectionId = getConnectionId(activeWorktreeId)
-      if (connectionId === undefined) {
-        toast.error('Unable to resolve the workspace connection.')
-        return
-      }
-      const store = useAppStore.getState()
-      const detectedAgents =
-        typeof connectionId === 'string'
-          ? await store.ensureRemoteDetectedAgents(connectionId)
-          : await store.ensureDetectedAgents()
-      const agent = pickDefaultSourceControlAgent(
-        store.settings?.defaultTuiAgent,
-        detectedAgents,
-        store.settings?.disabledTuiAgents
-      )
-      if (!agent) {
-        toast.error('No enabled AI agents. Configure agents in Settings.')
-        return
-      }
-      if (!isCurrentAsyncResult(requestKey)) {
-        return
-      }
-      const prompt = buildResolvePullRequestConflictsPrompt({
+    setAgentComposerState({
+      actionId: 'resolveConflicts',
+      title: 'Resolve Review Conflicts With AI',
+      description: 'Review and edit the full command input before starting an agent.',
+      prompt: buildResolvePullRequestConflictsPrompt({
+        reviewKind: activeConflictReview.provider === 'gitlab' ? 'MR' : 'PR',
         baseRef: activeConflictReview.conflictSummary?.baseRef,
         entries: conflictFiles.map((path) => ({ path })),
-        worktreePath: activeWorktreePath ?? null,
-        reviewKind: activeGitLabReview ? 'merge request' : 'pull request'
-      })
-      const result = launchAgentInNewTab({
-        agent,
-        worktreeId: activeWorktreeId,
-        prompt,
-        promptDelivery: 'submit-after-ready',
-        launchSource: 'conflict_resolution'
-      })
-      if (!result) {
-        toast.error('Could not build the agent launch command.')
-        return
-      }
-      if (result.tabId) {
-        focusTerminalTabSurface(result.tabId)
-      }
-      toast.success('Started an AI agent for the conflicts.')
-    } finally {
-      setIsResolvingConflictsWithAI(false)
-    }
-  }, [
-    activeConflictReview,
-    activeGitLabReview,
-    activeWorktreeId,
-    activeWorktreePath,
-    isCurrentAsyncResult,
-    isResolvingConflictsWithAI,
-    stateRequestKey
-  ])
+        worktreePath: activeWorktreePath ?? null
+      }),
+      launchSource: 'conflict_resolution'
+    })
+  }, [activeConflictReview, activeWorktreeId, activeWorktreePath])
 
   const handleFixChecksWithAI = useCallback(async (): Promise<void> => {
     if (isFixingChecksWithAI || !activeWorktreeId || !activeReview) {
@@ -1910,28 +1858,6 @@ export default function ChecksPanel(): React.JSX.Element {
     const requestKey = stateRequestKey
     setIsFixingChecksWithAI(true)
     try {
-      const connectionId = getConnectionId(activeWorktreeId)
-      if (connectionId === undefined) {
-        toast.error('Unable to resolve the workspace connection.')
-        return
-      }
-      const store = useAppStore.getState()
-      const detectedAgents =
-        typeof connectionId === 'string'
-          ? await store.ensureRemoteDetectedAgents(connectionId)
-          : await store.ensureDetectedAgents()
-      const agent = pickDefaultSourceControlAgent(
-        store.settings?.defaultTuiAgent,
-        detectedAgents,
-        store.settings?.disabledTuiAgents
-      )
-      if (!agent) {
-        toast.error('No enabled AI agents. Configure agents in Settings.')
-        return
-      }
-      if (!isCurrentAsyncResult(requestKey)) {
-        return
-      }
       const checkRunDetailsByCheckKey: Record<string, PRCheckRunDetails> = {}
       if (activeReview.provider !== 'gitlab' && repo) {
         await Promise.all(
@@ -1963,31 +1889,20 @@ export default function ChecksPanel(): React.JSX.Element {
       if (!isCurrentAsyncResult(requestKey)) {
         return
       }
-      const prompt = buildFixBrokenChecksPrompt({
-        reviewKind: activeReview.provider === 'gitlab' ? 'MR' : 'PR',
-        reviewNumber: activeReview.number,
-        reviewTitle: activeReview.title,
-        reviewUrl: activeReview.url,
-        checks,
-        checkRunDetailsByCheckKey
+      setAgentComposerState({
+        actionId: 'fixChecks',
+        title: 'Fix Checks With AI',
+        description: 'Review and edit the full command input before starting an agent.',
+        prompt: buildFixBrokenChecksPrompt({
+          reviewKind: activeReview.provider === 'gitlab' ? 'MR' : 'PR',
+          reviewNumber: activeReview.number,
+          reviewTitle: activeReview.title,
+          reviewUrl: activeReview.url,
+          checks,
+          checkRunDetailsByCheckKey
+        }),
+        launchSource: 'task_page'
       })
-      const result = launchAgentInNewTab({
-        agent,
-        worktreeId: activeWorktreeId,
-        prompt,
-        promptDelivery: 'submit-after-ready',
-        launchSource: 'task_page',
-        onPromptDelivered: () => {
-          toast.success('Started an AI agent for the broken checks.')
-        }
-      })
-      if (!result) {
-        toast.error('Could not build the agent launch command.')
-        return
-      }
-      if (result.tabId) {
-        focusTerminalTabSurface(result.tabId)
-      }
     } finally {
       setIsFixingChecksWithAI(false)
     }
@@ -2149,12 +2064,9 @@ export default function ChecksPanel(): React.JSX.Element {
   // Open hosted review in browser
   const handleOpenPR = useCallback(() => {
     if (activeReview?.url) {
-      // Why: route through openHttpLink so the PR/MR link honors the "open links
-      // in app" setting and lands in the Orca browser, matching terminal/editor
-      // links — instead of always launching the system browser.
-      openHttpLink(activeReview.url, { worktreeId: activeWorktreeId })
+      window.api.shell.openUrl(activeReview.url)
     }
-  }, [activeReview, activeWorktreeId])
+  }, [activeReview])
 
   const handleUnlinkPullRequest = useCallback(() => {
     if (!activeWorktreeId || activeReview?.provider !== 'github' || linkedPR === null) {
@@ -2312,6 +2224,82 @@ export default function ChecksPanel(): React.JSX.Element {
       updateWorktreeMeta
     ]
   )
+
+  const activeReviewClassification = React.useMemo(() => {
+    if (!repo) {
+      return null
+    }
+    const options: HostedReviewClassificationOptions = {
+      agentAuthorLogins: [],
+      viewer: null
+    }
+    if (activeGitLabReview) {
+      const commentsForClassification =
+        gitLabDetailsFetchedAt !== null && !commentsLoading ? comments : undefined
+      const summary = hostedReviewSummaryFromGitLabInfo({
+        review: activeGitLabReview,
+        comments: commentsForClassification,
+        checks
+      })
+      return classifyHostedReview(summary, options)
+    }
+    if (!pr) {
+      return null
+    }
+    let host = 'github.com'
+    let owner = 'unknown'
+    let repoName = 'unknown'
+    try {
+      const parsed = new URL(pr.url)
+      host = parsed.host || host
+      const segments = parsed.pathname.split('/').filter(Boolean)
+      if (segments.length >= 2) {
+        owner = segments[0]
+        repoName = segments[1]
+      }
+    } catch {
+      // Why: malformed URLs should not block queue-state classification.
+    }
+
+    // Why: unresolved thread data is paginated and fetched separately. Until
+    // comments have loaded for this PR, do not let queue badges imply a clean review.
+    const commentsForClassification =
+      commentsFetchedAt !== undefined && !commentsLoading ? comments : undefined
+    const summary = hostedReviewSummaryFromGitHubPRInfo({
+      pr,
+      owner,
+      repo: repoName,
+      host,
+      comments: commentsForClassification,
+      checks
+    })
+    return classifyHostedReview(summary, options)
+  }, [
+    activeGitLabReview,
+    repo,
+    gitLabDetailsFetchedAt,
+    commentsLoading,
+    comments,
+    checks,
+    pr,
+    commentsFetchedAt
+  ])
+
+  const queueBadges = React.useMemo(() => {
+    if (!activeReviewClassification) {
+      return [] as string[]
+    }
+    const badges: string[] = []
+    if (activeReviewClassification.needsResponse) {
+      badges.push('Needs response')
+    }
+    // Why: viewer/author/requestedReviewer signals are not wired into the
+    // ChecksPanel call site yet, so `state` and `requested` would mis-classify
+    // every PR (collapsing to 'teammate'). Suppress those badges until the
+    // inputs are available; needs-response works from PR metadata alone and
+    // remains accurate.
+    return badges
+  }, [activeReviewClassification])
 
   // ── Empty state ──
   if (!activeWorktree) {
@@ -2514,6 +2502,18 @@ export default function ChecksPanel(): React.JSX.Element {
             {reviewShortLabel} updated {new Date(activeReview.updatedAt).toLocaleString()}
           </div>
         )}
+        {queueBadges.length > 0 ? (
+          <div className="flex flex-wrap gap-1">
+            {queueBadges.map((badge) => (
+              <span
+                key={badge}
+                className="rounded-full border border-border px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground"
+              >
+                {badge}
+              </span>
+            ))}
+          </div>
+        ) : null}
 
         {/* Merge / Delete Workspace actions */}
         {activeReview && activeWorktree && repo && (
@@ -2572,8 +2572,49 @@ export default function ChecksPanel(): React.JSX.Element {
         onAddComment={pr ? handleAddPRComment : undefined}
         onReply={pr ? handleReplyToComment : undefined}
         onResolve={pr || activeGitLabReview ? handleResolve : undefined}
-        onEditComment={pr ? handleEditComment : undefined}
-        onDeleteComment={pr ? handleDeleteComment : undefined}
+      />
+      <SourceControlAgentActionDialog
+        open={agentComposerState !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setAgentComposerState(null)
+          }
+        }}
+        actionId={agentComposerState?.actionId ?? 'fixChecks'}
+        title={agentComposerState?.title ?? 'Fix With AI'}
+        description={agentComposerState?.description ?? ''}
+        baseCommandInput={agentComposerState?.prompt ?? ''}
+        worktreeId={activeWorktreeId}
+        groupId={activeWorktreeId}
+        connectionId={activeWorktreeId ? getConnectionId(activeWorktreeId) : null}
+        promptDelivery="submit-after-ready"
+        launchSource={agentComposerState?.launchSource ?? 'task_page'}
+        savedAgentId={
+          agentComposerState
+            ? (resolveSourceControlActionRecipe({
+                settings,
+                repo,
+                actionId: agentComposerState.actionId
+              }).agentId ?? null)
+            : null
+        }
+        savedCommandInputTemplate={
+          agentComposerState
+            ? (resolveSourceControlActionRecipe({
+                settings,
+                repo,
+                actionId: agentComposerState.actionId
+              }).commandInputTemplate ?? null)
+            : null
+        }
+        onSaveAgentDefault={saveLaunchActionDefault}
+        onLaunched={() => {
+          if (agentComposerState?.actionId === 'resolveConflicts') {
+            toast.success('Started an AI agent for the conflicts.')
+          } else {
+            toast.success('Started an AI agent for the broken checks.')
+          }
+        }}
       />
     </div>
   )

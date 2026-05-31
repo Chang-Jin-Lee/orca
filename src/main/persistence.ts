@@ -1732,8 +1732,11 @@ export class Store {
         // Merge with defaults in case new fields were added
         const homeDir = homedir()
         const defaults = getDefaultPersistedState(homeDir)
-        const rawSourceControlAiMissing = parsed.settings?.sourceControlAi === undefined
-        if (rawSourceControlAiMissing) {
+        const rawSourceControlAi = parsed.settings?.sourceControlAi
+        const rawSourceControlAiMissing = rawSourceControlAi === undefined
+        const rawSourceControlAiActionsMissing =
+          rawSourceControlAi !== undefined && rawSourceControlAi.actions === undefined
+        if (rawSourceControlAiMissing || rawSourceControlAiActionsMissing) {
           this.loadNeedsSave = true
         }
         const legacyCommitMessageAi = parsed.settings?.commitMessageAi

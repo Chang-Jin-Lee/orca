@@ -157,6 +157,20 @@ describe('CommitArea AI generation', () => {
     expect(markup).toContain('aria-label="Generate commit message with AI"')
   })
 
+  it('renders a single commit-message AI entry point in the composer', () => {
+    const props = baseProps({ hasMessage: false })
+    const markup = renderCommitArea({
+      ...props,
+      commitMessage: '',
+      aiEnabled: true,
+      aiAgentConfigured: true
+    })
+
+    expect(markup.match(/aria-label="Generate commit message with AI"/g)).toHaveLength(1)
+    expect(markup).not.toContain('aria-label="Customize commit-message generation"')
+    expect(markup).not.toContain('aria-label="Add commit message instructions"')
+  })
+
   it('can hide only the composer while keeping the split action surface visible', () => {
     const markup = renderCommitArea({
       ...baseProps({ hasMessage: false, stagedCount: 0 }),

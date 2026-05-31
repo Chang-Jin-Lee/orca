@@ -88,7 +88,8 @@ describe('resolveCommitMessageSettings', () => {
         agentId: 'codex',
         model: 'gpt-5.5',
         thinkingLevel: 'low',
-        customPrompt: 'Use Conventional Commits.'
+        customPrompt: 'Use Conventional Commits.',
+        commandInputTemplate: '{basePrompt}\n\nUse Conventional Commits.'
       }
     })
   })

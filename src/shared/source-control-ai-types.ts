@@ -1,6 +1,11 @@
 import type { CommitMessageAiModelCapability, TuiAgent } from './types'
+import type {
+  SourceControlAiActionDefaults,
+  SourceControlActionId,
+  SourceControlTextActionId
+} from './source-control-ai-actions'
 
-export type SourceControlAiOperation = 'commitMessage' | 'pullRequest' | 'branchName'
+export type SourceControlAiOperation = SourceControlTextActionId
 
 export type SourceControlAiModelChoice = {
   selectedModelByAgent?: Partial<Record<TuiAgent, string>>
@@ -17,6 +22,7 @@ export type SourceControlAiPrCreationDefaults = {
 
 export type SourceControlAiSettings = {
   enabled: boolean
+  actions?: SourceControlAiActionDefaults
   agentId: TuiAgent | 'custom' | null
   selectedModelByAgent: Partial<Record<TuiAgent, string>>
   selectedModelByAgentByHost?: Partial<Record<string, Partial<Record<TuiAgent, string>>>>
@@ -29,6 +35,8 @@ export type SourceControlAiSettings = {
   instructionsByOperation: Partial<Record<SourceControlAiOperation, string>>
   modelOverridesByOperation?: Partial<Record<SourceControlAiOperation, SourceControlAiModelChoice>>
   prCreationDefaults?: SourceControlAiPrCreationDefaults
+  /** @deprecated use actions instead. Kept for automatic migration and rollback compatibility. */
+  launchActionDefaults?: SourceControlAiActionDefaults
 }
 
 export type SourceControlAiSettingsPatch =
@@ -38,6 +46,15 @@ export type SourceControlAiSettingsPatch =
 export type RepoSourceControlAiOverrides = {
   modelOverridesByOperation?: Partial<Record<SourceControlAiOperation, SourceControlAiModelChoice>>
   instructionsByOperation?: Partial<Record<SourceControlAiOperation, string | null>>
+  actionOverrides?: Partial<
+    Record<
+      SourceControlActionId,
+      {
+        agentId?: TuiAgent | null
+        commandInputTemplate?: string | null
+      }
+    >
+  >
   prCreationDefaults?: {
     draft?: boolean | null
     useTemplate?: boolean | null

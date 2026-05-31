@@ -1,6 +1,7 @@
 /* eslint-disable max-lines -- Why: this table is the runtime git RPC contract; splitting it would make method coverage harder to audit. */
 import { defineMethod, type RpcMethod } from '../core'
 import type { GlobalSettings } from '../../../../shared/types'
+import type { ResolvedSourceControlAiGenerationParams } from '../../../../shared/source-control-ai'
 import {
   GitBranchCompare,
   GitBranchDiff,
@@ -169,6 +170,7 @@ export const GIT_METHODS: RpcMethod[] = [
       if (
         params.commitMessageAi === undefined &&
         params.sourceControlAi === undefined &&
+        params.sourceControlAiResolvedParams === undefined &&
         params.agentCmdOverrides === undefined &&
         params.enableGitHubAttribution === undefined &&
         params.commitMessageDiscoveryHostKey === undefined
@@ -181,6 +183,12 @@ export const GIT_METHODS: RpcMethod[] = [
           : {}),
         ...(params.sourceControlAi !== undefined
           ? { sourceControlAi: params.sourceControlAi as GlobalSettings['sourceControlAi'] }
+          : {}),
+        ...(params.sourceControlAiResolvedParams !== undefined
+          ? {
+              sourceControlAiResolvedParams:
+                params.sourceControlAiResolvedParams as ResolvedSourceControlAiGenerationParams
+            }
           : {}),
         ...(params.agentCmdOverrides !== undefined
           ? {
@@ -229,6 +237,7 @@ export const GIT_METHODS: RpcMethod[] = [
       if (
         params.commitMessageAi === undefined &&
         params.sourceControlAi === undefined &&
+        params.sourceControlAiResolvedParams === undefined &&
         params.agentCmdOverrides === undefined &&
         params.enableGitHubAttribution === undefined &&
         params.commitMessageDiscoveryHostKey === undefined
@@ -241,6 +250,12 @@ export const GIT_METHODS: RpcMethod[] = [
           : {}),
         ...(params.sourceControlAi !== undefined
           ? { sourceControlAi: params.sourceControlAi as GlobalSettings['sourceControlAi'] }
+          : {}),
+        ...(params.sourceControlAiResolvedParams !== undefined
+          ? {
+              sourceControlAiResolvedParams:
+                params.sourceControlAiResolvedParams as ResolvedSourceControlAiGenerationParams
+            }
           : {}),
         ...(params.agentCmdOverrides !== undefined
           ? {

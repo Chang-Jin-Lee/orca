@@ -1,69 +1,55 @@
 /* eslint-disable max-lines -- Why: repo Source Control AI settings keep one
-   draft/save flow across model, instruction, and PR-default override groups. */
+   draft/save flow across action recipes and PR-default override groups. */
 import { useMemo, useState } from 'react'
-import type { Repo } from '../../../../shared/types'
+import { Terminal } from 'lucide-react'
+import type { Repo, TuiAgent } from '../../../../shared/types'
 import type {
   RepoSourceControlAiOverrides,
-  SourceControlAiOperation
+  SourceControlAiSettings
 } from '../../../../shared/source-control-ai-types'
 import {
-  clearSourceControlAiModelChoiceForHost,
   normalizeRepoSourceControlAiOverrides,
-  normalizeSourceControlAiSettings,
-  readSourceControlAiModelChoiceForHost,
-  selectSourceControlAiModelChoiceForHost
+  normalizeSourceControlAiSettings
 } from '../../../../shared/source-control-ai'
 import {
-  getCommitMessageAgentCapability,
-  isCustomAgentId,
-  resolveCommitMessageAgentChoice
-} from '../../../../shared/commit-message-agent-spec'
-import {
-  getCommitMessageModelDiscoveryHostKeyForScope,
-  LOCAL_COMMIT_MESSAGE_HOST_KEY
-} from '../../../../shared/commit-message-host-key'
+  SOURCE_CONTROL_ACTION_IDS,
+  SOURCE_CONTROL_ACTION_LABELS,
+  SOURCE_CONTROL_TEXT_ACTION_IDS,
+  resolveSourceControlActionCommandTemplate,
+  type SourceControlActionId
+} from '../../../../shared/source-control-ai-actions'
 import { Label } from '../ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select'
 import { useAppStore } from '../../store'
-import { getRuntimeGitScope } from '../../runtime/runtime-git-client'
 import { getRepositorySourceControlAiSectionId } from './repository-settings-targets'
 import { Button } from '../ui/button'
 import { useMountedRef } from '@/hooks/useMountedRef'
+import { AGENT_CATALOG, AgentIcon } from '@/lib/agent-catalog'
+import { SourceControlActionVariableChips } from '../source-control/SourceControlActionVariableChips'
+import { listCommitMessageAgentCapabilities } from '../../../../shared/commit-message-agent-spec'
 
 type RepositorySourceControlAiSectionProps = {
   repo: Repo
   updateRepo: (repoId: string, updates: Partial<Repo>) => void | Promise<boolean>
 }
 
-const INHERIT_MODEL_VALUE = '__inherit__'
-const PROMPT_MODE_INHERIT = 'inherit'
-const PROMPT_MODE_OVERRIDE = 'override'
+const ACTION_MODE_INHERIT = 'inherit'
+const ACTION_MODE_OVERRIDE = 'override'
+const INHERIT_AGENT_VALUE = '__inherit_agent__'
+const DEFAULT_AGENT_VALUE = '__default_agent__'
+const SOURCE_CONTROL_TEXT_ACTION_ID_SET = new Set<string>(SOURCE_CONTROL_TEXT_ACTION_IDS)
+const TEXT_GENERATION_AGENT_ID_SET = new Set(
+  listCommitMessageAgentCapabilities().map((capability) => capability.id)
+)
 
-const OPERATIONS: {
-  operation: SourceControlAiOperation
-  modelLabel: string
-  instructionLabel: string
-  globalPlaceholder: string
-}[] = [
-  {
-    operation: 'commitMessage',
-    modelLabel: 'Commit message model',
-    instructionLabel: 'Commit message prompt',
-    globalPlaceholder: 'Global commit message prompt is empty.'
-  },
-  {
-    operation: 'pullRequest',
-    modelLabel: 'PR details model',
-    instructionLabel: 'Pull request prompt',
-    globalPlaceholder: 'Global pull request prompt is empty.'
-  },
-  {
-    operation: 'branchName',
-    modelLabel: 'Branch name model',
-    instructionLabel: 'Branch name prompt',
-    globalPlaceholder: 'Global branch name prompt is empty.'
-  }
-]
+const ACTION_DESCRIPTIONS: Record<SourceControlActionId, string> = {
+  commitMessage: 'Generate the commit message from staged changes.',
+  pullRequest: 'Generate the hosted review title and description.',
+  branchName: 'Rename Orca-created branches from the initial agent task.',
+  fixCommitFailure: 'Start an agent when a commit hook or git commit fails.',
+  fixChecks: 'Start an agent from failed hosted-review checks.',
+  resolveConflicts: 'Start an agent for local or hosted-review merge conflicts.'
+}
 
 type PrDefaultKey = keyof NonNullable<RepoSourceControlAiOverrides['prCreationDefaults']>
 type RepoAiDraftState = {
@@ -72,11 +58,11 @@ type RepoAiDraftState = {
   baseSerialized: string
 }
 
-function hasOwnPrompt(
-  prompts: RepoSourceControlAiOverrides['instructionsByOperation'],
-  operation: SourceControlAiOperation
+function hasOwnActionOverride(
+  overrides: RepoSourceControlAiOverrides['actionOverrides'],
+  actionId: SourceControlActionId
 ): boolean {
-  return typeof prompts?.[operation] === 'string'
+  return Object.prototype.hasOwnProperty.call(overrides ?? {}, actionId)
 }
 
 function triStateValue(value: boolean | null | undefined): 'inherit' | 'on' | 'off' {
@@ -141,6 +127,48 @@ export function resolveRepoAiDraftState(
   return current
 }
 
+function readInheritedCommandTemplate(
+  source: SourceControlAiSettings,
+  actionId: SourceControlActionId
+): string {
+  return resolveSourceControlActionCommandTemplate(source.actions, actionId)
+}
+
+export function dropRepoLegacyInstructionForAction(
+  value: RepoSourceControlAiOverrides,
+  actionId: SourceControlActionId
+): RepoSourceControlAiOverrides {
+  if (!SOURCE_CONTROL_TEXT_ACTION_ID_SET.has(actionId) || !value.instructionsByOperation) {
+    return value
+  }
+  const instructionsByOperation = { ...value.instructionsByOperation }
+  delete instructionsByOperation[actionId as keyof typeof instructionsByOperation]
+  return {
+    ...value,
+    instructionsByOperation:
+      Object.keys(instructionsByOperation).length > 0 ? instructionsByOperation : undefined
+  }
+}
+
+function actionAgentSelectValue(agentId: TuiAgent | null | undefined): string {
+  if (agentId === undefined) {
+    return INHERIT_AGENT_VALUE
+  }
+  return agentId ?? DEFAULT_AGENT_VALUE
+}
+
+function getAgentCatalogForAction(
+  actionId: SourceControlActionId,
+  selectedAgent: TuiAgent | null | undefined
+): typeof AGENT_CATALOG {
+  if (!SOURCE_CONTROL_TEXT_ACTION_ID_SET.has(actionId)) {
+    return AGENT_CATALOG
+  }
+  return AGENT_CATALOG.filter(
+    (agent) => TEXT_GENERATION_AGENT_ID_SET.has(agent.id) || agent.id === selectedAgent
+  )
+}
+
 export function RepositorySourceControlAiSection({
   repo,
   updateRepo
@@ -151,26 +179,6 @@ export function RepositorySourceControlAiSection({
     settings?.sourceControlAi,
     settings?.commitMessageAi
   )
-  const hostScope = getRuntimeGitScope(settings, repo.connectionId)
-  const hostKey = getCommitMessageModelDiscoveryHostKeyForScope(hostScope)
-  const agentId = resolveCommitMessageAgentChoice(
-    source.agentId,
-    settings?.defaultTuiAgent,
-    settings?.disabledTuiAgents
-  )
-  const baseCapability =
-    agentId && !isCustomAgentId(agentId) ? getCommitMessageAgentCapability(agentId) : null
-  const discoveredModels =
-    agentId && !isCustomAgentId(agentId)
-      ? (source.discoveredModelsByAgentByHost?.[hostKey]?.[agentId] ??
-        (hostKey === LOCAL_COMMIT_MESSAGE_HOST_KEY
-          ? source.discoveredModelsByAgent?.[agentId]
-          : undefined))
-      : undefined
-  const capability =
-    baseCapability && discoveredModels?.length
-      ? { ...baseCapability, models: discoveredModels }
-      : baseCapability
   const persistedRepoAi = useMemo(
     () => normalizeRepoAiDraft(repo.sourceControlAi),
     [repo.sourceControlAi]
@@ -239,7 +247,7 @@ export function RepositorySourceControlAiSection({
         return
       }
       if (result === false) {
-        setSaveError('Failed to save Git AI Author settings.')
+        setSaveError('Failed to save Source Control AI settings.')
         return
       }
       setDraftState((current) => {
@@ -255,7 +263,7 @@ export function RepositorySourceControlAiSection({
       })
     } catch {
       if (mountedRef.current) {
-        setSaveError('Failed to save Git AI Author settings.')
+        setSaveError('Failed to save Source Control AI settings.')
       }
     } finally {
       if (mountedRef.current) {
@@ -269,98 +277,71 @@ export function RepositorySourceControlAiSection({
     setSaveError(null)
   }
 
-  const updateModelOverride = (operation: SourceControlAiOperation, modelId: string): void => {
-    if (!capability) {
-      return
-    }
+  const updateActionMode = (actionId: SourceControlActionId, mode: string): void => {
     updateDraftRepoAi((current) => {
-      const nextModelOverrides = { ...current.modelOverridesByOperation }
-      if (modelId === INHERIT_MODEL_VALUE) {
-        const nextChoice = clearSourceControlAiModelChoiceForHost(
-          nextModelOverrides[operation],
-          hostKey,
-          capability.id
-        )
-        if (nextChoice) {
-          nextModelOverrides[operation] = nextChoice
-        } else {
-          delete nextModelOverrides[operation]
+      const nextActionOverrides = { ...current.actionOverrides }
+      if (mode === ACTION_MODE_INHERIT) {
+        delete nextActionOverrides[actionId]
+      } else if (!hasOwnActionOverride(nextActionOverrides, actionId)) {
+        nextActionOverrides[actionId] = {
+          commandInputTemplate: readInheritedCommandTemplate(source, actionId)
         }
-        return { ...current, modelOverridesByOperation: nextModelOverrides }
       }
-      const model = capability.models.find((candidate) => candidate.id === modelId)
-      if (!model) {
-        return current
-      }
-      const nextChoice = selectSourceControlAiModelChoiceForHost(
-        current.modelOverridesByOperation?.[operation],
-        hostKey,
-        capability.id,
-        model.id
+      return dropRepoLegacyInstructionForAction(
+        { ...current, actionOverrides: nextActionOverrides },
+        actionId
       )
-      if (model.thinkingLevels && model.defaultThinkingLevel) {
-        nextChoice.selectedThinkingByModel = {
-          ...nextChoice.selectedThinkingByModel,
-          [model.id]: nextChoice.selectedThinkingByModel?.[model.id] ?? model.defaultThinkingLevel
-        }
-      }
-      return {
-        ...current,
-        modelOverridesByOperation: {
-          ...nextModelOverrides,
-          [operation]: nextChoice
-        }
-      }
     })
   }
 
-  const updatePromptMode = (
-    operation: SourceControlAiOperation,
-    mode: string,
-    inheritedValue: string
-  ): void => {
+  const updateActionAgent = (actionId: SourceControlActionId, value: string): void => {
     updateDraftRepoAi((current) => {
-      const nextPrompts = { ...current.instructionsByOperation }
-      if (mode === PROMPT_MODE_INHERIT) {
-        delete nextPrompts[operation]
-      } else if (!hasOwnPrompt(nextPrompts, operation)) {
-        nextPrompts[operation] = inheritedValue
+      const nextActionOverrides = { ...current.actionOverrides }
+      const currentOverride = nextActionOverrides[actionId] ?? {
+        commandInputTemplate: readInheritedCommandTemplate(source, actionId)
       }
-      return { ...current, instructionsByOperation: nextPrompts }
+      if (value === INHERIT_AGENT_VALUE) {
+        const { agentId: _agentId, ...rest } = currentOverride
+        nextActionOverrides[actionId] = rest
+      } else {
+        nextActionOverrides[actionId] = {
+          ...currentOverride,
+          agentId: value === DEFAULT_AGENT_VALUE ? null : (value as TuiAgent)
+        }
+      }
+      return dropRepoLegacyInstructionForAction(
+        { ...current, actionOverrides: nextActionOverrides },
+        actionId
+      )
     })
   }
 
-  const updatePromptOverride = (operation: SourceControlAiOperation, value: string): void => {
-    updateDraftRepoAi((current) => ({
-      ...current,
-      instructionsByOperation: {
-        ...current.instructionsByOperation,
-        [operation]: value
-      }
-    }))
-  }
-
-  const updateOperationThinking = (
-    operation: SourceControlAiOperation,
-    modelId: string,
-    value: string
-  ): void => {
-    updateDraftRepoAi((current) => {
-      const choice = current.modelOverridesByOperation?.[operation]
-      return {
-        ...current,
-        modelOverridesByOperation: {
-          ...current.modelOverridesByOperation,
-          [operation]: {
-            ...choice,
-            selectedThinkingByModel: {
-              ...choice?.selectedThinkingByModel,
-              [modelId]: value
+  const updateActionTemplate = (actionId: SourceControlActionId, value: string): void => {
+    updateDraftRepoAi((current) =>
+      dropRepoLegacyInstructionForAction(
+        {
+          ...current,
+          actionOverrides: {
+            ...current.actionOverrides,
+            [actionId]: {
+              ...current.actionOverrides?.[actionId],
+              commandInputTemplate: value
             }
           }
-        }
-      }
-    })
+        },
+        actionId
+      )
+    )
+  }
+
+  const appendVariable = (actionId: SourceControlActionId, variable: string): void => {
+    const override = repoAi.actionOverrides?.[actionId]
+    const currentTemplate =
+      typeof override?.commandInputTemplate === 'string'
+        ? override.commandInputTemplate
+        : readInheritedCommandTemplate(source, actionId)
+    const separator = currentTemplate.endsWith('\n') || currentTemplate.length === 0 ? '' : ' '
+    updateActionTemplate(actionId, `${currentTemplate}${separator}{${variable}}`)
   }
 
   const updatePrDefault = (key: PrDefaultKey, value: string): void => {
@@ -390,9 +371,10 @@ export function RepositorySourceControlAiSection({
     >
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0 space-y-1">
-          <h3 className="text-sm font-semibold">Git AI Author</h3>
+          <h3 className="text-sm font-semibold">Source Control AI</h3>
           <p className="text-xs text-muted-foreground">
-            Repo-specific overrides. Each field uses global settings until you set it here.
+            Repo-specific action recipes. Each action inherits global settings until you customize
+            it here.
           </p>
           {saveError ? <p className="text-xs text-destructive">{saveError}</p> : null}
         </div>
@@ -423,109 +405,94 @@ export function RepositorySourceControlAiSection({
         </div>
       </div>
 
-      {capability ? (
-        <div className="space-y-3">
-          {OPERATIONS.map((row) => {
-            const choice = repoAi.modelOverridesByOperation?.[row.operation]
-            const selectedModelId = readSourceControlAiModelChoiceForHost(
-              choice,
-              hostKey,
-              capability.id
-            )
-            const selectedModel = selectedModelId
-              ? capability.models.find((model) => model.id === selectedModelId)
-              : null
-            const selectedThinking =
-              selectedModel?.thinkingLevels && selectedModel.defaultThinkingLevel
-                ? (choice?.selectedThinkingByModel?.[selectedModel.id] ??
-                  selectedModel.defaultThinkingLevel)
-                : null
-            return (
-              <div
-                key={row.operation}
-                className="space-y-2 rounded-md border border-border px-3 py-2"
-              >
-                <div className="flex items-center justify-between gap-4">
-                  <Label className="text-xs font-medium">{row.modelLabel}</Label>
+      <div className="space-y-3">
+        <Label className="text-xs font-medium">Action recipes</Label>
+        {SOURCE_CONTROL_ACTION_IDS.map((actionId) => {
+          const hasOverride = hasOwnActionOverride(repoAi.actionOverrides, actionId)
+          const override = repoAi.actionOverrides?.[actionId]
+          const inheritedTemplate = readInheritedCommandTemplate(source, actionId)
+          const templateValue =
+            hasOverride && typeof override?.commandInputTemplate === 'string'
+              ? override.commandInputTemplate
+              : ''
+          const agentOptions = getAgentCatalogForAction(actionId, override?.agentId)
+          return (
+            <div key={actionId} className="space-y-3 rounded-md border border-border px-3 py-3">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div className="min-w-0 space-y-0.5">
+                  <p className="text-xs font-medium text-foreground">
+                    {SOURCE_CONTROL_ACTION_LABELS[actionId]}
+                  </p>
+                  <p className="text-[11px] text-muted-foreground">
+                    {ACTION_DESCRIPTIONS[actionId]}
+                  </p>
+                </div>
+                <Select
+                  value={hasOverride ? ACTION_MODE_OVERRIDE : ACTION_MODE_INHERIT}
+                  onValueChange={(value) => updateActionMode(actionId, value)}
+                >
+                  <SelectTrigger size="sm" className="h-8 w-full shrink-0 text-xs sm:w-[150px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={ACTION_MODE_INHERIT}>Use global</SelectItem>
+                    <SelectItem value={ACTION_MODE_OVERRIDE}>Customize</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-[180px_1fr]">
+                <div className="space-y-2">
+                  <Label className="text-[11px] text-muted-foreground">Agent</Label>
                   <Select
-                    value={selectedModelId ?? INHERIT_MODEL_VALUE}
-                    onValueChange={(value) => updateModelOverride(row.operation, value)}
+                    value={actionAgentSelectValue(override?.agentId)}
+                    onValueChange={(value) => updateActionAgent(actionId, value)}
+                    disabled={!hasOverride}
                   >
-                    <SelectTrigger size="sm" className="h-8 w-[240px] text-xs">
+                    <SelectTrigger size="sm" className="h-8 w-full text-xs">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value={INHERIT_MODEL_VALUE}>Use global model</SelectItem>
-                      {capability.models.map((model) => (
-                        <SelectItem key={model.id} value={model.id}>
-                          {model.label}
+                      <SelectItem value={INHERIT_AGENT_VALUE}>
+                        <span className="flex items-center gap-2">
+                          <Terminal className="size-3.5 text-muted-foreground" />
+                          Use global agent
+                        </span>
+                      </SelectItem>
+                      <SelectItem value={DEFAULT_AGENT_VALUE}>
+                        <span className="flex items-center gap-2">
+                          <Terminal className="size-3.5 text-muted-foreground" />
+                          Use default agent
+                        </span>
+                      </SelectItem>
+                      {agentOptions.map((agent) => (
+                        <SelectItem key={agent.id} value={agent.id}>
+                          <span className="flex items-center gap-2">
+                            <AgentIcon agent={agent.id} size={14} />
+                            {agent.label}
+                          </span>
                         </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
                 </div>
-                {selectedModel?.thinkingLevels && selectedThinking ? (
-                  <div className="flex items-center justify-end gap-2">
-                    <span className="text-[11px] text-muted-foreground">Thinking</span>
-                    <Select
-                      value={selectedThinking}
-                      onValueChange={(value) =>
-                        updateOperationThinking(row.operation, selectedModel.id, value)
-                      }
-                    >
-                      <SelectTrigger size="sm" className="h-7 w-[150px] text-xs">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {selectedModel.thinkingLevels.map((level) => (
-                          <SelectItem key={level.id} value={level.id}>
-                            {level.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                ) : null}
+                <div className="space-y-2">
+                  <Label className="text-[11px] text-muted-foreground">Command template</Label>
+                  <textarea
+                    rows={3}
+                    value={templateValue}
+                    onChange={(event) => updateActionTemplate(actionId, event.target.value)}
+                    disabled={!hasOverride}
+                    placeholder={inheritedTemplate}
+                    spellCheck={false}
+                    className="w-full resize-y rounded-md border border-border bg-background px-2.5 py-2 font-mono text-xs text-foreground outline-none placeholder:text-muted-foreground/70 focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:bg-muted/40"
+                  />
+                  <SourceControlActionVariableChips
+                    actionId={actionId}
+                    disabled={!hasOverride}
+                    onInsert={(variable) => appendVariable(actionId, variable)}
+                  />
+                </div>
               </div>
-            )
-          })}
-        </div>
-      ) : (
-        <p className="rounded-md border border-border px-3 py-2 text-xs text-muted-foreground">
-          Model overrides are available after a supported global Git AI Author agent is selected.
-        </p>
-      )}
-
-      <div className="space-y-3">
-        {OPERATIONS.map((row) => {
-          const inherited = source.instructionsByOperation[row.operation]?.trim() ?? ''
-          const hasOverride = hasOwnPrompt(repoAi.instructionsByOperation, row.operation)
-          const value = hasOverride ? (repoAi.instructionsByOperation?.[row.operation] ?? '') : ''
-          return (
-            <div key={row.instructionLabel} className="space-y-2">
-              <div className="flex items-center justify-between gap-4">
-                <Label className="text-xs font-medium">{row.instructionLabel}</Label>
-                <Select
-                  value={hasOverride ? PROMPT_MODE_OVERRIDE : PROMPT_MODE_INHERIT}
-                  onValueChange={(mode) => updatePromptMode(row.operation, mode, inherited)}
-                >
-                  <SelectTrigger size="sm" className="h-8 w-[150px] text-xs">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value={PROMPT_MODE_INHERIT}>Use global</SelectItem>
-                    <SelectItem value={PROMPT_MODE_OVERRIDE}>Customize</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <textarea
-                rows={3}
-                value={hasOverride ? value : ''}
-                onChange={(event) => updatePromptOverride(row.operation, event.target.value)}
-                disabled={!hasOverride}
-                placeholder={hasOverride ? '' : inherited || row.globalPlaceholder}
-                className="w-full resize-y rounded-md border border-border bg-background px-2 py-1.5 text-xs text-foreground outline-none placeholder:text-muted-foreground/70 focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:bg-muted/40"
-              />
             </div>
           )
         })}
