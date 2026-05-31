@@ -128,12 +128,6 @@ export function CreateFromPicker({
   }, [activeRuntimeEnvironmentId, repoId])
 
   React.useEffect(() => {
-    setQuery('')
-    setSearchResults([])
-    setIsSearching(false)
-  }, [repoId])
-
-  React.useEffect(() => {
     const trimmedQuery = query.trim()
     if (!open || !repoId || trimmedQuery.length < 2) {
       setSearchResults([])

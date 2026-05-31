@@ -318,6 +318,9 @@ export function AutomationEditorDialog({
                     />
                   ) : (
                     <CreateFromPicker
+                      // Why: branch search state belongs to the selected project,
+                      // so repo switches should reset it before the next paint.
+                      key={draft.projectId}
                       repoId={draft.projectId}
                       repoMap={repoMap}
                       worktrees={worktrees}
