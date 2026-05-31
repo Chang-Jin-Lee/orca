@@ -680,7 +680,7 @@ const WorktreeCard = React.memo(function WorktreeCard({
       ) : null}
 
       {/* Content area */}
-      <div className="flex-1 min-w-0 flex flex-col gap-1.5">
+      <div className="flex-1 min-w-0 overflow-hidden flex flex-col gap-1.5">
         {/* Header row: Title */}
         <div className="flex items-center justify-between min-w-0 gap-2">
           <div className="flex min-w-0 flex-1 items-center gap-1.5">
