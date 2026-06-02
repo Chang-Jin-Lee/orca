@@ -569,7 +569,7 @@ export function useOnboardingFlow(
       })
       if (isGit) {
         openModal('project-added', {
-          projectId,
+          repoId: projectId,
           defaultWorktreeName: 'orca-worktree-1',
           telemetrySource: 'onboarding'
         })

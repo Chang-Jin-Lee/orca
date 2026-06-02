@@ -93,6 +93,7 @@ import {
   normalizeFeatureInteractions,
   type FeatureInteractionId
 } from '../shared/feature-interactions'
+import { normalizeContextualTourIds } from '../shared/contextual-tours'
 import { normalizeFeatureTipIds } from '../shared/feature-tips'
 import {
   DEFAULT_WORKSPACE_STATUS_ID,
@@ -297,6 +298,17 @@ function mergeFeatureInteractions(
       : incomingRecord
   }
   return merged
+}
+
+function mergeContextualTourSeenIds(
+  current: PersistedState['ui']['contextualToursSeenIds'],
+  incoming: PersistedState['ui']['contextualToursSeenIds']
+): PersistedState['ui']['contextualToursSeenIds'] {
+  const merged = new Set(normalizeContextualTourIds(current))
+  for (const id of normalizeContextualTourIds(incoming)) {
+    merged.add(id)
+  }
+  return [...merged]
 }
 
 function normalizeSortBy(sortBy: unknown): PersistedState['ui']['sortBy'] {
@@ -2938,6 +2950,7 @@ export class Store {
         this.state.ui?.showDotfilesByWorktree
       ),
       featureTipsSeenIds: normalizeFeatureTipIds(this.state.ui?.featureTipsSeenIds),
+      contextualToursSeenIds: normalizeContextualTourIds(this.state.ui?.contextualToursSeenIds),
       featureInteractions: normalizeFeatureInteractions(this.state.ui?.featureInteractions)
     }
   }
@@ -2982,6 +2995,15 @@ export class Store {
         updates.featureTipsSeenIds !== undefined
           ? normalizeFeatureTipIds(updates.featureTipsSeenIds)
           : normalizeFeatureTipIds(this.state.ui?.featureTipsSeenIds),
+      // Why: renderer and paired clients can mark different tours seen from
+      // stale UI snapshots; union them so completed tours stay suppressed.
+      contextualToursSeenIds:
+        updates.contextualToursSeenIds !== undefined
+          ? mergeContextualTourSeenIds(
+              this.state.ui?.contextualToursSeenIds,
+              updates.contextualToursSeenIds
+            )
+          : normalizeContextualTourIds(this.state.ui?.contextualToursSeenIds),
       // Why: runtime RPCs and the renderer can both record education state.
       // Merge instead of replacing so a stale renderer snapshot cannot erase
       // runtime-only feature interactions.
