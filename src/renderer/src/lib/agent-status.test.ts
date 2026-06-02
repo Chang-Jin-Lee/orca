@@ -364,14 +364,18 @@ describe('normalizeTerminalTitle', () => {
     expect(normalizeTerminalTitle('✋  Action Required (workspace)')).toBe('✋ Gemini CLI')
   })
 
-  it('leaves non-Gemini titles unchanged', () => {
-    expect(normalizeTerminalTitle('⠂ Claude Code')).toBe('⠂ Claude Code')
+  it('leaves non-agent titles unchanged', () => {
     expect(normalizeTerminalTitle('bash')).toBe('bash')
   })
 
   it('collapses Pi spinner and idle titles to stable labels', () => {
     expect(normalizeTerminalTitle('⠋ π - my-project')).toBe('⠋ Pi')
     expect(normalizeTerminalTitle('π - my-project')).toBe('Pi')
+  })
+
+  it('collapses generic braille spinner frames while preserving title text', () => {
+    expect(normalizeTerminalTitle('⠹ goal')).toBe('⠋ goal')
+    expect(normalizeTerminalTitle('⠂ Claude Code')).toBe('⠋ Claude Code')
   })
 })
 

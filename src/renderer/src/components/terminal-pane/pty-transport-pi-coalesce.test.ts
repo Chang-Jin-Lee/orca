@@ -12,6 +12,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 const ESC = '\x1b'
 const BEL = '\x07'
 const workingFrame = (frame: string): string => `${ESC}]0;${frame} π - cwd${BEL}`
+const workingTitle = (frame: string, title: string): string => `${ESC}]0;${frame} ${title}${BEL}`
 const idleTitle = (): string => `${ESC}]0;π - cwd${BEL}`
 
 function flushPtySideEffects(): Promise<void> {
@@ -101,7 +102,25 @@ describe('pty-transport — coalesced OSC titles from Pi', () => {
     await flushPtySideEffects()
 
     const seen = onTitleChange.mock.calls.map((c) => c[0])
-    expect(seen).toContain('⠋ Pi')
+    expect(seen).toEqual(['⠋ Pi'])
+
+    transport.disconnect()
+  })
+
+  it('dedupes normalized spinner-only title frame changes before observer callbacks', async () => {
+    // Why: each onTitleChange callback mutates high-fanout renderer state. Raw
+    // OSC spinner frames can arrive every 80ms, but the semantic title did not
+    // change, so only the first normalized working title should wake the store.
+    const { createIpcPtyTransport } = await import('./pty-transport')
+    const onTitleChange = vi.fn()
+    const transport = createIpcPtyTransport({ onTitleChange })
+    await transport.connect({ url: '', callbacks: {} })
+
+    const chunk = ['⠋', '⠙', '⠹', '⠸'].map((frame) => workingTitle(frame, 'goal')).join('body\r\n')
+    onData?.({ id: 'pty-pi', data: chunk })
+    await flushPtySideEffects()
+
+    expect(onTitleChange.mock.calls.map((c) => c[0])).toEqual(['⠋ goal'])
 
     transport.disconnect()
   })

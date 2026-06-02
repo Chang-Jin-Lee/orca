@@ -143,8 +143,14 @@ export function createPtyOutputProcessor({
     if (title.trim().toLowerCase() === 'cursor agent') {
       return
     }
-    lastEmittedTitle = normalizeTerminalTitle(title)
-    onTitleChange?.(lastEmittedTitle, title)
+    const normalizedTitle = normalizeTerminalTitle(title)
+    if (normalizedTitle === lastEmittedTitle) {
+      // Why: spinner frames can differ in raw OSC bytes while carrying the
+      // same semantic title; emitting each one churns Zustand subscribers.
+      return
+    }
+    lastEmittedTitle = normalizedTitle
+    onTitleChange?.(normalizedTitle, title)
     if (!suppressAgentTracker) {
       agentTracker?.handleTitle(title)
     }
@@ -398,6 +404,7 @@ export function createPtyOutputProcessor({
     pendingSideEffects.length = 0
     pendingSideEffectIndex = 0
     pendingWorkingTitleSideEffects = 0
+    lastEmittedTitle = null
     clearStaleTitleTimer()
     agentTracker?.reset()
     bellDetector.reset()

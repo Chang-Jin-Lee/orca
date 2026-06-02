@@ -103,6 +103,7 @@ export const STRONG_WORKING_KEYWORDS_RE = new RegExp(
 // correctly refuse to classify as working.
 const STRONG_WORKING_KEYWORDS_RE_GLOBAL = new RegExp(STRONG_WORKING_KEYWORDS_RE.source, 'gi')
 const PI_IDLE_PREFIX = '\u03c0 - ' // π - (Pi titlebar extension idle format)
+const BRAILLE_SPINNER_RE = /[\u2800-\u28FF]/g
 
 // eslint-disable-next-line no-control-regex -- intentional terminal escape sequence matching
 const OSC_TITLE_RE = /\x1b\]([012]);([^\x07\x1b]*?)(?:\x07|\x1b\\)/g
@@ -307,6 +308,12 @@ export function normalizeTerminalTitle(title: string): string {
     if (status === 'idle') {
       return 'Pi'
     }
+  }
+
+  // Why: OSC-title spinners rewrite every ~80ms; app state only needs the
+  // semantic working title, so preserve text while collapsing frame noise.
+  if (containsBrailleSpinner(title) && detectAgentStatusFromTitle(title) === 'working') {
+    return title.replace(BRAILLE_SPINNER_RE, '\u280b')
   }
 
   return title

@@ -189,10 +189,10 @@ describe('dispatcher → transport → onTitleChange for Pi spinner', () => {
 
     const seenTitles = onTitleChange.mock.calls.map((c) => c[0])
     // The two bare "Cursor Agent" titles must NOT reach the title-change
-    // pipeline. The two synthesized spinner frames must.
+    // pipeline. Spinner-only frame changes normalize to the same semantic
+    // working title, so only the first synthesized frame should emit.
     expect(seenTitles).not.toContain('Cursor Agent')
-    expect(seenTitles).toContain('⠋ Cursor Agent')
-    expect(seenTitles).toContain('⠙ Cursor Agent')
+    expect(seenTitles).toEqual(['⠋ Cursor Agent'])
 
     transport.disconnect()
   })
