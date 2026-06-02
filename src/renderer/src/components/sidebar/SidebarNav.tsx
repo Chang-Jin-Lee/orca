@@ -190,7 +190,7 @@ const SidebarNav = React.memo(function SidebarNav() {
         <div
           data-contextual-tour-target="setup-guide-entry"
           className={cn(
-            'relative rounded-md border border-sidebar-border transition-colors',
+            'group/setup-guide relative rounded-md border border-sidebar-border transition-colors',
             setupActive
               ? 'bg-sidebar-accent text-sidebar-accent-foreground ring-1 ring-sidebar-ring'
               : 'bg-sidebar-accent/60 text-sidebar-foreground hover:bg-sidebar-accent'
@@ -225,9 +225,9 @@ const SidebarNav = React.memo(function SidebarNav() {
             type="button"
             aria-label="Hide Getting started with Orca"
             onClick={handleHideSetupGuide}
-            className="absolute -left-1.5 -top-1.5 flex size-5 items-center justify-center rounded-full border border-sidebar-border bg-sidebar text-sidebar-foreground/60 shadow-xs transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-sidebar-ring"
+            className="pointer-events-none absolute -right-1 -top-1 flex size-4 items-center justify-center rounded-full border border-sidebar-border bg-sidebar text-sidebar-foreground/60 opacity-0 shadow-xs transition-colors transition-opacity group-hover/setup-guide:pointer-events-auto group-hover/setup-guide:opacity-100 group-focus-within/setup-guide:pointer-events-auto group-focus-within/setup-guide:opacity-100 hover:bg-sidebar-accent hover:text-sidebar-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-sidebar-ring"
           >
-            <X className="size-3" aria-hidden />
+            <X className="size-2.5" aria-hidden />
           </button>
         </div>
       ) : null}
