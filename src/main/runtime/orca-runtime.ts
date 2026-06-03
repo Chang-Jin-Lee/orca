@@ -83,6 +83,7 @@ import { FIRST_PANE_ID } from '../../shared/pane-key'
 import { isTerminalLeafId, makePaneKey, parsePaneKey } from '../../shared/stable-pane-id'
 import { isValidHostTerminalTabId } from '../../shared/terminal-tab-id'
 import { buildAgentDraftLaunchPlan, buildAgentStartupPlan } from '../../shared/tui-agent-startup'
+import { isExpectedAgentProcess } from '../../shared/agent-process-recognition'
 import { isTuiAgentEnabled, pickTuiAgent } from '../../shared/tui-agent-selection'
 import { TUI_AGENT_CONFIG, isTuiAgent } from '../../shared/tui-agent-config'
 import { detectInstalledAgents, detectRemoteAgents } from '../ipc/preflight'
@@ -705,6 +706,18 @@ type RuntimePtyController = {
 type WorktreeStartupDraftPaste = {
   agent: TuiAgent
   content: string
+}
+
+type WorktreeStartupFollowup = {
+  expectedProcess: string
+  prompt: string
+}
+
+function getAgentLaunchPlatformForRepo(repo: Pick<Repo, 'connectionId' | 'path'>): NodeJS.Platform {
+  if (!repo.connectionId) {
+    return process.platform
+  }
+  return isWindowsAbsolutePathLike(repo.path) ? 'win32' : 'linux'
 }
 
 const DECSET_BRACKETED_PASTE = '\x1b[?2004h'
@@ -7410,7 +7423,7 @@ export class OrcaRuntimeService {
 
     // Why: a mobile client can run on Windows while the workspace shell is
     // Linux over SSH. Startup command quoting must target the shell that runs it.
-    const agentLaunchPlatform: NodeJS.Platform = repo.connectionId ? 'linux' : process.platform
+    const agentLaunchPlatform = getAgentLaunchPlatformForRepo(repo)
     const draftLaunchPlan = buildAgentDraftLaunchPlan({
       agent,
       draft: content,
@@ -7444,6 +7457,48 @@ export class OrcaRuntimeService {
         ...(startupPlan.env ? { env: startupPlan.env } : {})
       },
       draftPaste: { agent, content }
+    }
+  }
+
+  private buildStartupForAgent(
+    repo: Repo,
+    agent: TuiAgent,
+    prompt: string | undefined
+  ): { agent: TuiAgent; startup: WorktreeStartupLaunch; followup?: WorktreeStartupFollowup } {
+    if (!this.store) {
+      throw new Error('runtime_unavailable')
+    }
+    const settings = this.store.getSettings()
+    if (!isTuiAgentEnabled(agent, settings.disabledTuiAgents)) {
+      throw new Error('Selected agent is disabled. Choose an enabled agent before creating.')
+    }
+    // Why: CLI clients may target SSH runtimes from macOS/Windows, so quote for
+    // the workspace shell rather than the client shell.
+    const agentLaunchPlatform = getAgentLaunchPlatformForRepo(repo)
+    const startupPlan = buildAgentStartupPlan({
+      agent,
+      prompt: prompt ?? '',
+      cmdOverrides: settings.agentCmdOverrides ?? {},
+      platform: agentLaunchPlatform,
+      allowEmptyPromptLaunch: true
+    })
+    if (!startupPlan) {
+      throw new Error(`Could not build launch command for ${agent}.`)
+    }
+    return {
+      agent,
+      startup: {
+        command: startupPlan.launchCommand,
+        ...(startupPlan.env ? { env: startupPlan.env } : {})
+      },
+      ...(startupPlan.followupPrompt
+        ? {
+            followup: {
+              expectedProcess: startupPlan.expectedProcess,
+              prompt: startupPlan.followupPrompt
+            }
+          }
+        : {})
     }
   }
 
@@ -7481,6 +7536,53 @@ export class OrcaRuntimeService {
     }
   }
 
+  private recordCreatedWorktreeLineage(
+    worktree: Pick<Worktree, 'id' | 'instanceId'>,
+    lineageResolution: WorktreeLineageResolution
+  ): { lineage: WorktreeLineage | null; warnings: WorktreeLineageWarning[] } {
+    const warnings = lineageResolution.kind === 'none' ? [...lineageResolution.warnings] : []
+    let lineage: WorktreeLineage | null = null
+    if (lineageResolution.kind !== 'lineage') {
+      return { lineage, warnings }
+    }
+
+    const childInstanceId = worktree.instanceId
+    const parentInstanceId = lineageResolution.parent.instanceId
+    if (childInstanceId && parentInstanceId && this.store?.setWorktreeLineage) {
+      lineage = this.store.setWorktreeLineage(worktree.id, {
+        worktreeId: worktree.id,
+        worktreeInstanceId: childInstanceId,
+        parentWorktreeId: lineageResolution.parent.id,
+        parentWorktreeInstanceId: parentInstanceId,
+        origin: lineageResolution.origin,
+        capture: lineageResolution.capture,
+        ...(lineageResolution.orchestrationRunId
+          ? { orchestrationRunId: lineageResolution.orchestrationRunId }
+          : {}),
+        ...(lineageResolution.taskId ? { taskId: lineageResolution.taskId } : {}),
+        ...(lineageResolution.coordinatorHandle
+          ? { coordinatorHandle: lineageResolution.coordinatorHandle }
+          : {}),
+        ...(lineageResolution.createdByTerminalHandle
+          ? { createdByTerminalHandle: lineageResolution.createdByTerminalHandle }
+          : {}),
+        createdAt: Date.now()
+      })
+    } else {
+      warnings.push({
+        code: 'LINEAGE_PARENT_CONTEXT_MISSING',
+        message:
+          'Worktree created, but Orca could not record lineage because instance identity was unavailable.',
+        details: {
+          childHasInstanceId: Boolean(childInstanceId),
+          parentHasInstanceId: Boolean(parentInstanceId),
+          storeSupportsLineage: Boolean(this.store?.setWorktreeLineage)
+        }
+      })
+    }
+    return { lineage, warnings }
+  }
+
   private pasteStartupDraftWhenReady(handle: string, draft: WorktreeStartupDraftPaste): void {
     void this.waitForStartupDraftReady(handle, draft.agent)
       .then((ptyId) => {
@@ -7496,6 +7598,52 @@ export class OrcaRuntimeService {
       .catch((error) => {
         console.warn('[worktree-create] failed to paste startup draft:', error)
       })
+  }
+
+  private sendStartupFollowupWhenReady(handle: string, followup: WorktreeStartupFollowup): void {
+    void this.waitForStartupFollowupReady(handle, followup.expectedProcess)
+      .then((ptyId) => {
+        if (!ptyId) {
+          console.warn('[worktree-create] agent did not become ready for follow-up prompt')
+          return
+        }
+        this.ptyController?.write(ptyId, `${followup.prompt}\r`)
+      })
+      .catch((error) => {
+        console.warn('[worktree-create] failed to send startup follow-up prompt:', error)
+      })
+  }
+
+  private async waitForStartupFollowupReady(
+    handle: string,
+    expectedProcess: string
+  ): Promise<string | null> {
+    const livePty = this.getLivePtyForHandle(handle)
+    const ptyId = livePty?.pty.ptyId
+    if (!ptyId || !this.ptyController) {
+      return null
+    }
+    for (let attempt = 0; attempt < 30; attempt += 1) {
+      if (attempt > 0) {
+        await new Promise((resolve) => setTimeout(resolve, 150))
+      }
+      try {
+        const foregroundProcess = await this.ptyController.getForegroundProcess(ptyId)
+        if (isExpectedAgentProcess(foregroundProcess, expectedProcess)) {
+          return ptyId
+        }
+        if (attempt >= 4 && !isShellProcess(foregroundProcess ?? '')) {
+          const hasChildProcesses =
+            (await this.ptyController.hasChildProcesses?.(ptyId).catch(() => false)) ?? false
+          if (hasChildProcesses) {
+            return ptyId
+          }
+        }
+      } catch {
+        // Ignore transient PTY inspection failures and keep polling.
+      }
+    }
+    return null
   }
 
   private waitForStartupDraftReady(handle: string, agent: TuiAgent): Promise<string | null> {
@@ -7618,6 +7766,8 @@ export class OrcaRuntimeService {
     activate?: boolean
     setupDecision?: 'run' | 'skip' | 'inherit'
     createdWithAgent?: TuiAgent
+    startupAgent?: TuiAgent
+    startupPrompt?: string
     pendingFirstAgentMessageRename?: boolean
     startup?: WorktreeStartupLaunch
     startupDraft?: string
@@ -7630,11 +7780,12 @@ export class OrcaRuntimeService {
 
     const repo = await this.resolveRepoSelector(args.repoSelector)
     const createSettings = this.store.getSettings()
+    const requestedAgent = args.startupAgent ?? args.createdWithAgent
     const requestedAgentEnabled =
-      args.createdWithAgent !== undefined
-        ? isTuiAgentEnabled(args.createdWithAgent, createSettings.disabledTuiAgents)
+      requestedAgent !== undefined
+        ? isTuiAgentEnabled(requestedAgent, createSettings.disabledTuiAgents)
         : false
-    if (args.startup && args.createdWithAgent && !requestedAgentEnabled) {
+    if ((args.startup || args.startupAgent) && requestedAgent && !requestedAgentEnabled) {
       throw new Error('Selected agent is disabled. Choose an enabled agent before creating.')
     }
     if (
@@ -7644,13 +7795,21 @@ export class OrcaRuntimeService {
     ) {
       throw new Error('Selected agent is disabled. Choose an enabled agent before creating.')
     }
-    const draftStartup = args.startupDraft
-      ? await this.buildStartupForDraft(repo, args.startupDraft, args.createdWithAgent)
-      : null
-    const effectiveStartup = args.startup ?? draftStartup?.startup
+    const agentStartup =
+      !args.startup && args.startupAgent
+        ? this.buildStartupForAgent(repo, args.startupAgent, args.startupPrompt)
+        : null
+    const draftStartup =
+      !args.startup && !agentStartup && args.startupDraft
+        ? await this.buildStartupForDraft(repo, args.startupDraft, requestedAgent)
+        : null
+    const effectiveStartup = args.startup ?? agentStartup?.startup ?? draftStartup?.startup
+    const effectiveStartupFollowup = agentStartup?.followup
     const effectiveCreatedWithAgent = args.startup
       ? args.createdWithAgent
-      : (draftStartup?.agent ?? (requestedAgentEnabled ? args.createdWithAgent : undefined))
+      : (agentStartup?.agent ??
+        draftStartup?.agent ??
+        (requestedAgentEnabled ? requestedAgent : undefined))
     const effectiveDraftPaste = args.startupDraftPaste ?? draftStartup?.draftPaste
     if (isFolderRepo(repo)) {
       const now = Date.now()
@@ -7701,6 +7860,9 @@ export class OrcaRuntimeService {
           if (effectiveDraftPaste) {
             this.pasteStartupDraftWhenReady(terminal.handle, effectiveDraftPaste)
           }
+          if (effectiveStartupFollowup) {
+            this.sendStartupFollowupWhenReady(terminal.handle, effectiveStartupFollowup)
+          }
           didSpawnStartup = true
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err)
@@ -7742,17 +7904,32 @@ export class OrcaRuntimeService {
         ...(warning ? { warning } : {})
       }
     }
-    if (repo.connectionId) {
-      return await this.createManagedRemoteWorktree(repo, {
-        ...args,
-        ...(effectiveStartup ? { startup: effectiveStartup } : {}),
-        ...(effectiveCreatedWithAgent ? { createdWithAgent: effectiveCreatedWithAgent } : {}),
-        ...(effectiveDraftPaste ? { startupDraftPaste: effectiveDraftPaste } : {})
-      })
-    }
     const lineageInput =
       args.lineage || args.comment ? { ...args.lineage, comment: args.comment } : undefined
     const lineageResolution = await this.resolveLineageForWorktreeCreate(lineageInput)
+    if (repo.connectionId) {
+      const result = await this.createManagedRemoteWorktree(repo, {
+        ...args,
+        activate: args.activate,
+        ...(effectiveStartup ? { startup: effectiveStartup } : {}),
+        ...(effectiveStartupFollowup ? { startupFollowup: effectiveStartupFollowup } : {}),
+        ...(effectiveCreatedWithAgent ? { createdWithAgent: effectiveCreatedWithAgent } : {}),
+        ...(effectiveDraftPaste ? { startupDraftPaste: effectiveDraftPaste } : {})
+      })
+      const recordedLineage = this.recordCreatedWorktreeLineage(result.worktree, lineageResolution)
+      return {
+        ...result,
+        worktree: {
+          ...result.worktree,
+          parentWorktreeId: recordedLineage.lineage?.parentWorktreeId ?? null,
+          childWorktreeIds: result.worktree.childWorktreeIds ?? [],
+          lineage: recordedLineage.lineage
+        },
+        ...(lineageInput
+          ? { lineage: recordedLineage.lineage, warnings: recordedLineage.warnings }
+          : {})
+      }
+    }
     const settings = createSettings
     const worktreePathSettings = getWorktreePathSettings(repo, settings)
     let effectiveRequestedName = args.name
@@ -8002,44 +8179,10 @@ export class OrcaRuntimeService {
       ...(args.workspaceStatus !== undefined ? { workspaceStatus: args.workspaceStatus } : {})
     })
     const worktree = mergeWorktree(repo.id, created, meta)
-    let lineage: WorktreeLineage | null = null
-    const lineageWarnings = lineageResolution.kind === 'none' ? [...lineageResolution.warnings] : []
-    if (lineageResolution.kind === 'lineage') {
-      const childInstanceId = meta.instanceId
-      const parentInstanceId = lineageResolution.parent.instanceId
-      if (childInstanceId && parentInstanceId && this.store.setWorktreeLineage) {
-        lineage = this.store.setWorktreeLineage(worktreeId, {
-          worktreeId,
-          worktreeInstanceId: childInstanceId,
-          parentWorktreeId: lineageResolution.parent.id,
-          parentWorktreeInstanceId: parentInstanceId,
-          origin: lineageResolution.origin,
-          capture: lineageResolution.capture,
-          ...(lineageResolution.orchestrationRunId
-            ? { orchestrationRunId: lineageResolution.orchestrationRunId }
-            : {}),
-          ...(lineageResolution.taskId ? { taskId: lineageResolution.taskId } : {}),
-          ...(lineageResolution.coordinatorHandle
-            ? { coordinatorHandle: lineageResolution.coordinatorHandle }
-            : {}),
-          ...(lineageResolution.createdByTerminalHandle
-            ? { createdByTerminalHandle: lineageResolution.createdByTerminalHandle }
-            : {}),
-          createdAt: now
-        })
-      } else {
-        lineageWarnings.push({
-          code: 'LINEAGE_PARENT_CONTEXT_MISSING',
-          message:
-            'Worktree created, but Orca could not record lineage because instance identity was unavailable.',
-          details: {
-            childHasInstanceId: Boolean(childInstanceId),
-            parentHasInstanceId: Boolean(parentInstanceId),
-            storeSupportsLineage: Boolean(this.store.setWorktreeLineage)
-          }
-        })
-      }
-    }
+    const { lineage, warnings: lineageWarnings } = this.recordCreatedWorktreeLineage(
+      worktree,
+      lineageResolution
+    )
 
     if (
       settings.experimentalWorktreeSymlinks &&
@@ -8092,9 +8235,9 @@ export class OrcaRuntimeService {
           }
         })
       }
-    } else if (hooks?.scripts.setup) {
+    } else if (hooks?.scripts.setup && effectiveDecision !== 'skip') {
       // Runtime RPC calls have no renderer trust prompt, so hooks require explicit CLI opt-in.
-      warning = `orca.yaml setup hook skipped for ${worktreePath}; pass --run-hooks to run it.`
+      warning = `orca.yaml setup hook skipped for ${worktreePath}; pass --setup run to run it.`
       console.warn(`[hooks] ${warning}`)
     }
 
@@ -8126,6 +8269,9 @@ export class OrcaRuntimeService {
         })
         if (effectiveDraftPaste) {
           this.pasteStartupDraftWhenReady(terminal.handle, effectiveDraftPaste)
+        }
+        if (effectiveStartupFollowup) {
+          this.sendStartupFollowupWhenReady(terminal.handle, effectiveStartupFollowup)
         }
         didSpawnStartup = true
         startupTerminalHandle = terminal.handle
@@ -8199,18 +8345,35 @@ export class OrcaRuntimeService {
       }
     } else if (this.ptyController?.spawn) {
       try {
+        let initialTerminalHandle: string | null = null
         if (!didSpawnStartup) {
-          await this.createTerminal(`id:${worktree.id}`)
+          const terminal = await this.createTerminal(`id:${worktree.id}`)
+          initialTerminalHandle = terminal.handle
         }
         if (setup && !didSpawnSetup) {
-          await this.createTerminal(`id:${worktree.id}`, {
-            title: 'Setup',
-            command: buildSetupRunnerCommand(
-              setup.runnerScriptPath,
-              process.platform === 'win32' ? 'windows' : 'posix'
-            ),
-            env: setup.envVars
-          })
+          const setupCommand = buildSetupRunnerCommand(
+            setup.runnerScriptPath,
+            process.platform === 'win32' ? 'windows' : 'posix'
+          )
+          const setupLaunchMode =
+            (this.store.getSettings() as Partial<Pick<GlobalSettings, 'setupScriptLaunchMode'>>)
+              .setupScriptLaunchMode ?? 'new-tab'
+          const shouldSplitSetup =
+            initialTerminalHandle &&
+            (setupLaunchMode === 'split-vertical' || setupLaunchMode === 'split-horizontal')
+          await (shouldSplitSetup
+            ? this.splitTerminal(initialTerminalHandle!, {
+                direction: setupLaunchMode === 'split-horizontal' ? 'horizontal' : 'vertical',
+                command: setupCommand,
+                env: setup.envVars,
+                activate: false
+              })
+            : this.createTerminal(`id:${worktree.id}`, {
+                title: 'Setup',
+                command: setupCommand,
+                env: setup.envVars
+              }))
+          didSpawnSetup = true
         }
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err)
@@ -8256,10 +8419,12 @@ export class OrcaRuntimeService {
       sparseCheckout?: { directories: string[]; presetId?: string }
       pushTarget?: GitPushTarget
       runHooks?: boolean
+      activate?: boolean
       setupDecision?: 'run' | 'skip' | 'inherit'
       createdWithAgent?: TuiAgent
       pendingFirstAgentMessageRename?: boolean
       startup?: WorktreeStartupLaunch
+      startupFollowup?: WorktreeStartupFollowup
       startupDraftPaste?: WorktreeStartupDraftPaste
     }
   ): Promise<CreateWorktreeResult> {
@@ -8332,6 +8497,9 @@ export class OrcaRuntimeService {
         if (args.startupDraftPaste) {
           this.pasteStartupDraftWhenReady(terminal.handle, args.startupDraftPaste)
         }
+        if (args.startupFollowup) {
+          this.sendStartupFollowupWhenReady(terminal.handle, args.startupFollowup)
+        }
         didSpawnStartup = true
         startupTerminalHandle = terminal.handle
       } catch (err) {
@@ -8380,18 +8548,52 @@ export class OrcaRuntimeService {
       }
     }
 
-    if (!args.startup && this.ptyController?.spawn) {
+    const shouldActivate = args.activate === true || args.runHooks === true
+    if (shouldActivate) {
+      const activationSetup = didSpawnSetup ? undefined : result.setup
+      if (args.startup && !didSpawnStartup) {
+        this.notifier?.activateWorktree(
+          repo.id,
+          result.worktree.id,
+          activationSetup,
+          args.startup,
+          result.defaultTabs
+        )
+      } else {
+        this.notifier?.activateWorktree(
+          repo.id,
+          result.worktree.id,
+          activationSetup,
+          undefined,
+          result.defaultTabs
+        )
+      }
+    }
+
+    if (!args.startup && !shouldActivate && this.ptyController?.spawn) {
       try {
-        await this.createTerminal(`path:${result.worktree.path}`)
+        const terminal = await this.createTerminal(`path:${result.worktree.path}`)
         if (result.setup && !didSpawnSetup) {
-          await this.createTerminal(`path:${result.worktree.path}`, {
-            title: 'Setup',
-            command: buildSetupRunnerCommand(
-              result.setup.runnerScriptPath,
-              isWindowsAbsolutePathLike(result.setup.runnerScriptPath) ? 'windows' : 'posix'
-            ),
-            env: result.setup.envVars
-          })
+          const setupCommand = buildSetupRunnerCommand(
+            result.setup.runnerScriptPath,
+            isWindowsAbsolutePathLike(result.setup.runnerScriptPath) ? 'windows' : 'posix'
+          )
+          const setupLaunchMode =
+            (this.store.getSettings() as Partial<Pick<GlobalSettings, 'setupScriptLaunchMode'>>)
+              .setupScriptLaunchMode ?? 'new-tab'
+          await (setupLaunchMode === 'split-vertical' || setupLaunchMode === 'split-horizontal'
+            ? this.splitTerminal(terminal.handle, {
+                direction: setupLaunchMode === 'split-horizontal' ? 'horizontal' : 'vertical',
+                command: setupCommand,
+                env: result.setup.envVars,
+                activate: false
+              })
+            : this.createTerminal(`path:${result.worktree.path}`, {
+                title: 'Setup',
+                command: setupCommand,
+                env: result.setup.envVars
+              }))
+          didSpawnSetup = true
         }
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err)
@@ -9832,7 +10034,7 @@ export class OrcaRuntimeService {
     const repo = this.store.getRepo(worktree.repoId)
     // Why: mobile may be running on iOS while the actual terminal shell is
     // Windows/macOS/Linux or an SSH Linux host; quote for the host shell.
-    const platform: NodeJS.Platform = repo?.connectionId ? 'linux' : process.platform
+    const platform = repo ? getAgentLaunchPlatformForRepo(repo) : process.platform
     const startupPlan = buildAgentStartupPlan({
       agent: opts.agent,
       prompt: '',
