@@ -5,17 +5,22 @@ import { getDefaultSettings } from '../../../../shared/constants'
 import { useAppStore } from '../../store'
 import { shouldOpenAutoRenameBranchAdvanced } from './AutoRenameBranchFromWorkSetting'
 import { GitPane, shouldShowAutoRenameBranchSetting } from './GitPane'
+import { TooltipProvider } from '../ui/tooltip'
 
 function renderGitPane(searchQuery: string): string {
   useAppStore.setState({ settingsSearchQuery: searchQuery })
   return renderToStaticMarkup(
-    React.createElement(GitPane, {
-      settings: getDefaultSettings('/tmp'),
-      updateSettings: () => {},
-      writeSourceControlAiSettings: async () => {},
-      displayedGitUsername: 'brennan',
-      settingsSearchQuery: searchQuery
-    })
+    React.createElement(
+      TooltipProvider,
+      null,
+      React.createElement(GitPane, {
+        settings: getDefaultSettings('/tmp'),
+        updateSettings: () => {},
+        writeSourceControlAiSettings: async () => {},
+        displayedGitUsername: 'brennan',
+        settingsSearchQuery: searchQuery
+      })
+    )
   )
 }
 

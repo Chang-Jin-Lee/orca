@@ -1,3 +1,4 @@
+import { isCustomAgentId, type CustomAgentId } from './commit-message-agent-spec'
 import { isTuiAgent } from './tui-agent-config'
 import type { TuiAgent } from './types'
 
@@ -8,7 +9,7 @@ export type SourceControlLaunchActionId = 'fixCommitFailure' | 'fixChecks' | 're
 export type SourceControlActionId = SourceControlTextActionId | SourceControlLaunchActionId
 
 export type SourceControlActionRecipe = {
-  agentId?: TuiAgent | null
+  agentId?: TuiAgent | CustomAgentId | null
   commandInputTemplate?: string
   agentArgs?: string
 }
@@ -163,8 +164,13 @@ export function normalizeSourceControlActionRecipe(
   }
 
   const normalized: SourceControlActionRecipe = {}
-  if (value.agentId === null || isTuiAgent(value.agentId)) {
-    normalized.agentId = value.agentId
+  const agentId = value.agentId
+  if (
+    agentId === null ||
+    isTuiAgent(agentId) ||
+    (typeof agentId === 'string' && isCustomAgentId(agentId))
+  ) {
+    normalized.agentId = agentId
   }
   if (typeof value.commandInputTemplate === 'string') {
     normalized.commandInputTemplate = value.commandInputTemplate
@@ -236,7 +242,7 @@ export function setSourceControlActionDefault(
 export function setSourceControlActionAgentDefault(
   defaults: SourceControlAiActionDefaults | null | undefined,
   actionId: SourceControlActionId,
-  agentId: TuiAgent | null
+  agentId: TuiAgent | CustomAgentId | null
 ): SourceControlAiActionDefaults {
   return setSourceControlActionDefault(defaults, actionId, { agentId })
 }

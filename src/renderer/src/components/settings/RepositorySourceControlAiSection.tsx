@@ -3,6 +3,11 @@
 import { useMemo, useState } from 'react'
 import { Terminal } from 'lucide-react'
 import type { Repo, TuiAgent } from '../../../../shared/types'
+import {
+  CUSTOM_AGENT_ID,
+  isCustomAgentId,
+  type CustomAgentId
+} from '../../../../shared/commit-message-agent-spec'
 import type {
   RepoSourceControlAiOverrides,
   SourceControlAiSettings
@@ -149,7 +154,7 @@ export function dropRepoLegacyInstructionForAction(
   }
 }
 
-function actionAgentSelectValue(agentId: TuiAgent | null | undefined): string {
+function actionAgentSelectValue(agentId: TuiAgent | CustomAgentId | null | undefined): string {
   if (agentId === undefined) {
     return INHERIT_AGENT_VALUE
   }
@@ -157,13 +162,13 @@ function actionAgentSelectValue(agentId: TuiAgent | null | undefined): string {
 }
 
 function resolveAgentArgsPlaceholderAgent(
-  agentId: TuiAgent | null | undefined,
+  agentId: TuiAgent | CustomAgentId | null | undefined,
   source: SourceControlAiSettings,
   actionId: SourceControlActionId,
   defaultTuiAgent: TuiAgent | 'blank' | null | undefined
 ): TuiAgent | null {
   const effectiveAgent = agentId === undefined ? source.actions?.[actionId]?.agentId : agentId
-  if (effectiveAgent) {
+  if (effectiveAgent && !isCustomAgentId(effectiveAgent)) {
     return effectiveAgent
   }
   return defaultTuiAgent && defaultTuiAgent !== 'blank' ? defaultTuiAgent : null
@@ -308,7 +313,12 @@ export function RepositorySourceControlAiSection({
       } else {
         nextActionOverrides[actionId] = {
           ...currentOverride,
-          agentId: value === DEFAULT_AGENT_VALUE ? null : (value as TuiAgent)
+          agentId:
+            value === DEFAULT_AGENT_VALUE
+              ? null
+              : value === CUSTOM_AGENT_ID
+                ? CUSTOM_AGENT_ID
+                : (value as TuiAgent)
         }
       }
       return dropRepoLegacyInstructionForAction(
@@ -497,6 +507,14 @@ export function RepositorySourceControlAiSection({
                           Use default agent
                         </span>
                       </SelectItem>
+                      {SOURCE_CONTROL_TEXT_ACTION_ID_SET.has(actionId) ? (
+                        <SelectItem value={CUSTOM_AGENT_ID}>
+                          <span className="flex items-center gap-2">
+                            <Terminal className="size-3.5 text-muted-foreground" />
+                            Custom command
+                          </span>
+                        </SelectItem>
+                      ) : null}
                       {agentOptions.map((agent) => (
                         <SelectItem key={agent.id} value={agent.id}>
                           <span className="flex items-center gap-2">

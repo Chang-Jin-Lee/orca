@@ -5,6 +5,7 @@ import {
   CUSTOM_AGENT_ID,
   getCommitMessageAgentSpec,
   getCommitMessageModel,
+  type CustomAgentId,
   isCustomAgentId,
   resolveCommitMessageAgentChoice
 } from './commit-message-agent-spec'
@@ -308,15 +309,17 @@ function commandTemplateFromInstruction(instruction: string | null | undefined):
 }
 
 function actionRecipeFromLegacyCommitMessageAi(legacy: CommitMessageAiSettings): {
-  agentId?: TuiAgent | null
+  agentId?: TuiAgent | CustomAgentId | null
   commandInputTemplate: string
 } {
   return {
     ...(legacy.agentId === null
       ? { agentId: null }
-      : legacy.agentId && !isCustomAgentId(legacy.agentId)
-        ? { agentId: legacy.agentId }
-        : {}),
+      : isCustomAgentId(legacy.agentId)
+        ? { agentId: CUSTOM_AGENT_ID }
+        : legacy.agentId
+          ? { agentId: legacy.agentId }
+          : {}),
     commandInputTemplate: commandTemplateFromInstruction(legacy.customPrompt)
   }
 }
@@ -336,8 +339,8 @@ function legacyPromptFromCommandTemplate(
 }
 
 function hasActionAgentRecipe(recipe: {
-  agentId?: TuiAgent | null
-}): recipe is { agentId: TuiAgent | null } {
+  agentId?: TuiAgent | CustomAgentId | null
+}): recipe is { agentId: TuiAgent | CustomAgentId | null } {
   return Object.prototype.hasOwnProperty.call(recipe, 'agentId')
 }
 
@@ -366,6 +369,8 @@ function applyLegacyAgentToActionRecipe(
   const next = { ...recipe }
   if (agentId === null) {
     next.agentId = null
+  } else if (isCustomAgentId(agentId)) {
+    next.agentId = CUSTOM_AGENT_ID
   } else if (agentId && !isCustomAgentId(agentId)) {
     next.agentId = agentId
   } else {
@@ -1018,7 +1023,7 @@ function resolveActionRecipeForTextOperation(
   source: SourceControlAiSettings,
   repoOverrides: RepoSourceControlAiOverrides | null | undefined,
   operation: SourceControlAiOperation
-): { agentId?: TuiAgent | null; commandInputTemplate: string; agentArgs?: string } {
+): { agentId?: TuiAgent | CustomAgentId | null; commandInputTemplate: string; agentArgs?: string } {
   const globalRecipe = readSourceControlActionDefault(source.actions, operation)
   const repoRecipe = repoOverrides?.actionOverrides?.[operation]
   const repoInstruction = readRepoInstructionOverride(

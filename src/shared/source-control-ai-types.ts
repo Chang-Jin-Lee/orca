@@ -1,4 +1,5 @@
 import type { CommitMessageAiModelCapability, TuiAgent } from './types'
+import type { CustomAgentId } from './commit-message-agent-spec'
 import type {
   SourceControlAiActionDefaults,
   SourceControlActionId,
@@ -50,7 +51,7 @@ export type RepoSourceControlAiOverrides = {
     Record<
       SourceControlActionId,
       {
-        agentId?: TuiAgent | null
+        agentId?: TuiAgent | CustomAgentId | null
         commandInputTemplate?: string | null
         agentArgs?: string | null
       }

@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest'
+import { buildCommitMessageGenerationParams } from './SourceControlTextGenerationDialog'
 import {
   applyCommitMessageGenerationDefaults,
-  applySourceControlTextGenerationDefaults,
-  buildCommitMessageGenerationParams
-} from './SourceControlTextGenerationDialog'
+  applySourceControlTextGenerationDefaults
+} from './SourceControlTextGenerationDefaults'
 
 describe('buildCommitMessageGenerationParams', () => {
   it('preserves the resolved model and thinking level for the selected agent', () => {
@@ -55,7 +55,29 @@ describe('buildCommitMessageGenerationParams', () => {
     })
   })
 
-  it('saves custom-command templates without replacing the inherited custom agent', () => {
+  it('uses the configured custom command when switching agents in the dialog', () => {
+    expect(
+      buildCommitMessageGenerationParams({
+        agentId: 'custom',
+        commandTemplate: '{basePrompt}',
+        baseParams: {
+          agentId: 'codex',
+          model: 'gpt-5.4-mini',
+          commandInputTemplate: '{basePrompt}'
+        },
+        settings: null,
+        customAgentCommand: 'my-commit-writer --prompt {prompt}'
+      })
+    ).toEqual({
+      agentId: 'custom',
+      model: '',
+      customPrompt: undefined,
+      commandInputTemplate: '{basePrompt}',
+      customAgentCommand: 'my-commit-writer --prompt {prompt}'
+    })
+  })
+
+  it('saves custom-command templates as an explicit action recipe', () => {
     const saved = applyCommitMessageGenerationDefaults(
       {
         enabled: true,
@@ -82,11 +104,12 @@ describe('buildCommitMessageGenerationParams', () => {
 
     expect(saved.agentId).toBe('custom')
     expect(saved.actions?.commitMessage).toEqual({
+      agentId: 'custom',
       commandInputTemplate: '{basePrompt}\n\nPrefer ticket IDs.'
     })
   })
 
-  it('makes the custom command the inherited agent when saving a custom default', () => {
+  it('saves a custom default without changing unrelated text actions', () => {
     const saved = applySourceControlTextGenerationDefaults(
       {
         enabled: true,
@@ -111,8 +134,9 @@ describe('buildCommitMessageGenerationParams', () => {
       }
     )
 
-    expect(saved.agentId).toBe('custom')
+    expect(saved.agentId).toBe('codex')
     expect(saved.actions?.pullRequest).toEqual({
+      agentId: 'custom',
       commandInputTemplate: '{basePrompt}\n\nPrefer ticket IDs.'
     })
   })

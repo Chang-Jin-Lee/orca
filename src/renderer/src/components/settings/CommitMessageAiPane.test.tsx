@@ -18,13 +18,18 @@ import {
   getSourceControlAgentArgsPlaceholder
 } from './source-control-action-recipe-options'
 import { COMMIT_MESSAGE_AI_PANE_SEARCH_ENTRIES } from './commit-message-ai-search'
+import { TooltipProvider } from '../ui/tooltip'
 
 function renderPane(settings: GlobalSettings): string {
   return renderToStaticMarkup(
-    React.createElement(CommitMessageAiPane, {
-      settings,
-      updateSettings: () => {}
-    })
+    React.createElement(
+      TooltipProvider,
+      null,
+      React.createElement(CommitMessageAiPane, {
+        settings,
+        updateSettings: () => {}
+      })
+    )
   )
 }
 
@@ -83,6 +88,7 @@ describe('CommitMessageAiPane', () => {
     expect(markup).toContain('Conflict resolution')
     expect(markup).toContain('CLI arguments')
     expect(markup).toContain('Command template')
+    expect(markup).toContain('Custom command')
     expect(markup).toContain('{basePrompt}')
     expect(markup).toContain('{stagedPatch}')
     expect(markup).toContain('Use Conventional Commits.')
@@ -176,7 +182,7 @@ describe('CommitMessageAiPane', () => {
     expect(markup.match(/shrink-0/g)?.length ?? 0).toBeGreaterThanOrEqual(6)
   })
 
-  it('renders saved custom action templates without the old custom command schema', () => {
+  it('renders saved custom action templates in action recipes', () => {
     const markup = renderPane(
       buildSettings({
         sourceControlAi: {
@@ -208,7 +214,35 @@ describe('CommitMessageAiPane', () => {
     expect(markup).toContain('Source Control AI')
     expect(markup).toContain('use $best-commit-msg to write a commit')
     expect(markup).toContain('use /fix-ci-issue to fix the linked CI bug')
-    expect(markup).not.toContain('Custom command')
+  })
+
+  it('renders the custom command editor when a text action uses it', () => {
+    const markup = renderPane(
+      buildSettings({
+        sourceControlAi: {
+          enabled: true,
+          agentId: null,
+          selectedModelByAgent: {},
+          selectedModelByAgentByHost: {},
+          discoveredModelsByAgent: {},
+          discoveredModelsByAgentByHost: {},
+          selectedThinkingByModel: {},
+          instructionsByOperation: { commitMessage: '', pullRequest: '', branchName: '' },
+          customAgentCommand: 'my-commit-writer --prompt {prompt}',
+          actions: {
+            commitMessage: {
+              agentId: 'custom',
+              commandInputTemplate: '{basePrompt}'
+            }
+          },
+          prCreationDefaults: {},
+          launchActionDefaults: {}
+        }
+      })
+    )
+
+    expect(markup).toContain('Used by commit-message, pull-request, and branch-name recipes')
+    expect(markup).toContain('my-commit-writer --prompt {prompt}')
   })
 
   it('preserves in-progress trailing spaces in command template textareas', () => {

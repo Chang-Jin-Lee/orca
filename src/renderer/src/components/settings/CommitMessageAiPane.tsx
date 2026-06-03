@@ -17,10 +17,16 @@ import {
   DEFAULT_SOURCE_CONTROL_ACTION_COMMAND_TEMPLATES,
   SOURCE_CONTROL_ACTION_IDS,
   SOURCE_CONTROL_ACTION_LABELS,
+  SOURCE_CONTROL_TEXT_ACTION_IDS,
   setSourceControlActionDefault,
   type SourceControlActionId
 } from '../../../../shared/source-control-ai-actions'
-import type { CommitMessageModelCapability } from '../../../../shared/commit-message-agent-spec'
+import {
+  CUSTOM_AGENT_ID,
+  isCustomAgentId,
+  type CommitMessageModelCapability,
+  type CustomAgentId
+} from '../../../../shared/commit-message-agent-spec'
 import { getCommitMessageModelDiscoveryHostKeyForScope } from '../../../../shared/commit-message-host-key'
 import { AgentIcon } from '@/lib/agent-catalog'
 import { getRuntimeGitScope } from '../../runtime/runtime-git-client'
@@ -44,6 +50,7 @@ type CommitMessageAiPaneProps = {
   writeSourceControlAiSettings?: (patch: SourceControlAiSettingsPatch) => Promise<void>
   onCustomPromptDirtyChange?: (dirty: boolean) => void
   customPromptDiscardSignal?: number
+  settingsSearchQuery?: string
 }
 
 const DEFAULT_AGENT_VALUE = '__default_agent__'
@@ -59,13 +66,17 @@ type ActionRecipeDraftState = {
 }
 
 function resolveAgentArgsPlaceholderAgent(
-  selectedAgent: TuiAgent | null | undefined,
+  selectedAgent: TuiAgent | CustomAgentId | null | undefined,
   defaultTuiAgent: GlobalSettings['defaultTuiAgent']
 ): TuiAgent | null {
-  if (selectedAgent) {
+  if (selectedAgent && !isCustomAgentId(selectedAgent)) {
     return selectedAgent
   }
   return defaultTuiAgent && defaultTuiAgent !== 'blank' ? defaultTuiAgent : null
+}
+
+function isSourceControlTextAction(actionId: SourceControlActionId): boolean {
+  return SOURCE_CONTROL_TEXT_ACTION_IDS.some((candidate) => candidate === actionId)
 }
 
 function readSettings(settings: GlobalSettings): SourceControlAiSettings {
@@ -158,9 +169,11 @@ export function CommitMessageAiPane({
   updateSettings,
   writeSourceControlAiSettings,
   onCustomPromptDirtyChange,
-  customPromptDiscardSignal
+  customPromptDiscardSignal,
+  settingsSearchQuery
 }: CommitMessageAiPaneProps): React.JSX.Element {
-  const searchQuery = useAppStore((s) => s.settingsSearchQuery)
+  const storeSearchQuery = useAppStore((s) => s.settingsSearchQuery)
+  const searchQuery = settingsSearchQuery ?? storeSearchQuery
   const config = readSettings(settings)
   const persistedActionRecipeValues = useMemo(
     () => readActionRecipeInputValues(readSettings(settings)),
@@ -248,10 +261,19 @@ export function CommitMessageAiPane({
   }
 
   const onActionAgentChange = (actionId: SourceControlActionId, value: string): void => {
-    const agentId = value === DEFAULT_AGENT_VALUE ? null : (value as TuiAgent)
+    const agentId =
+      value === DEFAULT_AGENT_VALUE
+        ? null
+        : value === CUSTOM_AGENT_ID
+          ? CUSTOM_AGENT_ID
+          : (value as TuiAgent)
     void writeConfig((current) => ({
       actions: setSourceControlActionDefault(current.actions, actionId, { agentId })
     }))
+  }
+
+  const onCustomCommandChange = (value: string): void => {
+    void writeConfig({ customAgentCommand: value })
   }
 
   const onActionTemplateChange = (actionId: SourceControlActionId, value: string): void => {
@@ -350,6 +372,12 @@ export function CommitMessageAiPane({
   }
 
   const sections: React.ReactNode[] = []
+  const customCommandInUse =
+    isCustomAgentId(config.agentId) ||
+    config.customAgentCommand.trim().length > 0 ||
+    SOURCE_CONTROL_TEXT_ACTION_IDS.some(
+      (actionId) => config.actions?.[actionId]?.agentId === CUSTOM_AGENT_ID
+    )
 
   if (
     matchesSettingsSearch(searchQuery, {
@@ -367,7 +395,7 @@ export function CommitMessageAiPane({
         keywords={['ai', 'commit', 'message', 'generate', 'agent', 'enabled']}
         className="flex items-center justify-between gap-4 py-2"
       >
-        <div className="space-y-0.5">
+        <div className="space-y-1">
           <Label>Enable Source Control AI defaults</Label>
           <p className="text-xs text-muted-foreground">
             Adds AI buttons that run the selected agent with the command template for that action.
@@ -479,6 +507,14 @@ export function CommitMessageAiPane({
                           Use default agent
                         </span>
                       </SelectItem>
+                      {isSourceControlTextAction(actionId) ? (
+                        <SelectItem value={CUSTOM_AGENT_ID}>
+                          <span className="flex items-center gap-2">
+                            <Terminal className="size-3.5 text-muted-foreground" />
+                            Custom command
+                          </span>
+                        </SelectItem>
+                      ) : null}
                       {agentOptions.map((agent) => (
                         <SelectItem key={agent.id} value={agent.id}>
                           <span className="flex items-center gap-2">
@@ -547,6 +583,45 @@ export function CommitMessageAiPane({
             )
           })}
         </div>
+      </SearchableSetting>
+    )
+  }
+
+  if (
+    config.enabled &&
+    (customCommandInUse ||
+      matchesSettingsSearch(searchQuery, {
+        title: 'Custom command',
+        description: 'Command line Orca runs when a text recipe uses Custom command.',
+        keywords: ['custom', 'command', 'cli', 'binary', 'prompt', 'placeholder']
+      }))
+  ) {
+    sections.push(
+      <SearchableSetting
+        key="custom-command"
+        title="Custom command"
+        description="Command line Orca runs when a text recipe uses Custom command."
+        keywords={['custom', 'command', 'cli', 'binary', 'prompt', 'placeholder']}
+        className="space-y-2 py-2"
+      >
+        <div className="space-y-0.5">
+          <Label htmlFor="source-control-ai-custom-command">Custom command</Label>
+          <p className="text-xs text-muted-foreground">
+            Used by commit-message, pull-request, and branch-name recipes that select Custom
+            command. Use <code className="font-mono">{'{prompt}'}</code> to pass the command input
+            as an argument; otherwise Orca pipes it on stdin.
+          </p>
+        </div>
+        <Input
+          id="source-control-ai-custom-command"
+          spellCheck={false}
+          autoCorrect="off"
+          autoCapitalize="off"
+          value={config.customAgentCommand}
+          onChange={(event) => onCustomCommandChange(event.target.value)}
+          placeholder="e.g. ollama run llama3.1 {prompt}"
+          className="h-8 font-mono text-xs"
+        />
       </SearchableSetting>
     )
   }

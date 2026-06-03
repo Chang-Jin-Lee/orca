@@ -4,7 +4,10 @@ import { focusTerminalTabSurface } from '@/lib/focus-terminal-tab-surface'
 import { findGithubPrWorkspaceAttachment } from '@/lib/github-work-item-workspace-attachment'
 import { launchAgentInNewTab } from '@/lib/launch-agent-in-new-tab'
 import { launchWorkItemDirect } from '@/lib/launch-work-item-direct'
-import { pickSourceControlLaunchAgent } from '@/lib/source-control-launch-agent-selection'
+import {
+  pickSourceControlLaunchAgent,
+  readSourceControlLaunchRecipeAgentId
+} from '@/lib/source-control-launch-agent-selection'
 import { activateAndRevealWorktree } from '@/lib/worktree-activation'
 import { useAppStore } from '@/store'
 import { resolveSourceControlActionRecipe } from '../../../shared/source-control-ai'
@@ -100,6 +103,7 @@ export async function startFixChecksAgent(args: StartFixChecksAgentArgs): Promis
     repo,
     actionId: 'fixChecks'
   })
+  const savedAgentId = readSourceControlLaunchRecipeAgentId(recipe)
   const commandInput = renderSourceControlActionCommandTemplate(
     recipe.commandInputTemplate ?? DEFAULT_SOURCE_CONTROL_ACTION_COMMAND_TEMPLATES.fixChecks,
     { basePrompt: args.basePrompt }
@@ -115,7 +119,7 @@ export async function startFixChecksAgent(args: StartFixChecksAgentArgs): Promis
       : findGithubPrWorkspaceAttachment(store.allWorktrees(), args.repoId, args.item.number)
   const targetWorktreeId = args.worktreeId ?? attachedWorkspace?.id ?? null
   if (targetWorktreeId) {
-    const agent = await pickExistingWorktreeAgent(targetWorktreeId, recipe.agentId)
+    const agent = await pickExistingWorktreeAgent(targetWorktreeId, savedAgentId)
     if (!agent) {
       return false
     }
@@ -145,7 +149,7 @@ export async function startFixChecksAgent(args: StartFixChecksAgentArgs): Promis
     return false
   }
 
-  const agentOverride = await resolveSavedAgentOverride(recipe.agentId, repo?.connectionId)
+  const agentOverride = await resolveSavedAgentOverride(savedAgentId, repo?.connectionId)
   if (agentOverride.kind === 'blocked') {
     return false
   }

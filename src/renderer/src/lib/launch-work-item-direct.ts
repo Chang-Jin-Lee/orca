@@ -1,16 +1,11 @@
-/* eslint-disable max-lines -- Why: direct work-item launch keeps workspace setup,
-   agent startup, and prompt delivery in one audited flow. */
 import { toast } from 'sonner'
-import { useAppStore, type AppState } from '@/store'
-import { pasteDraftWhenAgentReady } from '@/lib/agent-paste-draft'
+import { useAppStore } from '@/store'
 import { buildAgentDraftLaunchPlan, buildAgentStartupPlan } from '@/lib/tui-agent-startup'
 import { TUI_AGENT_CONFIG } from '../../../shared/tui-agent-config'
-import { pickTuiAgent } from '../../../shared/tui-agent-selection'
-import { activateAndRevealWorktree, type AgentStartedTelemetry } from '@/lib/worktree-activation'
-import { callRuntimeRpc, getActiveRuntimeTarget } from '@/runtime/runtime-rpc-client'
+import { isTuiAgentEnabled, pickTuiAgent } from '../../../shared/tui-agent-selection'
+import { activateAndRevealWorktree } from '@/lib/worktree-activation'
 import {
   getWorkspaceIntentName,
-  getSetupConfig,
   getWorkspaceSeedName,
   isGitLabIssueUrl
 } from '@/lib/new-workspace'
@@ -25,15 +20,20 @@ import { track, tuiAgentToAgentKind } from '@/lib/telemetry'
 import { getAgentLaunchPlatformForRepo } from '@/lib/agent-launch-platform'
 import type {
   GitPushTarget,
-  GitHubPrStartPoint,
-  OrcaHooks,
-  RepoHookSettings,
   SetupDecision,
   TuiAgent,
   WorkspaceCreateTelemetrySource
 } from '../../../shared/types'
 import type { LaunchSource } from '../../../shared/telemetry-events'
 import { getLinearIssueWorkspaceName } from '../../../shared/workspace-name'
+import {
+  buildDirectWorkItemStartupOpts,
+  pasteDirectWorkItemDraftWhenAgentReady
+} from '@/lib/launch-work-item-direct-agent'
+import {
+  resolveDirectPrStartPoint,
+  resolveDirectSetupDecision
+} from '@/lib/launch-work-item-direct-preflight'
 
 export type LaunchableWorkItem = {
   title: string
@@ -87,112 +87,8 @@ export type LaunchWorkItemDirectArgs = {
   promptDelivery?: 'draft' | 'submit-after-ready'
 }
 
-async function resolveDirectPrStartPoint(
-  repoId: string,
-  prNumber: number,
-  settings: AppState['settings']
-): Promise<GitHubPrStartPoint> {
-  const target = getActiveRuntimeTarget(settings)
-  const result =
-    target.kind === 'local'
-      ? await window.api.worktrees.resolvePrBase({ repoId, prNumber })
-      : await callRuntimeRpc<GitHubPrStartPoint | { error: string }>(
-          target,
-          'worktree.resolvePrBase',
-          { repo: repoId, prNumber },
-          { timeoutMs: 30_000 }
-        )
-  if ('error' in result) {
-    throw new Error(result.error)
-  }
-  return result
-}
-
-async function resolveSetupDecision(
-  repoId: string,
-  repo: { hookSettings?: RepoHookSettings }
-): Promise<{ kind: 'decided'; decision: SetupDecision } | { kind: 'needs-modal' }> {
-  let yamlHooks: OrcaHooks | null = null
-  try {
-    const result = await checkRuntimeHooks(useAppStore.getState().settings, repoId)
-    yamlHooks = (result.hooks as OrcaHooks | null) ?? null
-  } catch {
-    yamlHooks = null
-  }
-  const setupConfig = getSetupConfig(repo, yamlHooks)
-  if (!setupConfig) {
-    // Why: no setup script configured → the decision is irrelevant but `inherit`
-    // keeps the main-side behavior consistent with callers that don't pass one.
-    return { kind: 'decided', decision: 'inherit' }
-  }
-  const policy = repo.hookSettings?.setupRunPolicy ?? 'run-by-default'
-  if (policy === 'ask') {
-    return { kind: 'needs-modal' }
-  }
-  return {
-    kind: 'decided',
-    decision: policy === 'run-by-default' ? 'run' : 'skip'
-  }
-}
-
-// Why: telemetry rides the queued startup so main fires `agent_started`
-// only after pty:spawn confirms the launch. No agent / no plan → no event.
-function buildStartupOpts(
-  agent: TuiAgent | null,
-  plan: ReturnType<typeof buildAgentStartupPlan>,
-  launchSource: LaunchSource
-): {
-  startup?: { command: string; env?: Record<string, string>; telemetry?: AgentStartedTelemetry }
-} {
-  if (!plan) {
-    return {}
-  }
-  const telemetry: AgentStartedTelemetry | null =
-    agent === null
-      ? null
-      : { agent_kind: tuiAgentToAgentKind(agent), launch_source: launchSource, request_kind: 'new' }
-  return {
-    startup: {
-      command: plan.launchCommand,
-      ...(plan.env ? { env: plan.env } : {}),
-      ...(telemetry ? { telemetry } : {})
-    }
-  }
-}
-
 function getDirectDraftContent(item: LaunchableWorkItem): string {
   return getLaunchableWorkItemDraftContent(item)
-}
-
-async function pasteWorkItemDraftWhenAgentReady(args: {
-  primaryTabId: string
-  startupPlan: NonNullable<ReturnType<typeof buildAgentStartupPlan>>
-  content: string
-  submit?: boolean
-  forcePaste?: boolean
-  /** Telemetry-only: which agent the renderer thinks it launched, so an
-   *  `agent_error` on timeout can carry the right `agent_kind`. */
-  agentKind?: ReturnType<typeof tuiAgentToAgentKind>
-}): Promise<void> {
-  const { primaryTabId, startupPlan, content, submit = false, forcePaste = false, agentKind } = args
-  await pasteDraftWhenAgentReady({
-    tabId: primaryTabId,
-    content,
-    agent: startupPlan.agent,
-    submit,
-    forcePaste,
-    onTimeout: () => {
-      const label = submit ? 'prompt' : 'work item context'
-      toast.message(
-        `Agent took too long to start. The workspace is ready — paste the ${label} when the agent is idle.`
-      )
-      // Why: process-startup timeout has no v1 enum slot; the `unknown` slice
-      // on the dashboard is the trigger to add one.
-      if (agentKind) {
-        track('agent_error', { error_class: 'unknown', agent_kind: agentKind })
-      }
-    }
-  })
 }
 
 /**
@@ -238,7 +134,7 @@ export async function launchWorkItemDirect(args: LaunchWorkItemDirectArgs): Prom
       ? store.ensureRemoteDetectedAgents(repoConnectionId)
       : store.ensureDetectedAgents()
 
-  const setupResolution = await resolveSetupDecision(repoId, repo)
+  const setupResolution = await resolveDirectSetupDecision(repoId, repo)
   if (setupResolution.kind === 'needs-modal') {
     openModalFallback()
     return false
@@ -320,7 +216,7 @@ export async function launchWorkItemDirect(args: LaunchWorkItemDirectArgs): Prom
           : await latestStore.ensureDetectedAgents()
       if (
         !detectedAgents.includes(agentOverride) ||
-        !pickTuiAgent(agentOverride, detectedAgents, latestStore.settings?.disabledTuiAgents)
+        !isTuiAgentEnabled(agentOverride, latestStore.settings?.disabledTuiAgents)
       ) {
         activateAndRevealWorktree(worktreeId, {
           sidebarRevealBehavior: 'auto',
@@ -413,7 +309,7 @@ export async function launchWorkItemDirect(args: LaunchWorkItemDirectArgs): Prom
       sidebarRevealBehavior: 'auto',
       setup: result.setup,
       defaultTabs: result.defaultTabs,
-      ...buildStartupOpts(effectiveAgent, startupPlan, launchSource)
+      ...buildDirectWorkItemStartupOpts(effectiveAgent, startupPlan, launchSource)
     })
     if (!activation) {
       // Worktree vanished between create and activate — extremely unlikely but
@@ -448,13 +344,12 @@ export async function launchWorkItemDirect(args: LaunchWorkItemDirectArgs): Prom
   // latency on agent readiness. Run the paste in the background so the
   // "Use" CTA's spinner ends when the worktree is ready, not when the TUI
   // input buffer is ready.
-  void pasteWorkItemDraftWhenAgentReady({
+  void pasteDirectWorkItemDraftWhenAgentReady({
     primaryTabId,
     startupPlan,
     content: draftContent,
     submit: promptDelivery === 'submit-after-ready',
-    forcePaste: promptDelivery === 'submit-after-ready',
-    ...(effectiveAgent ? { agentKind: tuiAgentToAgentKind(effectiveAgent) } : {})
+    forcePaste: promptDelivery === 'submit-after-ready'
   })
   return true
 }

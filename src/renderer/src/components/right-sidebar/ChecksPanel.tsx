@@ -101,6 +101,7 @@ import { callRuntimeRpc, getActiveRuntimeTarget } from '@/runtime/runtime-rpc-cl
 import { gitLabPipelineJobsToPRChecks } from '../../../../shared/gitlab-pipeline-checks'
 import { getWorktreeGitIdentityDisplay } from '@/lib/worktree-git-identity-display'
 import { SourceControlAgentActionDialog } from './SourceControlAgentActionDialog'
+import { readSourceControlLaunchRecipeAgentId } from '@/lib/source-control-launch-agent-selection'
 import {
   normalizeSourceControlAiSettings,
   resolveSourceControlActionRecipe
@@ -2058,10 +2059,7 @@ export default function ChecksPanel(): React.JSX.Element {
       isCurrentAsyncResult,
       linkedGitLabMR,
       panelContextKey,
-      pr?.headSha,
-      pr?.prRepo,
       prCacheKey,
-      prNumber,
       repo
     ]
   )
@@ -2219,7 +2217,6 @@ export default function ChecksPanel(): React.JSX.Element {
       fallbackGitHubPRNumber,
       fetchGitLabDetails,
       fetchHostedReviewForBranch,
-      linkedGitLabMR,
       linkedPR,
       refreshLinkedGitHubPullRequest,
       repo,
@@ -2596,11 +2593,13 @@ export default function ChecksPanel(): React.JSX.Element {
         launchSource={agentComposerState?.launchSource ?? 'task_page'}
         savedAgentId={
           agentComposerState
-            ? (resolveSourceControlActionRecipe({
-                settings,
-                repo,
-                actionId: agentComposerState.actionId
-              }).agentId ?? null)
+            ? readSourceControlLaunchRecipeAgentId(
+                resolveSourceControlActionRecipe({
+                  settings,
+                  repo,
+                  actionId: agentComposerState.actionId
+                })
+              )
             : null
         }
         savedCommandInputTemplate={

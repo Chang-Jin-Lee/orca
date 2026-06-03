@@ -114,7 +114,10 @@ import {
   type PendingDiffCommentsClear
 } from './diff-comments-clear-dialog-state'
 import { launchAgentInNewTab } from '@/lib/launch-agent-in-new-tab'
-import { pickSourceControlLaunchAgent } from '@/lib/source-control-launch-agent-selection'
+import {
+  pickSourceControlLaunchAgent,
+  readSourceControlLaunchRecipeAgentId
+} from '@/lib/source-control-launch-agent-selection'
 import { installWindowVisibilityInterval } from '@/lib/window-visibility-interval'
 import {
   notifyEditorExternalFileChange,
@@ -204,11 +207,11 @@ import {
   type SourceControlRowOpenEvent
 } from './source-control-split-open'
 import { SourceControlAgentActionDialog } from './SourceControlAgentActionDialog'
+import { SourceControlTextGenerationDialog } from './SourceControlTextGenerationDialog'
 import {
   applyCommitMessageGenerationDefaults,
-  applySourceControlTextGenerationDefaults,
-  SourceControlTextGenerationDialog
-} from './SourceControlTextGenerationDialog'
+  applySourceControlTextGenerationDefaults
+} from './SourceControlTextGenerationDefaults'
 
 export type SourceControlScope = 'all' | 'uncommitted'
 type AbortConflictOperation = Extract<GitConflictOperation, 'merge' | 'rebase'>
@@ -218,7 +221,7 @@ export type SourceControlActionError = {
   message: string
 }
 type TextGenerationRecipeConfiguration = {
-  agentId?: TuiAgent | null
+  agentId?: SourceControlActionRecipe['agentId']
   commandInputTemplate?: string | null
   agentArgs?: string | null
 }
@@ -1876,7 +1879,7 @@ function SourceControlInner(): React.JSX.Element {
             ? await store.ensureRemoteDetectedAgents(connectionId)
             : await store.ensureDetectedAgents()
         const savedRecipe = getLaunchActionRecipe('fixCommitFailure')
-        const savedAgent = savedRecipe.agentId ?? null
+        const savedAgent = readSourceControlLaunchRecipeAgentId(savedRecipe)
         if (
           savedAgent &&
           (!detectedAgents.includes(savedAgent) ||
@@ -4998,7 +5001,9 @@ function SourceControlInner(): React.JSX.Element {
         connectionId={activeWorktreeId ? getConnectionId(activeWorktreeId) : null}
         promptDelivery="submit-after-ready"
         launchSource="conflict_resolution"
-        savedAgentId={getLaunchActionRecipe('resolveConflicts').agentId ?? null}
+        savedAgentId={readSourceControlLaunchRecipeAgentId(
+          getLaunchActionRecipe('resolveConflicts')
+        )}
         savedCommandInputTemplate={
           getLaunchActionRecipe('resolveConflicts').commandInputTemplate ?? null
         }
@@ -5921,7 +5926,7 @@ export function CommitArea({
                 iconClassName="size-3"
                 primaryClassName="h-6 px-2 text-[11px]"
                 chevronClassName="h-6 px-1.5"
-                savedAgentId={fixCommitFailureRecipe?.agentId ?? null}
+                savedAgentId={readSourceControlLaunchRecipeAgentId(fixCommitFailureRecipe)}
                 savedCommandInputTemplate={fixCommitFailureRecipe?.commandInputTemplate ?? null}
                 savedAgentArgs={fixCommitFailureRecipe?.agentArgs ?? null}
                 onSaveAgentDefault={onSaveLaunchActionDefault}
@@ -5971,7 +5976,7 @@ export function CommitArea({
                 iconClassName="size-4"
                 primaryClassName="rounded-r-none"
                 chevronClassName="rounded-l-none border-l border-primary-foreground/20 px-2"
-                savedAgentId={fixCommitFailureRecipe?.agentId ?? null}
+                savedAgentId={readSourceControlLaunchRecipeAgentId(fixCommitFailureRecipe)}
                 savedCommandInputTemplate={fixCommitFailureRecipe?.commandInputTemplate ?? null}
                 savedAgentArgs={fixCommitFailureRecipe?.agentArgs ?? null}
                 onSaveAgentDefault={onSaveLaunchActionDefault}

@@ -41,6 +41,22 @@ describe('source-control AI launch action defaults', () => {
     ).toBeUndefined()
   })
 
+  it('normalizes the custom command sentinel for text action recipes', () => {
+    expect(
+      normalizeSourceControlAiActionDefaults({
+        pullRequest: {
+          agentId: 'custom',
+          commandInputTemplate: '{basePrompt}'
+        }
+      })
+    ).toEqual({
+      pullRequest: {
+        agentId: 'custom',
+        commandInputTemplate: '{basePrompt}'
+      }
+    })
+  })
+
   it('trims command templates and CLI args only when reading them', () => {
     const defaults = normalizeSourceControlAiActionDefaults({
       fixCommitFailure: {

@@ -1,23 +1,14 @@
-/* eslint-disable max-lines -- Why: action launch customization keeps agent
-   selection, dry-run planning, save defaults, and execution in one modal. */
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
-import { CheckCircle2, RefreshCw, RotateCcw, Settings, Sparkles, TriangleAlert } from 'lucide-react'
-import AgentCombobox from '@/components/agent/AgentCombobox'
-import { Button } from '@/components/ui/button'
 import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle
 } from '@/components/ui/dialog'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import { AGENT_CATALOG, getAgentLabel } from '@/lib/agent-catalog'
 import { focusTerminalTabSurface } from '@/lib/focus-terminal-tab-surface'
 import { launchAgentInNewTab } from '@/lib/launch-agent-in-new-tab'
-import { cn } from '@/lib/utils'
 import { useAppStore } from '@/store'
 import {
   renderSourceControlActionCommandTemplate,
@@ -30,12 +21,10 @@ import type { LaunchSource } from '../../../../shared/telemetry-events'
 import { planSourceControlAgentActionLaunch } from '@/lib/source-control-agent-action-plan'
 import { pickSourceControlLaunchAgent } from '@/lib/source-control-launch-agent-selection'
 import { toast } from 'sonner'
-import { SourceControlActionVariableChips } from '../source-control/SourceControlActionVariableChips'
-
-type DeliveryPlanState =
-  | { status: 'idle' }
-  | { status: 'success'; summary: string; commandLabel: string; caveat: string }
-  | { status: 'error'; error: string }
+import {
+  SourceControlAgentActionDialogForm,
+  type SourceControlAgentActionDeliveryPlanState
+} from './SourceControlAgentActionDialogForm'
 
 export type SourceControlAgentActionDialogProps = {
   open: boolean
@@ -107,7 +96,9 @@ export function SourceControlAgentActionDialog({
   const [selectedAgent, setSelectedAgent] = useState<TuiAgent | null>(savedAgentId ?? null)
   const [detectedAgents, setDetectedAgents] = useState<TuiAgent[]>([])
   const [detecting, setDetecting] = useState(false)
-  const [deliveryPlan, setDeliveryPlan] = useState<DeliveryPlanState>({ status: 'idle' })
+  const [deliveryPlan, setDeliveryPlan] = useState<SourceControlAgentActionDeliveryPlanState>({
+    status: 'idle'
+  })
   const [isStarting, setIsStarting] = useState(false)
   const [saveAgentDefault, setSaveAgentDefault] = useState(true)
 
@@ -139,8 +130,6 @@ export function SourceControlAgentActionDialog({
     }
     setCommandTemplate(savedCommandInputTemplate ?? '{basePrompt}')
     setAgentArgs(savedAgentArgs ?? '')
-    setDeliveryPlan({ status: 'idle' })
-    setSaveAgentDefault(true)
     setSelectedAgent(savedAgentId ?? null)
     let stale = false
     void refreshDetectedAgents().then((nextAgents) => {
@@ -177,6 +166,17 @@ export function SourceControlAgentActionDialog({
     settings?.defaultTuiAgent
   ])
 
+  const handleOpenChange = useCallback(
+    (nextOpen: boolean) => {
+      if (!nextOpen) {
+        setDeliveryPlan({ status: 'idle' })
+        setSaveAgentDefault(true)
+      }
+      onOpenChange(nextOpen)
+    },
+    [onOpenChange]
+  )
+
   const enabledDetectedAgents = useMemo(
     () => detectedAgents.filter((agent) => isTuiAgentEnabled(agent, disabledAgents)),
     [detectedAgents, disabledAgents]
@@ -205,7 +205,7 @@ export function SourceControlAgentActionDialog({
     !isStarting
 
   const buildPlan = useCallback(
-    async (agentsOverride?: TuiAgent[]): Promise<DeliveryPlanState> => {
+    async (agentsOverride?: TuiAgent[]): Promise<SourceControlAgentActionDeliveryPlanState> => {
       const currentDetectedAgents = agentsOverride ?? (await refreshDetectedAgents())
       if (connectionUnavailable) {
         return { status: 'error', error: 'Unable to resolve the workspace connection.' }
@@ -275,7 +275,7 @@ export function SourceControlAgentActionDialog({
           launchSource
         })
         launched = Boolean(result)
-        if (result) {
+        if (result?.tabId) {
           focusTerminalTabSurface(result.tabId)
         }
       }
@@ -291,7 +291,7 @@ export function SourceControlAgentActionDialog({
         })
       }
       onLaunched?.()
-      onOpenChange(false)
+      handleOpenChange(false)
     } finally {
       setIsStarting(false)
     }
@@ -304,8 +304,8 @@ export function SourceControlAgentActionDialog({
     groupId,
     isStarting,
     launchSource,
+    handleOpenChange,
     onLaunched,
-    onOpenChange,
     onSaveAgentDefault,
     onStart,
     promptDelivery,
@@ -325,156 +325,45 @@ export function SourceControlAgentActionDialog({
         : null
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle className="text-sm">{title}</DialogTitle>
           <DialogDescription className="text-xs">{description}</DialogDescription>
         </DialogHeader>
-
-        <div className="space-y-4">
-          <div className="space-y-2">
-            <Label className="text-xs">Agent</Label>
-            {hasEnabledAgents || selectedAgent ? (
-              <AgentCombobox
-                agents={agentOptions}
-                value={selectedAgent}
-                onValueChange={(agent) => {
-                  setSelectedAgent(agent)
-                  setDeliveryPlan({ status: 'idle' })
-                }}
-                allowNarrowTrigger
-                triggerClassName="w-full"
-              />
-            ) : (
-              <div className="flex items-center justify-between gap-3 rounded-md border border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
-                <span>{detecting ? 'Detecting agents…' : 'No enabled agents'}</span>
-                {onOpenSettings ? (
-                  <Button type="button" variant="ghost" size="xs" onClick={onOpenSettings}>
-                    <Settings className="size-3.5" />
-                    Settings
-                  </Button>
-                ) : null}
-              </div>
-            )}
-            {statusCopy ? (
-              <p className="flex items-start gap-1.5 text-[11px] text-destructive">
-                <TriangleAlert className="mt-px size-3 shrink-0" />
-                <span>{statusCopy}</span>
-              </p>
-            ) : null}
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="source-control-agent-cli-args" className="text-xs">
-              CLI arguments
-            </Label>
-            <Input
-              id="source-control-agent-cli-args"
-              value={agentArgs}
-              spellCheck={false}
-              placeholder="--model sonnet"
-              onChange={(event) => {
-                setAgentArgs(event.target.value)
-                setDeliveryPlan({ status: 'idle' })
-              }}
-              className="h-8 font-mono text-xs"
-            />
-          </div>
-
-          <div className="space-y-2">
-            <div className="flex items-center justify-between gap-2">
-              <Label htmlFor="source-control-agent-command-input" className="text-xs">
-                Command template
-              </Label>
-              <Button
-                type="button"
-                variant="ghost"
-                size="xs"
-                onClick={() => {
-                  setCommandTemplate(savedCommandInputTemplate ?? '{basePrompt}')
-                  setDeliveryPlan({ status: 'idle' })
-                }}
-              >
-                <RotateCcw className="size-3.5" />
-                Reset
-              </Button>
-            </div>
-            <textarea
-              id="source-control-agent-command-input"
-              rows={12}
-              value={commandTemplate}
-              onChange={(event) => {
-                setCommandTemplate(event.target.value)
-                setDeliveryPlan({ status: 'idle' })
-              }}
-              className="min-h-[14rem] w-full resize-y rounded-md border border-border bg-background px-2.5 py-2 font-mono text-xs text-foreground outline-none placeholder:text-muted-foreground/70 focus-visible:ring-1 focus-visible:ring-ring"
-            />
-            <SourceControlActionVariableChips
-              actionId={actionId}
-              variablePreviews={{ basePrompt: baseCommandInput }}
-              onInsert={(variable) => {
-                const separator =
-                  commandTemplate.endsWith('\n') || commandTemplate.length === 0 ? '' : ' '
-                setCommandTemplate(`${commandTemplate}${separator}{${variable}}`)
-                setDeliveryPlan({ status: 'idle' })
-              }}
-            />
-          </div>
-
-          {onSaveAgentDefault && selectedAgent ? (
-            <label className="flex items-center gap-2 text-xs text-muted-foreground">
-              <input
-                type="checkbox"
-                checked={saveAgentDefault}
-                onChange={(event) => setSaveAgentDefault(event.target.checked)}
-                className="size-3.5 rounded border-border"
-              />
-              Save {getAgentLabel(selectedAgent)}, these CLI arguments, and this command template as
-              the default for this action
-            </label>
-          ) : null}
-
-          {deliveryPlan.status !== 'idle' ? (
-            <div
-              className={cn(
-                'rounded-md border px-3 py-2 text-xs',
-                deliveryPlan.status === 'error'
-                  ? 'border-destructive/30 bg-destructive/5 text-destructive'
-                  : 'border-border bg-muted/30 text-muted-foreground'
-              )}
-            >
-              {deliveryPlan.status === 'error' ? (
-                <span className="inline-flex items-start gap-2">
-                  <TriangleAlert className="mt-px size-3.5 shrink-0" />
-                  {deliveryPlan.error}
-                </span>
-              ) : (
-                <div className="space-y-1.5">
-                  <div className="flex items-start gap-2 text-foreground">
-                    <CheckCircle2 className="mt-px size-3.5 shrink-0 text-emerald-500" />
-                    <span>{deliveryPlan.summary}</span>
-                  </div>
-                  <div className="truncate font-mono text-[11px]">
-                    Launch: {deliveryPlan.commandLabel}
-                  </div>
-                  <div className="text-[11px]">{deliveryPlan.caveat}</div>
-                </div>
-              )}
-            </div>
-          ) : null}
-        </div>
-
-        <DialogFooter className="gap-2">
-          <Button type="button" size="sm" disabled={!canStart} onClick={() => void handleStart()}>
-            {isStarting ? (
-              <RefreshCw className="size-4 animate-spin" />
-            ) : (
-              <Sparkles className="size-4" />
-            )}
-            {startLabel}
-          </Button>
-        </DialogFooter>
+        <SourceControlAgentActionDialogForm
+          actionId={actionId}
+          agentOptions={agentOptions}
+          selectedAgent={selectedAgent}
+          hasEnabledAgents={hasEnabledAgents}
+          detecting={detecting}
+          statusCopy={statusCopy}
+          agentArgs={agentArgs}
+          commandTemplate={commandTemplate}
+          savedCommandInputTemplate={savedCommandInputTemplate}
+          baseCommandInput={baseCommandInput}
+          saveAgentDefault={saveAgentDefault}
+          canSaveAgentDefault={Boolean(onSaveAgentDefault)}
+          deliveryPlan={deliveryPlan}
+          canStart={canStart}
+          isStarting={isStarting}
+          startLabel={startLabel}
+          onSelectedAgentChange={(agent) => {
+            setSelectedAgent(agent)
+            setDeliveryPlan({ status: 'idle' })
+          }}
+          onAgentArgsChange={(value) => {
+            setAgentArgs(value)
+            setDeliveryPlan({ status: 'idle' })
+          }}
+          onCommandTemplateChange={(value) => {
+            setCommandTemplate(value)
+            setDeliveryPlan({ status: 'idle' })
+          }}
+          onSaveAgentDefaultChange={setSaveAgentDefault}
+          onOpenSettings={onOpenSettings}
+          onStart={() => void handleStart()}
+        />
       </DialogContent>
     </Dialog>
   )

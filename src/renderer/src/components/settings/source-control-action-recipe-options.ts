@@ -4,6 +4,8 @@ import {
   type SourceControlActionId
 } from '../../../../shared/source-control-ai-actions'
 import {
+  CUSTOM_AGENT_ID,
+  type CustomAgentId,
   getCommitMessageAgentCapability,
   listCommitMessageAgentCapabilities
 } from '../../../../shared/commit-message-agent-spec'
@@ -36,9 +38,15 @@ const MODEL_FLAG_BY_AGENT: Partial<Record<TuiAgent, string>> = {
   amp: '--mode'
 }
 
-export function getSourceControlAgentArgsPlaceholder(agentId: TuiAgent | null | undefined): string {
+export function getSourceControlAgentArgsPlaceholder(
+  agentId: TuiAgent | CustomAgentId | null | undefined
+): string {
   if (!agentId) {
     return FALLBACK_AGENT_ARGS_PLACEHOLDER
+  }
+
+  if (agentId === CUSTOM_AGENT_ID) {
+    return '--flag value'
   }
 
   const override = AGENT_ARGS_PLACEHOLDER_OVERRIDES[agentId]
@@ -59,7 +67,7 @@ export function getSourceControlAgentArgsPlaceholder(agentId: TuiAgent | null | 
 // agent even if it is no longer a supported text generator.
 export function getAgentCatalogForAction(
   actionId: SourceControlActionId,
-  selectedAgent: TuiAgent | null | undefined
+  selectedAgent: TuiAgent | CustomAgentId | null | undefined
 ): typeof AGENT_CATALOG {
   if (!SOURCE_CONTROL_TEXT_ACTION_ID_SET.has(actionId)) {
     return AGENT_CATALOG

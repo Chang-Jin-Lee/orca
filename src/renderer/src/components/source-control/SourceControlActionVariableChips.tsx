@@ -6,7 +6,7 @@ import {
   type SourceControlActionId
 } from '../../../../shared/source-control-ai-actions'
 import { Button } from '../ui/button'
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip'
+import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip'
 
 type SourceControlActionVariableChipsProps = {
   actionId: SourceControlActionId
@@ -79,39 +79,37 @@ export function SourceControlActionVariableChips({
   onInsert
 }: SourceControlActionVariableChipsProps): React.JSX.Element {
   return (
-    <TooltipProvider>
-      <div className="flex flex-wrap items-center gap-1.5">
-        <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground">
-          <Braces className="size-3" />
-          Variables
-        </span>
-        {SOURCE_CONTROL_ACTION_VARIABLES[actionId].map((variable) => {
-          const preview = hasVariablePreview(variablePreviews, variable)
-            ? variablePreviews?.[variable]
-            : undefined
-          return (
-            <Tooltip key={variable}>
-              <TooltipTrigger asChild>
-                <span className="inline-flex">
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="xs"
-                    disabled={disabled}
-                    className="h-5 rounded px-1.5 font-mono text-[10px]"
-                    onClick={() => onInsert(variable)}
-                  >
-                    {`{${variable}}`}
-                  </Button>
-                </span>
-              </TooltipTrigger>
-              <TooltipContent side="top" sideOffset={6} className="px-2 py-2 text-left">
-                <SourceControlVariableTooltip variable={variable} preview={preview} />
-              </TooltipContent>
-            </Tooltip>
-          )
-        })}
-      </div>
-    </TooltipProvider>
+    <div className="flex flex-wrap items-center gap-1.5">
+      <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground">
+        <Braces className="size-3" />
+        Variables
+      </span>
+      {SOURCE_CONTROL_ACTION_VARIABLES[actionId].map((variable) => {
+        const preview = hasVariablePreview(variablePreviews, variable)
+          ? variablePreviews?.[variable]
+          : undefined
+        return (
+          <Tooltip key={variable}>
+            <TooltipTrigger asChild>
+              <span className="inline-flex">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="xs"
+                  disabled={disabled}
+                  className="h-5 rounded px-1.5 font-mono text-[10px]"
+                  onClick={() => onInsert(variable)}
+                >
+                  {`{${variable}}`}
+                </Button>
+              </span>
+            </TooltipTrigger>
+            <TooltipContent side="top" sideOffset={6} className="px-2 py-2 text-left">
+              <SourceControlVariableTooltip variable={variable} preview={preview} />
+            </TooltipContent>
+          </Tooltip>
+        )
+      })}
+    </div>
   )
 }
