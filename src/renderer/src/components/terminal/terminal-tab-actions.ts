@@ -117,7 +117,13 @@ export function closeTerminalTab(tabId: string): void {
         state.setActiveFile(worktreeFile.id)
         state.setActiveTabType('editor')
       } else {
-        state.setActiveWorktree(null)
+        const browserTab = (state.browserTabsByWorktree[owningWorktreeId] ?? [])[0]
+        if (browserTab) {
+          state.setActiveBrowserTab(browserTab.id)
+          state.setActiveTabType('browser')
+        } else {
+          state.setActiveWorktree(null)
+        }
       }
     }
     return

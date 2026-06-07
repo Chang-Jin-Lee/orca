@@ -2,7 +2,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Worktree } from '../../../shared/types'
 import { getDefaultSettings } from '../../../shared/constants'
 import { useAppStore } from '@/store'
-import { activateAndRevealWorktree } from './worktree-activation'
+import {
+  activateAndRevealWorktree,
+  ensureWebRuntimeWorktreeTerminalAfterWake
+} from './worktree-activation'
 
 const initialAppStoreState = useAppStore.getState()
 
@@ -379,5 +382,93 @@ describe('activateAndRevealWorktree created agent reopen', () => {
     expect(result).toEqual({ primaryTabId: null })
     expect(useAppStore.getState().activeWorktreeId).toBe(worktree.id)
     expect(callRuntimeEnvironment).not.toHaveBeenCalled()
+  })
+
+  it('respawns a host terminal when waking a slept web workspace with dead local PTYs', async () => {
+    const worktree = makeWorktree()
+    const callRuntimeEnvironment = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        result: { repoId: worktree.repoId, worktreeId: worktree.id, activated: true }
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        result: { tabId: 'host-tab-1', terminal: 'term_host' }
+      })
+    ;(globalThis as { __ORCA_WEB_CLIENT__?: boolean }).__ORCA_WEB_CLIENT__ = true
+    vi.stubGlobal('window', {
+      api: {
+        runtimeEnvironments: {
+          call: callRuntimeEnvironment,
+          subscribe: vi.fn()
+        }
+      }
+    })
+
+    useAppStore.setState({
+      repos: [
+        {
+          id: 'repo-1',
+          path: '/workspace/repo',
+          displayName: 'repo',
+          badgeColor: '#000000',
+          addedAt: 0
+        }
+      ],
+      worktreesByRepo: { 'repo-1': [worktree] },
+      activeRepoId: 'repo-1',
+      activeView: 'terminal',
+      activeWorktreeId: null,
+      tabsByWorktree: {
+        [worktree.id]: [
+          {
+            id: 'tab-1',
+            ptyId: 'pty-1',
+            worktreeId: worktree.id,
+            title: 'Terminal 1',
+            customTitle: null,
+            color: null,
+            sortOrder: 0,
+            createdAt: 1
+          }
+        ]
+      },
+      ptyIdsByTabId: { 'tab-1': [] },
+      groupsByWorktree: {},
+      layoutByWorktree: {},
+      activeGroupIdByWorktree: {},
+      openFiles: [],
+      browserTabsByWorktree: {},
+      activeFileIdByWorktree: {},
+      activeBrowserTabIdByWorktree: {},
+      activeTabTypeByWorktree: {},
+      activeTabIdByWorktree: {},
+      tabBarOrderByWorktree: {},
+      settings: {
+        ...getDefaultSettings('/workspace/.orca-workspaces'),
+        agentCmdOverrides: {},
+        activeRuntimeEnvironmentId: 'web-runtime-1',
+        setupScriptLaunchMode: 'new-tab'
+      },
+      markWorktreeVisited: vi.fn(),
+      recordWorktreeVisit: vi.fn(),
+      refreshGitHubForWorktreeIfStale: vi.fn(),
+      revealWorktreeInSidebar: vi.fn(),
+      reconcileWorktreeTabModel: vi.fn(() => ({
+        renderableTabCount: 1,
+        activeRenderableTabId: 'tab-1'
+      }))
+    })
+
+    ensureWebRuntimeWorktreeTerminalAfterWake(worktree.id)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(callRuntimeEnvironment).toHaveBeenCalledWith(
+      expect.objectContaining({
+        selector: 'web-runtime-1',
+        method: 'session.tabs.createTerminal'
+      })
+    )
   })
 })

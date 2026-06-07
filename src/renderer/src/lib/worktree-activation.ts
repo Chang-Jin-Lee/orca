@@ -15,8 +15,10 @@ import { tuiAgentToAgentKind } from './telemetry'
 import { agentKindToTuiAgent } from '../../../shared/agent-kind'
 import { useAppStore } from '@/store'
 import type { PendingSidebarWorktreeReveal } from '@/store/slices/ui'
+import { tabHasLivePty } from '@/lib/tab-has-live-pty'
 import {
   activateWebRuntimeSessionWorktree,
+  createWebRuntimeSessionTerminal,
   isWebRuntimeSessionActive
 } from '@/runtime/web-runtime-session'
 import {
@@ -233,7 +235,41 @@ export function activateAndRevealWorktree(
     state.revealWorktreeInSidebar(worktreeId)
   }
 
+  ensureWebRuntimeWorktreeTerminalAfterWake(worktreeId)
+
   return { primaryTabId }
+}
+
+export function ensureWebRuntimeWorktreeTerminalAfterWake(worktreeId: string): void {
+  const state = useAppStore.getState()
+  const runtimeEnvironmentId = state.settings?.activeRuntimeEnvironmentId?.trim()
+  if (!runtimeEnvironmentId || !isWebRuntimeSessionActive(runtimeEnvironmentId)) {
+    return
+  }
+
+  const tabs = state.tabsByWorktree[worktreeId] ?? []
+  if (tabs.length === 0) {
+    return
+  }
+
+  const hasLivePty = tabs.some((tab) => tabHasLivePty(state.ptyIdsByTabId, tab.id))
+  if (hasLivePty) {
+    return
+  }
+
+  const { renderableTabCount } = state.reconcileWorktreeTabModel(worktreeId)
+  if (renderableTabCount === 0) {
+    return
+  }
+
+  // Why: sleep keeps local tab rows but terminal.stop clears host PTYs, so
+  // activation alone can leave a woke workspace with tab chrome but no surface.
+  void createWebRuntimeSessionTerminal({
+    worktreeId,
+    environmentId: runtimeEnvironmentId,
+    activate: true,
+    selectWorktree: false
+  })
 }
 
 export function ensureWorktreeHasInitialTerminal(

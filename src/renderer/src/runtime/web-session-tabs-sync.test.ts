@@ -16,6 +16,7 @@ import {
   resetWebSessionTabsSnapshotFreshnessForTests,
   shouldApplyWebSessionTabsSnapshot,
   shouldBootstrapInitialWebRuntimeTerminal,
+  shouldRespawnWebRuntimeTerminalAfterWake,
   type WebSessionTabsSyncState
 } from './web-session-tabs-sync'
 
@@ -149,6 +150,25 @@ describe('applyWebSessionTabsSnapshot', () => {
         localTerminalCount: 1
       })
     ).toBe(false)
+  })
+
+  it('respawns a terminal after wake when local slept tabs exist but the host snapshot is empty', () => {
+    const freshEmpty = makeSnapshot([], {
+      activeGroupId: null,
+      activeTabId: null,
+      activeTabType: null
+    })
+
+    expect(
+      shouldRespawnWebRuntimeTerminalAfterWake({
+        event: { type: 'snapshot', ...freshEmpty },
+        activeWorktreeId: WT,
+        requestedRespawnAfterWake: false,
+        snapshotIsFresh: true,
+        localTerminalCount: 1,
+        hasLiveLocalPty: false
+      })
+    ).toBe(true)
   })
 
   it('clears web session tracking maps when the host removes a worktree snapshot', () => {

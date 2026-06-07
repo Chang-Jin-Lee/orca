@@ -174,6 +174,30 @@ export function shouldBootstrapInitialWebRuntimeTerminal(args: {
   )
 }
 
+export function shouldRespawnWebRuntimeTerminalAfterWake(args: {
+  event: SessionTabsStreamEvent
+  activeWorktreeId: string
+  requestedRespawnAfterWake: boolean
+  snapshotIsFresh: boolean
+  localTerminalCount: number
+  hasLiveLocalPty: boolean
+}): boolean {
+  if (
+    !args.snapshotIsFresh ||
+    args.requestedRespawnAfterWake ||
+    args.localTerminalCount === 0 ||
+    args.hasLiveLocalPty ||
+    (args.event.type !== 'snapshot' && args.event.type !== 'updated')
+  ) {
+    return false
+  }
+  if (args.activeWorktreeId !== args.event.worktree) {
+    return false
+  }
+  const hostTerminalTabCount = args.event.tabs.filter((tab) => tab.type === 'terminal').length
+  return hostTerminalTabCount === 0
+}
+
 export function resetWebSessionTabsSnapshotFreshnessForTests(): void {
   latestSessionTabsSnapshotByWorktree.clear()
   hostSessionTabIdByLocalKey.clear()
@@ -2172,6 +2196,7 @@ export function useWebSessionTabsSync(): void {
 
     let disposed = false
     let requestedInitialTerminal = false
+    let requestedRespawnAfterWake = false
     let unsubscribe: (() => void) | null = null
     void window.api.runtimeEnvironments
       .subscribe(
@@ -2195,13 +2220,26 @@ export function useWebSessionTabsSync(): void {
               return
             }
             const fresh = shouldApplyWebSessionTabsSnapshot(event, environmentId)
+            const syncState = useAppStore.getState()
+            const localWorktreeTabs = syncState.tabsByWorktree[activeWorktreeId] ?? []
+            const localTerminalCount = localWorktreeTabs.length
+            const hasLiveLocalPty = localWorktreeTabs.some(
+              (tab) => (syncState.ptyIdsByTabId[tab.id] ?? []).length > 0
+            )
             const shouldBootstrapInitialTerminal = shouldBootstrapInitialWebRuntimeTerminal({
               event,
               activeWorktreeId,
               requestedInitialTerminal,
               snapshotIsFresh: fresh,
-              localTerminalCount:
-                useAppStore.getState().tabsByWorktree[activeWorktreeId]?.length ?? 0
+              localTerminalCount
+            })
+            const shouldRespawnAfterWake = shouldRespawnWebRuntimeTerminalAfterWake({
+              event,
+              activeWorktreeId,
+              requestedRespawnAfterWake,
+              snapshotIsFresh: fresh,
+              localTerminalCount,
+              hasLiveLocalPty
             })
             if (fresh) {
               useAppStore.setState((state) =>
@@ -2214,6 +2252,14 @@ export function useWebSessionTabsSync(): void {
                 worktreeId: activeWorktreeId,
                 environmentId,
                 activate: true
+              })
+            } else if (!disposed && shouldRespawnAfterWake) {
+              requestedRespawnAfterWake = true
+              void createWebRuntimeSessionTerminal({
+                worktreeId: activeWorktreeId,
+                environmentId,
+                activate: true,
+                selectWorktree: false
               })
             }
           },
