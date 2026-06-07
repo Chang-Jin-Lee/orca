@@ -84,7 +84,7 @@ export function closeTerminalTab(tabId: string): void {
   }
 
   const runtimeEnvironmentId = state.settings?.activeRuntimeEnvironmentId?.trim()
-  if (isWebRuntimeSessionActive(runtimeEnvironmentId)) {
+  if (runtimeEnvironmentId && isWebRuntimeSessionActive(runtimeEnvironmentId)) {
     const hostBackedTabId =
       resolveHostSessionTabIdForWebSessionTab(state, {
         environmentId: runtimeEnvironmentId,

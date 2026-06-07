@@ -15,7 +15,7 @@ const {
   getStateMock: vi.fn(),
   isWebRuntimeSessionActiveMock: vi.fn(),
   isWebTerminalSurfaceTabIdMock: vi.fn(() => false),
-  resolveHostSessionTabIdForWebSessionTabMock: vi.fn(() => null)
+  resolveHostSessionTabIdForWebSessionTabMock: vi.fn<() => string | null>(() => null)
 }))
 
 vi.mock('@/store', () => ({

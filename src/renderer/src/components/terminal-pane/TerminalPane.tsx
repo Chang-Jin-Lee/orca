@@ -47,7 +47,11 @@ import { useNotificationDispatch } from './use-notification-dispatch'
 import { connectPanePty } from './pty-connection'
 import { shouldPreserveTerminalScrollbackBuffers } from '../../../../shared/workspace-session-terminal-buffers'
 import { getFitOverrideForPty, onOverrideChange } from '@/lib/pane-manager/mobile-fit-overrides'
-import { getDriverForPty, onDriverChange } from '@/lib/pane-manager/mobile-driver-state'
+import {
+  getDriverForPty,
+  isPtyLocked,
+  onDriverChange
+} from '@/lib/pane-manager/mobile-driver-state'
 import { resolvePaneKeyForManager } from '@/lib/pane-manager/pane-key-resolution'
 import { safeFit } from '@/lib/pane-manager/pane-tree-ops'
 import { captureTerminalShutdownLayout } from './terminal-shutdown-layout-capture'
@@ -1132,9 +1136,19 @@ export default function TerminalPane({
       for (const pane of manager.getPanes()) {
         safeFit(pane)
         const transport = paneTransportsRef.current.get(pane.id)
-        if (transport?.isConnected()) {
-          transport.resize(pane.terminal.cols, pane.terminal.rows)
+        if (!transport?.isConnected()) {
+          continue
         }
+        const ptyId = transport.getPtyId()
+        if (!ptyId) {
+          continue
+        }
+        // Why: match pty-connection resize guards so web refit retries do not
+        // forward SIGWINCH while mobile-lock or phone-fit overrides are active.
+        if (getFitOverrideForPty(ptyId) || isPtyLocked(ptyId)) {
+          continue
+        }
+        transport.resize(pane.terminal.cols, pane.terminal.rows)
       }
     }
     const scheduleFrame = (): void => {

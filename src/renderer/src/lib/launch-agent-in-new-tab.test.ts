@@ -11,7 +11,7 @@ const mockTrack = vi.fn()
 const LEAF_ID = '11111111-1111-4111-8111-111111111111'
 
 const store = {
-  settings: { agentCmdOverrides: {} },
+  settings: { agentCmdOverrides: {}, activeRuntimeEnvironmentId: null as string | null },
   tabsByWorktree: {
     'wt-1': [{ id: 'tab-1' }]
   },
