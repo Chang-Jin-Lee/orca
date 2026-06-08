@@ -1638,6 +1638,7 @@ export type CreateWorktreeResult = {
   warning?: string
   initialBaseStatus?: WorktreeBaseStatusEvent
   localBaseRefRefresh?: LocalBaseRefRefreshResult
+  localBaseRefUpdateSuggestion?: LocalBaseRefUpdateSuggestion
   startupTerminal?: {
     spawned: boolean
     surface?: 'visible' | 'background'
@@ -1663,6 +1664,12 @@ export type LocalBaseRefRefreshResult = {
   baseRef: string
   localBranch: string
   ownerWorktreePath?: string
+}
+
+export type LocalBaseRefUpdateSuggestion = {
+  baseRef: string
+  localBranch: string
+  behind: number
 }
 
 export type WorktreeBaseStatusKind = 'checking' | 'current' | 'drift' | 'base_changed' | 'unknown'
@@ -1949,6 +1956,9 @@ export type GlobalSettings = {
   nestWorkspaces: boolean
   workspaceDirHistory?: OrcaWorkspaceLayout[]
   refreshLocalBaseRefOnWorktreeCreate: boolean
+  /** Set once the user dismisses the "local main is behind" suggestion toast, so
+   *  the nudge to enable refreshLocalBaseRefOnWorktreeCreate never shows again. */
+  localBaseRefSuggestionDismissed: boolean
   /** When enabled, Orca renames a workspace's auto-generated creature branch to
    *  a short name derived from the first prompt once work begins. Opt-in;
    *  uses the same agent configured for AI commit messages. */

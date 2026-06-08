@@ -49,6 +49,15 @@ describe('GitPane', () => {
     expect(renderGitPane('thinking')).toContain('Branch name model')
   })
 
+  it('renders the local main freshness setting with outcome-focused copy', () => {
+    const markup = renderGitPane('behind main')
+
+    expect(markup).toContain('Keep Local Main Up to Date')
+    expect(markup).toContain('git diff main...HEAD')
+    expect(markup).toContain('local-only commits')
+    expect(markup).not.toContain('Refresh Local Base Ref')
+  })
+
   it('keeps auto-rename advanced controls collapsed without an advanced search match', () => {
     expect(shouldOpenAutoRenameBranchAdvanced('')).toBe(false)
     expect(shouldOpenAutoRenameBranchAdvanced('creature name')).toBe(false)

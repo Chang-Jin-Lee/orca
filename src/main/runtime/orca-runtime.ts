@@ -525,6 +525,7 @@ type RuntimeStore = {
     workspaceDir: string
     nestWorkspaces: boolean
     refreshLocalBaseRefOnWorktreeCreate: boolean
+    localBaseRefSuggestionDismissed?: boolean
     branchPrefix: string
     branchPrefixCustom: string
     defaultTuiAgent?: GlobalSettings['defaultTuiAgent']
@@ -8591,7 +8592,16 @@ export class OrcaRuntimeService {
       )
     }
 
-    const existingBranchOption = { checkoutExistingBranch }
+    const suggestLocalBaseRefUpdate =
+      !settings.refreshLocalBaseRefOnWorktreeCreate &&
+      !settings.localBaseRefSuggestionDismissed &&
+      Boolean(remoteTrackingBase)
+    const remoteTrackingBaseOption = remoteTrackingBase ? { remoteTrackingBase } : undefined
+    const existingBranchOption = {
+      checkoutExistingBranch,
+      ...remoteTrackingBaseOption,
+      ...(suggestLocalBaseRefUpdate ? { suggestLocalBaseRefUpdate } : {})
+    }
     const addResult: AddWorktreeResult =
       (await (sparseDirectories.length > 0
         ? checkoutExistingBranch
@@ -8604,14 +8614,34 @@ export class OrcaRuntimeService {
               settings.refreshLocalBaseRefOnWorktreeCreate,
               existingBranchOption
             )
-          : addSparseWorktree(
-              repo.path,
-              worktreePath,
-              branchName,
-              sparseDirectories,
-              baseBranch,
-              settings.refreshLocalBaseRefOnWorktreeCreate
-            )
+          : suggestLocalBaseRefUpdate
+            ? addSparseWorktree(
+                repo.path,
+                worktreePath,
+                branchName,
+                sparseDirectories,
+                baseBranch,
+                settings.refreshLocalBaseRefOnWorktreeCreate,
+                { ...remoteTrackingBaseOption, suggestLocalBaseRefUpdate }
+              )
+            : remoteTrackingBaseOption
+              ? addSparseWorktree(
+                  repo.path,
+                  worktreePath,
+                  branchName,
+                  sparseDirectories,
+                  baseBranch,
+                  settings.refreshLocalBaseRefOnWorktreeCreate,
+                  remoteTrackingBaseOption
+                )
+              : addSparseWorktree(
+                  repo.path,
+                  worktreePath,
+                  branchName,
+                  sparseDirectories,
+                  baseBranch,
+                  settings.refreshLocalBaseRefOnWorktreeCreate
+                )
         : checkoutExistingBranch
           ? addWorktree(
               repo.path,
@@ -8622,13 +8652,33 @@ export class OrcaRuntimeService {
               false,
               existingBranchOption
             )
-          : addWorktree(
-              repo.path,
-              worktreePath,
-              branchName,
-              baseBranch,
-              settings.refreshLocalBaseRefOnWorktreeCreate
-            ))) ?? {}
+          : suggestLocalBaseRefUpdate
+            ? addWorktree(
+                repo.path,
+                worktreePath,
+                branchName,
+                baseBranch,
+                settings.refreshLocalBaseRefOnWorktreeCreate,
+                false,
+                { ...remoteTrackingBaseOption, suggestLocalBaseRefUpdate }
+              )
+            : remoteTrackingBaseOption
+              ? addWorktree(
+                  repo.path,
+                  worktreePath,
+                  branchName,
+                  baseBranch,
+                  settings.refreshLocalBaseRefOnWorktreeCreate,
+                  false,
+                  remoteTrackingBaseOption
+                )
+              : addWorktree(
+                  repo.path,
+                  worktreePath,
+                  branchName,
+                  baseBranch,
+                  settings.refreshLocalBaseRefOnWorktreeCreate
+                ))) ?? {}
 
     let configuredPushTarget: GitPushTarget | undefined
     if (preparedPushTarget) {
@@ -8914,6 +8964,9 @@ export class OrcaRuntimeService {
       ...(warning ? { warning } : {}),
       ...(addResult.localBaseRefRefresh
         ? { localBaseRefRefresh: addResult.localBaseRefRefresh }
+        : {}),
+      ...(addResult.localBaseRefUpdateSuggestion
+        ? { localBaseRefUpdateSuggestion: addResult.localBaseRefUpdateSuggestion }
         : {})
     }
   }
@@ -9297,13 +9350,17 @@ export class OrcaRuntimeService {
       return null
     }
 
+    const remoteRefPrefix = 'refs/remotes/'
+    const shortBaseBranch = baseBranch.startsWith(remoteRefPrefix)
+      ? baseBranch.slice(remoteRefPrefix.length)
+      : baseBranch
     const remote = remotes
-      .filter((candidate) => baseBranch.startsWith(`${candidate}/`))
+      .filter((candidate) => shortBaseBranch.startsWith(`${candidate}/`))
       .sort((a, b) => b.length - a.length)[0]
     if (!remote) {
       return null
     }
-    const branch = baseBranch.slice(remote.length + 1)
+    const branch = shortBaseBranch.slice(remote.length + 1)
     if (!branch) {
       return null
     }
@@ -9311,7 +9368,7 @@ export class OrcaRuntimeService {
       remote,
       branch,
       ref: `refs/remotes/${remote}/${branch}`,
-      base: baseBranch
+      base: `${remote}/${branch}`
     }
   }
 
