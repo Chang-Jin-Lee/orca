@@ -13,7 +13,8 @@ export const AUTO_RENAME_BRANCH_PARENT_SEARCH_ENTRY: SettingsSearchEntry = {
     'command',
     'template',
     'worktree',
-    'slug'
+    'slug',
+    'generate'
   ]
 }
 
