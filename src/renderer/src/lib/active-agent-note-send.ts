@@ -12,7 +12,13 @@ import { useAppStore } from '@/store'
 import { callRuntimeRpc, getActiveRuntimeTarget } from '@/runtime/runtime-rpc-client'
 import { toRuntimeWorktreeSelector } from '@/runtime/runtime-worktree-selector'
 import { makePaneKey, isTerminalLeafId } from '../../../shared/stable-pane-id'
-import { isExplicitAgentStatusFresh } from './agent-status'
+import {
+  detectAgentStatusFromTitle,
+  getAgentLabel,
+  isExplicitAgentStatusFresh
+} from './agent-status'
+import { resolveRuntimePaneTitleLeafId } from './runtime-pane-title-leaf-id'
+import type { TerminalLayoutSnapshot } from '../../../shared/types'
 
 const ACTIVE_AGENT_SEND_TIMEOUT_MS = 8000
 const ACTIVE_AGENT_SEND_RPC_TIMEOUT_MS = 15000
@@ -40,12 +46,21 @@ type ActiveTerminalNoteTargetState = {
   activeTabType: AppState['activeTabType']
   activeTabId: AppState['activeTabId']
   activeTabIdByWorktree: AppState['activeTabIdByWorktree']
-  tabsByWorktree: Record<string, readonly { id: string }[] | undefined>
+  tabsByWorktree: Record<
+    string,
+    readonly { id: string; title?: string; launchAgent?: unknown }[] | undefined
+  >
   ptyIdsByTabId?: Record<string, readonly string[] | undefined>
   terminalLayoutsByTabId: Record<
     string,
-    { activeLeafId: string | null; ptyIdsByLeafId?: Record<string, string | undefined> } | undefined
+    | {
+        activeLeafId: string | null
+        root?: TerminalLayoutSnapshot['root']
+        ptyIdsByLeafId?: Record<string, string | undefined>
+      }
+    | undefined
   >
+  runtimePaneTitlesByTabId?: Record<string, Record<number, string> | undefined>
   agentStatusByPaneKey?: Record<string, AgentStatusEntry | undefined>
 }
 
@@ -89,9 +104,13 @@ export function getActiveAgentNoteTarget(
   }
 
   const entry = state.agentStatusByPaneKey?.[makePaneKey(noteTarget.tabId, noteTarget.leafId)]
-  // Why: an active terminal can be a regular shell; only explicit hook-backed
-  // agent state is enough to offer the destructive "submit with Enter" target.
-  if (!entry || !isExplicitAgentStatusFresh(entry, now, AGENT_STATUS_STALE_AFTER_MS)) {
+  if (entry && isExplicitAgentStatusFresh(entry, now, AGENT_STATUS_STALE_AFTER_MS)) {
+    return noteTarget
+  }
+  // Why: freshly opened agents can be idle before their first hook event. Use
+  // renderer title/launch hints only to show the option; runtime still verifies
+  // the focused terminal is an idle agent before sending Enter.
+  if (!hasFocusedPaneAgentHint(state, worktreeId, noteTarget)) {
     return null
   }
 
@@ -223,6 +242,52 @@ function getActivePanePtyId(
     return activeLeafPtyId && livePtyIds.includes(activeLeafPtyId) ? activeLeafPtyId : null
   }
   return livePtyIds[0] ?? null
+}
+
+function hasFocusedPaneAgentHint(
+  state: ActiveTerminalNoteTargetState,
+  worktreeId: string,
+  noteTarget: ActiveTerminalNoteTarget
+): boolean {
+  const tab = (state.tabsByWorktree[worktreeId] ?? []).find(
+    (entry) => entry.id === noteTarget.tabId
+  )
+  const runtimeTitle = getFocusedRuntimePaneTitle(state, noteTarget)
+  if (runtimeTitle !== null) {
+    return isRecognizedAgentTitle(runtimeTitle)
+  }
+  if (tab?.launchAgent) {
+    return true
+  }
+
+  return tab?.title ? isRecognizedAgentTitle(tab.title) : false
+}
+
+function getFocusedRuntimePaneTitle(
+  state: ActiveTerminalNoteTargetState,
+  noteTarget: ActiveTerminalNoteTarget
+): string | null {
+  const paneTitles = state.runtimePaneTitlesByTabId?.[noteTarget.tabId]
+  if (!paneTitles || Object.keys(paneTitles).length === 0) {
+    return null
+  }
+
+  const titleEntries = Object.entries(paneTitles)
+  if (titleEntries.length === 1) {
+    return titleEntries[0][1]
+  }
+
+  const layout = state.terminalLayoutsByTabId[noteTarget.tabId]
+  for (const [runtimePaneId, title] of titleEntries) {
+    if (resolveRuntimePaneTitleLeafId(layout, runtimePaneId) === noteTarget.leafId) {
+      return title
+    }
+  }
+  return null
+}
+
+function isRecognizedAgentTitle(title: string): boolean {
+  return detectAgentStatusFromTitle(title) !== null && getAgentLabel(title) !== null
 }
 
 function isRuntimeTimeout(error: unknown): boolean {
