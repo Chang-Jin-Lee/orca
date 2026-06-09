@@ -318,7 +318,14 @@ export async function downloadRemoteFile(node: TreeNode, connectionId: string): 
     if (result.canceled) {
       return
     }
-    toast.success(`Downloaded '${node.name}'`)
+    toast.success(`Downloaded '${node.name}'`, {
+      action: {
+        label: 'Open',
+        onClick: () => {
+          void window.api.shell.openPath(result.destinationPath)
+        }
+      }
+    })
   } catch (error) {
     toast.error(extractIpcErrorMessage(error, `Failed to download '${node.name}'.`))
   }

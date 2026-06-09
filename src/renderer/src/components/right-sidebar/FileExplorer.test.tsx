@@ -411,9 +411,17 @@ describe('FileExplorerRow collapse folder action', () => {
       .fn()
       .mockResolvedValueOnce({ canceled: false, destinationPath: '/downloads/index.ts' })
       .mockResolvedValueOnce({ canceled: true })
+    const openPath = vi.fn().mockResolvedValue(undefined)
     ;(
-      globalThis as unknown as { window: { api: { fs: { downloadFile: typeof downloadFile } } } }
-    ).window = { api: { fs: { downloadFile } } }
+      globalThis as unknown as {
+        window: {
+          api: {
+            fs: { downloadFile: typeof downloadFile }
+            shell: { openPath: typeof openPath }
+          }
+        }
+      }
+    ).window = { api: { fs: { downloadFile }, shell: { openPath } } }
 
     await downloadRemoteFile(fileNode, 'ssh-1')
     await downloadRemoteFile(fileNode, 'ssh-1')
@@ -423,7 +431,17 @@ describe('FileExplorerRow collapse folder action', () => {
       connectionId: 'ssh-1'
     })
     expect(toastSuccessMock).toHaveBeenCalledTimes(1)
-    expect(toastSuccessMock).toHaveBeenCalledWith("Downloaded 'index.ts'")
+    expect(toastSuccessMock).toHaveBeenCalledWith("Downloaded 'index.ts'", {
+      action: {
+        label: 'Open',
+        onClick: expect.any(Function)
+      }
+    })
+    const action = toastSuccessMock.mock.calls[0]?.[1]?.action as
+      | { onClick: () => void }
+      | undefined
+    action?.onClick()
+    expect(openPath).toHaveBeenCalledWith('/downloads/index.ts')
     expect(toastErrorMock).not.toHaveBeenCalled()
   })
 

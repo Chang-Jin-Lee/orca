@@ -48,7 +48,7 @@ Add a file explorer context-menu action that lets users download a single file f
    - Show `Download` only when `connectionId` exists, the renderer is not the paired web client (`globalThis.__ORCA_WEB_CLIENT__ !== true`), and the node is not a directory; keep symlink rows visible and let IPC reject symlinks that resolve to directories.
    - Use a lucide download icon and the existing `ContextMenuItem` primitive.
    - Put the action near other file-only actions, before the local reveal/open-containing-folder item.
-   - On success, show a concise toast. On cancel, stay quiet. On error, show a failure toast.
+   - On success, show a concise toast with an `Open` action that reveals the saved local file. On cancel, stay quiet. On error, show a failure toast.
    - Keep the existing local reveal guard untouched; this action is a separate remote-to-local save path.
    - Keep new row logic small. Prefer a named predicate such as `shouldShowRemoteDownloadAction` for visibility tests, and do not add or change `max-lines` disables.
 
@@ -64,7 +64,7 @@ Add a file explorer context-menu action that lets users download a single file f
 - Selecting it calls `window.api.fs.downloadFile({ filePath, connectionId })`.
 - Main process validates provider/path and opens native Save dialog.
 - Main process downloads remote bytes over SFTP into a temp file beside the chosen local path, then promotes that file into place with overwrite-safe handling.
-- Renderer shows success or failure toast.
+- Renderer shows success or failure toast; the success toast can reveal the saved local file.
 
 ## Edge Cases
 
@@ -89,7 +89,7 @@ Add a file explorer context-menu action that lets users download a single file f
 
 - Unit: `src/main/ipc/filesystem.test.ts` for `fs:downloadFile` success, cancel, remote directory, selected local directory, missing/empty file path/connection, unavailable provider/method, filename sanitization, temp-file rename/cleanup, Windows overwrite handling, fail-on-destination-created-after-dialog, and dialog parenting; extend the Electron mock with `dialog.showSaveDialog` and `BrowserWindow.fromWebContents`, and the `fs/promises` mock with the local promotion primitives used by the handler.
 - Unit: `src/main/providers/ssh-filesystem-provider.test.ts` for SFTP `fastGet`/close behavior, including rejection cleanup.
-- Renderer unit: add a small predicate for Download visibility or row-focused coverage in `src/renderer/src/components/right-sidebar/FileExplorer.test.tsx`; cover SSH file visible, SSH folder hidden, local file hidden, and paired-web-client hidden. Do not rely on a full Electron run for this behavior.
+- Renderer unit: add a small predicate for Download visibility or row-focused coverage in `src/renderer/src/components/right-sidebar/FileExplorer.test.tsx`; cover SSH file visible, SSH folder hidden, local file hidden, paired-web-client hidden, API invocation, cancel-toast suppression, failure toasts, and the success-toast `Open` action. Do not rely on a full Electron run for this behavior.
 - Validation: run targeted tests plus `pnpm typecheck` and `pnpm lint`. Skip Electron validation per user request.
 
 ## UI Quality Bar
@@ -103,7 +103,7 @@ Electron screenshots are intentionally skipped by user request. If manually revi
 1. SSH file row context menu with `Download`.
 2. SSH folder row context menu without `Download`.
 3. Local file row context menu without `Download`.
-4. Success toast after saving a remote file.
+4. Success toast after saving a remote file, including the `Open` action.
 
 ## Rollout
 
@@ -140,5 +140,5 @@ Electron screenshots are intentionally skipped by user request. If manually revi
   1. SSH file context menu with `Download`.
   2. SSH folder context menu without `Download`.
   3. Local file context menu without `Download`.
-  4. Success toast after download.
+  4. Success toast after download, including the `Open` action.
 - Residual risks: No progress UI or cancellation for large files; acceptable for first scoped implementation but should stay explicit in release notes if users can trigger multi-GB downloads.
