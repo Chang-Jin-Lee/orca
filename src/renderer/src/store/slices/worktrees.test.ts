@@ -1343,10 +1343,12 @@ describe('createWorktree base status merge', () => {
       'Local main is behind origin/main',
       expect.objectContaining({
         id: 'local-base-ref-update-suggestion:origin/main:main',
-        description: expect.stringContaining('local main is 2 commits behind'),
+        description: expect.stringContaining(
+          'Your new worktree is current, but local main is 2 commits behind. AI diffs may miss recent commits.'
+        ),
         duration: Infinity,
         dismissible: true,
-        action: expect.objectContaining({ label: 'Turn On' }),
+        action: expect.objectContaining({ label: 'Keep main up to date' }),
         cancel: expect.objectContaining({ label: 'Dismiss' })
       })
     )
@@ -1490,8 +1492,8 @@ describe('createWorktree base status merge', () => {
     await Promise.resolve()
 
     expect(toast.dismiss).not.toHaveBeenCalled()
-    expect(toast.error).toHaveBeenCalledWith('Could not turn on Keep Local Main Up to Date', {
-      description: 'Open Settings and try again.'
+    expect(toast.error).toHaveBeenCalledWith('Could not keep local main up to date', {
+      description: 'Open Settings > Git and try again.'
     })
   })
 

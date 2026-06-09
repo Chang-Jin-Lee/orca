@@ -125,14 +125,14 @@ function showLocalBaseRefUpdateSuggestionToast(
   // the user acts, so a ~4s auto-expire can't bury this one-time, opt-in nudge.
   toast.warning(`Local ${suggestion.localBranch} is behind ${suggestion.baseRef}`, {
     id: toastId,
-    description: `Your new workspace used the latest ${suggestion.baseRef}, but local ${suggestion.localBranch} is ${suggestion.behind} ${commitNoun} behind. Turn this on so Orca keeps local ${suggestion.localBranch} current for future workspaces.`,
+    description: `Your new worktree is current, but local ${suggestion.localBranch} is ${suggestion.behind} ${commitNoun} behind. AI diffs may miss recent commits.`,
     duration: Infinity,
     dismissible: true,
     // Fires for the close (X) button and swipe; the Dismiss button uses its own
     // handler since sonner's cancel action does not trigger onDismiss.
     onDismiss: persistDismissal,
     action: {
-      label: 'Turn On',
+      label: `Keep ${suggestion.localBranch} up to date`,
       onClick: () => {
         void Promise.resolve(
           updateSettings({
@@ -147,8 +147,8 @@ function showLocalBaseRefUpdateSuggestionToast(
             toast.success(`Keeping local ${suggestion.localBranch} up to date`)
           })
           .catch(() => {
-            toast.error('Could not turn on Keep Local Main Up to Date', {
-              description: 'Open Settings and try again.'
+            toast.error(`Could not keep local ${suggestion.localBranch} up to date`, {
+              description: 'Open Settings > Git and try again.'
             })
           })
       }
