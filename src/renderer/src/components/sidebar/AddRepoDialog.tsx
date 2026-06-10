@@ -157,7 +157,6 @@ const AddRepoDialog = React.memo(function AddRepoDialog() {
   } = useCreateProjectDefaults({
     step,
     activeRuntimeEnvironmentId: settings?.activeRuntimeEnvironmentId,
-    workspaceDir: settings?.workspaceDir,
     createParent,
     setCreateParent,
     setCreateKind

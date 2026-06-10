@@ -1,5 +1,3 @@
-import { getDefaultCloneParent } from './clone-defaults'
-
 export type RepoKind = 'git' | 'folder'
 
 export type GitAvailability = 'checking' | 'available' | 'unavailable' | 'unknown'
@@ -40,27 +38,17 @@ export function getDefaultCreateProjectParent(homeDir: string): string {
   return joinCreateProjectPath(joinCreateProjectPath(trimmedHomeDir, 'orca'), 'projects')
 }
 
-export function getDefaultCreateProjectParentFromWorkspaceDir(
-  workspaceDir: string | null | undefined
-): string {
-  const workspaceParent = getDefaultCloneParent((workspaceDir ?? '').trim())
-  if (!workspaceParent) {
-    return ''
-  }
-  return joinCreateProjectPath(workspaceParent, 'projects')
-}
-
 export function getCreateProjectDefaultParentAutoFill({
   step,
   createParent,
   activeRuntimeEnvironmentId,
-  workspaceDir,
+  defaultParent,
   createStepAutoFilled
 }: {
   step: string
   createParent: string
   activeRuntimeEnvironmentId: string | null | undefined
-  workspaceDir: string | null | undefined
+  defaultParent?: string
   createStepAutoFilled: boolean
 }): { parent: string } | null {
   if (step !== 'create' || createStepAutoFilled || createParent) {
@@ -69,7 +57,7 @@ export function getCreateProjectDefaultParentAutoFill({
   if (activeRuntimeEnvironmentId?.trim()) {
     return null
   }
-  const parent = getDefaultCreateProjectParentFromWorkspaceDir(workspaceDir)
+  const parent = defaultParent ?? ''
   if (!parent) {
     return null
   }

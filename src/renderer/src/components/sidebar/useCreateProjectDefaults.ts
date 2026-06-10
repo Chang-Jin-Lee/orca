@@ -1,5 +1,5 @@
 // Default-driven create-project state for AddRepoDialog: resolves the default
-// parent (workspaceDir-derived locally, host home on runtimes) and probes Git
+// parent (local/runtime host home) and probes Git
 // availability, guarding against stale async results when the target changes.
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { browseRuntimeServerDirectory } from '@/runtime/runtime-server-directory-browser'
@@ -8,7 +8,6 @@ import type { AddRepoDialogStep } from './add-repo-dialog-types'
 import {
   getCreateProjectDefaultParentAutoFill,
   getDefaultCreateProjectParent,
-  getDefaultCreateProjectParentFromWorkspaceDir,
   type GitAvailability,
   type RepoKind
 } from './create-project-defaults'
@@ -42,14 +41,12 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
 export function useCreateProjectDefaults({
   step,
   activeRuntimeEnvironmentId,
-  workspaceDir,
   createParent,
   setCreateParent,
   setCreateKind
 }: {
   step: AddRepoDialogStep
   activeRuntimeEnvironmentId: string | null | undefined
-  workspaceDir: string | null | undefined
   createParent: string
   setCreateParent: (value: string) => void
   setCreateKind: (kind: RepoKind) => void
@@ -98,21 +95,37 @@ export function useCreateProjectDefaults({
       return
     }
     // Why: invalidate any in-flight runtime parent probe once local mode owns the default.
-    createParentDefaultGenRef.current++
-    setCreateDefaultParent(getDefaultCreateProjectParentFromWorkspaceDir(workspaceDir))
-    const autoFill = getCreateProjectDefaultParentAutoFill({
-      step,
-      createParent,
-      activeRuntimeEnvironmentId,
-      workspaceDir,
-      createStepAutoFilled: createStepAutoFilledRef.current || createParentTouchedRef.current
-    })
-    if (!autoFill) {
+    const gen = ++createParentDefaultGenRef.current
+    if (createParent.trim() || createParentTouchedRef.current) {
       return
     }
-    createStepAutoFilledRef.current = true
-    setCreateParent(autoFill.parent)
-  }, [activeRuntimeEnvironmentId, createParent, setCreateParent, step, workspaceDir])
+    setCreateDefaultParent('')
+    void window.api.repos
+      .getDefaultCreateProjectParent()
+      .then((parent) => {
+        const autoFill = getCreateProjectDefaultParentAutoFill({
+          step,
+          createParent,
+          activeRuntimeEnvironmentId,
+          defaultParent: parent,
+          createStepAutoFilled: createStepAutoFilledRef.current || createParentTouchedRef.current
+        })
+        if (
+          gen !== createParentDefaultGenRef.current ||
+          createParentTouchedRef.current ||
+          createParent.trim() ||
+          !autoFill
+        ) {
+          return
+        }
+        setCreateDefaultParent(parent)
+        createStepAutoFilledRef.current = true
+        setCreateParent(autoFill.parent)
+      })
+      .catch(() => {
+        // Keep the field empty if the local host cannot provide a submit-ready default.
+      })
+  }, [activeRuntimeEnvironmentId, createParent, setCreateParent, step])
 
   useEffect(() => {
     if (step !== 'create') {
@@ -123,11 +136,11 @@ export function useCreateProjectDefaults({
       setCreateRuntimeParentStatus('idle')
       return
     }
-    setCreateDefaultParent('')
     if (createParent.trim() || createParentTouchedRef.current) {
       setCreateRuntimeParentStatus('idle')
       return
     }
+    setCreateDefaultParent('')
 
     const gen = ++createParentDefaultGenRef.current
     setCreateRuntimeParentStatus('checking')

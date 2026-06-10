@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest'
 import {
   formatCreateProjectParentSummary,
   getCreateProjectDefaultParentAutoFill,
-  getDefaultCreateProjectParentFromWorkspaceDir,
   getDefaultCreateProjectParent,
   joinCreateProjectPath
 } from './create-project-defaults'
@@ -31,31 +30,13 @@ describe('create project defaults', () => {
     )
   })
 
-  it('derives the project parent from the configured Orca workspace root', () => {
-    expect(getDefaultCreateProjectParentFromWorkspaceDir('/Users/alice/orca/workspaces')).toBe(
-      '/Users/alice/orca/projects'
-    )
-    expect(
-      getDefaultCreateProjectParentFromWorkspaceDir('C:\\Users\\alice\\orca\\workspaces')
-    ).toBe('C:\\Users\\alice\\orca\\projects')
-  })
-
-  it('follows custom workspace directory preferences', () => {
-    expect(getDefaultCreateProjectParentFromWorkspaceDir('/Volumes/dev/orca-workspaces')).toBe(
-      '/Volumes/dev/orca-workspaces/projects'
-    )
-    expect(getDefaultCreateProjectParentFromWorkspaceDir('D:\\Dev\\Orca')).toBe(
-      'D:\\Dev\\Orca\\projects'
-    )
-  })
-
   it('auto-fills only the first empty local create step', () => {
     expect(
       getCreateProjectDefaultParentAutoFill({
         step: 'create',
         createParent: '',
         activeRuntimeEnvironmentId: null,
-        workspaceDir: '/Users/alice/orca/workspaces',
+        defaultParent: '/Users/alice/orca/projects',
         createStepAutoFilled: false
       })
     ).toEqual({ parent: '/Users/alice/orca/projects' })
@@ -64,7 +45,7 @@ describe('create project defaults', () => {
         step: 'create',
         createParent: '/tmp/project',
         activeRuntimeEnvironmentId: null,
-        workspaceDir: '/Users/alice/orca/workspaces',
+        defaultParent: '/Users/alice/orca/projects',
         createStepAutoFilled: false
       })
     ).toBeNull()
@@ -73,7 +54,7 @@ describe('create project defaults', () => {
         step: 'create',
         createParent: '',
         activeRuntimeEnvironmentId: null,
-        workspaceDir: '/Users/alice/orca/workspaces',
+        defaultParent: '/Users/alice/orca/projects',
         createStepAutoFilled: true
       })
     ).toBeNull()
@@ -85,7 +66,7 @@ describe('create project defaults', () => {
         step: 'create',
         createParent: '',
         activeRuntimeEnvironmentId: 'env-1',
-        workspaceDir: '/Users/alice/orca/workspaces',
+        defaultParent: '/Users/alice/orca/projects',
         createStepAutoFilled: false
       })
     ).toBeNull()

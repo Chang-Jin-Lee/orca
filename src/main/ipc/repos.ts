@@ -4,6 +4,7 @@ boundary. Splitting by line count would scatter tightly coupled repo behavior. *
 import type { BrowserWindow, IpcMainInvokeEvent } from 'electron'
 import { dialog, ipcMain } from 'electron'
 import { randomUUID } from 'crypto'
+import { homedir } from 'os'
 import { z } from 'zod'
 import type { Store } from '../persistence'
 import type {
@@ -273,6 +274,10 @@ async function isGitAvailable(): Promise<boolean> {
   }
 }
 
+function getDefaultCreateProjectParent(): string {
+  return join(homedir(), 'orca', 'projects')
+}
+
 function markCloneAbortCleanupPending(metadata: ActiveCloneMetadata): void {
   if (metadata.resolvePendingAbortCleanup) {
     return
@@ -458,6 +463,7 @@ export function registerRepoHandlers(mainWindow: BrowserWindow, store: Store): v
   ipcMain.removeHandler('repos:clone')
   ipcMain.removeHandler('repos:cloneAbort')
   ipcMain.removeHandler('repos:isGitAvailable')
+  ipcMain.removeHandler('repos:getDefaultCreateProjectParent')
   ipcMain.removeHandler('repos:getGitUsername')
   ipcMain.removeHandler('repos:getBaseRefDefault')
   ipcMain.removeHandler('repos:searchBaseRefs')
@@ -473,6 +479,7 @@ export function registerRepoHandlers(mainWindow: BrowserWindow, store: Store): v
   })
 
   ipcMain.handle('repos:isGitAvailable', () => isGitAvailable())
+  ipcMain.handle('repos:getDefaultCreateProjectParent', () => getDefaultCreateProjectParent())
 
   ipcMain.handle('projectGroups:list', () => store.getProjectGroups())
 
@@ -895,6 +902,9 @@ export function registerRepoHandlers(mainWindow: BrowserWindow, store: Store): v
       let createdDir = false
       let targetExists = false
       try {
+        // Why: the name-first default points at ~/orca/projects, which may not
+        // exist yet on a fresh install; create only the parent before probing target.
+        await mkdir(parentPath, { recursive: true })
         await access(targetPath)
         targetExists = true
       } catch (err) {

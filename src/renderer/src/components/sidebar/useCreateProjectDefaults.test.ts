@@ -6,7 +6,8 @@ const mocks = vi.hoisted(() => ({
   stateIndex: 0,
   browseRuntimeServerDirectory: vi.fn(),
   callRuntimeRpc: vi.fn(),
-  isGitAvailable: vi.fn()
+  isGitAvailable: vi.fn(),
+  getDefaultCreateProjectParent: vi.fn()
 }))
 
 vi.mock('react', async (importOriginal) => {
@@ -57,7 +58,6 @@ function useHarness(overrides: Partial<Parameters<typeof useCreateProjectDefault
   const result = useCreateProjectDefaults({
     step: 'create',
     activeRuntimeEnvironmentId: null,
-    workspaceDir: '/Users/alice/orca/workspaces',
     createParent: '',
     setCreateParent,
     setCreateKind,
@@ -72,8 +72,14 @@ describe('useCreateProjectDefaults', () => {
     mocks.stateValues = []
     mocks.stateIndex = 0
     vi.stubGlobal('window', {
-      api: { repos: { isGitAvailable: mocks.isGitAvailable } }
+      api: {
+        repos: {
+          isGitAvailable: mocks.isGitAvailable,
+          getDefaultCreateProjectParent: mocks.getDefaultCreateProjectParent
+        }
+      }
     })
+    mocks.getDefaultCreateProjectParent.mockResolvedValue('/Users/alice/orca/projects')
   })
 
   it('auto-fills the local default parent and defaults to git when available', async () => {
@@ -86,7 +92,29 @@ describe('useCreateProjectDefaults', () => {
     expect(mocks.stateValues[DEFAULT_PARENT_STATE]).toBe('/Users/alice/orca/projects')
     expect(mocks.stateValues[GIT_AVAILABILITY_STATE]).toBe('available')
     expect(setCreateKind).toHaveBeenCalledWith('git')
+    expect(mocks.getDefaultCreateProjectParent).toHaveBeenCalled()
     expect(mocks.callRuntimeRpc).not.toHaveBeenCalled()
+  })
+
+  it('auto-fills the local home default regardless of workspace directory settings', async () => {
+    mocks.isGitAvailable.mockResolvedValue(true)
+
+    const { setCreateParent } = useHarness()
+    await flushAsync()
+
+    expect(mocks.getDefaultCreateProjectParent).toHaveBeenCalled()
+    expect(setCreateParent).toHaveBeenCalledWith('/Users/alice/orca/projects')
+    expect(mocks.stateValues[DEFAULT_PARENT_STATE]).toBe('/Users/alice/orca/projects')
+  })
+
+  it('keeps the local default marker after the auto-filled parent rerenders the hook', async () => {
+    mocks.isGitAvailable.mockResolvedValue(true)
+
+    useHarness()
+    await flushAsync()
+    useHarness({ createParent: '/Users/alice/orca/projects' })
+
+    expect(mocks.stateValues[DEFAULT_PARENT_STATE]).toBe('/Users/alice/orca/projects')
   })
 
   it('defaults to folder with a visible fallback when Git is unavailable', async () => {
