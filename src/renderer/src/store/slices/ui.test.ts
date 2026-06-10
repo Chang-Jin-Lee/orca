@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { getDefaultUIState } from '../../../../shared/constants'
 import type {
   GitHubWorkItem,
+  LinearIssue,
   PersistedUIState,
   TerminalTab,
   Worktree,
@@ -115,6 +116,26 @@ function makeGitHubWorkItem(overrides: Partial<GitHubWorkItem> = {}): GitHubWork
     repoId: 'repo-1',
     ...overrides
   }
+}
+
+function makeLinearIssue(overrides: Partial<LinearIssue> = {}): LinearIssue {
+  return {
+    id: 'lin-1',
+    identifier: 'ORC-1',
+    title: 'Fix task flow',
+    url: 'https://linear.app/orca/issue/ORC-1/fix-task-flow',
+    state: { name: 'Todo', type: 'unstarted', color: '#999' },
+    priority: 0,
+    estimate: null,
+    assignee: null,
+    labels: [],
+    labelIds: [],
+    team: { id: 'team-1', name: 'Orca', key: 'ORC' },
+    workspaceId: 'workspace-1',
+    updatedAt: '2026-05-30T00:00:00.000Z',
+    createdAt: '2026-05-30T00:00:00.000Z',
+    ...overrides
+  } as LinearIssue
 }
 
 function makePersistedUI(overrides: Partial<PersistedUIState> = {}): PersistedUIState {
@@ -798,7 +819,7 @@ describe('createUISlice hydratePersistedUI', () => {
     expect(store.getState().worktreeCardProperties).toEqual(['status', 'unread', 'inline-agents'])
   })
 
-  it('adds the default-on Ports status item once for older persisted UI', () => {
+  it('adds default-on status items once for older persisted UI', () => {
     const setUI = vi.fn().mockResolvedValue(undefined)
     vi.stubGlobal('window', { api: { ui: { set: setUI } } })
     const store = createUIStore()
@@ -810,14 +831,15 @@ describe('createUISlice hydratePersistedUI', () => {
       })
     )
 
-    expect(store.getState().statusBarItems).toEqual(['claude', 'resource-usage', 'ports'])
+    expect(store.getState().statusBarItems).toEqual(['claude', 'resource-usage', 'ports', 'kimi'])
     expect(setUI).toHaveBeenCalledWith({
-      statusBarItems: ['claude', 'resource-usage', 'ports'],
-      _portsStatusBarDefaultAdded: true
+      statusBarItems: ['claude', 'resource-usage', 'ports', 'kimi'],
+      _portsStatusBarDefaultAdded: true,
+      _kimiStatusBarDefaultAdded: true
     })
   })
 
-  it('preserves a user-hidden Ports status item after the one-shot migration ran', () => {
+  it('preserves user-hidden default-on status items after one-shot migrations ran', () => {
     const setUI = vi.fn().mockResolvedValue(undefined)
     vi.stubGlobal('window', { api: { ui: { set: setUI } } })
     const store = createUIStore()
@@ -825,7 +847,8 @@ describe('createUISlice hydratePersistedUI', () => {
     store.getState().hydratePersistedUI(
       makePersistedUI({
         statusBarItems: ['claude', 'resource-usage'],
-        _portsStatusBarDefaultAdded: true
+        _portsStatusBarDefaultAdded: true,
+        _kimiStatusBarDefaultAdded: true
       })
     )
 
@@ -855,6 +878,29 @@ describe('createUISlice hydratePersistedUI', () => {
     )
 
     expect(store.getState().browserKagiSessionLink).toBe('https://kagi.com/search?token=secret')
+  })
+
+  it('hydrates and normalizes the default browser zoom level', () => {
+    const store = createUIStore()
+
+    store.getState().hydratePersistedUI(
+      makePersistedUI({
+        browserDefaultZoomLevel: 1.26
+      })
+    )
+
+    expect(store.getState().browserDefaultZoomLevel).toBe(1.5)
+  })
+
+  it('persists normalized default browser zoom changes', () => {
+    const setUI = vi.fn().mockResolvedValue(undefined)
+    vi.stubGlobal('window', { api: { ui: { set: setUI } } })
+    const store = createUIStore()
+
+    store.getState().setBrowserDefaultZoomLevel(10)
+
+    expect(store.getState().browserDefaultZoomLevel).toBe(5)
+    expect(setUI).toHaveBeenCalledWith({ browserDefaultZoomLevel: 5 })
   })
 
   it('drops an invalid Kagi session link during hydration', () => {
@@ -1343,6 +1389,46 @@ describe('createUISlice page navigation history', () => {
     expect(store.getState().worktreeNavHistoryIndex).toBe(0)
   })
 
+  it('records provider-depth interactions for direct Tasks detail opens', () => {
+    const store = createUIStore()
+    const recordFeatureInteraction = vi.fn()
+    store.setState({ recordFeatureInteraction } as Partial<AppState>)
+    const workItem = makeGitHubWorkItem()
+    const linearIssue = makeLinearIssue()
+
+    store.getState().openTaskPage({ taskSource: 'github', openGitHubWorkItem: workItem })
+    store.getState().openTaskPage({ taskSource: 'linear', openLinearIssue: linearIssue })
+
+    expect(recordFeatureInteraction).toHaveBeenCalledWith('tasks')
+    expect(recordFeatureInteraction).toHaveBeenCalledWith('github-tasks')
+    expect(recordFeatureInteraction).toHaveBeenCalledWith('linear-tasks')
+  })
+
+  it('can suppress the Tasks surface interaction for in-page provider navigation', () => {
+    const store = createUIStore()
+    const recordFeatureInteraction = vi.fn()
+    store.setState({ recordFeatureInteraction } as Partial<AppState>)
+    const workItem = makeGitHubWorkItem()
+    const linearIssue = makeLinearIssue()
+
+    store
+      .getState()
+      .openTaskPage(
+        { taskSource: 'github', openGitHubWorkItem: workItem },
+        { recordTasksInteraction: false }
+      )
+    store
+      .getState()
+      .openTaskPage(
+        { taskSource: 'linear', openLinearIssue: linearIssue },
+        { recordTasksInteraction: false }
+      )
+
+    expect(recordFeatureInteraction).not.toHaveBeenCalledWith('tasks')
+    expect(recordFeatureInteraction).toHaveBeenCalledWith('github-tasks')
+    expect(recordFeatureInteraction).toHaveBeenCalledWith('linear-tasks')
+  })
+
   it('skips the whole Tasks detail stack on close', () => {
     const store = createUIStore()
     const workItem = makeGitHubWorkItem()
@@ -1479,6 +1565,82 @@ describe('createUISlice setup guide sidebar dismissal', () => {
 
     store.getState().hydratePersistedUI(makePersistedUI({ setupGuideSidebarDismissed: undefined }))
     expect(store.getState().setupGuideSidebarDismissed).toBe(false)
+  })
+
+  it('persists browser milestone migration result once', () => {
+    const setMock = vi.fn(() => Promise.resolve())
+    vi.stubGlobal('window', {
+      api: {
+        ui: {
+          set: setMock
+        }
+      }
+    })
+    const store = createUIStore()
+
+    store.getState().markSetupGuideBrowserMilestoneMigrated(true)
+    store.getState().markSetupGuideBrowserMilestoneMigrated(true)
+
+    expect(store.getState().setupGuideBrowserMilestoneMigrated).toBe(true)
+    expect(store.getState().setupGuideBrowserMilestoneLegacyComplete).toBe(true)
+    expect(setMock).toHaveBeenCalledTimes(1)
+    expect(setMock).toHaveBeenCalledWith({
+      setupGuideBrowserMilestoneMigrated: true,
+      setupGuideBrowserMilestoneLegacyComplete: true
+    })
+  })
+
+  it('hydrates browser milestone migration fields explicitly', () => {
+    const store = createUIStore()
+
+    store.getState().hydratePersistedUI(
+      makePersistedUI({
+        setupGuideBrowserMilestoneMigrated: true,
+        setupGuideBrowserMilestoneLegacyComplete: true
+      })
+    )
+    expect(store.getState().setupGuideBrowserMilestoneMigrated).toBe(true)
+    expect(store.getState().setupGuideBrowserMilestoneLegacyComplete).toBe(true)
+
+    store.getState().hydratePersistedUI(
+      makePersistedUI({
+        setupGuideBrowserMilestoneMigrated: undefined,
+        setupGuideBrowserMilestoneLegacyComplete: undefined
+      })
+    )
+    expect(store.getState().setupGuideBrowserMilestoneMigrated).toBe(false)
+    expect(store.getState().setupGuideBrowserMilestoneLegacyComplete).toBe(false)
+  })
+})
+
+describe('createUISlice browser import hint dismissal', () => {
+  it('persists browser import hint dismissal changes once', () => {
+    const setMock = vi.fn(() => Promise.resolve())
+    vi.stubGlobal('window', {
+      api: {
+        ui: {
+          set: setMock
+        }
+      }
+    })
+    const store = createUIStore()
+
+    store.getState().setBrowserImportHintHidden(true)
+    store.getState().setBrowserImportHintHidden(true)
+
+    expect(store.getState().browserImportHintHidden).toBe(true)
+    expect(setMock).toHaveBeenCalledTimes(1)
+    expect(setMock).toHaveBeenCalledWith({ browserImportHintHidden: true })
+  })
+
+  it('hydrates only explicit browser import hint dismissals as hidden', () => {
+    const store = createUIStore()
+
+    store.getState().hydratePersistedUI(makePersistedUI({ browserImportHintHidden: true }))
+    expect(store.getState().browserImportHintHidden).toBe(true)
+
+    store.getState().hydratePersistedUI(makePersistedUI({ browserImportHintHidden: undefined }))
+    expect(store.getState().browserImportHintHidden).toBe(false)
   })
 })
 
@@ -1904,7 +2066,8 @@ describe('createUISlice contextual tours', () => {
     const store = createUIStore()
     const visibleSelectors = [
       '[data-contextual-tour-target="browser-grab-control"]',
-      '[data-contextual-tour-target="browser-annotation-control"]'
+      '[data-contextual-tour-target="browser-annotation-control"]',
+      '[data-contextual-tour-target="browser-import-cookies-control"]'
     ]
     stubContextualTourTargets(visibleSelectors)
     store.getState().hydratePersistedUI(makeAutoTourEligibleUI())
@@ -1915,7 +2078,24 @@ describe('createUISlice contextual tours', () => {
 
     store.getState().advanceContextualTour()
     expect(store.getState().activeContextualTourId).toBe('browser')
+    expect(store.getState().activeContextualTourStepIndex).toBe(2)
+  })
+
+  it('advances the browser tour to the cookie step before Import Cookies is measurable', () => {
+    const store = createUIStore()
+    const visibleSelectors = [
+      '[data-contextual-tour-target="browser-grab-control"]',
+      '[data-contextual-tour-target="browser-annotation-control"]'
+    ]
+    stubContextualTourTargets(visibleSelectors)
+    store.getState().hydratePersistedUI(makeAutoTourEligibleUI())
+    store.getState().requestContextualTour('browser', 'browser_visible')
+
+    store.getState().advanceContextualTour()
     expect(store.getState().activeContextualTourStepIndex).toBe(1)
+
+    store.getState().advanceContextualTour()
+    expect(store.getState().activeContextualTourStepIndex).toBe(2)
   })
 
   it('advances the active split step when the split command interaction is recorded', () => {

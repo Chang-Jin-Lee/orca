@@ -463,6 +463,32 @@ describe('getStatus', () => {
     ])
   })
 
+  it('preserves porcelain v2 submodule dirtiness flags on status rows', async () => {
+    readFileMock.mockResolvedValue('gitdir: /repo/.git/worktrees/feature\n')
+    existsSyncMock.mockReturnValue(false)
+    gitExecFileAsyncMock.mockResolvedValueOnce({
+      stdout:
+        '1 AM S..U 000000 160000 160000 0000000000000000000000000000000000000000 7844cb64e631f17a9ca5b548f3500ef7cecd2f17 nested-repo\n'
+    })
+
+    const result = await getStatus('/repo')
+
+    expect(result.entries).toEqual([
+      {
+        path: 'nested-repo',
+        status: 'added',
+        area: 'staged',
+        submodule: { commitChanged: false, trackedChanges: false, untrackedChanges: true }
+      },
+      {
+        path: 'nested-repo',
+        status: 'modified',
+        area: 'unstaged',
+        submodule: { commitChanged: false, trackedChanges: false, untrackedChanges: true }
+      }
+    ])
+  })
+
   it('omits ignored files by default and parses them when requested', async () => {
     readFileMock.mockResolvedValue('gitdir: /repo/.git/worktrees/feature\n')
     existsSyncMock.mockReturnValue(false)
@@ -806,6 +832,34 @@ describe('getStagedCommitContext', () => {
       }
     )
   })
+
+  it('falls back to the file summary when the staged patch overflows the buffer', async () => {
+    gitExecFileAsyncMock
+      .mockResolvedValueOnce({ stdout: 'feature/ai\n' })
+      .mockResolvedValueOnce({ stdout: 'A\thuge.jsonl\n' })
+      .mockRejectedValueOnce(
+        Object.assign(new Error('stdout maxBuffer length exceeded'), {
+          code: 'ENOBUFS'
+        })
+      )
+
+    const result = await getStagedCommitContext('/repo')
+
+    expect(result).toEqual({
+      branch: 'feature/ai',
+      stagedSummary: 'A\thuge.jsonl',
+      stagedPatch: ''
+    })
+  })
+
+  it('rethrows staged patch failures that are not buffer overflows', async () => {
+    gitExecFileAsyncMock
+      .mockResolvedValueOnce({ stdout: 'feature/ai\n' })
+      .mockResolvedValueOnce({ stdout: 'M\tREADME.md\n' })
+      .mockRejectedValueOnce(new Error('fatal: bad revision'))
+
+    await expect(getStagedCommitContext('/repo')).rejects.toThrow('fatal: bad revision')
+  })
 })
 
 describe('detectConflictOperation', () => {
@@ -851,6 +905,7 @@ describe('getBranchCompare', () => {
   it('returns a pinned branch compare snapshot and parsed branch entries', async () => {
     gitExecFileAsyncMock
       .mockResolvedValueOnce({ stdout: 'main\n' })
+      .mockResolvedValueOnce({ stdout: 'remote-base-oid\n' })
       .mockResolvedValueOnce({ stdout: 'head-oid\n' })
       .mockResolvedValueOnce({ stdout: 'base-oid\n' })
       .mockResolvedValueOnce({ stdout: 'merge-base-oid\n' })
@@ -885,6 +940,8 @@ describe('getBranchCompare', () => {
   it('returns invalid-base when the compare ref does not resolve', async () => {
     gitExecFileAsyncMock
       .mockResolvedValueOnce({ stdout: 'main\n' })
+      .mockRejectedValueOnce(new Error('missing remote base'))
+      .mockRejectedValueOnce(new Error('missing local base'))
       .mockResolvedValueOnce({ stdout: 'head-oid\n' })
       .mockRejectedValueOnce(new Error('missing base'))
 
@@ -898,6 +955,7 @@ describe('getBranchCompare', () => {
   it('returns unborn-head when HEAD cannot be resolved', async () => {
     gitExecFileAsyncMock
       .mockResolvedValueOnce({ stdout: 'main\n' })
+      .mockResolvedValueOnce({ stdout: 'remote-base-oid\n' })
       .mockRejectedValueOnce(new Error('unborn'))
       .mockRejectedValueOnce(new Error('missing base'))
 
@@ -911,6 +969,7 @@ describe('getBranchCompare', () => {
   it('treats an unborn branch with a resolvable base as having no committed branch changes', async () => {
     gitExecFileAsyncMock
       .mockResolvedValueOnce({ stdout: 'feature\n' })
+      .mockResolvedValueOnce({ stdout: 'remote-base-oid\n' })
       .mockRejectedValueOnce(new Error('unborn'))
       .mockResolvedValueOnce({ stdout: 'base-oid\n' })
 
@@ -932,6 +991,7 @@ describe('getBranchCompare', () => {
   it('returns no-merge-base when histories do not intersect', async () => {
     gitExecFileAsyncMock
       .mockResolvedValueOnce({ stdout: 'main\n' })
+      .mockResolvedValueOnce({ stdout: 'remote-base-oid\n' })
       .mockResolvedValueOnce({ stdout: 'head-oid\n' })
       .mockResolvedValueOnce({ stdout: 'base-oid\n' })
       .mockRejectedValueOnce(new Error('no merge base'))
@@ -946,6 +1006,7 @@ describe('getBranchCompare', () => {
   it('passes core.quotePath=false to diff --name-status and parses UTF-8 paths', async () => {
     gitExecFileAsyncMock
       .mockResolvedValueOnce({ stdout: 'main\n' })
+      .mockResolvedValueOnce({ stdout: 'remote-base-oid\n' })
       .mockResolvedValueOnce({ stdout: 'head-oid\n' })
       .mockResolvedValueOnce({ stdout: 'base-oid\n' })
       .mockResolvedValueOnce({ stdout: 'merge-base-oid\n' })
@@ -956,7 +1017,7 @@ describe('getBranchCompare', () => {
     const result = await getBranchCompare('/repo', 'origin/main')
 
     expect(gitExecFileAsyncMock).toHaveBeenNthCalledWith(
-      5,
+      6,
       [
         '-c',
         'core.quotePath=false',
@@ -972,6 +1033,52 @@ describe('getBranchCompare', () => {
     expect(result.entries).toEqual([
       { path: 'docs/日本語/sample.md', status: 'modified', added: 2, removed: 1 }
     ])
+  })
+
+  it('compares short remote labels through fully qualified remote-tracking refs', async () => {
+    gitExecFileAsyncMock.mockImplementation((args: string[]) => {
+      if (args[0] === 'branch') {
+        return Promise.resolve({ stdout: 'feature\n' })
+      }
+      if (
+        args[0] === 'rev-parse' &&
+        args.includes('--quiet') &&
+        args.includes('refs/remotes/origin/main^{commit}')
+      ) {
+        return Promise.resolve({ stdout: 'remote-base-oid\n' })
+      }
+      if (args[0] === 'rev-parse' && args.includes('HEAD')) {
+        return Promise.resolve({ stdout: 'head-oid\n' })
+      }
+      if (args[0] === 'rev-parse' && args.includes('refs/remotes/origin/main')) {
+        return Promise.resolve({ stdout: 'base-oid\n' })
+      }
+      if (args[0] === 'merge-base') {
+        return Promise.resolve({ stdout: 'merge-base-oid\n' })
+      }
+      if (args.includes('--name-status')) {
+        return Promise.resolve({ stdout: '' })
+      }
+      if (args.includes('--numstat')) {
+        return Promise.resolve({ stdout: '' })
+      }
+      if (args[0] === 'rev-list') {
+        return Promise.resolve({ stdout: '0\n' })
+      }
+      throw new Error(`unexpected git args: ${args.join(' ')}`)
+    })
+
+    const result = await getBranchCompare('/repo', 'origin/main')
+
+    expect(result.summary).toMatchObject({
+      baseRef: 'origin/main',
+      baseOid: 'base-oid',
+      status: 'ready'
+    })
+    expect(gitExecFileAsyncMock).toHaveBeenCalledWith(
+      ['rev-parse', '--verify', '--end-of-options', 'refs/remotes/origin/main'],
+      { cwd: '/repo' }
+    )
   })
 
   it('attaches counts for branch compare paths containing rename markers', async () => {

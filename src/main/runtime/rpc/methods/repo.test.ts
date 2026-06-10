@@ -33,6 +33,22 @@ describe('repo RPC methods', () => {
     })
   })
 
+  it('reports runtime Git availability without exposing command details', async () => {
+    const runtime = {
+      getRuntimeId: () => 'test-runtime',
+      isGitAvailable: vi.fn().mockResolvedValue(true)
+    } as unknown as OrcaRuntimeService
+    const dispatcher = new RpcDispatcher({ runtime, methods: REPO_METHODS })
+
+    const response = await dispatcher.dispatch(makeRequest('repo.gitAvailable'))
+
+    expect(runtime.isGitAvailable).toHaveBeenCalled()
+    expect(response).toMatchObject({
+      ok: true,
+      result: { available: true }
+    })
+  })
+
   it('clones a repo on the runtime server', async () => {
     const runtime = {
       getRuntimeId: () => 'test-runtime',
@@ -359,6 +375,39 @@ describe('repo RPC methods', () => {
       groupName: '',
       projectPaths: ['/srv/platform/api'],
       mode: 'separate'
+    })
+    expect(response).toMatchObject({
+      ok: true,
+      result: { importedCount: 1, failedCount: 0 }
+    })
+  })
+
+  it('allows grouped nested-repo imports with a blank group name', async () => {
+    const runtime = {
+      getRuntimeId: () => 'test-runtime',
+      importNestedRepos: vi.fn().mockResolvedValue({
+        projects: [{ path: '/srv/platform/api', projectId: 'repo-1', status: 'imported' }],
+        importedCount: 1,
+        alreadyKnownCount: 0,
+        failedCount: 0
+      })
+    } as unknown as OrcaRuntimeService
+    const dispatcher = new RpcDispatcher({ runtime, methods: REPO_METHODS })
+
+    const response = await dispatcher.dispatch(
+      makeRequest('projectGroup.importNested', {
+        parentPath: '/srv/platform',
+        groupName: '',
+        projectPaths: ['/srv/platform/api'],
+        mode: 'group'
+      })
+    )
+
+    expect(runtime.importNestedRepos).toHaveBeenCalledWith({
+      parentPath: '/srv/platform',
+      groupName: '',
+      projectPaths: ['/srv/platform/api'],
+      mode: 'group'
     })
     expect(response).toMatchObject({
       ok: true,

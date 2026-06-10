@@ -25,6 +25,12 @@ import {
   TERMINAL_PANE_SPLIT_SOURCES
 } from './feature-education-telemetry'
 import { FEATURE_WALL_SETUP_STEP_IDS } from './feature-wall-setup-steps'
+import {
+  FEATURE_INTERACTION_CATEGORIES,
+  FEATURE_INTERACTION_IDS,
+  FEATURE_INTERACTION_USAGE_BUCKETS,
+  getFeatureInteractionCategory
+} from './feature-interactions'
 import { SETUP_SCRIPT_IMPORT_PROVIDERS } from './setup-script-import-providers'
 import { WORKSPACE_SOURCE_VALUES, type WorkspaceSource } from './workspace-source'
 import { appStarSourceSchema } from './gh-star-source'
@@ -58,6 +64,7 @@ import type {
 // should map to concrete values; see `tuiAgentToAgentKind`.
 export const AGENT_KIND_VALUES = [
   'claude-code',
+  'claude-agent-teams',
   'openclaude',
   'codex',
   'autohand',
@@ -278,7 +285,6 @@ export const SETTINGS_CHANGED_WHITELIST = [
   'experimentalActivity',
   'experimentalTerminalAttention',
   'experimentalWorktreeSymlinks',
-  'experimentalUnifiedNewTabLauncher',
   'geminiCliOAuthEnabled'
 ] as const satisfies readonly BooleanGlobalSettingsKey[]
 export const settingsChangedKeySchema = z.enum(SETTINGS_CHANGED_WHITELIST)
@@ -301,8 +307,39 @@ const nthRepoAddedSchema = z.number().int().nonnegative().optional()
 
 const appOpenedSchema = z.object({ nth_repo_added: nthRepoAddedSchema }).strict()
 
+export const featureInteractionIdSchema = z.enum(FEATURE_INTERACTION_IDS)
+export const featureInteractionCategorySchema = z.enum(FEATURE_INTERACTION_CATEGORIES)
+export const featureInteractionUsageBucketSchema = z.enum(FEATURE_INTERACTION_USAGE_BUCKETS)
+export const featureInteractionUsageBucketSourceSchema = z.enum([
+  'crossed_now',
+  'observed_existing'
+])
+const featureInteractionUsageBucketReachedSchema = z
+  .object({
+    feature_id: featureInteractionIdSchema,
+    feature_category: featureInteractionCategorySchema,
+    count_bucket: featureInteractionUsageBucketSchema,
+    bucket_source: featureInteractionUsageBucketSourceSchema,
+    nth_repo_added: nthRepoAddedSchema
+  })
+  .strict()
+  .refine((value) => getFeatureInteractionCategory(value.feature_id) === value.feature_category, {
+    message: 'feature_category must match feature_id',
+    path: ['feature_category']
+  })
+
 const repoAddedSchema = z
-  .object({ method: repoMethodSchema, nth_repo_added: nthRepoAddedSchema })
+  // Why: `is_git_repo` is the real git-vs-folder signal, sourced from git
+  // detection at the add point. It moved here from `onboarding_completed`
+  // once project selection left onboarding (1.4.46). `.optional()` so
+  // SSH/remote or any path that genuinely can't determine git-ness validates
+  // cleanly instead of crashing the track call — same fail-soft intent as
+  // `nthRepoAddedSchema`. Never default-guess `false`; omit instead.
+  .object({
+    method: repoMethodSchema,
+    is_git_repo: z.boolean().optional(),
+    nth_repo_added: nthRepoAddedSchema
+  })
   .strict()
 
 const appStarredOrcaSchema = z
@@ -377,6 +414,19 @@ const orcaCliFeatureTipSetupResultSchema = z
   .object({
     source: orcaCliFeatureTipSourceSchema,
     result: z.enum(['installed', 'needs_attention', 'dev_preview', 'failed']),
+    nth_repo_added: nthRepoAddedSchema
+  })
+  .strict()
+
+const cmdJPaletteFeatureTipShownSchema = z
+  .object({
+    source: orcaCliFeatureTipSourceSchema,
+    nth_repo_added: nthRepoAddedSchema
+  })
+  .strict()
+const cmdJPaletteFeatureTipAcknowledgedSchema = z
+  .object({
+    source: orcaCliFeatureTipSourceSchema,
     nth_repo_added: nthRepoAddedSchema
   })
   .strict()
@@ -926,10 +976,12 @@ const onboardingTaskSourcesSnapshotSchema = z
     cohort: cohortSchema
   })
   .strict()
+// Why: no `is_git_repo` here — the signal moved to `repo_added.is_git_repo`.
+// Project selection left onboarding in 1.4.46, so this event now fires before
+// any repo is chosen; the old field was always `false` and meaningless.
 const onboardingCompletedSchema = z
   .object({
     path: onboardingPathSchema,
-    is_git_repo: z.boolean(),
     total_duration_ms: z.number().int().nonnegative(),
     cohort: cohortSchema
   })
@@ -1230,6 +1282,7 @@ const terminalPaneSplitSchema = z
 export const eventSchemas = {
   app_opened: appOpenedSchema,
   app_starred_orca: appStarredOrcaSchema,
+  feature_interaction_usage_bucket_reached: featureInteractionUsageBucketReachedSchema,
 
   repo_added: repoAddedSchema,
   add_repo_setup_step_action: addRepoSetupStepActionEventSchema,
@@ -1257,6 +1310,8 @@ export const eventSchemas = {
   orca_cli_feature_tip_shown: orcaCliFeatureTipShownSchema,
   orca_cli_feature_tip_setup_clicked: orcaCliFeatureTipSetupClickedSchema,
   orca_cli_feature_tip_setup_result: orcaCliFeatureTipSetupResultSchema,
+  cmd_j_palette_feature_tip_shown: cmdJPaletteFeatureTipShownSchema,
+  cmd_j_palette_feature_tip_acknowledged: cmdJPaletteFeatureTipAcknowledgedSchema,
 
   feature_wall_opened: featureWallOpenedSchema,
   feature_wall_closed: featureWallClosedSchema,
@@ -1308,10 +1363,27 @@ export type EventProps<N extends EventName> = EventMap[N]
 // Safely skips non-`ZodObject` schemas (e.g. a future `z.discriminatedUnion`
 // or `z.union`) — those have no `.shape`, and probing `key in undefined`
 // would throw at module load and take the telemetry module down on import.
+function eventSchemaShape(schema: z.ZodTypeAny): z.ZodRawShape | null {
+  if (schema instanceof z.ZodObject) {
+    return schema.shape
+  }
+
+  const shapeBearingSchema = schema as { shape?: unknown }
+  // Why: refined object schemas may still expose `.shape` even if a Zod
+  // version stops preserving `instanceof ZodObject` through refinement.
+  if (shapeBearingSchema.shape && typeof shapeBearingSchema.shape === 'object') {
+    return shapeBearingSchema.shape as z.ZodRawShape
+  }
+  return null
+}
+
 function eventsWithShapeKey(key: string): ReadonlySet<EventName> {
   return new Set(
     (Object.entries(eventSchemas) as [EventName, z.ZodTypeAny][])
-      .filter(([, schema]) => schema instanceof z.ZodObject && key in schema.shape)
+      .filter(([, schema]) => {
+        const shape = eventSchemaShape(schema)
+        return shape !== null && key in shape
+      })
       .map(([name]) => name)
   )
 }
@@ -1336,6 +1408,7 @@ export const COHORT_EXTENDED: readonly EventName[] = Array.from(COHORT_EXTENDED_
 type _CohortExtendedRoster =
   | 'app_opened'
   | 'app_starred_orca'
+  | 'feature_interaction_usage_bucket_reached'
   | 'repo_added'
   | 'add_repo_setup_step_action'
   | 'add_repo_existing_workspaces_detected'
@@ -1353,6 +1426,8 @@ type _CohortExtendedRoster =
   | 'orca_cli_feature_tip_shown'
   | 'orca_cli_feature_tip_setup_clicked'
   | 'orca_cli_feature_tip_setup_result'
+  | 'cmd_j_palette_feature_tip_shown'
+  | 'cmd_j_palette_feature_tip_acknowledged'
 // Why: `z.object({}).strict()` infers a string index signature, which would
 // make every key appear present. Ignore index-signature-only keys here so
 // strict empty event payloads do not get pulled into keyed telemetry rosters.

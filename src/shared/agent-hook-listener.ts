@@ -30,6 +30,10 @@ import { join } from 'path'
 import { parseAgentStatusPayload, type ParsedAgentStatusPayload } from './agent-status-types'
 import { ORCA_HOOK_PROTOCOL_VERSION } from './agent-hook-types'
 import { REMOTE_AGENT_HOOK_ENV, type AgentHookSource } from './agent-hook-relay'
+import {
+  extractAgentProviderSession,
+  type AgentProviderSessionMetadata
+} from './agent-session-resume'
 import { parsePaneKey } from './stable-pane-id'
 
 /** Maximum request body size accepted by the listener (1 MB). */
@@ -42,6 +46,19 @@ const MAX_WARNED_KEYS = 32
 
 /** Slowloris cap: drop requests that have not finished sending after 5 s. */
 export const HOOK_REQUEST_SLOWLORIS_MS = 5_000
+
+/** Why: OpenCode plugin builds installed before the throttle/cap fix re-post
+ *  the full accumulated reply text on every streamed part update (O(n²) bytes
+ *  per turn). Capping at ingest bounds the per-event cost of the status
+ *  compare, IPC fanout, renderer store update, and disk persist regardless of
+ *  which plugin version is running inside the OpenCode process. */
+export const OPENCODE_HOOK_TEXT_MAX_CHARS = 8_000
+
+function capOpenCodeHookText(text: string): string {
+  return text.length > OPENCODE_HOOK_TEXT_MAX_CHARS
+    ? text.slice(0, OPENCODE_HOOK_TEXT_MAX_CHARS)
+    : text
+}
 
 /** Bound paneKey size — `${tabId}:${leafUuid}` is well under 200 chars in
  *  practice; cap defends per-pane caches against pathological input.
@@ -177,6 +194,8 @@ export type AgentHookEventPayload = {
   toolAgentId?: string
   /** Agent/subagent type from the source hook payload, when present. */
   toolAgentType?: string
+  /** Provider-owned conversation/session id needed to resume a sleeping agent. */
+  providerSession?: AgentProviderSessionMetadata
   /** True when this event is a relay cache replay rather than a live hook. */
   isReplay?: boolean
   payload: ParsedAgentStatusPayload
@@ -314,7 +333,7 @@ function extractPromptText(hookPayload: Record<string, unknown>): ExtractedPromp
   // role === 'user', the text *is* the prompt — surface it even though
   // OpenCode has no UserPromptSubmit-equivalent.
   if (hookPayload.role === 'user' && typeof hookPayload.text === 'string') {
-    const trimmed = hookPayload.text.trim()
+    const trimmed = capOpenCodeHookText(hookPayload.text.trim())
     if (trimmed.length > 0) {
       return { text: trimmed, source: 'role_user_text' }
     }
@@ -1201,7 +1220,7 @@ function extractOpenCodeToolFields(
   if (eventName === 'MessagePart' && hookPayload.role === 'assistant') {
     const text = readString(hookPayload, 'text')
     if (text) {
-      return { lastAssistantMessage: text }
+      return { lastAssistantMessage: capOpenCodeHookText(text) }
     }
   }
   return {}
@@ -2343,7 +2362,12 @@ function normalizeCursorEvent(
     eventName === 'sessionStart' ||
     eventName === 'preToolUse' ||
     eventName === 'postToolUse' ||
-    eventName === 'postToolUseFailure'
+    eventName === 'postToolUseFailure' ||
+    // Why: these fire for every shell/MCP invocation as pre-execution gates,
+    // not only when the user is blocked on approval. Treat them like PreToolUse
+    // so a tool-heavy turn does not spam waiting-state notifications.
+    eventName === 'beforeShellExecution' ||
+    eventName === 'beforeMCPExecution'
       ? 'working'
       : eventName === 'afterAgentResponse'
         ? previousStatus?.state === 'done' && previousStatus.agentType === 'cursor'
@@ -2351,9 +2375,7 @@ function normalizeCursorEvent(
           : 'working'
         : eventName === 'stop' || eventName === 'sessionEnd'
           ? 'done'
-          : eventName === 'beforeShellExecution' || eventName === 'beforeMCPExecution'
-            ? 'waiting'
-            : null
+          : null
 
   if (!stateName) {
     return null
@@ -2888,6 +2910,7 @@ export function normalizeHookPayload(
   // it null; the relay forwards null on the wire and Orca's `ingestRemote`
   // stamps the real value from `mux` identity on receive. See
   // docs/design/agent-status-over-ssh.md §5.
+  const providerSession = extractAgentProviderSession(source, hookPayloadRecord)
   return payload
     ? {
         paneKey,
@@ -2911,6 +2934,7 @@ export function normalizeHookPayload(
         toolUseId: readFirstString(hookPayloadRecord, ['tool_use_id', 'toolUseId']),
         toolAgentId: readFirstString(hookPayloadRecord, ['agent_id', 'agentId']),
         toolAgentType: readString(hookPayloadRecord, 'agent_type'),
+        ...(providerSession ? { providerSession } : {}),
         payload
       }
     : null

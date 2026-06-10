@@ -57,6 +57,8 @@ function renderComposerCard(createInitialCommitPending: boolean): string {
     <NewWorkspaceComposerCard
       quickAgent={null}
       onQuickAgentChange={vi.fn()}
+      forkPushWarning={null}
+      projectError={null}
       eligibleRepos={[
         {
           id: 'repo-1',

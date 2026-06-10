@@ -17,6 +17,10 @@ type PanelSize = {
   height: number
 }
 
+/**
+ * Computes the position and placement for a tour panel relative to a target element,
+ * choosing the best side and clamping the panel within the viewport.
+ */
 export function clampContextualTourPanelPosition(args: {
   targetRect: Pick<DOMRect, 'left' | 'right' | 'top' | 'bottom' | 'width' | 'height'>
   viewport: ViewportSize
@@ -37,7 +41,15 @@ export function clampContextualTourPanelPosition(args: {
   let left: number
   let top: number
   if (args.preferredPlacement) {
-    placement = args.preferredPlacement
+    placement = resolvePreferredPlacement({
+      preferredPlacement: args.preferredPlacement,
+      roomAbove,
+      roomBelow,
+      roomLeft,
+      roomRight,
+      panel,
+      gap
+    })
     const preferredPosition = getUnclampedPanelPosition({
       placement,
       targetRect,
@@ -90,6 +102,59 @@ export function clampContextualTourPanelPosition(args: {
   return { left: clampedLeft, top: clampedTop, placement, arrowOffset }
 }
 
+// Why: flip to the opposite side when the preferred side lacks room, and fall
+// back to the horizontal axis when neither vertical side fits.
+function resolvePreferredPlacement(args: {
+  preferredPlacement: ContextualTourPanelPlacement
+  roomAbove: number
+  roomBelow: number
+  roomLeft: number
+  roomRight: number
+  panel: PanelSize
+  gap: number
+}): ContextualTourPanelPlacement {
+  const horizontalRoom = args.panel.width + args.gap
+  const verticalRoom = args.panel.height + args.gap
+  if (args.preferredPlacement === 'left') {
+    return args.roomLeft < horizontalRoom && args.roomRight >= horizontalRoom ? 'right' : 'left'
+  }
+  if (args.preferredPlacement === 'right') {
+    return args.roomRight < horizontalRoom && args.roomLeft >= horizontalRoom ? 'left' : 'right'
+  }
+  if (args.preferredPlacement === 'top') {
+    if (args.roomAbove >= verticalRoom) {
+      return 'top'
+    }
+    if (args.roomBelow >= verticalRoom) {
+      return 'bottom'
+    }
+    return getPreferredHorizontalPlacement(args)
+  }
+  if (args.roomBelow >= verticalRoom) {
+    return 'bottom'
+  }
+  if (args.roomAbove >= verticalRoom) {
+    return 'top'
+  }
+  return getPreferredHorizontalPlacement(args)
+}
+
+// Why: prefer right when it fits or has at least as much room as left,
+// matching the no-preference placement heuristic above.
+function getPreferredHorizontalPlacement(args: {
+  roomLeft: number
+  roomRight: number
+  panel: PanelSize
+  gap: number
+}): ContextualTourPanelPlacement {
+  const horizontalRoom = args.panel.width + args.gap
+  if (args.roomRight >= horizontalRoom || args.roomRight >= args.roomLeft) {
+    return 'right'
+  }
+  return 'left'
+}
+
+/** Returns the raw (unclamped) top-left position for a panel at the given placement side. */
 function getUnclampedPanelPosition(args: {
   placement: ContextualTourPanelPlacement
   targetRect: Pick<DOMRect, 'left' | 'right' | 'top' | 'bottom' | 'width' | 'height'>
@@ -121,16 +186,22 @@ function getUnclampedPanelPosition(args: {
   }
 }
 
-export function getContextualTourPanelCssPosition(args: {
-  position: ContextualTourPanelPosition
-  panelHostRect?: Pick<DOMRect, 'left' | 'top'> | null
-}): Pick<ContextualTourPanelPosition, 'left' | 'top' | 'arrowOffset'> {
-  const { position, panelHostRect } = args
-  const left = panelHostRect ? position.left - panelHostRect.left : position.left
-  const top = panelHostRect ? position.top - panelHostRect.top : position.top
-  return { left, top, arrowOffset: position.arrowOffset }
+/** Translates a target rect from viewport coordinates into the host element's local coordinate space. */
+export function getContextualTourTargetRectInHost(
+  targetRect: Pick<DOMRect, 'left' | 'right' | 'top' | 'bottom' | 'width' | 'height'>,
+  hostRect: Pick<DOMRect, 'left' | 'top'>
+): Pick<DOMRect, 'left' | 'right' | 'top' | 'bottom' | 'width' | 'height'> {
+  return {
+    left: targetRect.left - hostRect.left,
+    right: targetRect.right - hostRect.left,
+    top: targetRect.top - hostRect.top,
+    bottom: targetRect.bottom - hostRect.top,
+    width: targetRect.width,
+    height: targetRect.height
+  }
 }
 
+/** Clamps a number between min and max, inclusive. */
 function clampNumber(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max)
 }

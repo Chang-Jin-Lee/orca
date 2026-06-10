@@ -88,11 +88,17 @@ import { getRepoIdFromWorktreeId, getWorktreePathBasenameFromId } from '../share
 import { normalizeRuntimePathForComparison } from '../shared/cross-platform-path'
 import { normalizeTerminalQuickCommands } from '../shared/terminal-quick-commands'
 import { normalizeTaskProviderSettings } from '../shared/task-providers'
+import { normalizeAutoRenameBranchFromWorkDefaultOn } from '../shared/auto-rename-branch-from-work-settings'
 import { normalizeOpenInApplications } from '../shared/open-in-applications'
 import { normalizeTerminalShortcutPolicy } from '../shared/keybindings'
 import { normalizeAppIconId } from '../shared/app-icon'
+import { normalizeTerminalCustomThemes } from '../shared/terminal-custom-themes'
 import {
+  compareFeatureInteractionUsageBuckets,
+  getFeatureInteractionCategory,
+  getFeatureInteractionUsageBucket,
   normalizeFeatureInteractions,
+  normalizeFeatureInteractionTelemetryBuckets,
   type FeatureInteractionId
 } from '../shared/feature-interactions'
 import { normalizeContextualTourIds } from '../shared/contextual-tours'
@@ -123,12 +129,17 @@ import {
   sourceControlAiSettingsFromLegacy
 } from '../shared/source-control-ai'
 import { normalizeDisabledTuiAgents } from '../shared/tui-agent-selection'
+import { normalizeTerminalCursorStyleDefault } from '../shared/terminal-cursor-style-settings'
+import { normalizeUiLanguage } from '../shared/ui-language'
+import { normalizeBrowserPageZoomLevel } from '../shared/browser-page-zoom'
 import {
   collectTerminalScrollbackSnapshotRefs,
   deleteTerminalScrollbackSnapshotSync,
   migrateWorkspaceSessionTerminalScrollbackSnapshots,
   readTerminalScrollbackSnapshotSync
 } from './terminal-scrollback-snapshots'
+import { track } from './telemetry/client'
+import { getCohortAtEmit } from './telemetry/cohort-classifier'
 
 function encrypt(plaintext: string): string {
   if (!plaintext || !safeStorage.isEncryptionAvailable()) {
@@ -319,6 +330,21 @@ function mergeContextualTourSeenIds(
   return [...merged]
 }
 
+function stripMainOwnedTelemetryMarkerFromUI(
+  value: Partial<PersistedState['ui']> | undefined
+): Partial<PersistedState['ui']> {
+  if (!value || typeof value !== 'object') {
+    return {}
+  }
+  const { featureInteractionTelemetryBuckets: _reserved, ...ui } = value as Partial<
+    PersistedState['ui']
+  > & {
+    featureInteractionTelemetryBuckets?: unknown
+  }
+  void _reserved
+  return ui
+}
+
 function normalizeSortBy(sortBy: unknown): PersistedState['ui']['sortBy'] {
   if (
     sortBy === 'smart' ||
@@ -330,6 +356,13 @@ function normalizeSortBy(sortBy: unknown): PersistedState['ui']['sortBy'] {
     return sortBy
   }
   return getDefaultUIState().sortBy
+}
+
+function normalizeProjectOrderBy(projectOrderBy: unknown): PersistedState['ui']['projectOrderBy'] {
+  if (projectOrderBy === 'manual' || projectOrderBy === 'recent') {
+    return projectOrderBy
+  }
+  return getDefaultUIState().projectOrderBy
 }
 
 function normalizeRightSidebarTab(tab: unknown): PersistedState['ui']['rightSidebarTab'] {
@@ -1722,8 +1755,11 @@ export class Store {
         // Merge with defaults in case new fields were added
         const homeDir = homedir()
         const defaults = getDefaultPersistedState(homeDir)
-        const rawSourceControlAiMissing = parsed.settings?.sourceControlAi === undefined
-        if (rawSourceControlAiMissing) {
+        const rawSourceControlAi = parsed.settings?.sourceControlAi
+        const rawSourceControlAiMissing = rawSourceControlAi === undefined
+        const rawSourceControlAiActionsMissing =
+          rawSourceControlAi !== undefined && rawSourceControlAi.actions === undefined
+        if (rawSourceControlAiMissing || rawSourceControlAiActionsMissing) {
           this.loadNeedsSave = true
         }
         const legacyCommitMessageAi = parsed.settings?.commitMessageAi
@@ -1816,6 +1852,14 @@ export class Store {
         const migratedExperimentalActivity = experimentalActivityDefaultedOffForAllUsers
           ? (parsed.settings?.experimentalActivity ?? false)
           : false
+        const autoRenameBranchFromWorkDefaultedOn =
+          parsed.settings?.autoRenameBranchFromWorkDefaultedOn === true
+        // Why: default-on rollout should activate old profiles once, but a
+        // later Settings opt-out must survive reloads.
+        const migratedAutoRenameBranchFromWork = normalizeAutoRenameBranchFromWorkDefaultOn(
+          parsed.settings
+        )
+        const migratedTerminalCursorStyle = normalizeTerminalCursorStyleDefault(parsed.settings)
         const rawTaskProviderSettings = normalizeTaskProviderSettings({
           visibleTaskProviders: parsed.settings?.visibleTaskProviders,
           defaultTaskSource: parsed.settings?.defaultTaskSource
@@ -1850,6 +1894,23 @@ export class Store {
         if (!visibleTaskProvidersDefaultedForJira) {
           this.loadNeedsSave = true
         }
+        const claudeAgentTeamsDefaultDisabledMigrated =
+          parsed.settings?.claudeAgentTeamsDefaultDisabledMigrated === true
+        if (!claudeAgentTeamsDefaultDisabledMigrated) {
+          this.loadNeedsSave = true
+        }
+        const migratedDisabledTuiAgents = normalizeDisabledTuiAgents(
+          parsed.settings?.disabledTuiAgents
+        )
+        if (
+          !claudeAgentTeamsDefaultDisabledMigrated &&
+          !migratedDisabledTuiAgents.includes('claude-agent-teams')
+        ) {
+          migratedDisabledTuiAgents.push('claude-agent-teams')
+        }
+        if (!autoRenameBranchFromWorkDefaultedOn) {
+          this.loadNeedsSave = true
+        }
         const normalizedOnboarding = normalizeLoadedOnboardingState(
           parsed.onboarding,
           defaults.onboarding
@@ -1860,6 +1921,9 @@ export class Store {
         result = {
           ...defaults,
           ...parsed,
+          featureInteractionTelemetryBuckets: normalizeFeatureInteractionTelemetryBuckets(
+            parsed.featureInteractionTelemetryBuckets
+          ),
           projectGroups: normalizeProjectGroups(parsed.projectGroups),
           worktreeLineageById: parsed.worktreeLineageById ?? {},
           settings: {
@@ -1881,8 +1945,17 @@ export class Store {
               (process.platform === 'linux' && migratePrimarySelectionPlatformDefault),
             primarySelectionMiddleClickPasteDefaultedForTerminalDefaults:
               primarySelectionDefaultedForTerminalDefaults || stampPrimarySelectionTerminalDefaults,
+            ...migratedAutoRenameBranchFromWork,
+            ...migratedTerminalCursorStyle,
             experimentalActivity: migratedExperimentalActivity,
             experimentalActivityDefaultedOffForAllUsers: true,
+            // Why: compact worktree cards graduated from Experimental; preserve
+            // the old opt-in for profiles written during the rollout.
+            compactWorktreeCards:
+              parsed.settings?.compactWorktreeCards ??
+              parsed.settings?.experimentalCompactWorktreeCards ??
+              defaults.settings.compactWorktreeCards,
+            experimentalCompactWorktreeCards: undefined,
             terminalMacOptionAsAlt: migratedOptionAsAlt,
             terminalMacOptionAsAltMigrated: true,
             floatingTerminalEnabled: migratedFloatingTerminalEnabled,
@@ -1893,15 +1966,22 @@ export class Store {
             terminalQuickCommands: normalizeTerminalQuickCommands(
               parsed.settings?.terminalQuickCommands
             ),
+            terminalCustomThemes: normalizeTerminalCustomThemes(
+              parsed.settings?.terminalCustomThemes
+            ),
             appIcon: normalizeAppIconId(parsed.settings?.appIcon),
+            uiLanguage: normalizeUiLanguage(parsed.settings?.uiLanguage),
             defaultTaskSource: taskProviderSettings.defaultTaskSource,
             visibleTaskProviders: taskProviderSettings.visibleTaskProviders,
             visibleTaskProvidersDefaultedForJira: true,
             terminalShortcutPolicy: normalizeTerminalShortcutPolicy(
               parsed.settings?.terminalShortcutPolicy
             ),
-            disabledTuiAgents: normalizeDisabledTuiAgents(parsed.settings?.disabledTuiAgents),
-            openInApplications: normalizeOpenInApplications(parsed.settings?.openInApplications),
+            disabledTuiAgents: migratedDisabledTuiAgents,
+            claudeAgentTeamsDefaultDisabledMigrated: true,
+            openInApplications: normalizeOpenInApplications(parsed.settings?.openInApplications, {
+              seedDefaults: true
+            }),
             notifications: normalizeNotificationSettings(parsed.settings?.notifications),
             sourceControlAi: migratedSourceControlAi,
             // Why: new builds read sourceControlAi, but rollback builds still
@@ -2050,12 +2130,18 @@ export class Store {
             }
             return {
               ...defaults.ui,
-              ...parsed.ui,
+              ...stripMainOwnedTelemetryMarkerFromUI(parsed.ui),
               // Why: migrate once from the retired Appearance setting only
               // when no explicit persisted chrome preference exists yet.
               rightSidebarOpen,
               rightSidebarTab: normalizeRightSidebarTab(parsed.ui?.rightSidebarTab),
               setupGuideSidebarDismissed,
+              setupGuideBrowserMilestoneMigrated:
+                typeof parsed.ui?.setupGuideBrowserMilestoneMigrated === 'boolean'
+                  ? parsed.ui.setupGuideBrowserMilestoneMigrated
+                  : false,
+              setupGuideBrowserMilestoneLegacyComplete:
+                parsed.ui?.setupGuideBrowserMilestoneLegacyComplete === true,
               sortBy: migrate ? ('smart' as const) : sort,
               showDotfilesByWorktree: normalizeShowDotfilesByWorktree(
                 parsed.ui?.showDotfilesByWorktree
@@ -2548,9 +2634,8 @@ export class Store {
         | 'externalWorktreeVisibilityPromptDismissedAt'
         | 'projectGroupId'
         | 'projectGroupOrder'
-        | 'sourceControlAi'
       >
-    >
+    > & { sourceControlAi?: Repo['sourceControlAi'] | null }
   ): Repo | null {
     const repo = this.state.repos.find((r) => r.id === id)
     if (!repo) {
@@ -2600,7 +2685,10 @@ export class Store {
       // time visibility changes so later hide/show choices keep legacy safety.
       repo.externalWorktreeVisibilityLegacy = externalWorktreeVisibilityLegacy
     }
-    if ('sourceControlAi' in sanitizedUpdates && sanitizedUpdates.sourceControlAi === undefined) {
+    if (
+      'sourceControlAi' in sanitizedUpdates &&
+      (sanitizedUpdates.sourceControlAi === undefined || sanitizedUpdates.sourceControlAi === null)
+    ) {
       delete repo.sourceControlAi
       delete sanitizedUpdates.sourceControlAi
     } else if ('sourceControlAi' in sanitizedUpdates) {
@@ -2619,9 +2707,15 @@ export class Store {
   }
 
   private hydrateRepo(repo: Repo): Repo {
-    const { repoIcon: rawRepoIcon, upstream: rawUpstream, ...repoWithoutIcon } = repo
+    const {
+      repoIcon: rawRepoIcon,
+      upstream: rawUpstream,
+      sourceControlAi: rawSourceControlAi,
+      ...repoWithoutIcon
+    } = repo
     const repoIcon = sanitizeRepoIcon(rawRepoIcon)
     const upstream = sanitizeRepoUpstream(rawUpstream)
+    const sourceControlAi = normalizeRepoSourceControlAiOverrides(rawSourceControlAi)
     const gitUsername = isFolderRepo(repo)
       ? ''
       : (this.gitUsernameCache.get(repo.path) ??
@@ -2635,6 +2729,7 @@ export class Store {
       ...repoWithoutIcon,
       ...(repoIcon !== undefined ? { repoIcon } : {}),
       ...(upstream !== undefined ? { upstream } : {}),
+      ...(sourceControlAi !== undefined ? { sourceControlAi } : {}),
       kind: isFolderRepo(repo) ? 'folder' : 'git',
       gitUsername,
       hookSettings: {
@@ -3006,6 +3101,11 @@ export class Store {
         updates.terminalQuickCommands
       )
     }
+    if ('terminalCustomThemes' in updates) {
+      sanitizedUpdates.terminalCustomThemes = normalizeTerminalCustomThemes(
+        updates.terminalCustomThemes
+      )
+    }
     if ('visibleTaskProviders' in updates || 'defaultTaskSource' in updates) {
       const taskProviderSettings = normalizeTaskProviderSettings({
         visibleTaskProviders:
@@ -3023,6 +3123,9 @@ export class Store {
         sanitizedUpdates.visibleTaskProvidersDefaultedForJira = true
       }
     }
+    if ('autoRenameBranchFromWork' in updates || 'autoRenameBranchFromWorkDefaultedOn' in updates) {
+      sanitizedUpdates.autoRenameBranchFromWorkDefaultedOn = true
+    }
     if ('openInApplications' in updates) {
       sanitizedUpdates.openInApplications = normalizeOpenInApplications(updates.openInApplications)
     }
@@ -3033,6 +3136,9 @@ export class Store {
     }
     if ('appIcon' in updates) {
       sanitizedUpdates.appIcon = normalizeAppIconId(updates.appIcon)
+    }
+    if ('uiLanguage' in updates) {
+      sanitizedUpdates.uiLanguage = normalizeUiLanguage(updates.uiLanguage)
     }
     const historyWithPreviousLayout = buildWorkspaceDirHistoryForUpdate(
       this.state.settings,
@@ -3093,11 +3199,13 @@ export class Store {
   // ── UI State ───────────────────────────────────────────────────────
 
   getUI(): PersistedState['ui'] {
+    const uiState = stripMainOwnedTelemetryMarkerFromUI(this.state.ui)
     return {
       ...getDefaultUIState(),
-      ...this.state.ui,
+      ...uiState,
       groupBy: normalizeGroupBy(this.state.ui?.groupBy),
       sortBy: normalizeSortBy(this.state.ui?.sortBy),
+      projectOrderBy: normalizeProjectOrderBy(this.state.ui?.projectOrderBy),
       rightSidebarTab: normalizeRightSidebarTab(this.state.ui?.rightSidebarTab),
       worktreeCardProperties: normalizeWorktreeCardProperties(
         this.state.ui?.worktreeCardProperties
@@ -3110,6 +3218,9 @@ export class Store {
       workspaceBoardColumnWidth: clampWorkspaceBoardColumnWidth(
         this.state.ui?.workspaceBoardColumnWidth
       ),
+      browserDefaultZoomLevel: normalizeBrowserPageZoomLevel(
+        this.state.ui?.browserDefaultZoomLevel
+      ),
       showDotfilesByWorktree: normalizeShowDotfilesByWorktree(
         this.state.ui?.showDotfilesByWorktree
       ),
@@ -3120,44 +3231,55 @@ export class Store {
   }
 
   updateUI(updates: Partial<PersistedState['ui']>): void {
+    const sanitizedUpdates = stripMainOwnedTelemetryMarkerFromUI(updates)
+    const currentUI = {
+      ...getDefaultUIState(),
+      ...stripMainOwnedTelemetryMarkerFromUI(this.state.ui)
+    }
     this.state.ui = {
-      ...this.state.ui,
-      ...updates,
-      groupBy: updates.groupBy
-        ? normalizeGroupBy(updates.groupBy)
+      ...currentUI,
+      ...sanitizedUpdates,
+      groupBy: sanitizedUpdates.groupBy
+        ? normalizeGroupBy(sanitizedUpdates.groupBy)
         : normalizeGroupBy(this.state.ui?.groupBy),
-      sortBy: updates.sortBy
-        ? normalizeSortBy(updates.sortBy)
+      sortBy: sanitizedUpdates.sortBy
+        ? normalizeSortBy(sanitizedUpdates.sortBy)
         : normalizeSortBy(this.state.ui?.sortBy),
+      projectOrderBy: updates.projectOrderBy
+        ? normalizeProjectOrderBy(updates.projectOrderBy)
+        : normalizeProjectOrderBy(this.state.ui?.projectOrderBy),
       rightSidebarTab:
-        updates.rightSidebarTab !== undefined
-          ? normalizeRightSidebarTab(updates.rightSidebarTab)
+        sanitizedUpdates.rightSidebarTab !== undefined
+          ? normalizeRightSidebarTab(sanitizedUpdates.rightSidebarTab)
           : normalizeRightSidebarTab(this.state.ui?.rightSidebarTab),
       worktreeCardProperties:
-        updates.worktreeCardProperties !== undefined
-          ? normalizeWorktreeCardProperties(updates.worktreeCardProperties)
+        sanitizedUpdates.worktreeCardProperties !== undefined
+          ? normalizeWorktreeCardProperties(sanitizedUpdates.worktreeCardProperties)
           : normalizeWorktreeCardProperties(this.state.ui?.worktreeCardProperties),
       agentActivityDisplayMode:
         updates.agentActivityDisplayMode !== undefined
           ? normalizeAgentActivityDisplayMode(updates.agentActivityDisplayMode)
           : normalizeAgentActivityDisplayMode(this.state.ui?.agentActivityDisplayMode),
       workspaceStatuses:
-        updates.workspaceStatuses !== undefined
-          ? normalizeWorkspaceStatuses(updates.workspaceStatuses)
+        sanitizedUpdates.workspaceStatuses !== undefined
+          ? normalizeWorkspaceStatuses(sanitizedUpdates.workspaceStatuses)
           : normalizeWorkspaceStatuses(this.state.ui?.workspaceStatuses),
       workspaceBoardOpacity: clampWorkspaceBoardOpacity(
-        updates.workspaceBoardOpacity ?? this.state.ui?.workspaceBoardOpacity
+        sanitizedUpdates.workspaceBoardOpacity ?? this.state.ui?.workspaceBoardOpacity
       ),
       workspaceBoardColumnWidth: clampWorkspaceBoardColumnWidth(
-        updates.workspaceBoardColumnWidth ?? this.state.ui?.workspaceBoardColumnWidth
+        sanitizedUpdates.workspaceBoardColumnWidth ?? this.state.ui?.workspaceBoardColumnWidth
+      ),
+      browserDefaultZoomLevel: normalizeBrowserPageZoomLevel(
+        updates.browserDefaultZoomLevel ?? this.state.ui?.browserDefaultZoomLevel
       ),
       showDotfilesByWorktree:
         updates.showDotfilesByWorktree !== undefined
           ? normalizeShowDotfilesByWorktree(updates.showDotfilesByWorktree)
           : normalizeShowDotfilesByWorktree(this.state.ui?.showDotfilesByWorktree),
       featureTipsSeenIds:
-        updates.featureTipsSeenIds !== undefined
-          ? normalizeFeatureTipIds(updates.featureTipsSeenIds)
+        sanitizedUpdates.featureTipsSeenIds !== undefined
+          ? normalizeFeatureTipIds(sanitizedUpdates.featureTipsSeenIds)
           : normalizeFeatureTipIds(this.state.ui?.featureTipsSeenIds),
       // Why: renderer and paired clients can mark different tours seen from
       // stale UI snapshots; union them so completed tours stay suppressed.
@@ -3172,10 +3294,10 @@ export class Store {
       // Merge instead of replacing so a stale renderer snapshot cannot erase
       // runtime-only feature interactions.
       featureInteractions:
-        updates.featureInteractions !== undefined
+        sanitizedUpdates.featureInteractions !== undefined
           ? mergeFeatureInteractions(
               this.state.ui?.featureInteractions,
-              updates.featureInteractions
+              sanitizedUpdates.featureInteractions
             )
           : normalizeFeatureInteractions(this.state.ui?.featureInteractions)
     }
@@ -3184,16 +3306,46 @@ export class Store {
 
   recordFeatureInteraction(id: FeatureInteractionId): PersistedState['ui'] {
     const featureInteractions = normalizeFeatureInteractions(this.state.ui?.featureInteractions)
+    const telemetryBuckets = normalizeFeatureInteractionTelemetryBuckets(
+      this.state.featureInteractionTelemetryBuckets
+    )
     const existing = featureInteractions[id]
+    const previousCount = existing?.interactionCount ?? 0
+    const nextCount = previousCount + 1
+    const previousBucket = getFeatureInteractionUsageBucket(previousCount)
+    const nextBucket = getFeatureInteractionUsageBucket(nextCount)
+    const lastEmittedBucket = telemetryBuckets[id] ?? null
+    const shouldEmit =
+      nextBucket !== null &&
+      (lastEmittedBucket === null ||
+        compareFeatureInteractionUsageBuckets(nextBucket, lastEmittedBucket) > 0)
+
     this.updateUI({
       featureInteractions: {
         ...featureInteractions,
         [id]: {
           firstInteractedAt: existing?.firstInteractedAt ?? Date.now(),
-          interactionCount: (existing?.interactionCount ?? 0) + 1
+          interactionCount: nextCount
         }
       }
     })
+    this.state.featureInteractionTelemetryBuckets = shouldEmit
+      ? { ...telemetryBuckets, [id]: nextBucket }
+      : telemetryBuckets
+    this.scheduleSave()
+
+    if (shouldEmit) {
+      track('feature_interaction_usage_bucket_reached', {
+        feature_id: id,
+        feature_category: getFeatureInteractionCategory(id),
+        count_bucket: nextBucket,
+        bucket_source:
+          lastEmittedBucket === null && previousBucket !== null && previousBucket === nextBucket
+            ? 'observed_existing'
+            : 'crossed_now',
+        ...getCohortAtEmit()
+      })
+    }
     return this.getUI()
   }
 

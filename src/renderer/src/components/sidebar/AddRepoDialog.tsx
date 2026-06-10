@@ -3,7 +3,7 @@ import { useAppStore } from '@/store'
 import { Dialog, DialogContent } from '@/components/ui/dialog'
 import { track } from '@/lib/telemetry'
 import { useRemoteRepo } from './AddRepoSteps'
-import { useCreateRepo } from './AddRepoCreateStep'
+import { useCreateRepo } from './useCreateRepo'
 import { buildNestedRepoScanTelemetry } from '../../../../shared/nested-repo-telemetry'
 import type { AddRepoExistingWorkspaceSource } from '../../../../shared/telemetry-events'
 import { AddRepoStepIndicator } from './AddRepoStepIndicator'
@@ -14,11 +14,9 @@ import { useAddRepoCloneFlow } from './useAddRepoCloneFlow'
 import { useAddRepoLocalFolderFlow } from './useAddRepoLocalFolderFlow'
 import { useAddRepoServerPathFlow } from './useAddRepoServerPathFlow'
 import { useAddRepoNestedImportFlow } from './useAddRepoNestedImportFlow'
-import {
-  buildAddRepoExistingWorkspacesTelemetry,
-  shouldTrackAddRepoExistingWorkspacesDetected
-} from './add-repo-existing-workspaces-telemetry'
+import { buildAddRepoExistingWorkspacesDetectedEvent } from './add-repo-existing-workspaces-telemetry'
 import { finishProjectAddWithDefaultCheckout } from './project-added-default-checkout'
+import { useCreateProjectDefaults } from './useCreateProjectDefaults'
 
 const AddRepoDialog = React.memo(function AddRepoDialog() {
   const activeModal = useAppStore((s) => s.activeModal)
@@ -34,6 +32,8 @@ const AddRepoDialog = React.memo(function AddRepoDialog() {
   const openSettingsTarget = useAppStore((s) => s.openSettingsTarget)
   const setHideDefaultBranchWorkspace = useAppStore((s) => s.setHideDefaultBranchWorkspace)
   const settings = useAppStore((s) => s.settings)
+  const sshConnectionStates = useAppStore((s) => s.sshConnectionStates)
+  const sshTargetLabels = useAppStore((s) => s.sshTargetLabels)
 
   const [step, setStep] = useState<AddRepoDialogStep>('add')
   const [isAdding, setIsAdding] = useState(false)
@@ -66,21 +66,11 @@ const AddRepoDialog = React.memo(function AddRepoDialog() {
   const completeGitRepoAdd = useCallback(
     async (repoId: string, source: AddRepoExistingWorkspaceSource): Promise<void> => {
       const worktrees = useAppStore.getState().worktreesByRepo[repoId] ?? []
-      const sortedWorktrees = [...worktrees].sort((a, b) => {
-        if (a.lastActivityAt !== b.lastActivityAt) {
-          return b.lastActivityAt - a.lastActivityAt
-        }
-        return a.displayName.localeCompare(b.displayName)
-      })
-      const existingWorkspaceTelemetry = buildAddRepoExistingWorkspacesTelemetry(
+      const existingWorkspaceTelemetry = buildAddRepoExistingWorkspacesDetectedEvent(
         source,
-        sortedWorktrees
+        worktrees
       )
-      if (
-        existingWorkspaceTelemetry &&
-        shouldTrackAddRepoExistingWorkspacesDetected(existingWorkspaceTelemetry) &&
-        !detectedTelemetryTrackedRef.current.has(repoId)
-      ) {
+      if (existingWorkspaceTelemetry && !detectedTelemetryTrackedRef.current.has(repoId)) {
         detectedTelemetryTrackedRef.current.add(repoId)
         track('add_repo_existing_workspaces_detected', existingWorkspaceTelemetry)
       }
@@ -158,6 +148,22 @@ const AddRepoDialog = React.memo(function AddRepoDialog() {
   )
 
   const {
+    createDefaultParent,
+    createGitAvailability,
+    createRuntimeParentStatus,
+    createParentDefaultPending,
+    resetCreateDefaultState,
+    markCreateParentTouched,
+    markCreateKindTouched
+  } = useCreateProjectDefaults({
+    step,
+    activeRuntimeEnvironmentId: settings?.activeRuntimeEnvironmentId,
+    createParent,
+    setCreateParent,
+    setCreateKind
+  })
+
+  const {
     cloneUrl,
     cloneDestination,
     cloneError,
@@ -181,6 +187,12 @@ const AddRepoDialog = React.memo(function AddRepoDialog() {
   const droppedLocalPath =
     typeof modalData.droppedLocalPath === 'string' ? modalData.droppedLocalPath : ''
   const isRuntimeEnvironmentActive = Boolean(settings?.activeRuntimeEnvironmentId?.trim())
+  // Why: repo_added telemetry cannot reliably separate SSH from local folder adds,
+  // so promote remote projects from durable local SSH state instead.
+  const isSshLikely =
+    repos.some((repo) => Boolean(repo.connectionId)) ||
+    sshTargetLabels.size > 0 ||
+    Array.from(sshConnectionStates.values()).some((state) => state.status === 'connected')
 
   const { handleBrowse, resetLocalFolderFlow } = useAddRepoLocalFolderFlow({
     isOpen,
@@ -244,12 +256,14 @@ const AddRepoDialog = React.memo(function AddRepoDialog() {
     resetCloneFlow()
     resetNestedImportFlow()
     resetNestedRepoReviewState()
+    resetCreateDefaultState()
     resetCreateState()
     resetRemoteState()
   }, [
     resetCloneFlow,
     resetLocalFolderFlow,
     resetNestedRepoReviewState,
+    resetCreateDefaultState,
     resetServerPathFlow,
     resetNestedImportFlow,
     resetRemoteState,
@@ -262,13 +276,6 @@ const AddRepoDialog = React.memo(function AddRepoDialog() {
       resetState()
     }
   }, [isOpen, resetState])
-
-  const isInputStep =
-    step === 'add' ||
-    step === 'clone' ||
-    step === 'remote' ||
-    step === 'create' ||
-    step === 'nested'
 
   // Why: handleBack reuses resetState which already aborts clones and resets all fields.
   const handleBack = useCallback(() => {
@@ -296,15 +303,12 @@ const AddRepoDialog = React.memo(function AddRepoDialog() {
           step === 'nested' ? 'max-h-[calc(100vh-2rem)] grid-rows-[auto_auto_minmax(0,1fr)]' : ''
         }`}
       >
-        <AddRepoStepIndicator
-          step={step}
-          isInputStep={isInputStep}
-          isAdding={isAdding}
-          onBack={handleBack}
-        />
+        <AddRepoStepIndicator step={step} isAdding={isAdding} onBack={handleBack} />
         <AddRepoDialogStepContent
           step={step}
           isRuntimeEnvironmentActive={isRuntimeEnvironmentActive}
+          activeRuntimeEnvironmentId={settings?.activeRuntimeEnvironmentId}
+          isSshLikely={isSshLikely}
           repoCount={repos.length}
           isAdding={isAdding}
           addProjectBusyLabel={addProjectBusyLabel}
@@ -331,6 +335,10 @@ const AddRepoDialog = React.memo(function AddRepoDialog() {
           createKind={createKind}
           createError={createError}
           isCreating={isCreating}
+          createDefaultParent={createDefaultParent}
+          createGitAvailability={createGitAvailability}
+          createRuntimeParentStatus={createRuntimeParentStatus}
+          createParentDefaultPending={createParentDefaultPending}
           onBrowse={handleBrowse}
           onOpenCloneStep={() => {
             setCloneError(null)
@@ -372,21 +380,28 @@ const AddRepoDialog = React.memo(function AddRepoDialog() {
           onClone={handleClone}
           onNestedGroupNameChange={setNestedGroupName}
           onNestedSelectedPathsChange={setNestedSelectedPaths}
-          onNestedBack={handleBack}
           onImportNestedRepos={(mode) => void handleImportNestedRepos(mode)}
           onCreateNameChange={(value) => {
             setCreateName(value)
             setCreateError(null)
           }}
           onCreateParentChange={(value) => {
+            markCreateParentTouched(value)
             setCreateParent(value)
             setCreateError(null)
           }}
           onCreateKindChange={(kind) => {
+            markCreateKindTouched()
             setCreateKind(kind)
             setCreateError(null)
           }}
-          onPickCreateParent={handlePickParent}
+          onPickCreateParent={() => {
+            void handlePickParent().then((dir) => {
+              if (dir) {
+                markCreateParentTouched(dir)
+              }
+            })
+          }}
           onCreate={handleCreate}
         />
       </DialogContent>
