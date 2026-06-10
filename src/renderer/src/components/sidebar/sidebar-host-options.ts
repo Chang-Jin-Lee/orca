@@ -87,6 +87,23 @@ export function getSidebarHostScopeLabel(
   return options.find((option) => option.id === scope)?.label ?? 'All hosts'
 }
 
+export function getSidebarHostVisibilityLabel(
+  visibleHostIds: readonly ExecutionHostId[] | null | undefined,
+  hosts: readonly SidebarHostOption[]
+): string {
+  if (!visibleHostIds || visibleHostIds.length === hosts.length) {
+    return translate('auto.components.sidebar.sidebarHostOptions.3e102f111c', 'All hosts')
+  }
+  if (visibleHostIds.length === 1) {
+    return hosts.find((host) => host.id === visibleHostIds[0])?.label ?? 'Hosts'
+  }
+  return translate(
+    'auto.components.sidebar.sidebarHostOptions.visibleHostsCount',
+    '{{value0}} hosts',
+    { value0: visibleHostIds.length }
+  )
+}
+
 export function getSidebarHostHealthLabel(health: SidebarHostScopeOption['health']): string {
   switch (health) {
     case 'local':

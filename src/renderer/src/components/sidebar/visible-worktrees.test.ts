@@ -299,6 +299,32 @@ describe('computeVisibleWorktreeIds', () => {
     expect(result).toEqual([local.id, remote.id])
   })
 
+  it('filters worktrees to a selected set of visible hosts', () => {
+    const local = makeWorktree('local', 'repo1')
+    const ssh = makeWorktree('ssh', 'repo2')
+    const runtime = makeWorktree('runtime', 'repo3')
+    const scopedRepoMap = new Map(repoMap)
+    scopedRepoMap.set('repo2', {
+      ...makeRepo('repo2', 'Repo 2', '#111'),
+      connectionId: 'ssh-1'
+    })
+    scopedRepoMap.set('repo3', {
+      ...makeRepo('repo3', 'Repo 3', '#222'),
+      executionHostId: 'runtime:env-1'
+    })
+
+    const result = computeVisibleWorktreeIds(
+      { repo1: [local], repo2: [ssh], repo3: [runtime] },
+      [local.id, ssh.id, runtime.id],
+      visibleOptions({
+        repoMap: scopedRepoMap,
+        visibleWorkspaceHostIds: ['local', 'ssh:ssh-1']
+      })
+    )
+
+    expect(result).toEqual([local.id, ssh.id])
+  })
+
   it('hides branch-backed mains across every repo in a multi-repo workspace', () => {
     const main1 = makeWorktree('main1', 'repo1')
     main1.isMainWorktree = true
@@ -498,6 +524,10 @@ describe('sidebarHasActiveFilters', () => {
   it('returns true when only filterRepoIds is non-empty', () => {
     expect(sidebarHasActiveFilters(filterState({ filterRepoIds: ['repo1'] }))).toBe(true)
   })
+
+  it('returns true when only host visibility is narrowed', () => {
+    expect(sidebarHasActiveFilters(filterState({ visibleWorkspaceHostIds: ['local'] }))).toBe(true)
+  })
 })
 
 describe('computeClearFilterActions', () => {
@@ -505,7 +535,8 @@ describe('computeClearFilterActions', () => {
     expect(computeClearFilterActions(filterState())).toEqual({
       resetShowSleepingWorkspaces: false,
       resetFilterRepoIds: false,
-      resetHideDefaultBranchWorkspace: false
+      resetHideDefaultBranchWorkspace: false,
+      resetVisibleWorkspaceHostIds: false
     })
   })
 
@@ -516,7 +547,8 @@ describe('computeClearFilterActions', () => {
     expect(computeClearFilterActions(filterState({ hideDefaultBranchWorkspace: true }))).toEqual({
       resetShowSleepingWorkspaces: false,
       resetFilterRepoIds: false,
-      resetHideDefaultBranchWorkspace: true
+      resetHideDefaultBranchWorkspace: true,
+      resetVisibleWorkspaceHostIds: false
     })
   })
 
@@ -539,13 +571,15 @@ describe('computeClearFilterActions', () => {
         filterState({
           showSleepingWorkspaces: false,
           filterRepoIds: ['repo1', 'repo2'],
-          hideDefaultBranchWorkspace: true
+          hideDefaultBranchWorkspace: true,
+          visibleWorkspaceHostIds: ['local']
         })
       )
     ).toEqual({
       resetShowSleepingWorkspaces: true,
       resetFilterRepoIds: true,
-      resetHideDefaultBranchWorkspace: true
+      resetHideDefaultBranchWorkspace: true,
+      resetVisibleWorkspaceHostIds: true
     })
   })
 })

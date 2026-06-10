@@ -108,12 +108,17 @@ export function addHostSectionRows(args: {
   rows: readonly Row[]
   hostOptions: readonly HostSectionOption[]
   workspaceHostScope: ExecutionHostScope
+  visibleWorkspaceHostIds?: readonly ExecutionHostId[] | null
   defaultHostId: ExecutionHostId
   // Why: host sections reuse the sidebar's persisted collapsed-group keys
   // (`host:<hostId>`) so collapse state survives restarts like other groups.
   collapsedHostKeys?: ReadonlySet<string>
+  forceCollapseHosts?: boolean
 }): HostSectionRow[] {
-  if (args.workspaceHostScope !== ALL_EXECUTION_HOSTS_SCOPE || args.hostOptions.length <= 1) {
+  const visibleHostIds =
+    args.visibleWorkspaceHostIds ??
+    (args.workspaceHostScope === ALL_EXECUTION_HOSTS_SCOPE ? null : [args.workspaceHostScope])
+  if ((visibleHostIds && visibleHostIds.length <= 1) || args.hostOptions.length <= 1) {
     return [...args.rows]
   }
 
@@ -169,7 +174,8 @@ export function addHostSectionRows(args: {
       continue
     }
     const host = hostOptionsById.get(hostId) ?? getFallbackHost(hostId)
-    const collapsed = args.collapsedHostKeys?.has(`host:${host.id}`) ?? false
+    const collapsed =
+      args.forceCollapseHosts || (args.collapsedHostKeys?.has(`host:${host.id}`) ?? false)
     result.push({
       type: 'host-header',
       key: `host:${host.id}`,

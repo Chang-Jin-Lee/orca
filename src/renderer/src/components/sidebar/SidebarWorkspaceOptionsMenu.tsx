@@ -21,7 +21,7 @@ import type { AgentActivityDisplayMode } from '../../../../shared/types'
 import { DEFAULT_SHOW_SLEEPING_WORKSPACES } from '../../../../shared/constants'
 import SidebarRepositoryFilterSection from './SidebarRepositoryFilterSection'
 import SidebarWorkspaceFilterSection from './SidebarWorkspaceFilterSection'
-import { getSidebarHostScopeLabel, shouldShowHostScopeControls } from './sidebar-host-options'
+import { getSidebarHostVisibilityLabel, shouldShowHostScopeControls } from './sidebar-host-options'
 import { useSidebarHostScopeOptions } from './use-sidebar-host-scope-options'
 import { SidebarHostScopeMenuSection } from './SidebarHostScopeMenuSection'
 import {
@@ -51,8 +51,9 @@ const SidebarWorkspaceOptionsMenu = React.memo(function SidebarWorkspaceOptionsM
   const toggleWorktreeCardProperty = useAppStore((s) => s.toggleWorktreeCardProperty)
   const settings = useAppStore((s) => s.settings)
   const updateSettings = useAppStore((s) => s.updateSettings)
-  const workspaceHostScope = useAppStore((s) => s.workspaceHostScope)
   const setWorkspaceHostScope = useAppStore((s) => s.setWorkspaceHostScope)
+  const visibleWorkspaceHostIds = useAppStore((s) => s.visibleWorkspaceHostIds)
+  const setVisibleWorkspaceHostIds = useAppStore((s) => s.setVisibleWorkspaceHostIds)
   const agentActivityDisplayMode = useAppStore((s) => s.agentActivityDisplayMode)
   const setAgentActivityDisplayMode = useAppStore((s) => s.setAgentActivityDisplayMode)
   const sortBy = useAppStore((s) => s.sortBy)
@@ -63,7 +64,7 @@ const SidebarWorkspaceOptionsMenu = React.memo(function SidebarWorkspaceOptionsM
   const setProjectOrderBy = useAppStore((s) => s.setProjectOrderBy)
 
   const [open, setOpen] = useState(false)
-  const { hostOptions, hostScopeOptions } = useSidebarHostScopeOptions()
+  const { hostOptions } = useSidebarHostScopeOptions()
   const showHostScopeControls = shouldShowHostScopeControls(hostOptions)
 
   const handleOpenChange = useCallback(
@@ -87,14 +88,19 @@ const SidebarWorkspaceOptionsMenu = React.memo(function SidebarWorkspaceOptionsM
   }, [repos, filterRepoIds])
   const hasRepoFilter = selectedCount > 0
   const hasSleepingFilter = showSleepingWorkspaces !== DEFAULT_SHOW_SLEEPING_WORKSPACES
-  const hasAnyFilter = hasSleepingFilter || hideDefaultBranchWorkspace || hasRepoFilter
+  const hasHostVisibilityFilter = visibleWorkspaceHostIds !== null
+  const hasAnyFilter =
+    hasSleepingFilter || hideDefaultBranchWorkspace || hasRepoFilter || hasHostVisibilityFilter
   const activeFilterCount =
-    (hasSleepingFilter ? 1 : 0) + (hideDefaultBranchWorkspace ? 1 : 0) + selectedCount
+    (hasSleepingFilter ? 1 : 0) +
+    (hideDefaultBranchWorkspace ? 1 : 0) +
+    (hasHostVisibilityFilter ? 1 : 0) +
+    selectedCount
   const activeFilterLabel = `${activeFilterCount} ${activeFilterCount === 1 ? 'filter' : 'filters'}`
   const sortLabel = SORT_OPTIONS.find((opt) => opt.id === sortBy)?.label ?? 'Sort'
   const projectOrderLabel =
     PROJECT_ORDER_OPTIONS.find((opt) => opt.id === projectOrderBy)?.label ?? 'Manual'
-  const hostScopeLabel = getSidebarHostScopeLabel(workspaceHostScope, hostScopeOptions)
+  const hostVisibilityLabel = getSidebarHostVisibilityLabel(visibleWorkspaceHostIds, hostOptions)
   const cardLayout = settings?.compactWorktreeCards ? 'compact' : 'detailed'
   const cardLayoutLabel =
     CARD_LAYOUT_OPTIONS.find((opt) => opt.id === cardLayout)?.label ?? 'Detailed'
@@ -163,11 +169,12 @@ const SidebarWorkspaceOptionsMenu = React.memo(function SidebarWorkspaceOptionsM
         {showHostScopeControls && (
           <SidebarHostScopeMenuSection
             hostOptionsCount={hostOptions.length}
-            hostScopeLabel={hostScopeLabel}
-            hostScopeOptions={hostScopeOptions}
+            hostVisibilityLabel={hostVisibilityLabel}
+            hostOptions={hostOptions}
             preserveWorkspaceBoardOpen={preserveWorkspaceBoardOpen}
-            workspaceHostScope={workspaceHostScope}
             setWorkspaceHostScope={setWorkspaceHostScope}
+            visibleWorkspaceHostIds={visibleWorkspaceHostIds}
+            setVisibleWorkspaceHostIds={setVisibleWorkspaceHostIds}
           />
         )}
 

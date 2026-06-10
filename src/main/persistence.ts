@@ -72,7 +72,9 @@ import {
 import { parseWorkspaceSession } from '../shared/workspace-session-schema'
 import {
   LOCAL_EXECUTION_HOST_ID,
+  normalizeExecutionHostOrder,
   normalizeExecutionHostId,
+  normalizeVisibleExecutionHostIds,
   type ExecutionHostId
 } from '../shared/execution-host'
 import { toRelaySshPtyId } from './providers/ssh-pty-id'
@@ -3231,6 +3233,10 @@ export class Store {
       workspaceBoardColumnWidth: clampWorkspaceBoardColumnWidth(
         this.state.ui?.workspaceBoardColumnWidth
       ),
+      visibleWorkspaceHostIds: normalizeVisibleExecutionHostIds(
+        this.state.ui?.visibleWorkspaceHostIds
+      ),
+      workspaceHostOrder: normalizeExecutionHostOrder(this.state.ui?.workspaceHostOrder),
       browserDefaultZoomLevel: normalizeBrowserPageZoomLevel(
         this.state.ui?.browserDefaultZoomLevel
       ),
@@ -3278,6 +3284,14 @@ export class Store {
       workspaceBoardColumnWidth: clampWorkspaceBoardColumnWidth(
         updates.workspaceBoardColumnWidth ?? this.state.ui?.workspaceBoardColumnWidth
       ),
+      visibleWorkspaceHostIds:
+        updates.visibleWorkspaceHostIds !== undefined
+          ? normalizeVisibleExecutionHostIds(updates.visibleWorkspaceHostIds)
+          : normalizeVisibleExecutionHostIds(this.state.ui?.visibleWorkspaceHostIds),
+      workspaceHostOrder:
+        updates.workspaceHostOrder !== undefined
+          ? normalizeExecutionHostOrder(updates.workspaceHostOrder)
+          : normalizeExecutionHostOrder(this.state.ui?.workspaceHostOrder),
       browserDefaultZoomLevel: normalizeBrowserPageZoomLevel(
         updates.browserDefaultZoomLevel ?? this.state.ui?.browserDefaultZoomLevel
       ),

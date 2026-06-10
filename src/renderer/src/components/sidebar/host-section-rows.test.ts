@@ -152,6 +152,38 @@ describe('addHostSectionRows', () => {
     ])
   })
 
+  it('keeps host headers for a custom multi-host visibility filter', () => {
+    const local = repo('local')
+    const ssh = repo('ssh', 'ssh-1')
+    const rows = [repoHeader(local), item('local-wt', local), repoHeader(ssh), item('ssh-wt', ssh)]
+
+    const sectioned = addHostSectionRows({
+      rows,
+      hostOptions: [
+        {
+          id: 'local',
+          kind: 'local',
+          label: 'Local Mac',
+          detail: 'This computer',
+          health: 'local'
+        },
+        { id: 'ssh:ssh-1', kind: 'ssh', label: 'Builder', detail: 'SSH', health: 'available' }
+      ],
+      workspaceHostScope: 'all',
+      visibleWorkspaceHostIds: ['local', 'ssh:ssh-1'],
+      defaultHostId: 'local'
+    })
+
+    expect(sectioned.map(rowKey)).toEqual([
+      'host:local',
+      'repo:local',
+      'local-wt',
+      'host:ssh:ssh-1',
+      'repo:ssh',
+      'ssh-wt'
+    ])
+  })
+
   it('keeps non-repo group headers with the following host-owned rows', () => {
     const local = repo('local')
     const ssh = repo('ssh', 'ssh-1')
@@ -448,6 +480,36 @@ describe('addHostSectionRows', () => {
     ])
     expect(sectioned.filter((row) => row.type === 'host-header')).toMatchObject([
       { hostId: 'local', collapsed: false },
+      { hostId: 'ssh:ssh-1', collapsed: true, count: 1 }
+    ])
+  })
+
+  it('can temporarily collapse every host without mutating persisted collapse keys', () => {
+    const local = repo('local')
+    const ssh = repo('ssh', 'ssh-1')
+    const rows = [repoHeader(local), item('local-wt', local), repoHeader(ssh), item('ssh-wt', ssh)]
+
+    const sectioned = addHostSectionRows({
+      rows,
+      hostOptions: [
+        {
+          id: 'local',
+          kind: 'local',
+          label: 'Local Mac',
+          detail: 'This computer',
+          health: 'local'
+        },
+        { id: 'ssh:ssh-1', kind: 'ssh', label: 'Builder', detail: 'SSH', health: 'available' }
+      ],
+      workspaceHostScope: 'all',
+      defaultHostId: 'local',
+      collapsedHostKeys: new Set(),
+      forceCollapseHosts: true
+    })
+
+    expect(sectioned.map(rowKey)).toEqual(['host:local', 'host:ssh:ssh-1'])
+    expect(sectioned.filter((row) => row.type === 'host-header')).toMatchObject([
+      { hostId: 'local', collapsed: true, count: 1 },
       { hostId: 'ssh:ssh-1', collapsed: true, count: 1 }
     ])
   })

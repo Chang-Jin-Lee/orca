@@ -30,6 +30,7 @@ export type SidebarFilterState = {
   showSleepingWorkspaces: boolean
   filterRepoIds: readonly string[]
   hideDefaultBranchWorkspace: boolean
+  visibleWorkspaceHostIds?: readonly ExecutionHostId[] | null
 }
 
 /**
@@ -45,7 +46,8 @@ export function sidebarHasActiveFilters(state: SidebarFilterState): boolean {
   return (
     state.showSleepingWorkspaces !== DEFAULT_SHOW_SLEEPING_WORKSPACES ||
     state.filterRepoIds.length > 0 ||
-    state.hideDefaultBranchWorkspace
+    state.hideDefaultBranchWorkspace ||
+    state.visibleWorkspaceHostIds != null
   )
 }
 
@@ -55,6 +57,7 @@ export type ClearFilterActions = {
   resetShowSleepingWorkspaces: boolean
   resetFilterRepoIds: boolean
   resetHideDefaultBranchWorkspace: boolean
+  resetVisibleWorkspaceHostIds: boolean
 }
 
 /**
@@ -71,7 +74,8 @@ export function computeClearFilterActions(state: SidebarFilterState): ClearFilte
   return {
     resetShowSleepingWorkspaces: state.showSleepingWorkspaces !== DEFAULT_SHOW_SLEEPING_WORKSPACES,
     resetFilterRepoIds: state.filterRepoIds.length > 0,
-    resetHideDefaultBranchWorkspace: state.hideDefaultBranchWorkspace
+    resetHideDefaultBranchWorkspace: state.hideDefaultBranchWorkspace,
+    resetVisibleWorkspaceHostIds: state.visibleWorkspaceHostIds != null
   }
 }
 
@@ -101,6 +105,7 @@ export function computeVisibleWorktreeIds(
     hideDefaultBranchWorkspace: boolean
     repoMap: Map<string, Repo>
     workspaceHostScope: ExecutionHostScope
+    visibleWorkspaceHostIds?: readonly ExecutionHostId[] | null
     defaultHostId: ExecutionHostId
     worktreeLineageById: Record<string, WorktreeLineage>
   }
@@ -118,7 +123,11 @@ export function computeVisibleWorktreeIds(
     all = all.filter((w) => !isDefaultBranchWorkspace(w))
   }
 
-  if (opts.workspaceHostScope !== ALL_EXECUTION_HOSTS_SCOPE) {
+  const visibleHostIds =
+    opts.visibleWorkspaceHostIds ??
+    (opts.workspaceHostScope === ALL_EXECUTION_HOSTS_SCOPE ? null : [opts.workspaceHostScope])
+  if (visibleHostIds) {
+    const visibleHostIdSet = new Set(visibleHostIds)
     all = all.filter((w) => {
       const repo = opts.repoMap.get(w.repoId)
       if (!repo) {
@@ -128,7 +137,7 @@ export function computeVisibleWorktreeIds(
         repo.connectionId || repo.executionHostId
           ? getRepoExecutionHostId(repo)
           : opts.defaultHostId
-      return hostId === opts.workspaceHostScope
+      return visibleHostIdSet.has(hostId)
     })
   }
 
@@ -282,6 +291,7 @@ export function getVisibleWorktreeIds(): string[] {
     hideDefaultBranchWorkspace: state.hideDefaultBranchWorkspace,
     repoMap,
     workspaceHostScope: state.workspaceHostScope,
+    visibleWorkspaceHostIds: state.visibleWorkspaceHostIds,
     defaultHostId: getSettingsFocusedExecutionHostId(state.settings),
     worktreeLineageById: state.worktreeLineageById
   })

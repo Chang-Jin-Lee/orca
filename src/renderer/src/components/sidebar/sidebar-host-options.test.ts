@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   buildSidebarHostOptions,
   buildSidebarHostScopeOptions,
+  getSidebarHostVisibilityLabel,
   getSidebarHostHealthLabel,
   shouldShowHostScopeControls
 } from './sidebar-host-options'
@@ -152,6 +153,18 @@ describe('sidebar host options', () => {
       { id: 'local', label: 'Local Mac', health: 'local' },
       { id: 'ssh:ssh-1', label: 'Builder', health: 'disconnected' }
     ])
+  })
+
+  it('labels visible host selections for the workspace options menu', () => {
+    const hosts = buildSidebarHostOptions({
+      repos: [{ connectionId: 'ssh-1' }],
+      sshTargetLabels: new Map([['ssh-1', 'Builder']]),
+      settings: { activeRuntimeEnvironmentId: null }
+    })
+
+    expect(getSidebarHostVisibilityLabel(null, hosts)).toBe('All hosts')
+    expect(getSidebarHostVisibilityLabel(['ssh:ssh-1'], hosts)).toBe('Builder')
+    expect(getSidebarHostVisibilityLabel(['local', 'ssh:ssh-1'], hosts)).toBe('All hosts')
   })
 
   it('carries host kind so the header menu can pick lifecycle actions', () => {

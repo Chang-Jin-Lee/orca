@@ -17,6 +17,7 @@ export function useVisibleWorkspaceKanbanWorktreeIds({
   const showSleepingWorkspaces = useAppStore((s) => s.showSleepingWorkspaces)
   const hideDefaultBranchWorkspace = useAppStore((s) => s.hideDefaultBranchWorkspace)
   const workspaceHostScope = useAppStore((s) => s.workspaceHostScope)
+  const visibleWorkspaceHostIds = useAppStore((s) => s.visibleWorkspaceHostIds)
   const settings = useAppStore((s) => s.settings)
   const filterRepoIds = useAppStore((s) => s.filterRepoIds)
   const tabsByWorktree = useAppStore((s) => (!showSleepingWorkspaces ? s.tabsByWorktree : null))
@@ -39,6 +40,7 @@ export function useVisibleWorkspaceKanbanWorktreeIds({
         hideDefaultBranchWorkspace,
         repoMap,
         workspaceHostScope,
+        visibleWorkspaceHostIds,
         defaultHostId: getSettingsFocusedExecutionHostId(settings),
         // Why: the board has no nested lineage presentation. Ancestor injection
         // would make filtered-out parents appear as ordinary cards.
@@ -51,6 +53,7 @@ export function useVisibleWorkspaceKanbanWorktreeIds({
     filterRepoIds,
     hideDefaultBranchWorkspace,
     workspaceHostScope,
+    visibleWorkspaceHostIds,
     settings,
     ptyIdsByTabId,
     repoMap,

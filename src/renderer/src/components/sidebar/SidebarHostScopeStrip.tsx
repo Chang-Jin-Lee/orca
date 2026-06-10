@@ -2,9 +2,8 @@ import React from 'react'
 import { AlertTriangle, Loader2, X } from 'lucide-react'
 import { useAppStore } from '@/store'
 import { Button } from '@/components/ui/button'
-import { ALL_EXECUTION_HOSTS_SCOPE } from '../../../../shared/execution-host'
 import {
-  getSidebarHostScopeLabel,
+  getSidebarHostVisibilityLabel,
   shouldShowHostScopeControls,
   type SidebarHostScopeOption
 } from './sidebar-host-options'
@@ -27,19 +26,22 @@ function HostScopeWarningIcon({ health }: { health: SidebarHostScopeOption['heal
  *  story, so no persistent strip renders; scope switching lives in the
  *  workspace options menu. */
 const SidebarHostScopeStrip = React.memo(function SidebarHostScopeStrip() {
-  const workspaceHostScope = useAppStore((s) => s.workspaceHostScope)
-  const setWorkspaceHostScope = useAppStore((s) => s.setWorkspaceHostScope)
+  const visibleWorkspaceHostIds = useAppStore((s) => s.visibleWorkspaceHostIds)
+  const setVisibleWorkspaceHostIds = useAppStore((s) => s.setVisibleWorkspaceHostIds)
   const { hostOptions, hostScopeOptions } = useSidebarHostScopeOptions()
 
-  if (workspaceHostScope === ALL_EXECUTION_HOSTS_SCOPE) {
+  if (!visibleWorkspaceHostIds) {
     return null
   }
   if (!shouldShowHostScopeControls(hostOptions)) {
     return null
   }
 
-  const label = getSidebarHostScopeLabel(workspaceHostScope, hostScopeOptions)
-  const selectedScope = hostScopeOptions.find((option) => option.id === workspaceHostScope)
+  const label = getSidebarHostVisibilityLabel(visibleWorkspaceHostIds, hostOptions)
+  const selectedScope =
+    visibleWorkspaceHostIds.length === 1
+      ? hostScopeOptions.find((option) => option.id === visibleWorkspaceHostIds[0])
+      : undefined
 
   return (
     <div className="px-2 pb-1">
@@ -49,7 +51,7 @@ const SidebarHostScopeStrip = React.memo(function SidebarHostScopeStrip() {
           <span className="truncate text-xs font-medium text-sidebar-foreground">
             {translate(
               'auto.components.sidebar.SidebarHostScopeStrip.scopedTo',
-              '{{value0}} only',
+              '{{value0}} visible',
               {
                 value0: label
               }
@@ -60,7 +62,7 @@ const SidebarHostScopeStrip = React.memo(function SidebarHostScopeStrip() {
           variant="ghost"
           size="sm"
           className="h-5 shrink-0 gap-1 rounded px-1.5 text-[11px] font-normal text-muted-foreground hover:text-foreground"
-          onClick={() => setWorkspaceHostScope(ALL_EXECUTION_HOSTS_SCOPE)}
+          onClick={() => setVisibleWorkspaceHostIds(null)}
         >
           <X className="size-3" />
           {translate('auto.components.sidebar.SidebarHostScopeStrip.backToAll', 'All hosts')}

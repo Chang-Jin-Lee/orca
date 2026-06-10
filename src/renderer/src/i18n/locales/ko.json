@@ -3324,10 +3324,12 @@
           "82594419ba": "필터"
         },
         "SidebarHostScopeStrip": {
-          "scopedTo": "{{value0}} only",
+          "scopedTo": "{{value0}} visible",
           "backToAll": "All hosts"
         },
         "SidebarWorkspaceOptionsMenu": {
+          "hosts": "Hosts",
+          "allHostsDetail": "Show every host",
           "95c9754653": "에이전트 활동 레이아웃",
           "3d4b9c4997": "호버",
           "ba87080fb7": "속성 표시",
@@ -3527,7 +3529,10 @@
           "20bebf9c7f": "{{value0}}개 하위 워크스페이스 표시",
           "c1f4a31623": "{{value0}}개 하위 워크스페이스 표시",
           "e97297cb75": "{{value0}}개 하위 워크스페이스 숨기기",
-          "0cd15956d4": "{{value0}}개 하위 워크스페이스 숨기기"
+          "0cd15956d4": "{{value0}}개 하위 워크스페이스 숨기기",
+          "7a8b9c0d1e": "Update required",
+          "hostAuthNeeded": "Authentication needed",
+          "hostDisconnected": "Disconnected"
         },
         "WorktreeMetaDialog": {
           "3db0a2a593": "취소",
@@ -3750,7 +3755,8 @@
           }
         },
         "sidebarHostOptions": {
-          "3e102f111c": "All hosts"
+          "3e102f111c": "All hosts",
+          "visibleHostsCount": "{{value0}} hosts"
         },
         "HostRemoveDialog": {
           "1a2b3c4d5e": "Removed {{value0}}",

@@ -1,43 +1,85 @@
 import type React from 'react'
 import {
+  DropdownMenuCheckboxItem,
   DropdownMenuLabel,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuSub,
   DropdownMenuSubContent,
   DropdownMenuSubTrigger
 } from '@/components/ui/dropdown-menu'
-import type { WorkspaceHostScope } from '../../../../shared/types'
-import type { SidebarHostScopeOption } from './sidebar-host-options'
+import { ALL_EXECUTION_HOSTS_SCOPE, type ExecutionHostId } from '../../../../shared/execution-host'
+import type { VisibleWorkspaceHostIds, WorkspaceHostScope } from '../../../../shared/types'
+import { getSidebarHostHealthLabel, type SidebarHostOption } from './sidebar-host-options'
 import { translate } from '@/i18n/i18n'
 
 type SidebarHostScopeMenuSectionProps = {
   hostOptionsCount: number
-  hostScopeLabel: string
-  hostScopeOptions: readonly SidebarHostScopeOption[]
+  hostVisibilityLabel: string
+  hostOptions: readonly SidebarHostOption[]
   preserveWorkspaceBoardOpen: boolean
-  workspaceHostScope: WorkspaceHostScope
   setWorkspaceHostScope: (scope: WorkspaceHostScope) => void
+  visibleWorkspaceHostIds: VisibleWorkspaceHostIds
+  setVisibleWorkspaceHostIds: (ids: VisibleWorkspaceHostIds) => void
+}
+
+function getHostMetadata(host: SidebarHostOption): string {
+  const healthLabel = getSidebarHostHealthLabel(host.health)
+  if (host.kind === 'local') {
+    return host.detail
+  }
+  const kindLabel = host.kind === 'ssh' ? 'SSH' : 'Runtime'
+  return `${kindLabel} · ${healthLabel}`
 }
 
 export function SidebarHostScopeMenuSection({
   hostOptionsCount,
-  hostScopeLabel,
-  hostScopeOptions,
+  hostVisibilityLabel,
+  hostOptions,
   preserveWorkspaceBoardOpen,
-  workspaceHostScope,
-  setWorkspaceHostScope
+  setWorkspaceHostScope,
+  visibleWorkspaceHostIds,
+  setVisibleWorkspaceHostIds
 }: SidebarHostScopeMenuSectionProps): React.JSX.Element {
+  const allVisible = !visibleWorkspaceHostIds
+  const visibleHostIdSet = new Set(visibleWorkspaceHostIds ?? [])
+
+  const toggleAllHosts = (): void => {
+    if (!allVisible) {
+      setWorkspaceHostScope(ALL_EXECUTION_HOSTS_SCOPE)
+      return
+    }
+    const firstHost = hostOptions[0]
+    if (firstHost) {
+      setVisibleWorkspaceHostIds([firstHost.id])
+    }
+  }
+
+  const toggleHost = (hostId: ExecutionHostId): void => {
+    if (allVisible) {
+      setVisibleWorkspaceHostIds([hostId])
+      return
+    }
+    const next = new Set(visibleHostIdSet)
+    if (next.has(hostId)) {
+      if (next.size <= 1) {
+        return
+      }
+      next.delete(hostId)
+    } else {
+      next.add(hostId)
+    }
+    setVisibleWorkspaceHostIds(next.size === hostOptions.length ? null : [...next])
+  }
+
   return (
     <>
       <DropdownMenuLabel>
-        {translate('auto.components.sidebar.SidebarWorkspaceOptionsMenu.631b97eea9', 'Host scope')}
+        {translate('auto.components.sidebar.SidebarWorkspaceOptionsMenu.hosts', 'Hosts')}
       </DropdownMenuLabel>
       <DropdownMenuSub>
         <DropdownMenuSubTrigger>
           <span className="flex flex-1 items-center justify-between gap-3">
-            <span className="min-w-0 truncate">{hostScopeLabel}</span>
+            <span className="min-w-0 truncate">{hostVisibilityLabel}</span>
             <span className="text-[11px] font-medium text-muted-foreground">
               {hostOptionsCount}
             </span>
@@ -47,26 +89,41 @@ export function SidebarHostScopeMenuSection({
           className="w-56"
           data-workspace-board-preserve-open={preserveWorkspaceBoardOpen ? '' : undefined}
         >
-          <DropdownMenuRadioGroup
-            value={workspaceHostScope}
-            onValueChange={(value) => setWorkspaceHostScope(value as WorkspaceHostScope)}
+          <DropdownMenuCheckboxItem
+            checked={allVisible}
+            onCheckedChange={toggleAllHosts}
+            onSelect={(e) => e.preventDefault()}
+            className="min-h-11 items-start py-1.5"
           >
-            {hostScopeOptions.map((option) => (
-              <DropdownMenuRadioItem
-                key={option.id}
-                value={option.id}
-                onSelect={(e) => e.preventDefault()}
-                className="flex-col items-start gap-0.5"
-              >
-                <span>{option.label}</span>
-                {option.detail && (
-                  <span className="max-w-44 truncate text-[11px] font-normal text-muted-foreground">
-                    {option.detail}
-                  </span>
+            <span className="flex min-w-0 flex-col gap-0.5">
+              <span className="truncate">
+                {translate('auto.components.sidebar.sidebarHostOptions.3e102f111c', 'All hosts')}
+              </span>
+              <span className="truncate text-[11px] font-normal text-muted-foreground">
+                {translate(
+                  'auto.components.sidebar.SidebarWorkspaceOptionsMenu.allHostsDetail',
+                  'Show every host'
                 )}
-              </DropdownMenuRadioItem>
-            ))}
-          </DropdownMenuRadioGroup>
+              </span>
+            </span>
+          </DropdownMenuCheckboxItem>
+          {hostOptions.map((host) => (
+            <DropdownMenuCheckboxItem
+              key={host.id}
+              checked={visibleHostIdSet.has(host.id)}
+              disabled={!allVisible && visibleHostIdSet.has(host.id) && visibleHostIdSet.size <= 1}
+              onCheckedChange={() => toggleHost(host.id)}
+              onSelect={(e) => e.preventDefault()}
+              className="min-h-11 items-start py-1.5"
+            >
+              <span className="flex min-w-0 flex-col gap-0.5">
+                <span className="truncate">{host.label}</span>
+                <span className="text-[11px] font-normal text-muted-foreground">
+                  {getHostMetadata(host)}
+                </span>
+              </span>
+            </DropdownMenuCheckboxItem>
+          ))}
         </DropdownMenuSubContent>
       </DropdownMenuSub>
 

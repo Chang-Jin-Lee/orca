@@ -22,7 +22,9 @@ import type {
   AgentActivityDisplayMode,
   ProjectOrderBy,
   WorktreeCardProperty,
-  WorkspaceHostScope
+  WorkspaceHostOrder,
+  WorkspaceHostScope,
+  VisibleWorkspaceHostIds
 } from '../../../../shared/types'
 import type { LaunchSource } from '../../../../shared/telemetry-events'
 import { tuiAgentToAgentKind } from '../../../../shared/agent-kind'
@@ -62,7 +64,11 @@ import {
   DEFAULT_BROWSER_PAGE_ZOOM_LEVEL,
   normalizeBrowserPageZoomLevel
 } from '../../../../shared/browser-page-zoom'
-import { normalizeExecutionHostScope } from '../../../../shared/execution-host'
+import {
+  normalizeExecutionHostOrder,
+  normalizeExecutionHostScope,
+  normalizeVisibleExecutionHostIds
+} from '../../../../shared/execution-host'
 import {
   WORKSPACE_BOARD_COLUMN_WIDTH_DEFAULT,
   clampWorkspaceBoardColumnWidth,
@@ -257,6 +263,15 @@ function normalizePersistedRightSidebarTab(
     return tab
   }
   return 'explorer'
+}
+
+function normalizeHydratedVisibleWorkspaceHostIds(ui: PersistedUIState): VisibleWorkspaceHostIds {
+  const visibleHostIds = normalizeVisibleExecutionHostIds(ui.visibleWorkspaceHostIds)
+  if (visibleHostIds) {
+    return visibleHostIds
+  }
+  const legacyScope = normalizeExecutionHostScope(ui.workspaceHostScope)
+  return legacyScope === 'all' ? null : [legacyScope]
 }
 
 const MIN_SIDEBAR_WIDTH = 220
@@ -748,6 +763,10 @@ export type UISlice = {
   setShowSleepingWorkspaces: (v: boolean) => void
   workspaceHostScope: WorkspaceHostScope
   setWorkspaceHostScope: (scope: WorkspaceHostScope) => void
+  visibleWorkspaceHostIds: VisibleWorkspaceHostIds
+  setVisibleWorkspaceHostIds: (ids: VisibleWorkspaceHostIds) => void
+  workspaceHostOrder: WorkspaceHostOrder
+  setWorkspaceHostOrder: (ids: WorkspaceHostOrder) => void
   hideDefaultBranchWorkspace: boolean
   setHideDefaultBranchWorkspace: (v: boolean) => void
   showDotfilesByWorktree: Record<string, boolean>
@@ -1723,8 +1742,33 @@ export const createUISlice: StateCreator<AppState, [], [], UISlice> = (set, get)
   // never trigger resource teardown (terminals, browser pages, etc.).
   setWorkspaceHostScope: (scope) => {
     const normalized = normalizeExecutionHostScope(scope)
-    set({ workspaceHostScope: normalized })
-    window.api.ui.set({ workspaceHostScope: normalized }).catch(console.error)
+    const visibleWorkspaceHostIds = normalized === 'all' ? null : [normalized]
+    set({ workspaceHostScope: normalized, visibleWorkspaceHostIds })
+    window.api.ui
+      .set({ workspaceHostScope: normalized, visibleWorkspaceHostIds })
+      .catch(console.error)
+  },
+  visibleWorkspaceHostIds: null,
+  setVisibleWorkspaceHostIds: (ids) => {
+    const normalized = normalizeVisibleExecutionHostIds(ids)
+    // Why: workspaceHostScope remains the compatibility/default-host signal
+    // for creation flows while visibility can now be multi-select.
+    let workspaceHostScope: WorkspaceHostScope = get().workspaceHostScope
+    if (normalized === null) {
+      workspaceHostScope = 'all'
+    } else if (normalized.length === 1) {
+      workspaceHostScope = normalized[0]
+    }
+    set({ visibleWorkspaceHostIds: normalized, workspaceHostScope })
+    window.api.ui
+      .set({ visibleWorkspaceHostIds: normalized, workspaceHostScope })
+      .catch(console.error)
+  },
+  workspaceHostOrder: [],
+  setWorkspaceHostOrder: (ids) => {
+    const workspaceHostOrder = normalizeExecutionHostOrder(ids)
+    set({ workspaceHostOrder })
+    window.api.ui.set({ workspaceHostOrder }).catch(console.error)
   },
 
   hideDefaultBranchWorkspace: false,
@@ -2022,6 +2066,8 @@ export const createUISlice: StateCreator<AppState, [], [], UISlice> = (set, get)
         // start from the new default: sleeping workspaces visible.
         showSleepingWorkspaces: !(ui.hideSleepingWorkspaces ?? DEFAULT_HIDE_SLEEPING_WORKSPACES),
         workspaceHostScope: normalizeExecutionHostScope(ui.workspaceHostScope),
+        visibleWorkspaceHostIds: normalizeHydratedVisibleWorkspaceHostIds(ui),
+        workspaceHostOrder: normalizeExecutionHostOrder(ui.workspaceHostOrder),
         hideDefaultBranchWorkspace: ui.hideDefaultBranchWorkspace ?? false,
         showDotfilesByWorktree: sanitizeShowDotfilesByWorktree(ui.showDotfilesByWorktree),
         filterRepoIds: (ui.filterRepoIds ?? []).filter((repoId) => validRepoIds.has(repoId)),

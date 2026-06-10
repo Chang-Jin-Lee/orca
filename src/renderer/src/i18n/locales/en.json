@@ -3341,13 +3341,16 @@
           "82594419ba": "Filters"
         },
         "sidebarHostOptions": {
-          "3e102f111c": "All hosts"
+          "3e102f111c": "All hosts",
+          "visibleHostsCount": "{{value0}} hosts"
         },
         "SidebarHostScopeStrip": {
-          "scopedTo": "{{value0}} only",
+          "scopedTo": "{{value0}} visible",
           "backToAll": "All hosts"
         },
         "SidebarWorkspaceOptionsMenu": {
+          "hosts": "Hosts",
+          "allHostsDetail": "Show every host",
           "95c9754653": "Agent activity layout",
           "3d4b9c4997": "Hover",
           "ba87080fb7": "Show properties",
@@ -3518,6 +3521,9 @@
           "697d0f6e1b": "Unpin"
         },
         "WorktreeList": {
+          "7a8b9c0d1e": "Update required",
+          "hostAuthNeeded": "Authentication needed",
+          "hostDisconnected": "Disconnected",
           "d880ea0744": "Create a group and move this project into it.",
           "bc1460beb3": "Update the group name shown in the sidebar.",
           "13757c053c": "New Project Group",

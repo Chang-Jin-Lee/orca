@@ -562,6 +562,10 @@ describe('createUISlice hydratePersistedUI', () => {
   it('defaults workspace host scope to all hosts', () => {
     expect(getDefaultUIState().workspaceHostScope).toBe('all')
     expect(createUIStore().getState().workspaceHostScope).toBe('all')
+    expect(getDefaultUIState().visibleWorkspaceHostIds).toBeNull()
+    expect(createUIStore().getState().visibleWorkspaceHostIds).toBeNull()
+    expect(getDefaultUIState().workspaceHostOrder).toEqual([])
+    expect(createUIStore().getState().workspaceHostOrder).toEqual([])
   })
 
   it('preserves the current right sidebar width when older persisted UI omits it', () => {
@@ -606,6 +610,43 @@ describe('createUISlice hydratePersistedUI', () => {
     store.getState().hydratePersistedUI(makePersistedUI({ workspaceHostScope: 'ssh:win%20vm' }))
 
     expect(store.getState().workspaceHostScope).toBe('ssh:win%20vm')
+    expect(store.getState().visibleWorkspaceHostIds).toEqual(['ssh:win%20vm'])
+  })
+
+  it('hydrates a persisted visible workspace host set', () => {
+    const store = createUIStore()
+
+    store.getState().hydratePersistedUI(
+      makePersistedUI({
+        workspaceHostScope: 'ssh:win%20vm',
+        visibleWorkspaceHostIds: [
+          'local',
+          'ssh:win%20vm',
+          'bogus' as NonNullable<PersistedUIState['visibleWorkspaceHostIds']>[number],
+          'local'
+        ]
+      })
+    )
+
+    expect(store.getState().workspaceHostScope).toBe('ssh:win%20vm')
+    expect(store.getState().visibleWorkspaceHostIds).toEqual(['local', 'ssh:win%20vm'])
+  })
+
+  it('hydrates a persisted workspace host order', () => {
+    const store = createUIStore()
+
+    store.getState().hydratePersistedUI(
+      makePersistedUI({
+        workspaceHostOrder: [
+          'ssh:win%20vm',
+          'bogus' as NonNullable<PersistedUIState['workspaceHostOrder']>[number],
+          'local',
+          'ssh:win%20vm'
+        ]
+      })
+    )
+
+    expect(store.getState().workspaceHostOrder).toEqual(['ssh:win%20vm', 'local'])
   })
 
   it('falls back to all hosts for invalid persisted workspace host scopes', () => {
@@ -618,6 +659,7 @@ describe('createUISlice hydratePersistedUI', () => {
       )
 
     expect(store.getState().workspaceHostScope).toBe('all')
+    expect(store.getState().visibleWorkspaceHostIds).toBeNull()
   })
 
   it('persists workspace host scope changes', () => {
@@ -628,7 +670,38 @@ describe('createUISlice hydratePersistedUI', () => {
     store.getState().setWorkspaceHostScope('runtime:env-1')
 
     expect(store.getState().workspaceHostScope).toBe('runtime:env-1')
-    expect(setUI).toHaveBeenCalledWith({ workspaceHostScope: 'runtime:env-1' })
+    expect(store.getState().visibleWorkspaceHostIds).toEqual(['runtime:env-1'])
+    expect(setUI).toHaveBeenCalledWith({
+      workspaceHostScope: 'runtime:env-1',
+      visibleWorkspaceHostIds: ['runtime:env-1']
+    })
+  })
+
+  it('persists visible workspace host changes independently of focused host', () => {
+    const setUI = vi.fn(() => Promise.resolve())
+    vi.stubGlobal('window', { api: { ui: { set: setUI } } })
+    const store = createUIStore()
+
+    store.getState().setWorkspaceHostScope('runtime:env-1')
+    store.getState().setVisibleWorkspaceHostIds(['local', 'runtime:env-1'])
+
+    expect(store.getState().workspaceHostScope).toBe('runtime:env-1')
+    expect(store.getState().visibleWorkspaceHostIds).toEqual(['local', 'runtime:env-1'])
+    expect(setUI).toHaveBeenLastCalledWith({
+      workspaceHostScope: 'runtime:env-1',
+      visibleWorkspaceHostIds: ['local', 'runtime:env-1']
+    })
+  })
+
+  it('persists workspace host order changes', () => {
+    const setUI = vi.fn(() => Promise.resolve())
+    vi.stubGlobal('window', { api: { ui: { set: setUI } } })
+    const store = createUIStore()
+
+    store.getState().setWorkspaceHostOrder(['ssh:win%20vm', 'bogus' as never, 'local'])
+
+    expect(store.getState().workspaceHostOrder).toEqual(['ssh:win%20vm', 'local'])
+    expect(setUI).toHaveBeenCalledWith({ workspaceHostOrder: ['ssh:win%20vm', 'local'] })
   })
 
   it('hydrates persisted per-worktree dotfile visibility', () => {

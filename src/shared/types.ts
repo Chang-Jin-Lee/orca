@@ -2611,6 +2611,8 @@ export type RightSidebarTab = 'explorer' | 'search' | 'source-control' | 'checks
 
 export type ProjectOrderBy = 'manual' | 'recent'
 export type WorkspaceHostScope = 'all' | 'local' | `ssh:${string}` | `runtime:${string}`
+export type VisibleWorkspaceHostIds = Exclude<WorkspaceHostScope, 'all'>[] | null
+export type WorkspaceHostOrder = Exclude<WorkspaceHostScope, 'all'>[]
 
 export type PersistedUIState = {
   lastActiveRepoId: string | null
@@ -2634,6 +2636,12 @@ export type PersistedUIState = {
    *  command-center view; specific host IDs focus the sidebar without tearing
    *  down sessions owned by other hosts. */
   workspaceHostScope?: WorkspaceHostScope
+  /** Which execution hosts the workspace sidebar shows. `null` means sticky
+   *  all-hosts so newly-added hosts appear automatically. */
+  visibleWorkspaceHostIds?: VisibleWorkspaceHostIds
+  /** User-defined sidebar order for host sections. Missing/new hosts append in
+   *  the discovered host order. */
+  workspaceHostOrder?: WorkspaceHostOrder
   /** Deprecated legacy positive-form setting. Ignored on hydration. */
   showSleepingWorkspaces?: boolean
   /** Deprecated legacy name used by a short-lived build. Ignored on hydration. */

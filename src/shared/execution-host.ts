@@ -73,6 +73,32 @@ export function normalizeExecutionHostScope(value: string | null | undefined): E
   return normalizeExecutionHostId(normalized) ?? ALL_EXECUTION_HOSTS_SCOPE
 }
 
+export function normalizeVisibleExecutionHostIds(
+  value: readonly string[] | null | undefined
+): ExecutionHostId[] | null {
+  if (!Array.isArray(value)) {
+    return null
+  }
+  const ids: ExecutionHostId[] = []
+  const seen = new Set<ExecutionHostId>()
+  for (const raw of value) {
+    const id = normalizeExecutionHostId(raw)
+    if (!id || seen.has(id)) {
+      continue
+    }
+    seen.add(id)
+    ids.push(id)
+  }
+  return ids.length > 0 ? ids : null
+}
+
+export function normalizeExecutionHostOrder(
+  value: readonly string[] | null | undefined
+): ExecutionHostId[] {
+  const normalized = normalizeVisibleExecutionHostIds(value)
+  return normalized ?? []
+}
+
 export function getRepoExecutionHostId(
   repo: Pick<Repo, 'connectionId' | 'executionHostId'>
 ): ExecutionHostId {
