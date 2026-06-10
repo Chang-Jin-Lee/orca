@@ -21,12 +21,8 @@ import type { AgentActivityDisplayMode } from '../../../../shared/types'
 import { DEFAULT_SHOW_SLEEPING_WORKSPACES } from '../../../../shared/constants'
 import SidebarRepositoryFilterSection from './SidebarRepositoryFilterSection'
 import SidebarWorkspaceFilterSection from './SidebarWorkspaceFilterSection'
-import {
-  buildSidebarHostOptions,
-  buildSidebarHostScopeOptions,
-  getSidebarHostScopeLabel,
-  shouldShowHostScopeControls
-} from './sidebar-host-options'
+import { getSidebarHostScopeLabel, shouldShowHostScopeControls } from './sidebar-host-options'
+import { useSidebarHostScopeOptions } from './use-sidebar-host-scope-options'
 import { SidebarHostScopeMenuSection } from './SidebarHostScopeMenuSection'
 import {
   AGENT_ACTIVITY_DISPLAY_OPTIONS,
@@ -55,8 +51,6 @@ const SidebarWorkspaceOptionsMenu = React.memo(function SidebarWorkspaceOptionsM
   const toggleWorktreeCardProperty = useAppStore((s) => s.toggleWorktreeCardProperty)
   const settings = useAppStore((s) => s.settings)
   const updateSettings = useAppStore((s) => s.updateSettings)
-  const sshTargetLabels = useAppStore((s) => s.sshTargetLabels)
-  const sshConnectionStates = useAppStore((s) => s.sshConnectionStates)
   const workspaceHostScope = useAppStore((s) => s.workspaceHostScope)
   const setWorkspaceHostScope = useAppStore((s) => s.setWorkspaceHostScope)
   const agentActivityDisplayMode = useAppStore((s) => s.agentActivityDisplayMode)
@@ -69,12 +63,8 @@ const SidebarWorkspaceOptionsMenu = React.memo(function SidebarWorkspaceOptionsM
   const setProjectOrderBy = useAppStore((s) => s.setProjectOrderBy)
 
   const [open, setOpen] = useState(false)
-  const hostOptions = useMemo(
-    () => buildSidebarHostOptions({ repos, sshTargetLabels, sshConnectionStates, settings }),
-    [repos, sshTargetLabels, sshConnectionStates, settings]
-  )
+  const { hostOptions, hostScopeOptions } = useSidebarHostScopeOptions()
   const showHostScopeControls = shouldShowHostScopeControls(hostOptions)
-  const hostScopeOptions = useMemo(() => buildSidebarHostScopeOptions(hostOptions), [hostOptions])
 
   const handleOpenChange = useCallback(
     (next: boolean) => {

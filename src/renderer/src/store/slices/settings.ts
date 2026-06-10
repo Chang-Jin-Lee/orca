@@ -59,6 +59,10 @@ export const createSettingsSlice: StateCreator<AppState, [], [], SettingsSlice> 
     try {
       const settings = await window.api.settings.get()
       set({ settings })
+      // Why: best-effort boot probe so sidebar host pickers show live runtime
+      // health before the settings pane is ever opened. Fire-and-forget to keep
+      // startup off the network round-trips.
+      void get().hydrateRuntimeEnvironmentStatuses()
     } catch (err) {
       console.error('Failed to fetch settings:', err)
     }

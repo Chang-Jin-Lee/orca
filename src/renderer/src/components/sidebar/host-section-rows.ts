@@ -8,6 +8,7 @@ import {
 } from '../../../../shared/execution-host'
 import type { ExecutionHostHealth } from '../../../../shared/execution-host-registry'
 import type { RuntimeCompatVerdict } from '../../../../shared/protocol-compat'
+import type { SshConnectionStatus } from '../../../../shared/ssh-types'
 import type { Repo } from '../../../../shared/types'
 import type { Row } from './worktree-list-groups'
 
@@ -22,6 +23,7 @@ export type HostHeaderRow = {
   // Why: blocked-host guidance in the header menu needs the verdict reason so
   // it can deep-link an "Update server/client required" row per skew direction.
   compatibility?: RuntimeCompatVerdict
+  connectionStatus?: SshConnectionStatus
   count: number
 }
 
@@ -34,6 +36,7 @@ export type HostSectionOption = {
   detail: string
   health: ExecutionHostHealth
   compatibility?: RuntimeCompatVerdict
+  connectionStatus?: SshConnectionStatus
 }
 
 function getRepoHostId(
@@ -145,6 +148,7 @@ export function addHostSectionRows(args: {
       detail: host.detail,
       health: host.health,
       compatibility: host.compatibility,
+      connectionStatus: host.connectionStatus,
       count: countWorktreeRows(hostRows)
     })
     result.push(...hostRows)

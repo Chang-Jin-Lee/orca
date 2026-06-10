@@ -154,7 +154,8 @@ function getComposerPrefetchRepoId(
   return resolveComposerGitRepoId({
     eligibleRepos: getComposerEligibleRepos(state.repos),
     initialRepoId,
-    activeRepoId: state.activeRepoId
+    activeRepoId: state.activeRepoId,
+    focusedHostScope: state.workspaceHostScope
   })
 }
 

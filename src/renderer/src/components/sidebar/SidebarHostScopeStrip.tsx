@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react'
+import React from 'react'
 import { AlertTriangle, ChevronDown, Circle, Loader2, Monitor, Server } from 'lucide-react'
 import { useAppStore } from '@/store'
 import { Button } from '@/components/ui/button'
@@ -11,13 +11,12 @@ import {
   DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu'
 import {
-  buildSidebarHostOptions,
-  buildSidebarHostScopeOptions,
   getSidebarHostHealthLabel,
   getSidebarHostScopeLabel,
   shouldShowHostScopeControls,
   type SidebarHostScopeOption
 } from './sidebar-host-options'
+import { useSidebarHostScopeOptions } from './use-sidebar-host-scope-options'
 
 function HostHealthDot({ health }: { health: SidebarHostScopeOption['health'] }) {
   if (health === 'connecting') {
@@ -41,18 +40,9 @@ function HostHealthDot({ health }: { health: SidebarHostScopeOption['health'] })
 }
 
 const SidebarHostScopeStrip = React.memo(function SidebarHostScopeStrip() {
-  const repos = useAppStore((s) => s.repos)
-  const sshTargetLabels = useAppStore((s) => s.sshTargetLabels)
-  const sshConnectionStates = useAppStore((s) => s.sshConnectionStates)
-  const settings = useAppStore((s) => s.settings)
   const workspaceHostScope = useAppStore((s) => s.workspaceHostScope)
   const setWorkspaceHostScope = useAppStore((s) => s.setWorkspaceHostScope)
-
-  const hostOptions = useMemo(
-    () => buildSidebarHostOptions({ repos, sshTargetLabels, sshConnectionStates, settings }),
-    [repos, sshTargetLabels, sshConnectionStates, settings]
-  )
-  const hostScopeOptions = useMemo(() => buildSidebarHostScopeOptions(hostOptions), [hostOptions])
+  const { hostOptions, hostScopeOptions } = useSidebarHostScopeOptions()
 
   if (!shouldShowHostScopeControls(hostOptions)) {
     return null

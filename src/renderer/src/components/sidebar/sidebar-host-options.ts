@@ -9,7 +9,8 @@ import {
   type ExecutionHostHealth
 } from '../../../../shared/execution-host-registry'
 import type { RuntimeCompatVerdict } from '../../../../shared/protocol-compat'
-import type { SshConnectionState } from '../../../../shared/ssh-types'
+import type { SshConnectionState, SshConnectionStatus } from '../../../../shared/ssh-types'
+import type { RuntimeStatus } from '../../../../shared/runtime-types'
 import { translate } from '@/i18n/i18n'
 
 export type SidebarHostOption = {
@@ -20,6 +21,8 @@ export type SidebarHostOption = {
   health: ExecutionHostHealth
   // Why: surfaced to the sidebar host-header menu so it can warn on version skew.
   compatibility?: RuntimeCompatVerdict
+  // Why: lets host headers spell out auth-needed SSH states, not just an icon.
+  connectionStatus?: SshConnectionStatus
 }
 
 export type SidebarHostScopeOption = {
@@ -34,12 +37,19 @@ export function buildSidebarHostOptions(args: {
   sshTargetLabels: ReadonlyMap<string, string>
   sshConnectionStates?: ReadonlyMap<string, SshConnectionState>
   settings: Pick<GlobalSettings, 'activeRuntimeEnvironmentId'> | null | undefined
+  // Why: live per-environment runtime status lets the registry surface compat
+  // verdicts and blocked health in the sidebar without re-probing servers.
+  runtimeStatusByEnvironmentId?: ReadonlyMap<
+    string,
+    { status?: RuntimeStatus | null; appVersion?: string | null }
+  >
 }): SidebarHostOption[] {
   return buildExecutionHostRegistry({
     repos: args.repos,
     settings: args.settings,
     sshTargetLabels: args.sshTargetLabels,
-    sshConnectionStates: args.sshConnectionStates
+    sshConnectionStates: args.sshConnectionStates,
+    runtimeStatusByEnvironmentId: args.runtimeStatusByEnvironmentId
   })
 }
 

@@ -76,6 +76,70 @@ describe('sidebar host options', () => {
     })
   })
 
+  it('marks a runtime host blocked when its live status fails compat', () => {
+    const hosts = buildSidebarHostOptions({
+      repos: [],
+      sshTargetLabels: new Map(),
+      settings: { activeRuntimeEnvironmentId: 'runtime-1' },
+      // Why: protocol 0 is below the minimum compatible server version, so the
+      // registry must surface a 'server-too-old' blocked verdict + health when
+      // the live status map is passed.
+      runtimeStatusByEnvironmentId: new Map([
+        [
+          'runtime-1',
+          {
+            status: {
+              runtimeId: 'rt',
+              rendererGraphEpoch: 0,
+              graphStatus: 'ready',
+              authoritativeWindowId: null,
+              liveTabCount: 0,
+              liveLeafCount: 0,
+              runtimeProtocolVersion: 0,
+              minCompatibleRuntimeClientVersion: 0
+            }
+          }
+        ]
+      ])
+    })
+
+    const runtimeHost = hosts.find((host) => host.id === 'runtime:runtime-1')
+    expect(runtimeHost?.health).toBe('blocked')
+    expect(runtimeHost?.compatibility).toMatchObject({
+      kind: 'blocked',
+      reason: 'server-too-old'
+    })
+  })
+
+  it('leaves a runtime host available when its live status is compatible', () => {
+    const hosts = buildSidebarHostOptions({
+      repos: [],
+      sshTargetLabels: new Map(),
+      settings: { activeRuntimeEnvironmentId: 'runtime-1' },
+      runtimeStatusByEnvironmentId: new Map([
+        [
+          'runtime-1',
+          {
+            status: {
+              runtimeId: 'rt',
+              rendererGraphEpoch: 0,
+              graphStatus: 'ready',
+              authoritativeWindowId: null,
+              liveTabCount: 0,
+              liveLeafCount: 0,
+              runtimeProtocolVersion: 3,
+              minCompatibleRuntimeClientVersion: 3
+            }
+          }
+        ]
+      ])
+    })
+
+    const runtimeHost = hosts.find((host) => host.id === 'runtime:runtime-1')
+    expect(runtimeHost?.health).toBe('available')
+    expect(runtimeHost?.compatibility?.kind).toBe('ok')
+  })
+
   it('builds all-host plus focused-host scope options', () => {
     const hosts = buildSidebarHostOptions({
       repos: [{ connectionId: 'ssh-1' }],

@@ -129,7 +129,13 @@ export function HostSectionHeaderMenu({ row }: { row: HostHeaderRow }): React.JS
         selector: parsed.environmentId,
         timeoutMs: 10_000
       })
-      unwrapRuntimeRpcResult<RuntimeStatus>(response)
+      const runtimeStatus = unwrapRuntimeRpcResult<RuntimeStatus>(response)
+      // Why: feed the probe result into the shared store so the host header and
+      // other host pickers reflect this check without a separate fetch.
+      useAppStore.getState().setRuntimeEnvironmentStatus(parsed.environmentId, {
+        status: runtimeStatus,
+        checkedAt: Date.now()
+      })
       toast.success(
         translate(
           'auto.components.sidebar.HostSectionHeaderMenu.7f1a2b3c4d',
@@ -140,6 +146,12 @@ export function HostSectionHeaderMenu({ row }: { row: HostHeaderRow }): React.JS
         )
       )
     } catch (err) {
+      // Why: record the failed probe so the host registry can drop a previously
+      // healthy verdict instead of showing stale "compatible" state.
+      useAppStore.getState().setRuntimeEnvironmentStatus(parsed.environmentId, {
+        status: null,
+        checkedAt: Date.now()
+      })
       toast.error(
         err instanceof Error
           ? err.message

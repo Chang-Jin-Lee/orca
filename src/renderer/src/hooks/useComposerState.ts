@@ -318,6 +318,7 @@ export function useComposerState(options: UseComposerStateOptions): UseComposerS
   const workspaceStatuses = useAppStore((s) => s.workspaceStatuses)
   const sshConnectionStates = useAppStore((s) => s.sshConnectionStates)
   const sshConnectedGeneration = useAppStore((s) => s.sshConnectedGeneration)
+  const workspaceHostScope = useAppStore((s) => s.workspaceHostScope)
   const eligibleRepos = useMemo(() => getComposerEligibleRepos(repos), [repos])
   const draftRepoId = persistDraft ? (newWorkspaceDraft?.repoId ?? null) : null
   const resolvedInitialWorkspaceStatus = useMemo(
@@ -332,7 +333,8 @@ export function useComposerState(options: UseComposerStateOptions): UseComposerS
     eligibleRepos,
     draftRepoId,
     initialRepoId,
-    activeRepoId
+    activeRepoId,
+    focusedHostScope: workspaceHostScope
   })
 
   const [internalRepoId, setInternalRepoId] = useState<string>(resolvedInitialRepoId)

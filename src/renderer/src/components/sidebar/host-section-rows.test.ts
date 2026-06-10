@@ -232,6 +232,41 @@ describe('addHostSectionRows', () => {
     ])
   })
 
+  it('carries the SSH connection status through to the host header row', () => {
+    const ssh = repo('ssh', 'ssh-1')
+    const rows = [repoHeader(ssh), item('ssh-wt', ssh)]
+
+    const sectioned = addHostSectionRows({
+      rows,
+      hostOptions: [
+        {
+          id: 'local',
+          kind: 'local',
+          label: 'Local Mac',
+          detail: 'This computer',
+          health: 'local'
+        },
+        {
+          id: 'ssh:ssh-1',
+          kind: 'ssh',
+          label: 'Builder',
+          detail: 'SSH',
+          health: 'error',
+          connectionStatus: 'auth-failed'
+        }
+      ],
+      workspaceHostScope: 'all',
+      defaultHostId: 'local'
+    })
+
+    expect(sectioned[0]).toMatchObject({
+      type: 'host-header',
+      hostId: 'ssh:ssh-1',
+      health: 'error',
+      connectionStatus: 'auth-failed'
+    })
+  })
+
   it('uses the focused runtime as the owner for non-SSH repos', () => {
     const project = repo('runtime-project')
     const rows = [repoHeader(project), item('runtime-wt', project)]

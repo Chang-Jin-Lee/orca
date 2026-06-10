@@ -505,10 +505,32 @@ function HostHeaderHealthIcon({ health }: { health: HostHeaderRow['health'] }): 
   )
 }
 
-function HostSectionHeader({ row }: { row: HostHeaderRow }): React.JSX.Element {
+function getHostHeaderDetail(row: HostHeaderRow): { text: string; isWarning: boolean } {
   // Why: a blocked compatibility verdict gets a compact warning treatment so one
   // skewed host stands out without altering how its siblings render.
+  if (row.health === 'blocked') {
+    return {
+      text: translate('auto.components.sidebar.WorktreeList.7a8b9c0d1e', 'Update required'),
+      isWarning: true
+    }
+  }
+  // Why: auth-expired SSH hosts must say so in words — the plan requires a clear
+  // auth-needed status, and the health icon alone doesn't explain the fix.
+  if (row.connectionStatus === 'auth-failed') {
+    return {
+      text: translate(
+        'auto.components.sidebar.WorktreeList.hostAuthNeeded',
+        'Authentication needed'
+      ),
+      isWarning: true
+    }
+  }
+  return { text: row.detail, isWarning: false }
+}
+
+function HostSectionHeader({ row }: { row: HostHeaderRow }): React.JSX.Element {
   const isBlocked = row.health === 'blocked'
+  const detail = getHostHeaderDetail(row)
   return (
     <div className="px-2 pt-1">
       <div
@@ -528,12 +550,10 @@ function HostSectionHeader({ row }: { row: HostHeaderRow }): React.JSX.Element {
           <div
             className={cn(
               'mt-0.5 truncate text-[10px] leading-none',
-              isBlocked ? 'text-destructive' : 'text-muted-foreground'
+              detail.isWarning ? 'text-destructive' : 'text-muted-foreground'
             )}
           >
-            {isBlocked
-              ? translate('auto.components.sidebar.WorktreeList.7a8b9c0d1e', 'Update required')
-              : row.detail}
+            {detail.text}
           </div>
         </div>
         <SectionMetricsBadge count={row.count} />
@@ -3963,6 +3983,7 @@ const WorktreeList = React.memo(function WorktreeList({
   const settings = useAppStore((s) => s.settings)
   const sshTargetLabels = useAppStore((s) => s.sshTargetLabels)
   const sshConnectionStates = useAppStore((s) => s.sshConnectionStates)
+  const runtimeStatusByEnvironmentId = useAppStore((s) => s.runtimeStatusByEnvironmentId)
 
   const sortEpoch = useAppStore((s) => s.sortEpoch)
 
@@ -4406,8 +4427,15 @@ const WorktreeList = React.memo(function WorktreeList({
   )
   const defaultHostId = getSettingsFocusedExecutionHostId(settings)
   const hostOptions = useMemo(
-    () => buildSidebarHostOptions({ repos, sshTargetLabels, sshConnectionStates, settings }),
-    [repos, sshTargetLabels, sshConnectionStates, settings]
+    () =>
+      buildSidebarHostOptions({
+        repos,
+        sshTargetLabels,
+        sshConnectionStates,
+        settings,
+        runtimeStatusByEnvironmentId
+      }),
+    [repos, sshTargetLabels, sshConnectionStates, settings, runtimeStatusByEnvironmentId]
   )
   const sectionRows = useMemo(
     () =>

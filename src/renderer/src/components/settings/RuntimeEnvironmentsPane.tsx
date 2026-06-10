@@ -35,6 +35,7 @@ import {
   getWebRuntimeEnvironmentsSearchEntry
 } from './runtime-environments-search'
 import { unwrapRuntimeRpcResult } from '@/runtime/runtime-rpc-client'
+import { useAppStore } from '@/store'
 import { translate } from '@/i18n/i18n'
 
 const LOCAL_RUNTIME_VALUE = '__local__'
@@ -120,6 +121,11 @@ export function RuntimeEnvironmentsPane({
     }
     try {
       const nextEnvironments = await window.api.runtimeEnvironments.list()
+      // Why: drop store status for servers no longer saved so stale hosts don't
+      // linger in the sidebar registry.
+      useAppStore
+        .getState()
+        .retainRuntimeEnvironmentStatuses(nextEnvironments.map((environment) => environment.id))
       if (mountedRef.current) {
         setEnvironments(nextEnvironments)
         setDetailsByEnvironmentId((current) => {
@@ -143,6 +149,12 @@ export function RuntimeEnvironmentsPane({
               timeoutMs: 10_000
             })
             const runtimeStatus = unwrapRuntimeRpcResult<RuntimeStatus>(response)
+            // Why: feed the live status into the store so sidebar host pickers
+            // reflect manual refreshes, not just the settings pane.
+            useAppStore.getState().setRuntimeEnvironmentStatus(environment.id, {
+              status: runtimeStatus,
+              checkedAt: Date.now()
+            })
             if (!mountedRef.current) {
               return
             }
@@ -156,6 +168,12 @@ export function RuntimeEnvironmentsPane({
               }
             }))
           } catch (error) {
+            // Why: record the failed probe (null status) so the sidebar can
+            // distinguish unreachable from never-checked.
+            useAppStore.getState().setRuntimeEnvironmentStatus(environment.id, {
+              status: null,
+              checkedAt: Date.now()
+            })
             if (!mountedRef.current) {
               return
             }
