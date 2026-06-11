@@ -155,6 +155,32 @@ describe('project-host workspace target resolution', () => {
     })
   })
 
+  it('reports setup-not-ready when the selected host has pending setup metadata', () => {
+    const repo = makeRepo('orca')
+    const projects = [makeProject('github:stablyai/orca', ['orca'])]
+    const projectHostSetups = [
+      makeSetup('orca', 'github:stablyai/orca', 'local', 'orca'),
+      makeSetup('gpu-pending', 'github:stablyai/orca', 'runtime:gpu', '', {
+        path: '',
+        setupState: 'setting-up',
+        setupMethod: 'provisioned'
+      })
+    ]
+
+    expect(
+      resolveWorkspaceCreationTarget({
+        eligibleRepos: [repo],
+        projects,
+        projectHostSetups,
+        projectId: 'github:stablyai/orca',
+        hostId: 'runtime:gpu'
+      })
+    ).toEqual({
+      status: 'unavailable',
+      reason: 'setup-not-ready'
+    })
+  })
+
   it('reports unavailable when an explicit setup is not ready', () => {
     const repo = makeRepo('orca')
     const projects = [makeProject('github:stablyai/orca', ['orca'])]

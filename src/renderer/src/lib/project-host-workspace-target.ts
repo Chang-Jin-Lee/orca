@@ -142,6 +142,12 @@ export function resolveWorkspaceCreationTarget(
   }
 
   if (projectId && hostId) {
+    const hostSetup = setups.find(
+      (setup) => setup.projectId === projectId && setup.hostId === hostId
+    )
+    if (hostSetup && !isReadySetup(hostSetup)) {
+      return { status: 'unavailable', reason: 'setup-not-ready' }
+    }
     const target = findReadySetupTarget(
       setups,
       repoById,

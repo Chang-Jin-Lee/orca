@@ -508,6 +508,8 @@ Already partially landed:
   known host before a checkout path exists
 - workspace creation host options distinguish pending/error/unsupported setup
   metadata from hosts that have no setup
+- workspace creation target resolution reports `setup-not-ready` when a
+  selected host has non-ready setup metadata
 
 Not complete yet:
 

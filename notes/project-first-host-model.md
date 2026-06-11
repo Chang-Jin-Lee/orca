@@ -791,6 +791,9 @@ Landed so far:
 - Updated workspace creation host options so non-ready setup metadata appears
   with its real pending/error/unsupported state instead of being collapsed into
   a generic "project not set up" row.
+- Updated workspace creation target resolution so selecting a host with
+  non-ready setup metadata reports `setup-not-ready` instead of
+  `project-not-set-up-on-host`.
 - Added tests for local repos, SSH repos, same-provider multi-host grouping,
   no-identity same-name non-grouping, selector cache behavior, persistence
   backfill, repo mutation synchronization, renderer hydration, runtime RPC
