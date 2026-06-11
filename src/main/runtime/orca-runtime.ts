@@ -13739,10 +13739,11 @@ export class OrcaRuntimeService {
     if (leafTitleClassification === 'agent') {
       return true
     }
-    const ptyTitleClassification = classifyLatestAgentTitle(
+    const ptyTitle = getLatestAgentCandidateTitle(
       { title: pty.title, updatedAt: pty.titleUpdatedAt },
       { title: pty.lastOscTitle, updatedAt: pty.lastOscTitleAt }
     )
+    const ptyTitleClassification = classifyAgentTitle(ptyTitle)
     if (leafTitle === null && ptyTitleClassification === 'agent') {
       return true
     }
@@ -13754,12 +13755,12 @@ export class OrcaRuntimeService {
     if (isKnownReadyPromptPreview(waitText)) {
       return true
     }
-    // Why: a `claude agents` management screen can have foreground process
-    // `claude`; that process alone is not agent activity.
+    // Why: stale status is only a fallback when no current title evidence
+    // exists; neutral titles such as shells should clear it.
     if (
       pty.lastAgentStatus !== null &&
       leafTitle === null &&
-      ptyTitleClassification === 'neutral' &&
+      ptyTitle === null &&
       managementTitleClassification !== 'management'
     ) {
       return true

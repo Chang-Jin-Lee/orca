@@ -6117,6 +6117,7 @@ describe('OrcaRuntimeService', () => {
           {
             lastAgentStatus: 'working' | null
             lastOscTitle: string | null
+            lastOscTitleAt: number | null
           }
         >
       }
@@ -6127,6 +6128,7 @@ describe('OrcaRuntimeService', () => {
     }
     pty.lastAgentStatus = 'working'
     pty.lastOscTitle = 'claude agents'
+    pty.lastOscTitleAt = 0
 
     await expect(runtime.isTerminalRunningAgent(handle)).resolves.toBe(false)
   })
@@ -6423,6 +6425,7 @@ describe('OrcaRuntimeService', () => {
           string,
           {
             lastOscTitle: string | null
+            lastOscTitleAt: number | null
           }
         >
       }
@@ -6432,6 +6435,7 @@ describe('OrcaRuntimeService', () => {
       throw new Error('expected runtime PTY record')
     }
     pty.lastOscTitle = 'claude working'
+    pty.lastOscTitleAt = 0
 
     await expect(runtime.isTerminalRunningAgent(handle)).resolves.toBe(false)
   })
@@ -6457,6 +6461,7 @@ describe('OrcaRuntimeService', () => {
           string,
           {
             lastOscTitle: string | null
+            lastOscTitleAt: number | null
           }
         >
       }
@@ -6466,6 +6471,7 @@ describe('OrcaRuntimeService', () => {
       throw new Error('expected runtime PTY record')
     }
     pty.lastOscTitle = 'claude agents'
+    pty.lastOscTitleAt = 0
 
     await expect(runtime.isTerminalRunningAgent(handle)).resolves.toBe(true)
   })
@@ -6548,6 +6554,40 @@ describe('OrcaRuntimeService', () => {
     })
     runtime.onPtyData('pty-bg', '\x1b]0;Claude working\x07', 100)
     runtime.onPtyData('pty-bg', '\x1b]0;zsh\x07', 101)
+
+    await expect(runtime.isTerminalRunningAgent(handle)).resolves.toBe(false)
+  })
+
+  it('does not use stale runtime-created PTY status when a neutral PTY title exists', async () => {
+    const runtime = new OrcaRuntimeService(store)
+    runtime.setPtyController({
+      spawn: vi.fn().mockResolvedValue({ id: 'pty-bg' }),
+      write: () => true,
+      kill: () => true,
+      getForegroundProcess: async () => null
+    })
+    runtime.attachWindow(1)
+    runtime.syncWindowGraph(1, { tabs: [], leaves: [] })
+    const { handle } = await runtime.createTerminal(`path:${TEST_WORKTREE_PATH}`, {
+      command: 'claude',
+      title: 'zsh'
+    })
+    const pty = (
+      runtime as unknown as {
+        ptysById: Map<
+          string,
+          {
+            lastAgentStatus: 'working' | null
+          }
+        >
+      }
+    ).ptysById.get('pty-bg')
+    expect(pty).toBeDefined()
+    if (!pty) {
+      throw new Error('expected runtime PTY record')
+    }
+    pty.lastAgentStatus = 'working'
+    runtime.setPtyController(null)
 
     await expect(runtime.isTerminalRunningAgent(handle)).resolves.toBe(false)
   })
