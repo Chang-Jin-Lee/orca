@@ -2,6 +2,8 @@ import { describe, expect, it, vi } from 'vitest'
 import { RpcDispatcher } from '../dispatcher'
 import type { RpcRequest } from '../core'
 import { OrcaRuntimeService } from '../../orca-runtime'
+import { LinearWriteFailure } from '../../../linear/issues'
+import { sanitizeLinearErrorMessage } from '../../../linear/issue-context-errors'
 import { LINEAR_AGENT_ACCESS_METHODS } from './linear-agent-access'
 
 function makeRequest(method: string, params?: unknown): RpcRequest {
@@ -134,7 +136,7 @@ describe('Linear agent access RPC methods', () => {
 type LinearWriteRunner = {
   runLinearAgentWrite<T>(
     write: (signal: AbortSignal) => Promise<T>,
-    unconfirmed: () => Error
+    unconfirmed: (cause?: string) => Error
   ): Promise<T>
 }
 
@@ -144,7 +146,7 @@ type LinearUnconfirmedBuilder = {
     writeId: string,
     target: unknown,
     extra?: unknown
-  ): Error & { data?: { nextSteps?: string[] } }
+  ): Error & { data?: { cause?: string; nextSteps?: string[] } }
   resolveLinearAgentState(input: string, states: unknown[]): unknown | null
   notifyLinearLinkedIssueUpdated(workspaceId: string, identifier: string): Promise<void>
   listResolvedWorktrees(): Promise<unknown[]>
@@ -182,6 +184,73 @@ type LinearRetryLookupTester = {
 }
 
 describe('Linear agent write recovery helpers', () => {
+  it('keeps stable write failure codes while preserving the Linear provider message', async () => {
+    const runtime = new OrcaRuntimeService()
+    const runner = runtime as unknown as LinearWriteRunner
+
+    await expect(
+      runner.runLinearAgentWrite(
+        async () => {
+          throw new LinearWriteFailure(
+            'failed',
+            'Linear rejected the state transition because the issue is archived.'
+          )
+        },
+        () => Object.assign(new Error('should not be used'), { code: 'linear_write_unconfirmed' })
+      )
+    ).rejects.toMatchObject({
+      code: 'linear_write_failed',
+      message: 'Linear rejected the state transition because the issue is archived.'
+    })
+  })
+
+  it('keeps pinned retry guidance for unconfirmed writes while adding sanitized cause text', async () => {
+    const runtime = new OrcaRuntimeService()
+    const runner = runtime as unknown as LinearWriteRunner
+    const builder = runtime as unknown as LinearUnconfirmedBuilder
+    const writeId = '11111111-1111-4111-8111-111111111111'
+    const target = {
+      workspaceId: 'workspace-1',
+      issue: { id: 'issue-1', identifier: 'ENG-123', url: 'https://example.invalid/ENG-123' }
+    }
+
+    await expect(
+      runner.runLinearAgentWrite(
+        async () => {
+          throw new LinearWriteFailure(
+            'unconfirmed',
+            'Linear write could not be confirmed.',
+            new Error('fetch failed: socket hang up Authorization: Bearer linear-secret-token')
+          )
+        },
+        (cause) =>
+          builder.linearCreateStyleUnconfirmed('comment', writeId, target, {
+            bodyRequired: true,
+            cause
+          })
+      )
+    ).rejects.toMatchObject({
+      code: 'linear_write_unconfirmed',
+      data: {
+        cause: 'fetch failed: socket hang up Authorization: Bearer [REDACTED]',
+        nextSteps: [expect.stringContaining(`--write-id=${writeId}`)]
+      }
+    })
+  })
+
+  it('sanitizes Linear provider messages before they enter RPC error envelopes', () => {
+    const message = sanitizeLinearErrorMessage(
+      'Linear rejected mutation variables: {"body":"user comment payload","id":"issue-1"} headers: {Authorization: Bearer token-123}\n    at handler (linear.ts:1:1)'
+    )
+
+    expect(message).toContain('Linear rejected mutation')
+    expect(message).toContain('variables: [REDACTED]')
+    expect(message).toContain('headers: [REDACTED]')
+    expect(message).not.toContain('user comment payload')
+    expect(message).not.toContain('token-123')
+    expect(message).not.toContain('at handler')
+  })
+
   it('returns unconfirmed at the write deadline even when the request ignores abort', async () => {
     vi.useFakeTimers()
     try {

@@ -344,7 +344,12 @@ import {
   resolveLegacyLinearLinkWorkspace,
   searchLinearIssuesForAgents
 } from '../linear/issue-context'
-import { classifyLinearError, linearError, linearMessage } from '../linear/issue-context-errors'
+import {
+  classifyLinearError,
+  linearError,
+  linearMessage,
+  sanitizeLinearErrorMessage
+} from '../linear/issue-context-errors'
 import {
   createProject as createLinearProject,
   getCustomView as getLinearCustomView,
@@ -14879,14 +14884,15 @@ export class OrcaRuntimeService {
           }
           return updated
         },
-        () =>
+        (cause) =>
           linearError(
             'linear_write_unconfirmed',
             'Linear may have applied the state change, but Orca could not confirm it.',
             {
               nextSteps: [
                 `Run \`orca linear issue ${target.issue.identifier} --workspace ${target.workspaceId} --json\` and check the current state before retrying.`
-              ]
+              ],
+              ...(cause ? { cause } : {})
             }
           )
       )
@@ -14937,10 +14943,11 @@ export class OrcaRuntimeService {
             parentId,
             signal
           }),
-        () =>
+        (cause) =>
           this.linearCreateStyleUnconfirmed('comment', writeId, target, {
             parentId,
-            bodyRequired: true
+            bodyRequired: true,
+            cause
           })
       )
       await this.notifyLinearLinkedIssueUpdated(target.workspaceId, target.issue.identifier)
@@ -14997,10 +15004,11 @@ export class OrcaRuntimeService {
             target.workspaceId,
             { signal }
           ),
-        () =>
+        (cause) =>
           this.linearCreateStyleUnconfirmed('attach', writeId, target, {
             title,
-            url: url.toString()
+            url: url.toString(),
+            cause
           })
       )
       await this.notifyLinearLinkedIssueUpdated(target.workspaceId, target.issue.identifier)
@@ -15077,12 +15085,13 @@ export class OrcaRuntimeService {
             parentId,
             signal
           }),
-        () =>
+        (cause) =>
           this.linearCreateStyleUnconfirmed('create', writeId, null, {
             team,
             parent,
             title: params.title,
-            bodyRequired: params.body !== undefined
+            bodyRequired: params.body !== undefined,
+            cause
           })
       )
       if (parent) {
@@ -15185,7 +15194,7 @@ export class OrcaRuntimeService {
 
   private async runLinearAgentWrite<T>(
     write: (signal: AbortSignal) => Promise<T>,
-    unconfirmed: () => LinearAgentAccessError
+    unconfirmed: (cause?: string) => LinearAgentAccessError
   ): Promise<T> {
     const controller = new AbortController()
     const writePromise = write(controller.signal)
@@ -15211,13 +15220,13 @@ export class OrcaRuntimeService {
         throw error
       }
       if (error instanceof LinearWriteFailure && error.kind === 'unconfirmed') {
-        throw unconfirmed()
+        throw unconfirmed(this.linearWriteFailureCauseMessage(error))
       }
       if (error instanceof LinearWriteFailure && error.kind === 'network') {
-        throw linearError('linear_network_error', error.message)
+        throw linearError('linear_network_error', sanitizeLinearErrorMessage(error.message))
       }
       if (error instanceof LinearWriteFailure) {
-        throw linearError('linear_write_failed', error.message)
+        throw linearError('linear_write_failed', sanitizeLinearErrorMessage(error.message))
       }
       throw this.mapLinearReadFailure(error)
     } finally {
@@ -15225,6 +15234,16 @@ export class OrcaRuntimeService {
         clearTimeout(timer)
       }
     }
+  }
+
+  private linearWriteFailureCauseMessage(error: LinearWriteFailure): string {
+    if (error.cause instanceof Error) {
+      return sanitizeLinearErrorMessage(error.cause.message)
+    }
+    if (error.cause !== undefined) {
+      return sanitizeLinearErrorMessage(String(error.cause))
+    }
+    return sanitizeLinearErrorMessage(error.message)
   }
 
   private mapLinearReadFailure(error: unknown): LinearAgentAccessError {
@@ -15318,7 +15337,7 @@ export class OrcaRuntimeService {
     issueId: string,
     parentId: string | null,
     workspaceId: string,
-    unconfirmed: () => LinearAgentAccessError
+    unconfirmed: (cause?: string) => LinearAgentAccessError
   ): Promise<NonNullable<Awaited<ReturnType<typeof getLinearCommentByUuidForAgent>>>> {
     try {
       const comment = await this.getMatchingLinearCommentWrite(
@@ -15335,7 +15354,11 @@ export class OrcaRuntimeService {
       if (error instanceof LinearAgentAccessError && error.code === 'linear_invalid_write_id') {
         throw error
       }
-      throw unconfirmed()
+      throw unconfirmed(
+        error instanceof Error
+          ? sanitizeLinearErrorMessage(error.message)
+          : sanitizeLinearErrorMessage(String(error))
+      )
     }
     throw unconfirmed()
   }
@@ -15344,7 +15367,7 @@ export class OrcaRuntimeService {
     writeId: string,
     issueId: string,
     workspaceId: string,
-    unconfirmed: () => LinearAgentAccessError
+    unconfirmed: (cause?: string) => LinearAgentAccessError
   ): Promise<NonNullable<Awaited<ReturnType<typeof getLinearAttachmentByUuidForAgent>>>> {
     try {
       const attachment = await this.getMatchingLinearAttachmentWrite(
@@ -15360,7 +15383,11 @@ export class OrcaRuntimeService {
       if (error instanceof LinearAgentAccessError && error.code === 'linear_invalid_write_id') {
         throw error
       }
-      throw unconfirmed()
+      throw unconfirmed(
+        error instanceof Error
+          ? sanitizeLinearErrorMessage(error.message)
+          : sanitizeLinearErrorMessage(String(error))
+      )
     }
     throw unconfirmed()
   }
@@ -15370,7 +15397,7 @@ export class OrcaRuntimeService {
     teamId: string,
     parentId: string | null,
     workspaceId: string,
-    unconfirmed: () => LinearAgentAccessError
+    unconfirmed: (cause?: string) => LinearAgentAccessError
   ): Promise<NonNullable<Awaited<ReturnType<typeof getLinearIssueByUuidForAgent>>>> {
     try {
       const issue = await this.getMatchingLinearCreatedIssue(
@@ -15387,7 +15414,11 @@ export class OrcaRuntimeService {
       if (error instanceof LinearAgentAccessError && error.code === 'linear_invalid_write_id') {
         throw error
       }
-      throw unconfirmed()
+      throw unconfirmed(
+        error instanceof Error
+          ? sanitizeLinearErrorMessage(error.message)
+          : sanitizeLinearErrorMessage(String(error))
+      )
     }
     throw unconfirmed()
   }
@@ -15564,6 +15595,7 @@ export class OrcaRuntimeService {
       title?: string
       url?: string
       bodyRequired?: boolean
+      cause?: string
     } = {}
   ): LinearAgentAccessError {
     const workspaceId = target?.workspaceId ?? extra.team?.workspaceId ?? ''
@@ -15608,7 +15640,10 @@ export class OrcaRuntimeService {
         parentId: extra.parentId,
         team: extra.team ? { id: extra.team.id, key: extra.team.key } : undefined,
         parentIdentifier: extra.parent?.issue.identifier,
-        nextSteps: [`${retryPrefix}etry once with the pinned command: \`${pinned}\`.${payloadNote}`]
+        nextSteps: [
+          `${retryPrefix}etry once with the pinned command: \`${pinned}\`.${payloadNote}`
+        ],
+        ...(extra.cause ? { cause: sanitizeLinearErrorMessage(extra.cause) } : {})
       }
     )
   }
