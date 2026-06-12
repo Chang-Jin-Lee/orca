@@ -112,7 +112,7 @@ export default function HostedReviewActions({
                   events even when the merge button inside is disabled. */}
                 <span
                   className={cn(
-                    'inline-flex max-w-full',
+                    'inline-flex min-w-0 max-w-full shrink',
                     primaryMergeDisabled && 'cursor-not-allowed'
                   )}
                 >

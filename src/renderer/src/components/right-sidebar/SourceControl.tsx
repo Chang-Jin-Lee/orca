@@ -4986,7 +4986,7 @@ export function CommitArea({
             pair read as one split button instead of two detached buttons. */}
         <Tooltip>
           <TooltipTrigger asChild>
-            <span className="inline-flex">
+            <span className="inline-flex min-w-0 max-w-full shrink">
               <Button
                 type="button"
                 size="xs"
