@@ -74,14 +74,18 @@ const FEATURE_SETUP_ROWS: readonly FeatureSetupRow[] = [
   },
   {
     id: 'linearTickets',
-    title: translate(
-      'auto.components.onboarding.FeatureSetupChecklist.linearTicketsTitle',
-      'Linear agent skill'
-    ),
-    description: translate(
-      'auto.components.onboarding.FeatureSetupChecklist.linearTicketsDescription',
-      'Agents can use linked Linear tasks for richer ticket-aware handoffs.'
-    ),
+    get title() {
+      return translate(
+        'auto.components.onboarding.FeatureSetupChecklist.linearTicketsTitle',
+        'Linear agent skill'
+      )
+    },
+    get description() {
+      return translate(
+        'auto.components.onboarding.FeatureSetupChecklist.linearTicketsDescription',
+        'Agents can use linked Linear tasks for richer ticket-aware handoffs.'
+      )
+    },
     setupSummary: 'Recommended for Linear workspaces; does not affect Linear connection setup.',
     icon: <TicketCheck className="size-4" />
   }
