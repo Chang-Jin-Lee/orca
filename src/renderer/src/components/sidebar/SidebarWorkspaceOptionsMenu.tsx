@@ -17,208 +17,24 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import type { AgentActivityDisplayMode, WorktreeCardProperty } from '../../../../shared/types'
+import type { AgentActivityDisplayMode } from '../../../../shared/types'
 import { DEFAULT_SHOW_SLEEPING_WORKSPACES } from '../../../../shared/constants'
 import SidebarRepositoryFilterSection from './SidebarRepositoryFilterSection'
 import SidebarWorkspaceFilterSection from './SidebarWorkspaceFilterSection'
 import { translate } from '@/i18n/i18n'
+import {
+  AGENT_ACTIVITY_DISPLAY_OPTIONS,
+  CARD_LAYOUT_OPTIONS,
+  GROUP_BY_OPTIONS,
+  PROJECT_ORDER_OPTIONS,
+  PROPERTY_OPTIONS,
+  SORT_OPTIONS
+} from './sidebar-workspace-options-menu-options'
 
 type SidebarWorkspaceOptionsMenuProps = {
   preserveWorkspaceBoardOpen?: boolean
   onMenuOpenChange?: (open: boolean) => void
 }
-
-const GROUP_BY_OPTIONS = [
-  {
-    id: 'none',
-    get label() {
-      return translate('auto.components.sidebar.SidebarWorkspaceOptionsMenu.c2c7a45cda', 'None')
-    }
-  },
-  {
-    id: 'workspace-status',
-    get label() {
-      return translate('auto.components.sidebar.SidebarWorkspaceOptionsMenu.e029a2d775', 'Status')
-    }
-  },
-  {
-    id: 'pr-status',
-    get label() {
-      return translate('auto.components.sidebar.SidebarWorkspaceOptionsMenu.0f9b959b31', 'PR')
-    }
-  },
-  {
-    id: 'repo',
-    get label() {
-      return translate('auto.components.sidebar.SidebarWorkspaceOptionsMenu.2170d553cf', 'Project')
-    }
-  }
-] as const
-
-const CARD_LAYOUT_OPTIONS = [
-  {
-    id: 'detailed',
-    get label() {
-      return translate('auto.components.sidebar.SidebarWorkspaceOptionsMenu.cc17bd443b', 'Detailed')
-    }
-  },
-  {
-    id: 'compact',
-    get label() {
-      return translate('auto.components.sidebar.SidebarWorkspaceOptionsMenu.25105b28cb', 'Compact')
-    }
-  }
-] as const
-
-const PROPERTY_OPTIONS: { id: WorktreeCardProperty; label: string }[] = [
-  {
-    id: 'issue',
-    get label() {
-      return translate(
-        'auto.components.sidebar.SidebarWorkspaceOptionsMenu.91dfc653e8',
-        'GitHub ticket'
-      )
-    }
-  },
-  {
-    id: 'linear-issue',
-    get label() {
-      return translate(
-        'auto.components.sidebar.SidebarWorkspaceOptionsMenu.ca4d3c522e',
-        'Linear issue'
-      )
-    }
-  },
-  {
-    id: 'pr',
-    get label() {
-      return translate(
-        'auto.components.sidebar.SidebarWorkspaceOptionsMenu.b8dcc6f321',
-        'PR/MR link'
-      )
-    }
-  },
-  {
-    id: 'comment',
-    get label() {
-      return translate('auto.components.sidebar.SidebarWorkspaceOptionsMenu.26c71e536c', 'Notes')
-    }
-  },
-  {
-    id: 'ports',
-    get label() {
-      return translate('auto.components.sidebar.SidebarWorkspaceOptionsMenu.b64d8bcca0', 'Ports')
-    }
-  },
-  // Why: toggles the inline "Agent activity" list rendered below each
-  // workspace card body (see WorktreeCard -> WorktreeCardAgents). Off hides
-  // the list; there is no alternate surface.
-  {
-    id: 'inline-agents',
-    get label() {
-      return translate(
-        'auto.components.sidebar.SidebarWorkspaceOptionsMenu.d7084e8bc8',
-        'Agent activity'
-      )
-    }
-  }
-]
-
-const AGENT_ACTIVITY_DISPLAY_OPTIONS: { id: AgentActivityDisplayMode; label: string }[] = [
-  {
-    id: 'compact',
-    get label() {
-      return translate('auto.components.sidebar.SidebarWorkspaceOptionsMenu.25105b28cb', 'Compact')
-    }
-  },
-  {
-    id: 'full',
-    get label() {
-      return translate(
-        'auto.components.sidebar.SidebarWorkspaceOptionsMenu.2a81e07366',
-        'Full list'
-      )
-    }
-  }
-]
-
-const SORT_OPTIONS = [
-  {
-    id: 'name',
-    get label() {
-      return translate('auto.components.sidebar.SidebarWorkspaceOptionsMenu.3728165cdd', 'Name')
-    },
-    description: null
-  },
-  {
-    id: 'smart',
-    get label() {
-      return translate(
-        'auto.components.sidebar.SidebarWorkspaceOptionsMenu.503462f2b4',
-        'Agent Activity'
-      )
-    },
-    get description() {
-      return translate(
-        'auto.components.sidebar.SidebarWorkspaceOptionsMenu.b759bb87ee',
-        'Agents that need attention, then most recent activity.'
-      )
-    }
-  },
-  {
-    id: 'recent',
-    get label() {
-      return translate('auto.components.sidebar.SidebarWorkspaceOptionsMenu.b451c8b162', 'Recent')
-    },
-    description: null
-  },
-  {
-    id: 'repo',
-    get label() {
-      return translate('auto.components.sidebar.SidebarWorkspaceOptionsMenu.2170d553cf', 'Project')
-    },
-    description: null
-  },
-  {
-    id: 'manual',
-    get label() {
-      return translate('auto.components.sidebar.SidebarWorkspaceOptionsMenu.7b316bdd51', 'Manual')
-    },
-    get description() {
-      return translate(
-        'auto.components.sidebar.SidebarWorkspaceOptionsMenu.7153d07485',
-        'Drag workspaces to arrange them within each group.'
-      )
-    }
-  }
-] as const
-
-const PROJECT_ORDER_OPTIONS = [
-  {
-    id: 'manual',
-    get label() {
-      return translate('auto.components.sidebar.SidebarWorkspaceOptionsMenu.7b316bdd51', 'Manual')
-    },
-    get description() {
-      return translate(
-        'auto.components.sidebar.SidebarWorkspaceOptionsMenu.6664282a7b',
-        'Drag projects to arrange them'
-      )
-    }
-  },
-  {
-    id: 'recent',
-    get label() {
-      return translate('auto.components.sidebar.SidebarWorkspaceOptionsMenu.b451c8b162', 'Recent')
-    },
-    get description() {
-      return translate(
-        'auto.components.sidebar.SidebarWorkspaceOptionsMenu.af9249c505',
-        'Most recent workspace activity'
-      )
-    }
-  }
-] as const
 
 const SidebarWorkspaceOptionsMenu = React.memo(function SidebarWorkspaceOptionsMenu({
   preserveWorkspaceBoardOpen = false,
