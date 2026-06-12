@@ -134,7 +134,10 @@ export type AgentStatusSlice = {
   /** Update or insert an agent status entry from a status payload. */
   setAgentStatus: (
     paneKey: string,
-    payload: ParsedAgentStatusPayload & { orchestration?: AgentStatusOrchestrationContext },
+    payload: ParsedAgentStatusPayload & {
+      orchestration?: AgentStatusOrchestrationContext
+      promptInteractionKey?: string
+    },
     terminalTitle?: string,
     timing?: { updatedAt?: number; stateStartedAt?: number },
     routing?: { tabId?: string; worktreeId?: string; terminalHandle?: string },
@@ -1250,8 +1253,13 @@ export const createAgentStatusSlice: StateCreator<AppState, [], [], AgentStatusS
             previousState: existing.state,
             incomingState: payload.state,
             previousPrompt: existing.prompt,
-            incomingPrompt: payload.prompt
+            incomingPrompt: payload.prompt,
+            previousPromptInteractionKey: existing.promptInteractionKey,
+            incomingPromptInteractionKey: payload.promptInteractionKey
           })
+        const promptInteractionKey =
+          payload.promptInteractionKey ??
+          (payload.prompt === existing?.prompt ? existing?.promptInteractionKey : undefined)
         // Why: prefer main's authoritative stateStartedAt when provided — main's
         // attachStatusTiming preserves it across same-state pings (server.ts) and
         // persists it across restart. Fall back to existing.stateStartedAt only when
@@ -1377,6 +1385,7 @@ export const createAgentStatusSlice: StateCreator<AppState, [], [], AgentStatusS
             ? existing?.subagents
             : payload.subagents,
           ...(providerSession ? { providerSession } : {}),
+          ...(promptInteractionKey ? { promptInteractionKey } : {}),
           // Why: interrupted lives on `done` only. parseAgentStatusPayload
           // already clamps it to `undefined` for non-done states, so writing
           // the field through directly preserves truth for done and resets
