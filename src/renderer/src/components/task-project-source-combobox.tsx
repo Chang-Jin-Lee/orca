@@ -244,16 +244,19 @@ export default function TaskProjectSourceCombobox({
               const selectedSource = getSelectedSource(group, selected)
               const detail = getProjectDetail(group, selected, getRepoHostLabel)
               return (
-                <div key={group.projectKey} className="flex items-stretch">
+                <div
+                  key={group.projectKey}
+                  onMouseEnter={() => setCommandValue(group.repo.id)}
+                  className={cn(
+                    'group/source-row flex items-stretch transition-colors hover:bg-accent hover:text-accent-foreground',
+                    commandValue === group.repo.id && 'bg-accent text-accent-foreground'
+                  )}
+                >
                   <button
                     type="button"
                     onClick={() => toggleProject(group)}
                     onMouseDown={(event) => event.preventDefault()}
-                    onMouseEnter={() => setCommandValue(group.repo.id)}
-                    className={cn(
-                      'flex min-w-0 flex-1 items-center gap-2 px-3 py-1.5 text-left text-xs transition-colors hover:bg-accent hover:text-accent-foreground',
-                      commandValue === group.repo.id && 'bg-accent text-accent-foreground'
-                    )}
+                    className="flex min-w-0 flex-1 items-center gap-2 px-3 py-1.5 text-left text-xs"
                   >
                     <Check
                       className={cn(
@@ -287,7 +290,7 @@ export default function TaskProjectSourceCombobox({
                             'Choose task source'
                           )}
                           onMouseDown={(event) => event.preventDefault()}
-                          className="flex w-8 shrink-0 items-center justify-center text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+                          className="flex w-8 shrink-0 items-center justify-center text-muted-foreground opacity-0 transition-opacity group-hover/source-row:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100"
                         >
                           <ChevronRight className="size-3.5" />
                         </button>
