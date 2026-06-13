@@ -113,6 +113,11 @@
             Add Project host selection now keeps disconnected SSH hosts visible but disabled,
             and falls back to Local Mac instead of selecting a host that cannot be used.
           </li>
+          <li class="fix">
+            The locked SSH Add Project path screen no longer shows a redundant
+            <code>SSH target</code> row or button-like host field after the host was already
+            selected on the previous step.
+          </li>
         </ul>
       </section>
 
@@ -168,6 +173,16 @@
             selected. Restored the SSH status to connected afterward so the app is ready for manual
             inspection.
           </li>
+          <li class="pass">
+            Fresh-profile validation on 2026-06-13 connected a Docker SSH target through Orca's
+            real <code>ssh.connect</code> IPC/relay path, then added
+            <code>/home/orca/host-context-e2e-local</code> through the visible Add Project SSH flow.
+          </li>
+          <li class="pass">
+            From that SSH project, created a new SSH worktree. The remote filesystem contains
+            <code>/home/orca/goldfish</code> as a Git worktree on branch <code>goldfish</code>,
+            and Orca activated <code>repo-id::/home/orca/goldfish</code>.
+          </li>
         </ul>
       </section>
 
@@ -190,6 +205,16 @@
             Continued verification added focused Add Project host-selector tests, Automations
             branch-routing tests, shared host-model tests, and another full
             <code>pnpm run typecheck</code> pass.
+          </li>
+          <li class="pass">
+            Focused locked-SSH Add Project regression test passed:
+            <code>src/renderer/src/components/sidebar/AddRepoDialogStepContent.test.tsx</code>,
+            9 tests.
+          </li>
+          <li class="pass">
+            Targeted lint passed for
+            <code>AddRepoRemoteStep.tsx</code> and
+            <code>AddRepoDialogStepContent.test.tsx</code>.
           </li>
           <li class="warn">
             Docker/SSH verification intentionally used throwaway paths under <code>/home/orca</code>
@@ -271,6 +296,18 @@
         <figure>
           <img src="artifacts/host-context-automations-ssh-source-unavailable.png" alt="Automations SSH source unavailable" />
           <figcaption>Automations distinguishes a connected SSH host from an unavailable remote automation source.</figcaption>
+        </figure>
+        <figure>
+          <img src="artifacts/host-context-electron-ssh-connected.png" alt="Fresh profile with SSH connected" />
+          <figcaption>Fresh profile after connecting the Docker SSH target through Orca's SSH relay path.</figcaption>
+        </figure>
+        <figure>
+          <img src="artifacts/host-context-electron-ssh-project-added.png" alt="SSH project added through Add Project" />
+          <figcaption>Visible Add Project SSH flow added the remote Git repository and activated the primary workspace.</figcaption>
+        </figure>
+        <figure>
+          <img src="artifacts/host-context-electron-ssh-worktree-created.png" alt="SSH worktree created" />
+          <figcaption>New Worktree from the SSH project created and activated a remote SSH worktree.</figcaption>
         </figure>
       </section>
     </main>

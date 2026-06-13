@@ -143,17 +143,23 @@ export function RemoteStep({
               </div>
             )}
           </div>
-        ) : selectedTarget ? (
-          <div className="space-y-1">
-            <label className="text-[11px] font-medium text-muted-foreground">
-              {translate('auto.components.sidebar.AddRepoRemoteStep.44637f43bd', 'SSH target')}
-            </label>
-            <SshTargetRow
-              target={selectedTarget}
-              isSelected
-              onSelect={() => undefined}
-              onConnect={onConnectTarget}
-            />
+        ) : selectedTarget && !selectedTargetConnected ? (
+          <div className="flex items-center justify-between gap-3 rounded-md border border-border bg-muted/30 px-3 py-2">
+            <p className="min-w-0 text-xs text-muted-foreground">
+              {translate(
+                'auto.components.sidebar.AddRepoRemoteStep.lockedDisconnected',
+                '{{value0}} is disconnected.',
+                { value0: selectedTargetLabel ?? 'This SSH host' }
+              )}
+            </p>
+            <Button
+              variant="outline"
+              size="xs"
+              className="shrink-0"
+              onClick={() => onConnectTarget(selectedTarget.id)}
+            >
+              {translate('auto.components.sidebar.AddRepoRemoteStep.93e0221434', 'Connect')}
+            </Button>
           </div>
         ) : null}
 

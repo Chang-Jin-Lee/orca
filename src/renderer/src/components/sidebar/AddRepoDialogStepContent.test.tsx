@@ -211,7 +211,7 @@ describe('AddRepoDialogStepContent nested imports', () => {
     expect(html).toContain('Open project on SSH host')
     expect(html).toContain('openclaw 2')
     expect(html).toContain('Host path')
-    expect(html).toContain('SSH target')
+    expect(html).not.toContain('SSH target')
     expect(html).not.toContain('github.com')
     expect(html).not.toContain('Connect')
   })
@@ -239,7 +239,9 @@ describe('AddRepoDialogStepContent nested imports', () => {
     })
 
     expect(html).toContain('openclaw 2')
+    expect(html).toContain('is disconnected')
     expect(html).toContain('Connect')
+    expect(html).not.toContain('SSH target')
     expect(html).toContain('placeholder="/home/user/project"')
     expect(html).toContain('disabled=""')
   })
