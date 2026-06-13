@@ -29,9 +29,9 @@ Done means: a new agent can read the shared types and understand exactly where w
 
 ## 2. Provider Routing And Task Data
 
-- [~] Update GitHub issue/PR listing to accept an explicit TaskSourceContext instead of deriving from selected repo, path, or active runtime state.
-- [~] Update GitHub drawer mutations such as comment, state change, assignment, label, branch creation, and review actions to preserve the same source context as the list item.
-- [~] Update GitHub cache keys to include provider identity and source host/runtime identity so two hosts with different GitHub accounts cannot collide.
+- [x] Update GitHub issue/PR listing to accept an explicit TaskSourceContext instead of deriving from selected repo, path, or active runtime state.
+- [x] Update GitHub drawer mutations such as comment, state change, assignment, label, branch creation, and review actions to preserve the same source context as the list item.
+- [x] Update GitHub cache keys to include provider identity and source host/runtime identity so two hosts with different GitHub accounts cannot collide.
 - [x] Update GitLab IPC/preload/main handlers to accept explicit project/source context instead of path-only selectors.
 - [x] Guard or retire GitLab path-only fallbacks where they can mutate or fetch from the wrong host.
 - [x] Update Linear routing to use an explicit source account/workspace context instead of settings.activeRuntimeEnvironmentId.
@@ -48,7 +48,7 @@ Done means: if Machine A and Machine B have different provider accounts, every l
 - [~] Support switching the task source without changing the current run host.
 - [~] Show enough account/host metadata to make mismatched GitHub/GitLab/Linear/Jira accounts understandable.
 - [~] Persist task source context in task drawer URLs/state so refresh, deep links, and reopen preserve the same source.
-- [~] Ensure task drawer actions reuse the drawer item source context, not a global provider default.
+- [x] Ensure task drawer actions reuse the drawer item source context, not a global provider default.
 - [~] Add disabled/auth-needed/disconnected states for source hosts.
 - [x] Add empty states explaining when a project has no configured task source on the selected host.
 
