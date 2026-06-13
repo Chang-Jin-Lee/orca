@@ -278,4 +278,45 @@ describe('task source context summary', () => {
       })?.label
     ).toBe('Some GitLab source hosts unavailable: 2 source hosts')
   })
+
+  it('shows provider-specific source availability reasons', () => {
+    expect(
+      getTaskSourceContextSummary({
+        provider: 'github',
+        providerLabel: 'GitHub',
+        selectedRepoCount: 1,
+        repoContexts: [
+          {
+            kind: 'task-source',
+            provider: 'github',
+            projectId: 'github:stablyai/orca',
+            hostId: 'ssh:devbox',
+            repoId: 'repo-1',
+            providerIdentity: { provider: 'github', owner: 'stablyai', repo: 'orca' }
+          }
+        ],
+        hostAvailability: [{ hostId: 'ssh:devbox', reason: 'missing-provider-auth' }]
+      })
+    ).toEqual({
+      label: 'GitHub · devbox · provider auth needed · stablyai/orca',
+      title:
+        'GitHub · Host: devbox · Availability: devbox provider auth needed · Source: stablyai/orca'
+    })
+
+    expect(
+      getTaskSourceAvailabilityNotice({
+        providerLabel: 'GitHub',
+        sourceCount: 3,
+        hostAvailability: [
+          { hostId: 'ssh:devbox', reason: 'unavailable-source-tool' },
+          { hostId: 'runtime:linux', reason: 'unsupported-provider' }
+        ]
+      })
+    ).toEqual({
+      label: 'Some GitHub source hosts unavailable: 2 source hosts',
+      title:
+        'Reconnect or update devbox source tool unavailable, linux provider unsupported on this host to load this source.',
+      blocking: false
+    })
+  })
 })

@@ -20,7 +20,12 @@ export type TaskSourceHostAvailability = {
   hostId: ExecutionHostScope
   status?: SshConnectionStatus
   health?: ExecutionHostHealth
-  reason?: 'checking-task-source-capability' | 'missing-task-source-capability'
+  reason?:
+    | 'checking-task-source-capability'
+    | 'missing-task-source-capability'
+    | 'missing-provider-auth'
+    | 'unavailable-source-tool'
+    | 'unsupported-provider'
 }
 
 export function getTaskSourceContextSummary(args: {
@@ -211,6 +216,12 @@ function getAvailabilityStatusLabel(availability: TaskSourceHostAvailability): s
       return 'checking server capabilities'
     case 'missing-task-source-capability':
       return 'server update needed for task sources'
+    case 'missing-provider-auth':
+      return 'provider auth needed'
+    case 'unavailable-source-tool':
+      return 'source tool unavailable'
+    case 'unsupported-provider':
+      return 'provider unsupported on this host'
   }
   if (availability.status) {
     return availability.status === 'connected' ? null : getSshStatusLabel(availability.status)
