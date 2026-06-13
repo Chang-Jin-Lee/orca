@@ -209,6 +209,15 @@ describe('feature interaction writer boundaries', () => {
     }
   })
 
+  it('records Jira provider-depth for workspace use', () => {
+    const taskPageSource = componentSource('TaskPage.tsx')
+    const jiraWriter = "recordFeatureInteraction('jira-tasks')"
+
+    expect(
+      sourceBetween(taskPageSource, 'const handleUseJiraItem', 'const handleJiraConnect')
+    ).toContain(jiraWriter)
+  })
+
   it('records browser annotation agent handoff only from the prompt-delivered callback', () => {
     const source = componentSource('browser-pane/BrowserPane.tsx')
     expect(

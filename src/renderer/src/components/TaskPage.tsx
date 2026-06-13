@@ -7111,6 +7111,7 @@ export default function TaskPage(): React.JSX.Element {
 
   const handleUseJiraItem = useCallback(
     (issue: JiraIssue): void => {
+      useAppStore.getState().recordFeatureInteraction('jira-tasks')
       openComposerForJiraItem(issue)
     },
     [openComposerForJiraItem]
