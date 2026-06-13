@@ -148,6 +148,7 @@ import { getRepoExecutionHostId } from '../../../shared/execution-host'
 import { projectHostSetupProjectionFromRepos } from '../../../shared/project-host-setup-projection'
 import {
   getTaskSourceCacheScope,
+  getTaskSourceRuntimeSettings,
   normalizeTaskSourceContext,
   type TaskSourceContext
 } from '../../../shared/task-source-context'
@@ -897,14 +898,26 @@ function buildJiraCreateCustomFields(
 
 function GHStatusCell({
   item,
-  repo
+  repo,
+  sourceContext
 }: {
   item: GitHubWorkItem
   repo: Repo | null
+  sourceContext?: TaskSourceContext | null
 }): React.JSX.Element {
   const patchWorkItem = useAppStore((s) => s.patchWorkItem)
   const repoOwnerSettings = useAppStore(
     useShallow((s) => getSettingsForRepoRuntimeOwner(s, repo?.id ?? null))
+  )
+  const sourceSettings = useMemo(
+    () =>
+      sourceContext?.provider === 'github'
+        ? ({
+            ...repoOwnerSettings,
+            ...getTaskSourceRuntimeSettings(sourceContext)
+          } as typeof repoOwnerSettings)
+        : repoOwnerSettings,
+    [repoOwnerSettings, sourceContext]
   )
   const [statusStateDraft, setStatusStateDraft] = useState(() =>
     createTaskPageGitHubStatusStateDraft(item)
@@ -937,18 +950,21 @@ function GHStatusCell({
       const reqId = reqRef.current
       updateLocalState(newState)
       patchWorkItem(item.id, { state: newState }, item.repoId)
-      const target = getActiveRuntimeTarget(repoOwnerSettings)
+      const target = getActiveRuntimeTarget(sourceSettings)
+      const runtimeRepoId =
+        sourceContext?.provider === 'github' ? (sourceContext.repoId ?? repo.id) : repo.id
       const updatePromise =
         target.kind === 'environment'
           ? callRuntimeRpc<{ ok?: boolean; error?: string }>(
               target,
               'github.updateIssue',
-              { repo: repo.id, number: item.number, updates: { state: newState } },
+              { repo: runtimeRepoId, number: item.number, updates: { state: newState } },
               { timeoutMs: 30_000 }
             )
           : window.api.gh.updateIssue({
               repoPath: repo.path,
               repoId: repo.id,
+              sourceContext,
               number: item.number,
               updates: { state: newState }
             })
@@ -982,7 +998,7 @@ function GHStatusCell({
           toast.error(translate('auto.components.TaskPage.1c893195ac', 'Failed to update state'))
         })
     },
-    [item, localState, patchWorkItem, repo, repoOwnerSettings, updateLocalState]
+    [item, localState, patchWorkItem, repo, sourceContext, sourceSettings, updateLocalState]
   )
 
   if (item.type !== 'issue' || !repo) {
@@ -1331,14 +1347,26 @@ function GitHubIssueAssigneeSelector({
 
 function GHAssigneesCell({
   item,
-  repo
+  repo,
+  sourceContext
 }: {
   item: GitHubWorkItem
   repo: Repo | null
+  sourceContext?: TaskSourceContext | null
 }): React.JSX.Element {
   const patchWorkItem = useAppStore((s) => s.patchWorkItem)
   const repoOwnerSettings = useAppStore(
     useShallow((s) => getSettingsForRepoRuntimeOwner(s, repo?.id ?? null))
+  )
+  const sourceSettings = useMemo(
+    () =>
+      sourceContext?.provider === 'github'
+        ? ({
+            ...repoOwnerSettings,
+            ...getTaskSourceRuntimeSettings(sourceContext)
+          } as typeof repoOwnerSettings)
+        : repoOwnerSettings,
+    [repoOwnerSettings, sourceContext]
   )
   const [open, setOpen] = useState(false)
   const [pendingLogin, setPendingLogin] = useState<string | null>(null)
@@ -1358,7 +1386,7 @@ function GHAssigneesCell({
     open ? owner : null,
     open ? repoName : null,
     seedLogins,
-    repoOwnerSettings
+    sourceSettings
   )
 
   const toggleAssignee = useCallback(
@@ -1377,7 +1405,7 @@ function GHAssigneesCell({
 
       try {
         const updates = isOn ? { removeAssignees: [user.login] } : { addAssignees: [user.login] }
-        const target = getActiveRuntimeTarget(repoOwnerSettings)
+        const target = getActiveRuntimeTarget(sourceSettings)
         if (owner && repoName) {
           const args = {
             owner,
@@ -1398,17 +1426,20 @@ function GHAssigneesCell({
             throw new Error(res.error.message)
           }
         } else if (repo) {
+          const runtimeRepoId =
+            sourceContext?.provider === 'github' ? (sourceContext.repoId ?? repo.id) : repo.id
           const res =
             target.kind === 'environment'
               ? await callRuntimeRpc<{ ok?: boolean; error?: string }>(
                   target,
                   'github.updateIssue',
-                  { repo: repo.id, number: item.number, updates },
+                  { repo: runtimeRepoId, number: item.number, updates },
                   { timeoutMs: 30_000 }
                 )
               : await window.api.gh.updateIssue({
                   repoPath: repo.path,
                   repoId: repo.id,
+                  sourceContext,
                   number: item.number,
                   updates
                 })
@@ -1441,7 +1472,8 @@ function GHAssigneesCell({
       pendingLogin,
       repo,
       repoName,
-      repoOwnerSettings
+      sourceContext,
+      sourceSettings
     ]
   )
 
@@ -1646,10 +1678,12 @@ function buildRequestedReviewUsers(
 
 function PRReviewCell({
   item,
-  repo
+  repo,
+  sourceContext
 }: {
   item: GitHubWorkItem
   repo: Repo | null
+  sourceContext?: TaskSourceContext | null
 }): React.JSX.Element {
   const [open, setOpen] = useState(false)
   const [reviewerInput, setReviewerInput] = useState('')
@@ -1664,9 +1698,18 @@ function PRReviewCell({
   const patchWorkItem = useAppStore((s) => s.patchWorkItem)
   const [activeReviewerCursor, setActiveReviewerCursor] = useState({ resetKey: '', index: 0 })
   const [submitting, setSubmitting] = useState(false)
-  const settings = useAppStore((s) => s.settings)
   const repoOwnerSettings = useAppStore(
     useShallow((s) => getSettingsForRepoRuntimeOwner(s, repo?.id ?? null))
+  )
+  const sourceSettings = useMemo(
+    () =>
+      sourceContext?.provider === 'github'
+        ? ({
+            ...repoOwnerSettings,
+            ...getTaskSourceRuntimeSettings(sourceContext)
+          } as typeof repoOwnerSettings)
+        : repoOwnerSettings,
+    [repoOwnerSettings, sourceContext]
   )
   const reviewerInputRef = useRef<HTMLInputElement | null>(null)
   const reviewerInputFocusFrameRef = useRef<number | null>(null)
@@ -1734,7 +1777,7 @@ function PRReviewCell({
     open && reviewSlug ? reviewSlug.owner : null,
     open && reviewSlug ? reviewSlug.repo : null,
     reviewerSeedUsers.map((user) => user.login),
-    settings
+    sourceSettings
   )
 
   const authorLogin = item.author?.toLowerCase() ?? null
@@ -1862,18 +1905,21 @@ function PRReviewCell({
     }
     setSubmitting(true)
     try {
-      const target = getActiveRuntimeTarget(repoOwnerSettings)
+      const target = getActiveRuntimeTarget(sourceSettings)
+      const runtimeRepoId =
+        sourceContext?.provider === 'github' ? (sourceContext.repoId ?? repo.id) : repo.id
       const result =
         target.kind === 'environment'
           ? await callRuntimeRpc<{ ok: boolean; error?: string }>(
               target,
               'github.requestPRReviewers',
-              { repo: repo.id, prNumber: item.number, reviewers: logins },
+              { repo: runtimeRepoId, prNumber: item.number, reviewers: logins },
               { timeoutMs: 30_000 }
             )
           : await window.api.gh.requestPRReviewers({
               repoPath: repo.path,
               repoId: repo.id,
+              sourceContext,
               prNumber: item.number,
               reviewers: logins
             })
@@ -1911,18 +1957,21 @@ function PRReviewCell({
     }
     setSubmitting(true)
     try {
-      const target = getActiveRuntimeTarget(repoOwnerSettings)
+      const target = getActiveRuntimeTarget(sourceSettings)
+      const runtimeRepoId =
+        sourceContext?.provider === 'github' ? (sourceContext.repoId ?? repo.id) : repo.id
       const result =
         target.kind === 'environment'
           ? await callRuntimeRpc<{ ok: boolean; error?: string }>(
               target,
               'github.removePRReviewers',
-              { repo: repo.id, prNumber: item.number, reviewers: logins },
+              { repo: runtimeRepoId, prNumber: item.number, reviewers: logins },
               { timeoutMs: 30_000 }
             )
           : await window.api.gh.removePRReviewers({
               repoPath: repo.path,
               repoId: repo.id,
+              sourceContext,
               prNumber: item.number,
               reviewers: logins
             })
@@ -2226,14 +2275,29 @@ function PRChecksCell({
 function PRMergeCell({
   item,
   repo,
+  sourceContext,
   onRefresh
 }: {
   item: GitHubWorkItem
   repo: Repo | null
+  sourceContext?: TaskSourceContext | null
   onRefresh: () => void
 }): React.JSX.Element {
   const [merging, setMerging] = useState(false)
   const confirm = useConfirmationDialog()
+  const repoOwnerSettings = useAppStore(
+    useShallow((s) => getSettingsForRepoRuntimeOwner(s, repo?.id ?? null))
+  )
+  const sourceSettings = useMemo(
+    () =>
+      sourceContext?.provider === 'github'
+        ? ({
+            ...repoOwnerSettings,
+            ...getTaskSourceRuntimeSettings(sourceContext)
+          } as typeof repoOwnerSettings)
+        : repoOwnerSettings,
+    [repoOwnerSettings, sourceContext]
+  )
   if (item.type !== 'pr') {
     return (
       <span className="text-[11px] text-muted-foreground">
@@ -2266,13 +2330,30 @@ function PRMergeCell({
     }
     setMerging(true)
     try {
-      const result = await window.api.gh.mergePR({
-        repoPath: repo.path,
-        repoId: repo.id,
-        prNumber: item.number,
-        method,
-        prRepo: item.prRepo ?? null
-      })
+      const target = getActiveRuntimeTarget(sourceSettings)
+      const runtimeRepoId =
+        sourceContext?.provider === 'github' ? (sourceContext.repoId ?? repo.id) : repo.id
+      const result =
+        target.kind === 'environment'
+          ? await callRuntimeRpc<{ ok: boolean; error?: string }>(
+              target,
+              'github.mergePR',
+              {
+                repo: runtimeRepoId,
+                prNumber: item.number,
+                method,
+                prRepo: item.prRepo ?? null
+              },
+              { timeoutMs: 30_000 }
+            )
+          : await window.api.gh.mergePR({
+              repoPath: repo.path,
+              repoId: repo.id,
+              sourceContext,
+              prNumber: item.number,
+              method,
+              prRepo: item.prRepo ?? null
+            })
       if (result.ok) {
         useAppStore.getState().recordFeatureInteraction('github-tasks')
         toast.success(translate('auto.components.TaskPage.a161925adc', 'Pull request merged'))
@@ -2294,13 +2375,30 @@ function PRMergeCell({
     const enabled = mergePresentation.autoMergeAction.kind === 'enable'
     setMerging(true)
     try {
-      const result = await window.api.gh.setPRAutoMerge({
-        repoPath: repo.path,
-        repoId: repo.id,
-        prNumber: item.number,
-        enabled,
-        prRepo: item.prRepo ?? null
-      })
+      const target = getActiveRuntimeTarget(sourceSettings)
+      const runtimeRepoId =
+        sourceContext?.provider === 'github' ? (sourceContext.repoId ?? repo.id) : repo.id
+      const result =
+        target.kind === 'environment'
+          ? await callRuntimeRpc<{ ok: boolean; error?: string }>(
+              target,
+              'github.setPRAutoMerge',
+              {
+                repo: runtimeRepoId,
+                prNumber: item.number,
+                enabled,
+                prRepo: item.prRepo ?? null
+              },
+              { timeoutMs: 30_000 }
+            )
+          : await window.api.gh.setPRAutoMerge({
+              repoPath: repo.path,
+              repoId: repo.id,
+              sourceContext,
+              prNumber: item.number,
+              enabled,
+              prRepo: item.prRepo ?? null
+            })
       if (result.ok) {
         useAppStore.getState().recordFeatureInteraction('github-tasks')
         toast.success(
@@ -3303,20 +3401,31 @@ export default function TaskPage(): React.JSX.Element {
     () => selectedRepos.find((r) => r.id === newIssueRepoId) ?? selectedRepos[0] ?? null,
     [selectedRepos, newIssueRepoId]
   )
+  const newIssueSourceContext = useMemo(
+    () => getTaskPageRepoSourceContext(newIssueTargetRepo, 'github'),
+    [newIssueTargetRepo]
+  )
   const newIssueRuntimeTarget = useMemo(() => {
     if (!newIssueTargetRepo?.id) {
       return null
     }
-    const targetSettings = getSettingsForRepoRuntimeOwner(
+    const repoOwnerSettings = getSettingsForRepoRuntimeOwner(
       { repos: [newIssueTargetRepo], settings },
       newIssueTargetRepo.id
     )
+    const targetSettings =
+      newIssueSourceContext?.provider === 'github'
+        ? {
+            ...repoOwnerSettings,
+            ...getTaskSourceRuntimeSettings(newIssueSourceContext)
+          }
+        : repoOwnerSettings
     const target = getActiveRuntimeTarget(targetSettings)
     if (target.kind !== 'environment') {
       return null
     }
     return repos.some((repo) => repo.id === newIssueTargetRepo.id) ? target : null
-  }, [newIssueTargetRepo, repos, settings])
+  }, [newIssueSourceContext, newIssueTargetRepo, repos, settings])
   const newIssueRepoLabels = useRepoLabels(
     newIssueOpen ? (newIssueTargetRepo?.path ?? null) : null,
     newIssueOpen ? (newIssueTargetRepo?.id ?? null) : null,
@@ -5756,7 +5865,10 @@ export default function TaskPage(): React.JSX.Element {
             newIssueRuntimeTarget,
             'github.createIssue',
             {
-              repo: newIssueTargetRepo.id,
+              repo:
+                newIssueSourceContext?.provider === 'github'
+                  ? (newIssueSourceContext.repoId ?? newIssueTargetRepo.id)
+                  : newIssueTargetRepo.id,
               title,
               body: newIssueBody,
               labels: newIssueLabels,
@@ -5767,6 +5879,7 @@ export default function TaskPage(): React.JSX.Element {
         : await window.api.gh.createIssue({
             repoPath: newIssueTargetRepo.path,
             repoId: newIssueTargetRepo.id,
+            sourceContext: newIssueSourceContext,
             title,
             body: newIssueBody,
             labels: newIssueLabels,
@@ -5822,12 +5935,20 @@ export default function TaskPage(): React.JSX.Element {
         ? callRuntimeRpc<Awaited<ReturnType<typeof window.api.gh.workItem>>>(
             newIssueRuntimeTarget,
             'github.workItem',
-            { repo: newIssueTargetRepo.id, number: result.number, type: 'issue' },
+            {
+              repo:
+                newIssueSourceContext?.provider === 'github'
+                  ? (newIssueSourceContext.repoId ?? newIssueTargetRepo.id)
+                  : newIssueTargetRepo.id,
+              number: result.number,
+              type: 'issue'
+            },
             { timeoutMs: 30_000 }
           )
         : window.api.gh.workItem({
             repoPath: newIssueTargetRepo.path,
             repoId: newIssueTargetRepo.id,
+            sourceContext: newIssueSourceContext,
             number: result.number,
             type: 'issue'
           })
@@ -5851,6 +5972,7 @@ export default function TaskPage(): React.JSX.Element {
     newIssueAssignees,
     newIssueLabels,
     newIssueRuntimeTarget,
+    newIssueSourceContext,
     newIssueSubmitting,
     newIssueTargetRepo,
     newIssueTitle,
@@ -8344,14 +8466,22 @@ export default function TaskPage(): React.JSX.Element {
 
                           {!showPRManagementColumns ? (
                             <div className="min-w-0 flex items-center text-xs text-muted-foreground">
-                              <GHAssigneesCell item={item} repo={itemRepo ?? null} />
+                              <GHAssigneesCell
+                                item={item}
+                                repo={itemRepo ?? null}
+                                sourceContext={getTaskPageRepoSourceContext(itemRepo, 'github')}
+                              />
                             </div>
                           ) : null}
 
                           {showPRManagementColumns ? (
                             <>
                               <div className="flex min-w-0 items-center">
-                                <PRReviewCell item={item} repo={itemRepo ?? null} />
+                                <PRReviewCell
+                                  item={item}
+                                  repo={itemRepo ?? null}
+                                  sourceContext={getTaskPageRepoSourceContext(itemRepo, 'github')}
+                                />
                               </div>
 
                               <div className="flex min-w-0 items-center">
@@ -8366,13 +8496,18 @@ export default function TaskPage(): React.JSX.Element {
                                 <PRMergeCell
                                   item={item}
                                   repo={itemRepo ?? null}
+                                  sourceContext={getTaskPageRepoSourceContext(itemRepo, 'github')}
                                   onRefresh={() => setTaskRefreshNonce((current) => current + 1)}
                                 />
                               </div>
                             </>
                           ) : (
                             <div className="flex items-center">
-                              <GHStatusCell item={item} repo={itemRepo ?? null} />
+                              <GHStatusCell
+                                item={item}
+                                repo={itemRepo ?? null}
+                                sourceContext={getTaskPageRepoSourceContext(itemRepo, 'github')}
+                              />
                             </div>
                           )}
 

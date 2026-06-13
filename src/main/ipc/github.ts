@@ -319,7 +319,7 @@ export function registerGitHubHandlers(store: Store, stats: StatsCollector): voi
 
   ipcMain.handle(
     'gh:createIssue',
-    (_event, args: { repoPath: string; title: string; body: string } & GitHubCreateIssueFields) => {
+    (_event, args: RepoScopedArgs & { title: string; body: string } & GitHubCreateIssueFields) => {
       const repo = assertRegisteredRepo(args, store)
       const fields =
         args.labels !== undefined || args.assignees !== undefined
@@ -727,6 +727,8 @@ export function registerGitHubHandlers(store: Store, stats: StatsCollector): voi
       event,
       args: {
         repoPath: string
+        repoId?: string | null
+        sourceContext?: TaskSourceContext | null
         prNumber: number
         method?: 'merge' | 'squash' | 'rebase'
         prRepo?: GitHubOwnerRepo | null
@@ -756,6 +758,8 @@ export function registerGitHubHandlers(store: Store, stats: StatsCollector): voi
       event,
       args: {
         repoPath: string
+        repoId?: string | null
+        sourceContext?: TaskSourceContext | null
         prNumber: number
         enabled: boolean
         prRepo?: GitHubOwnerRepo | null
@@ -783,7 +787,7 @@ export function registerGitHubHandlers(store: Store, stats: StatsCollector): voi
     'gh:updatePRState',
     async (
       event,
-      args: { repoPath: string; prNumber: number; updates: GitHubPullRequestStateUpdate }
+      args: RepoScopedArgs & { prNumber: number; updates: GitHubPullRequestStateUpdate }
     ) => {
       const repo = assertRegisteredRepo(args, store)
       if (
@@ -813,7 +817,7 @@ export function registerGitHubHandlers(store: Store, stats: StatsCollector): voi
     'gh:rerunPRChecks',
     async (
       _event,
-      args: { repoPath: string; prNumber: number; headSha?: string; failedOnly?: boolean }
+      args: RepoScopedArgs & { prNumber: number; headSha?: string; failedOnly?: boolean }
     ) => {
       const repo = assertRegisteredRepo(args, store)
       if (
@@ -834,7 +838,7 @@ export function registerGitHubHandlers(store: Store, stats: StatsCollector): voi
 
   ipcMain.handle(
     'gh:requestPRReviewers',
-    async (event, args: { repoPath: string; prNumber: number; reviewers: string[] }) => {
+    async (event, args: RepoScopedArgs & { prNumber: number; reviewers: string[] }) => {
       const repo = assertRegisteredRepo(args, store)
       const result = await requestPRReviewers(
         repo.path,
@@ -854,7 +858,7 @@ export function registerGitHubHandlers(store: Store, stats: StatsCollector): voi
 
   ipcMain.handle(
     'gh:removePRReviewers',
-    async (event, args: { repoPath: string; prNumber: number; reviewers: string[] }) => {
+    async (event, args: RepoScopedArgs & { prNumber: number; reviewers: string[] }) => {
       const repo = assertRegisteredRepo(args, store)
       const result = await removePRReviewers(
         repo.path,
@@ -874,10 +878,7 @@ export function registerGitHubHandlers(store: Store, stats: StatsCollector): voi
 
   ipcMain.handle(
     'gh:updateIssue',
-    async (
-      event,
-      args: { repoPath: string; repoId?: string; number: number; updates: GitHubIssueUpdate }
-    ) => {
+    async (event, args: RepoScopedArgs & { number: number; updates: GitHubIssueUpdate }) => {
       const repo = assertRegisteredRepo(args, store)
       if (typeof args.number !== 'number' || !Number.isInteger(args.number) || args.number < 1) {
         return { ok: false, error: 'Invalid issue number' }
