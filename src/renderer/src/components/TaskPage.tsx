@@ -3221,10 +3221,22 @@ export default function TaskPage(): React.JSX.Element {
         : null,
     [gitlabDialogItem, primaryRepo, selectedRepos]
   )
-  const gitlabDialogSourceContext = useMemo(
-    () => getTaskPageRepoSourceContext(gitlabDialogRepo, 'gitlab'),
-    [gitlabDialogRepo]
-  )
+  const gitlabDialogSourceContext = useMemo(() => {
+    if (
+      gitlabDialogItem &&
+      pageData.openGitLabSourceContext?.provider === 'gitlab' &&
+      pageData.openGitLabWorkItem?.id === gitlabDialogItem.id &&
+      pageData.openGitLabWorkItem.repoId === gitlabDialogItem.repoId
+    ) {
+      return pageData.openGitLabSourceContext
+    }
+    return getTaskPageRepoSourceContext(gitlabDialogRepo, 'gitlab')
+  }, [
+    gitlabDialogItem,
+    gitlabDialogRepo,
+    pageData.openGitLabSourceContext,
+    pageData.openGitLabWorkItem
+  ])
 
   const setDialogWorkItem = useCallback(
     (item: GitHubWorkItem | null, initialTab: ItemDialogTab = 'conversation') => {
@@ -3243,6 +3255,10 @@ export default function TaskPage(): React.JSX.Element {
     setDialogWorkItem(pageData.openGitHubWorkItem, pageData.openGitHubInitialTab)
   }, [pageData.openGitHubInitialTab, pageData.openGitHubWorkItem, setDialogWorkItem])
 
+  useEffect(() => {
+    setGitlabDialogItem(pageData.openGitLabWorkItem ?? null)
+  }, [pageData.openGitLabWorkItem])
+
   const openGitHubDetailPage = useCallback(
     (item: GitHubWorkItem, initialTab: ItemDialogTab = 'conversation') => {
       openTaskPage(
@@ -3252,6 +3268,21 @@ export default function TaskPage(): React.JSX.Element {
           openGitHubWorkItem: item,
           openGitHubSourceContext: getTaskPageRepoSourceContext(repoMap.get(item.repoId), 'github'),
           openGitHubInitialTab: initialTab
+        },
+        { recordTasksInteraction: false }
+      )
+    },
+    [openTaskPage, repoMap]
+  )
+
+  const openGitLabDetailPage = useCallback(
+    (item: GitLabWorkItem) => {
+      openTaskPage(
+        {
+          taskSource: 'gitlab',
+          preselectedRepoId: item.repoId,
+          openGitLabWorkItem: item,
+          openGitLabSourceContext: getTaskPageRepoSourceContext(repoMap.get(item.repoId), 'gitlab')
         },
         { recordTasksInteraction: false }
       )
@@ -3545,6 +3576,8 @@ export default function TaskPage(): React.JSX.Element {
         openGitHubWorkItem: undefined,
         openGitHubSourceContext: undefined,
         openGitHubInitialTab: undefined,
+        openGitLabWorkItem: undefined,
+        openGitLabSourceContext: undefined,
         openLinearIssue: undefined,
         openLinearSourceContext: undefined
       }
@@ -8848,13 +8881,13 @@ export default function TaskPage(): React.JSX.Element {
                       key={item.id}
                       onClick={() => {
                         useAppStore.getState().recordFeatureInteraction('gitlab-tasks')
-                        setGitlabDialogItem(item)
+                        openGitLabDetailPage(item)
                       }}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter' || e.key === ' ') {
                           e.preventDefault()
                           useAppStore.getState().recordFeatureInteraction('gitlab-tasks')
-                          setGitlabDialogItem(item)
+                          openGitLabDetailPage(item)
                         }
                       }}
                       className="grid w-full cursor-pointer gap-3 px-3 py-2 text-left grid-cols-[80px_minmax(0,3fr)_120px_110px_50px] hover:bg-muted/50"

@@ -2,6 +2,7 @@ import type { StateCreator } from 'zustand'
 import type { AppState } from '../types'
 import { findWorktreeById } from './worktree-helpers'
 import type { GitHubWorkItem, LinearIssue } from '../../../../shared/types'
+import type { GitLabWorkItem } from '../../../../shared/gitlab-types'
 import {
   getTaskSourceCacheScope,
   type TaskSourceContext
@@ -31,6 +32,12 @@ export type WorktreeNavHistoryTaskDetailEntry =
       kind: 'task-detail'
       source: 'linear'
       issue: LinearIssue
+      sourceContext?: TaskSourceContext | null
+    }
+  | {
+      kind: 'task-detail'
+      source: 'gitlab'
+      workItem: GitLabWorkItem
       sourceContext?: TaskSourceContext | null
     }
 export type WorktreeNavHistoryViewEntry =
@@ -97,6 +104,13 @@ function getHistoryEntryKey(entry: WorktreeNavHistoryEntry): string {
         ? getTaskSourceCacheScope(entry.sourceContext)
         : 'legacy'
     return `view:task-detail:github:${sourceScope}:${entry.workItem.repoId}:${entry.workItem.type}:${entry.workItem.number}:${entry.initialTab ?? 'conversation'}`
+  }
+  if (entry.source === 'gitlab') {
+    const sourceScope =
+      entry.sourceContext?.provider === 'gitlab'
+        ? getTaskSourceCacheScope(entry.sourceContext)
+        : 'legacy'
+    return `view:task-detail:gitlab:${sourceScope}:${entry.workItem.repoId}:${entry.workItem.type}:${entry.workItem.number}`
   }
   const sourceScope =
     entry.sourceContext?.provider === 'linear'

@@ -27,6 +27,7 @@ import type {
   WorkspaceHostScope,
   VisibleWorkspaceHostIds
 } from '../../../../shared/types'
+import type { GitLabWorkItem } from '../../../../shared/gitlab-types'
 import type { LaunchSource } from '../../../../shared/telemetry-events'
 import type { TaskSourceContext } from '../../../../shared/task-source-context'
 import { tuiAgentToAgentKind } from '../../../../shared/agent-kind'
@@ -605,6 +606,8 @@ export type UISlice = {
     openGitHubWorkItem?: GitHubWorkItem
     openGitHubSourceContext?: TaskSourceContext | null
     openGitHubInitialTab?: 'conversation' | 'checks' | 'files'
+    openGitLabWorkItem?: GitLabWorkItem
+    openGitLabSourceContext?: TaskSourceContext | null
     openLinearIssue?: LinearIssue
     openLinearSourceContext?: TaskSourceContext | null
   }
@@ -1088,6 +1091,9 @@ export const createUISlice: StateCreator<AppState, [], [], UISlice> = (set, get)
     if (data.openGitHubWorkItem) {
       get().recordFeatureInteraction?.('github-tasks')
     }
+    if (data.openGitLabWorkItem) {
+      get().recordFeatureInteraction?.('gitlab-tasks')
+    }
     if (data.openLinearIssue) {
       get().recordFeatureInteraction?.('linear-tasks')
     }
@@ -1105,14 +1111,21 @@ export const createUISlice: StateCreator<AppState, [], [], UISlice> = (set, get)
           sourceContext: data.openGitHubSourceContext,
           initialTab: data.openGitHubInitialTab
         } as const)
-      : data.openLinearIssue
+      : data.openGitLabWorkItem
         ? ({
             kind: 'task-detail',
-            source: 'linear',
-            issue: data.openLinearIssue,
-            sourceContext: data.openLinearSourceContext
+            source: 'gitlab',
+            workItem: data.openGitLabWorkItem,
+            sourceContext: data.openGitLabSourceContext
           } as const)
-        : null
+        : data.openLinearIssue
+          ? ({
+              kind: 'task-detail',
+              source: 'linear',
+              issue: data.openLinearIssue,
+              sourceContext: data.openLinearSourceContext
+            } as const)
+          : null
     const currentEntry = get().worktreeNavHistory[get().worktreeNavHistoryIndex]
     const currentIsTaskStack =
       currentEntry === 'tasks' ||

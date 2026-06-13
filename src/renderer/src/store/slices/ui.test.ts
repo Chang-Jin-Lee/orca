@@ -10,6 +10,7 @@ import type {
   Worktree,
   WorktreeCardProperty
 } from '../../../../shared/types'
+import type { GitLabWorkItem } from '../../../../shared/gitlab-types'
 import { createUISlice } from './ui'
 import { createWorktreeNavHistorySlice } from './worktree-nav-history'
 import { createSettingsSearchState } from './settings-search-state'
@@ -139,6 +140,22 @@ function makeLinearIssue(overrides: Partial<LinearIssue> = {}): LinearIssue {
     createdAt: '2026-05-30T00:00:00.000Z',
     ...overrides
   } as LinearIssue
+}
+
+function makeGitLabWorkItem(overrides: Partial<GitLabWorkItem> = {}): GitLabWorkItem {
+  return {
+    id: 'mr-12',
+    type: 'mr',
+    number: 12,
+    title: 'Fix runner routing',
+    state: 'opened',
+    url: 'https://gitlab.com/acme/repo/-/merge_requests/12',
+    labels: [],
+    updatedAt: '2026-05-30T00:00:00.000Z',
+    author: 'gitlab-user',
+    repoId: 'repo-1',
+    ...overrides
+  }
 }
 
 function makePersistedUI(overrides: Partial<PersistedUIState> = {}): PersistedUIState {
@@ -1668,6 +1685,33 @@ describe('createUISlice page navigation history', () => {
       kind: 'task-detail',
       source: 'linear',
       issue: linearIssue,
+      sourceContext
+    })
+  })
+
+  it('preserves GitLab task detail source context in navigation history', () => {
+    const store = createUIStore()
+    const workItem = makeGitLabWorkItem({ repoId: 'repo-remote' })
+    const sourceContext: TaskSourceContext = {
+      kind: 'task-source',
+      provider: 'gitlab',
+      projectId: 'project-1',
+      hostId: 'ssh:devbox',
+      projectHostSetupId: 'setup-1',
+      repoId: 'repo-remote',
+      providerIdentity: { provider: 'gitlab', projectId: '1234' }
+    }
+
+    store.getState().openTaskPage({
+      taskSource: 'gitlab',
+      openGitLabWorkItem: workItem,
+      openGitLabSourceContext: sourceContext
+    })
+
+    expect(store.getState().worktreeNavHistory.at(-1)).toEqual({
+      kind: 'task-detail',
+      source: 'gitlab',
+      workItem,
       sourceContext
     })
   })

@@ -584,7 +584,10 @@ setWorktreeNavViewActivator((entry) => {
         openGitHubWorkItem: undefined,
         openGitHubSourceContext: undefined,
         openGitHubInitialTab: undefined,
-        openLinearIssue: undefined
+        openGitLabWorkItem: undefined,
+        openGitLabSourceContext: undefined,
+        openLinearIssue: undefined,
+        openLinearSourceContext: undefined
       }
     }))
     return
@@ -599,7 +602,29 @@ setWorktreeNavViewActivator((entry) => {
         openGitHubWorkItem: entry.workItem,
         openGitHubSourceContext: entry.sourceContext,
         openGitHubInitialTab: entry.initialTab,
-        openLinearIssue: undefined
+        openGitLabWorkItem: undefined,
+        openGitLabSourceContext: undefined,
+        openLinearIssue: undefined,
+        openLinearSourceContext: undefined
+      }
+    }))
+    return
+  }
+  if (entry.source === 'gitlab') {
+    useAppStore.setState((state) => ({
+      activeView: 'tasks',
+      githubTaskDrawerWorkItem: null,
+      taskPageData: {
+        ...state.taskPageData,
+        taskSource: 'gitlab',
+        preselectedRepoId: entry.workItem.repoId,
+        openGitHubWorkItem: undefined,
+        openGitHubSourceContext: undefined,
+        openGitHubInitialTab: undefined,
+        openGitLabWorkItem: entry.workItem,
+        openGitLabSourceContext: entry.sourceContext,
+        openLinearIssue: undefined,
+        openLinearSourceContext: undefined
       }
     }))
     return
@@ -613,7 +638,10 @@ setWorktreeNavViewActivator((entry) => {
       openGitHubWorkItem: undefined,
       openGitHubSourceContext: undefined,
       openGitHubInitialTab: undefined,
-      openLinearIssue: entry.issue
+      openGitLabWorkItem: undefined,
+      openGitLabSourceContext: undefined,
+      openLinearIssue: entry.issue,
+      openLinearSourceContext: entry.sourceContext
     }
   }))
 })
