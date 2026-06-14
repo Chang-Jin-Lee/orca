@@ -1095,7 +1095,7 @@ const WorktreeCard = React.memo(function WorktreeCard({
                     className="h-4 shrink-0 gap-0.5 rounded !px-0.5 text-[10px] font-medium leading-none text-muted-foreground border border-worktree-sidebar-border/60 bg-worktree-sidebar-accent/45 hover:bg-worktree-sidebar-accent hover:text-foreground has-[>svg]:!px-0.5"
                     aria-label={translate(
                       'auto.components.sidebar.WorktreeCard.c6833b5187',
-                      'Will be renamed from first agent message'
+                      'This worktree will be renamed from the first agent message'
                     )}
                   >
                     <Sparkles className="size-2.5" />
@@ -1105,7 +1105,7 @@ const WorktreeCard = React.memo(function WorktreeCard({
                 <TooltipContent side="right" sideOffset={8}>
                   {translate(
                     'auto.components.sidebar.WorktreeCard.c6833b5187',
-                    'Will be renamed from first agent message'
+                    'This worktree will be renamed from the first agent message'
                   )}
                 </TooltipContent>
               </Tooltip>
