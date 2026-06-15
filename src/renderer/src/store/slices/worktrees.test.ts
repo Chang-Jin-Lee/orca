@@ -143,6 +143,7 @@ function createTestStore() {
         activeTabTypeByWorktree: {},
         rightSidebarTab: 'explorer' as const,
         rightSidebarTabByWorktree: {},
+        sourceControlCommitDraftsByWorktree: {},
         activeWorktreeId: null,
         activeTabId: null,
         activeFileId: null,
@@ -1805,6 +1806,25 @@ describe('removeWorktree state cleanup', () => {
     // Draft for file-1 should be removed, draft for file-2 should remain
     expect(store.getState().editorDrafts).toEqual({
       'file-2': 'draft content for another worktree'
+    })
+  })
+
+  it('cleans up Source Control commit drafts for the removed worktree', async () => {
+    const store = createTestStore()
+    const wt = makeWorktree({ id: 'repo1::/path/wt1', repoId: 'repo1', path: '/path/wt1' })
+
+    store.setState({
+      worktreesByRepo: { repo1: [wt] },
+      sourceControlCommitDraftsByWorktree: {
+        [wt.id]: 'feat: removed worktree draft',
+        'repo1::/path/wt2': 'feat: sibling draft'
+      }
+    } as Partial<AppState>)
+
+    await store.getState().removeWorktree(wt.id)
+
+    expect(store.getState().sourceControlCommitDraftsByWorktree).toEqual({
+      'repo1::/path/wt2': 'feat: sibling draft'
     })
   })
 

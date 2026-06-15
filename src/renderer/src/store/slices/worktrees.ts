@@ -55,6 +55,7 @@ import {
   worktreeWorkspaceKey
 } from '../../../../shared/workspace-scope'
 import { folderWorkspaceToWorktree } from '../../../../shared/folder-workspace-worktree'
+import { omitSourceControlCommitDraftsForWorktrees } from './source-control-commit-drafts'
 export type { WorktreeSlice, WorktreeDeleteState } from './worktree-helpers'
 
 // Why: old runtime servers only have `worktree.list`; preserve the large-list
@@ -1177,6 +1178,11 @@ function buildWorktreePurgeState(s: AppState, worktreeIds: string[]): Partial<Ap
     groupsByWorktree: omitByWorktree(s.groupsByWorktree),
     layoutByWorktree: omitByWorktree(s.layoutByWorktree),
     activeGroupIdByWorktree: omitByWorktree(s.activeGroupIdByWorktree),
+    // Source control state
+    sourceControlCommitDraftsByWorktree: omitSourceControlCommitDraftsForWorktrees(
+      s.sourceControlCommitDraftsByWorktree,
+      worktreeIds
+    ),
     // Git status caches
     gitStatusByWorktree: omitByWorktree(s.gitStatusByWorktree),
     gitIgnoredPathsByWorktree: omitByWorktree(s.gitIgnoredPathsByWorktree),
@@ -2014,6 +2020,10 @@ export const createWorktreeSlice: StateCreator<AppState, [], [], WorktreeSlice> 
           ...s.rightSidebarExplorerViewByWorktree
         }
         delete nextRightSidebarExplorerViewByWorktree[worktreeId]
+        const nextSourceControlCommitDraftsByWorktree = omitSourceControlCommitDraftsForWorktrees(
+          s.sourceControlCommitDraftsByWorktree,
+          [worktreeId]
+        )
         // If the active file belonged to the removed worktree, clear it
         const activeFileCleared = s.activeFileId
           ? s.openFiles.some((f) => f.id === s.activeFileId && f.worktreeId === worktreeId)
@@ -2066,6 +2076,7 @@ export const createWorktreeSlice: StateCreator<AppState, [], [], WorktreeSlice> 
           activeBrowserTabIdByWorktree: nextActiveBrowserTabIdByWorktree,
           activeTabTypeByWorktree: nextActiveTabTypeByWorktree,
           rightSidebarExplorerViewByWorktree: nextRightSidebarExplorerViewByWorktree,
+          sourceControlCommitDraftsByWorktree: nextSourceControlCommitDraftsByWorktree,
           activeTabIdByWorktree: nextActiveTabIdByWorktree,
           tabBarOrderByWorktree: nextTabBarOrderByWorktree,
           pendingReconnectTabByWorktree: nextPendingReconnectTabByWorktree,
