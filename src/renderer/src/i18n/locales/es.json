@@ -8566,8 +8566,8 @@
             "ef182dcb12": "buscar",
             "fc3095d2ed": "explorador",
             "aiVaultSessionHistory": "Agents",
-            "folderWorkspaces": "Attached worktrees",
-            "parentPrChecks": "PR Checks"
+            "folderWorkspaces": "Árboles de trabajo adjuntos",
+            "parentPrChecks": "Comprobaciones de PR"
           },
           "right": {
             "panel": {
@@ -10998,42 +10998,44 @@
           "emptyCopy": "Worktrees created from this workspace will show up here."
         },
         "FolderWorkspacePrChecksPanel": {
-          "unavailable": "PR checks are only shown for folder workspaces.",
-          "refresh": "Refresh PR checks",
-          "emptyTitle": "No attached worktrees yet",
-          "emptyCopy": "PR checks will appear here after worktrees are attached to this folder workspace.",
-          "openChecksTab": "Open {{value0}} Checks tab",
-          "openReviewExternally": "Open {{value0}} externally",
-          "summary": "{{value0}} attached · {{value1}} with PR/MR · {{value2}} attention · {{value3}} pending · {{value4}} passing · {{value5}} no PR · {{value6}} unknown"
+          "unavailable": "Las comprobaciones de PR solo se muestran en espacios de trabajo de carpeta.",
+          "refresh": "Actualizar comprobaciones de PR",
+          "emptyTitle": "Aún no hay árboles de trabajo adjuntos",
+          "emptyCopy": "Las comprobaciones de PR aparecerán aquí cuando se adjunten árboles de trabajo a este espacio de trabajo de carpeta.",
+          "openChecksTab": "Abrir la pestaña Comprobaciones de {{value0}}",
+          "openReviewExternally": "Abrir {{value0}} externamente",
+          "summary": "{{value0}} adjuntos · {{value1}} con PR/MR · {{value2}} requieren atención · {{value3}} pendientes · {{value4}} correctos · {{value5}} sin PR · {{value6}} desconocidos",
+          "showDetails": "Mostrar detalles de comprobaciones de PR de {{value0}}",
+          "hideDetails": "Ocultar detalles de comprobaciones de PR de {{value0}}"
         },
         "parentPrChecks": {
           "rowSummary": {
-            "failingCount": "{{value0}} failing",
-            "pendingCount": "{{value0}} pending",
-            "checksFailing": "Checks failing",
-            "mergeConflicts": "Merge conflicts",
-            "checksPending": "Checks pending",
-            "checksPassing": "Checks passing",
-            "merged": "Merged",
-            "closedWithoutMerge": "Closed without merge",
-            "draftReview": "Draft review",
-            "noCheckSignal": "No check signal",
-            "reviewUnavailable": "Review status unavailable",
-            "noPrLinked": "No PR linked",
-            "detailsUnavailable": "Review details unavailable",
-            "refreshFailed": "Refresh failed",
-            "checking": "Checking review status…",
-            "notFetched": "Status not fetched yet",
-            "unavailableWorktree": "Unavailable for this worktree"
+            "failingCount": "{{value0}} fallando",
+            "pendingCount": "{{value0}} pendientes",
+            "checksFailing": "Comprobaciones fallando",
+            "mergeConflicts": "Conflictos de fusión",
+            "checksPending": "Comprobaciones pendientes",
+            "checksPassing": "Comprobaciones correctas",
+            "merged": "Fusionado",
+            "closedWithoutMerge": "Cerrado sin fusionar",
+            "draftReview": "Revisión en borrador",
+            "noCheckSignal": "Sin señal de comprobaciones",
+            "reviewUnavailable": "Estado de revisión no disponible",
+            "noPrLinked": "Sin PR vinculado",
+            "detailsUnavailable": "Detalles de revisión no disponibles",
+            "refreshFailed": "Error al actualizar",
+            "checking": "Comprobando estado de revisión…",
+            "notFetched": "Estado aún no obtenido",
+            "unavailableWorktree": "No disponible para este árbol de trabajo"
           },
           "groups": {
-            "needsAttention": "Needs attention",
-            "pending": "Pending",
-            "merged": "Merged",
-            "passing": "Passing",
-            "draftOrNoChecks": "Draft / no checks",
-            "noPr": "No PR",
-            "unavailable": "Unavailable"
+            "needsAttention": "Requiere atención",
+            "pending": "Pendiente",
+            "merged": "Fusionado",
+            "passing": "Correcto",
+            "draftOrNoChecks": "Borrador / sin comprobaciones",
+            "noPr": "Sin PR",
+            "unavailable": "No disponible"
           }
         }
       },

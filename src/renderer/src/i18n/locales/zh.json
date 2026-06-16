@@ -8566,8 +8566,8 @@
             "ef182dcb12": "搜索",
             "fc3095d2ed": "探险家",
             "aiVaultSessionHistory": "Agents",
-            "folderWorkspaces": "Attached worktrees",
-            "parentPrChecks": "PR Checks"
+            "folderWorkspaces": "已附加的工作树",
+            "parentPrChecks": "PR 检查"
           },
           "right": {
             "panel": {
@@ -10998,42 +10998,44 @@
           "emptyCopy": "Worktrees created from this workspace will show up here."
         },
         "FolderWorkspacePrChecksPanel": {
-          "unavailable": "PR checks are only shown for folder workspaces.",
-          "refresh": "Refresh PR checks",
-          "emptyTitle": "No attached worktrees yet",
-          "emptyCopy": "PR checks will appear here after worktrees are attached to this folder workspace.",
-          "openChecksTab": "Open {{value0}} Checks tab",
-          "openReviewExternally": "Open {{value0}} externally",
-          "summary": "{{value0}} attached · {{value1}} with PR/MR · {{value2}} attention · {{value3}} pending · {{value4}} passing · {{value5}} no PR · {{value6}} unknown"
+          "unavailable": "PR 检查仅在文件夹工作区中显示。",
+          "refresh": "刷新 PR 检查",
+          "emptyTitle": "还没有附加的工作树",
+          "emptyCopy": "将工作树附加到此文件夹工作区后，PR 检查会显示在这里。",
+          "openChecksTab": "打开 {{value0}} 的检查标签页",
+          "openReviewExternally": "在外部打开 {{value0}}",
+          "summary": "已附加 {{value0}} 个 · 有 PR/MR {{value1}} 个 · 需注意 {{value2}} 个 · 等待中 {{value3}} 个 · 通过 {{value4}} 个 · 无 PR {{value5}} 个 · 未知 {{value6}} 个",
+          "showDetails": "显示 {{value0}} 的 PR 检查详情",
+          "hideDetails": "隐藏 {{value0}} 的 PR 检查详情"
         },
         "parentPrChecks": {
           "rowSummary": {
-            "failingCount": "{{value0}} failing",
-            "pendingCount": "{{value0}} pending",
-            "checksFailing": "Checks failing",
-            "mergeConflicts": "Merge conflicts",
-            "checksPending": "Checks pending",
-            "checksPassing": "Checks passing",
-            "merged": "Merged",
-            "closedWithoutMerge": "Closed without merge",
-            "draftReview": "Draft review",
-            "noCheckSignal": "No check signal",
-            "reviewUnavailable": "Review status unavailable",
-            "noPrLinked": "No PR linked",
-            "detailsUnavailable": "Review details unavailable",
-            "refreshFailed": "Refresh failed",
-            "checking": "Checking review status…",
-            "notFetched": "Status not fetched yet",
-            "unavailableWorktree": "Unavailable for this worktree"
+            "failingCount": "{{value0}} 个失败",
+            "pendingCount": "{{value0}} 个等待中",
+            "checksFailing": "检查失败",
+            "mergeConflicts": "合并冲突",
+            "checksPending": "检查等待中",
+            "checksPassing": "检查通过",
+            "merged": "已合并",
+            "closedWithoutMerge": "未合并已关闭",
+            "draftReview": "草稿评审",
+            "noCheckSignal": "无检查信号",
+            "reviewUnavailable": "评审状态不可用",
+            "noPrLinked": "未关联 PR",
+            "detailsUnavailable": "评审详情不可用",
+            "refreshFailed": "刷新失败",
+            "checking": "正在检查评审状态…",
+            "notFetched": "尚未获取状态",
+            "unavailableWorktree": "此工作树不可用"
           },
           "groups": {
-            "needsAttention": "Needs attention",
-            "pending": "Pending",
-            "merged": "Merged",
-            "passing": "Passing",
-            "draftOrNoChecks": "Draft / no checks",
-            "noPr": "No PR",
-            "unavailable": "Unavailable"
+            "needsAttention": "需注意",
+            "pending": "等待中",
+            "merged": "已合并",
+            "passing": "通过",
+            "draftOrNoChecks": "草稿 / 无检查",
+            "noPr": "无 PR",
+            "unavailable": "不可用"
           }
         }
       },

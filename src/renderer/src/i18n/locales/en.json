@@ -11005,7 +11005,9 @@
           "emptyCopy": "PR checks will appear here after worktrees are attached to this folder workspace.",
           "openChecksTab": "Open {{value0}} Checks tab",
           "openReviewExternally": "Open {{value0}} externally",
-          "summary": "{{value0}} attached · {{value1}} with PR/MR · {{value2}} attention · {{value3}} pending · {{value4}} passing · {{value5}} no PR · {{value6}} unknown"
+          "summary": "{{value0}} attached · {{value1}} with PR/MR · {{value2}} attention · {{value3}} pending · {{value4}} passing · {{value5}} no PR · {{value6}} unknown",
+          "showDetails": "Show {{value0}} PR check details",
+          "hideDetails": "Hide {{value0}} PR check details"
         },
         "parentPrChecks": {
           "rowSummary": {

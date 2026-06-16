@@ -130,6 +130,19 @@ describe('buildParentPrChecksProjection', () => {
         }
       }).rows[0]
     ).toMatchObject({ status: 'merged', group: 'merged' })
+
+    expect(
+      makeProjection({
+        worktree,
+        repo,
+        hostedReviewCache: {
+          [cacheKey]: {
+            data: makeReview({ mergeable: 'CONFLICTING', status: 'success' }),
+            fetchedAt: 1
+          }
+        }
+      }).rows[0]
+    ).toMatchObject({ status: 'conflict', group: 'needsAttention', checkTone: 'failure' })
   })
 
   it('only counts a visible successful unlinked no-review outcome as No PR', () => {
@@ -153,6 +166,25 @@ describe('buildParentPrChecksProjection', () => {
     })
     expect(provenNoReview.rows[0]?.status).toBe('noReview')
     expect(provenNoReview.summary.noPr).toBe(1)
+  })
+
+  it('classifies completed unavailable refreshes as unavailable instead of not fetched', () => {
+    const repo = makeRepo()
+    const worktree = makeWorktree({ id: 'repo-1::/feature' })
+    const identity = getParentPrChecksRefreshIdentity(worktree, repo, 'feature')
+
+    const projection = makeProjection({
+      worktree,
+      repo,
+      refreshOutcomes: new Map([[identity, { kind: 'unavailable' }]])
+    })
+
+    expect(projection.rows[0]).toMatchObject({
+      status: 'unavailable',
+      group: 'unavailable',
+      summary: 'Review status unavailable'
+    })
+    expect(projection.summary.unknown).toBe(1)
   })
 
   it('keeps linked unavailable and refresh-error rows out of No PR', () => {

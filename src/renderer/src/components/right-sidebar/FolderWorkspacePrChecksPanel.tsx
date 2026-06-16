@@ -109,6 +109,8 @@ export default function FolderWorkspacePrChecksPanel({
     if (refreshCandidates.length === 0) {
       return
     }
+    // Why: manual refresh should force exactly one generation; automatic
+    // refresh cycles after that must stay cache/staleness-aware.
     const forceRefresh = manualRefreshGeneration > lastForcedManualRefreshGenerationRef.current
     if (forceRefresh) {
       lastForcedManualRefreshGenerationRef.current = manualRefreshGeneration

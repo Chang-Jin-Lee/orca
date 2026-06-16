@@ -28,11 +28,17 @@ export function FolderWorkspacePrChecksRow({
 }: FolderWorkspacePrChecksRowProps): React.JSX.Element {
   const Icon = CHECK_ICON[row.checkTone] ?? CHECK_ICON.neutral
   const reviewProviderLabel = row.provider === 'gitlab' ? 'MR' : 'PR'
-  const toggleDetailsLabel = translate(
-    'auto.components.rightSidebar.FolderWorkspacePrChecksPanel.toggleDetails',
-    'Show {{value0}} PR check details',
-    { value0: row.worktree.displayName }
-  )
+  const toggleDetailsLabel = expanded
+    ? translate(
+        'auto.components.rightSidebar.FolderWorkspacePrChecksPanel.hideDetails',
+        'Hide {{value0}} PR check details',
+        { value0: row.worktree.displayName }
+      )
+    : translate(
+        'auto.components.rightSidebar.FolderWorkspacePrChecksPanel.showDetails',
+        'Show {{value0}} PR check details',
+        { value0: row.worktree.displayName }
+      )
   const openExternalLabel = translate(
     'auto.components.rightSidebar.FolderWorkspacePrChecksPanel.openReviewExternally',
     'Open {{value0}} externally',

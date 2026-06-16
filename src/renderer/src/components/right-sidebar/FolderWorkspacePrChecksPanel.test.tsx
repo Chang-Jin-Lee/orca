@@ -248,6 +248,9 @@ describe('FolderWorkspacePrChecksPanel', () => {
     })
 
     expect(container.querySelector('[data-testid="checks-list"]')).not.toBeNull()
+    expect(
+      container.querySelector('[aria-label="Hide Child worktree PR check details"]')
+    ).not.toBeNull()
     expect(container.textContent).toContain('verify')
     expect(mockState.store.setActiveWorktree).not.toHaveBeenCalled()
     expect(mockState.store.setRightSidebarTab).not.toHaveBeenCalled()
@@ -270,10 +273,11 @@ describe('FolderWorkspacePrChecksPanel', () => {
     const linkButton = container.querySelector<HTMLButtonElement>(
       '[aria-label="Open PR externally"]'
     )
+    expect(linkButton).not.toBeNull()
     const event = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })
 
     act(() => {
-      linkButton?.dispatchEvent(event)
+      linkButton!.dispatchEvent(event)
     })
 
     expect(mockState.store.setActiveWorktree).not.toHaveBeenCalled()

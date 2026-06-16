@@ -35,6 +35,9 @@ export function classifyParentPrChecksRowStatus({
   if (hasFallbackReview) {
     return 'linkedDetailsUnavailable'
   }
+  if (outcome?.kind === 'unavailable') {
+    return 'unavailable'
+  }
   if (outcome?.kind === 'no-review') {
     return 'noReview'
   }
@@ -91,6 +94,7 @@ export function groupForRowStatus(status: ParentPrChecksRowStatus): ParentPrChec
     case 'notFetched':
     case 'loading':
     case 'unsupported':
+    case 'unavailable':
       return 'unavailable'
   }
 }
@@ -99,9 +103,6 @@ export function getRowCheckTone(
   status: ParentPrChecksRowStatus,
   review: HostedReviewInfo | null | undefined
 ): CheckStatus {
-  if (review?.status) {
-    return review.status
-  }
   if (
     ['failing', 'conflict', 'closed', 'linkedDetailsUnavailable', 'refreshError'].includes(status)
   ) {
@@ -113,7 +114,7 @@ export function getRowCheckTone(
   if (status === 'success' || status === 'merged') {
     return 'success'
   }
-  return 'neutral'
+  return review?.status ?? 'neutral'
 }
 
 export function getRowSummary(
@@ -201,6 +202,11 @@ export function getRowSummary(
       return translate(
         'auto.components.rightSidebar.parentPrChecks.rowSummary.notFetched',
         'Status not fetched yet'
+      )
+    case 'unavailable':
+      return translate(
+        'auto.components.rightSidebar.parentPrChecks.rowSummary.reviewUnavailable',
+        'Review status unavailable'
       )
     case 'unsupported':
       return translate(

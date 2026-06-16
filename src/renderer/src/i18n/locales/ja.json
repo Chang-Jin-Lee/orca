@@ -8566,8 +8566,8 @@
             "ef182dcb12": "検索",
             "fc3095d2ed": "エクスプローラ",
             "aiVaultSessionHistory": "Agents",
-            "folderWorkspaces": "Attached worktrees",
-            "parentPrChecks": "PR Checks"
+            "folderWorkspaces": "添付ワークツリー",
+            "parentPrChecks": "PRチェック"
           },
           "right": {
             "panel": {
@@ -10998,42 +10998,44 @@
           "emptyCopy": "Worktrees created from this workspace will show up here."
         },
         "FolderWorkspacePrChecksPanel": {
-          "unavailable": "PR checks are only shown for folder workspaces.",
-          "refresh": "Refresh PR checks",
-          "emptyTitle": "No attached worktrees yet",
-          "emptyCopy": "PR checks will appear here after worktrees are attached to this folder workspace.",
-          "openChecksTab": "Open {{value0}} Checks tab",
-          "openReviewExternally": "Open {{value0}} externally",
-          "summary": "{{value0}} attached · {{value1}} with PR/MR · {{value2}} attention · {{value3}} pending · {{value4}} passing · {{value5}} no PR · {{value6}} unknown"
+          "unavailable": "PRチェックはフォルダーワークスペースでのみ表示されます。",
+          "refresh": "PRチェックを更新",
+          "emptyTitle": "添付ワークツリーはまだありません",
+          "emptyCopy": "このフォルダーワークスペースにワークツリーを添付すると、ここにPRチェックが表示されます。",
+          "openChecksTab": "{{value0}} のチェックタブを開く",
+          "openReviewExternally": "{{value0}} を外部で開く",
+          "summary": "{{value0}} 件添付 · PR/MRあり {{value1}} 件 · 要対応 {{value2}} 件 · 保留中 {{value3}} 件 · 成功 {{value4}} 件 · PRなし {{value5}} 件 · 不明 {{value6}} 件",
+          "showDetails": "{{value0}} のPRチェック詳細を表示",
+          "hideDetails": "{{value0}} のPRチェック詳細を非表示"
         },
         "parentPrChecks": {
           "rowSummary": {
-            "failingCount": "{{value0}} failing",
-            "pendingCount": "{{value0}} pending",
-            "checksFailing": "Checks failing",
-            "mergeConflicts": "Merge conflicts",
-            "checksPending": "Checks pending",
-            "checksPassing": "Checks passing",
-            "merged": "Merged",
-            "closedWithoutMerge": "Closed without merge",
-            "draftReview": "Draft review",
-            "noCheckSignal": "No check signal",
-            "reviewUnavailable": "Review status unavailable",
-            "noPrLinked": "No PR linked",
-            "detailsUnavailable": "Review details unavailable",
-            "refreshFailed": "Refresh failed",
-            "checking": "Checking review status…",
-            "notFetched": "Status not fetched yet",
-            "unavailableWorktree": "Unavailable for this worktree"
+            "failingCount": "{{value0}} 件失敗",
+            "pendingCount": "{{value0}} 件保留中",
+            "checksFailing": "チェック失敗",
+            "mergeConflicts": "マージ競合",
+            "checksPending": "チェック保留中",
+            "checksPassing": "チェック成功",
+            "merged": "マージ済み",
+            "closedWithoutMerge": "マージせずにクローズ",
+            "draftReview": "下書きレビュー",
+            "noCheckSignal": "チェック信号なし",
+            "reviewUnavailable": "レビュー状態を取得できません",
+            "noPrLinked": "PR未リンク",
+            "detailsUnavailable": "レビュー詳細を取得できません",
+            "refreshFailed": "更新に失敗しました",
+            "checking": "レビュー状態を確認中…",
+            "notFetched": "状態はまだ取得されていません",
+            "unavailableWorktree": "このワークツリーでは利用できません"
           },
           "groups": {
-            "needsAttention": "Needs attention",
-            "pending": "Pending",
-            "merged": "Merged",
-            "passing": "Passing",
-            "draftOrNoChecks": "Draft / no checks",
-            "noPr": "No PR",
-            "unavailable": "Unavailable"
+            "needsAttention": "要対応",
+            "pending": "保留中",
+            "merged": "マージ済み",
+            "passing": "成功",
+            "draftOrNoChecks": "下書き / チェックなし",
+            "noPr": "PRなし",
+            "unavailable": "利用不可"
           }
         }
       },

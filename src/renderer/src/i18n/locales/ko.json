@@ -8566,8 +8566,8 @@
             "ef182dcb12": "검색",
             "fc3095d2ed": "탐침",
             "aiVaultSessionHistory": "Agents",
-            "folderWorkspaces": "Attached worktrees",
-            "parentPrChecks": "PR Checks"
+            "folderWorkspaces": "연결된 워크트리",
+            "parentPrChecks": "PR 검사"
           },
           "right": {
             "panel": {
@@ -10998,42 +10998,44 @@
           "emptyCopy": "Worktrees created from this workspace will show up here."
         },
         "FolderWorkspacePrChecksPanel": {
-          "unavailable": "PR checks are only shown for folder workspaces.",
-          "refresh": "Refresh PR checks",
-          "emptyTitle": "No attached worktrees yet",
-          "emptyCopy": "PR checks will appear here after worktrees are attached to this folder workspace.",
-          "openChecksTab": "Open {{value0}} Checks tab",
-          "openReviewExternally": "Open {{value0}} externally",
-          "summary": "{{value0}} attached · {{value1}} with PR/MR · {{value2}} attention · {{value3}} pending · {{value4}} passing · {{value5}} no PR · {{value6}} unknown"
+          "unavailable": "PR 검사는 폴더 워크스페이스에서만 표시됩니다.",
+          "refresh": "PR 검사 새로고침",
+          "emptyTitle": "아직 연결된 워크트리가 없습니다",
+          "emptyCopy": "이 폴더 워크스페이스에 워크트리가 연결되면 PR 검사가 여기에 표시됩니다.",
+          "openChecksTab": "{{value0}} 검사 탭 열기",
+          "openReviewExternally": "{{value0}} 외부에서 열기",
+          "summary": "{{value0}}개 연결됨 · PR/MR 있음 {{value1}}개 · 주의 필요 {{value2}}개 · 대기 중 {{value3}}개 · 통과 {{value4}}개 · PR 없음 {{value5}}개 · 알 수 없음 {{value6}}개",
+          "showDetails": "{{value0}} PR 검사 세부 정보 표시",
+          "hideDetails": "{{value0}} PR 검사 세부 정보 숨기기"
         },
         "parentPrChecks": {
           "rowSummary": {
-            "failingCount": "{{value0}} failing",
-            "pendingCount": "{{value0}} pending",
-            "checksFailing": "Checks failing",
-            "mergeConflicts": "Merge conflicts",
-            "checksPending": "Checks pending",
-            "checksPassing": "Checks passing",
-            "merged": "Merged",
-            "closedWithoutMerge": "Closed without merge",
-            "draftReview": "Draft review",
-            "noCheckSignal": "No check signal",
-            "reviewUnavailable": "Review status unavailable",
-            "noPrLinked": "No PR linked",
-            "detailsUnavailable": "Review details unavailable",
-            "refreshFailed": "Refresh failed",
-            "checking": "Checking review status…",
-            "notFetched": "Status not fetched yet",
-            "unavailableWorktree": "Unavailable for this worktree"
+            "failingCount": "{{value0}}개 실패",
+            "pendingCount": "{{value0}}개 대기 중",
+            "checksFailing": "검사 실패",
+            "mergeConflicts": "병합 충돌",
+            "checksPending": "검사 대기 중",
+            "checksPassing": "검사 통과",
+            "merged": "병합됨",
+            "closedWithoutMerge": "병합 없이 닫힘",
+            "draftReview": "초안 리뷰",
+            "noCheckSignal": "검사 신호 없음",
+            "reviewUnavailable": "리뷰 상태를 사용할 수 없음",
+            "noPrLinked": "연결된 PR 없음",
+            "detailsUnavailable": "리뷰 세부 정보를 사용할 수 없음",
+            "refreshFailed": "새로고침 실패",
+            "checking": "리뷰 상태 확인 중…",
+            "notFetched": "상태를 아직 가져오지 않음",
+            "unavailableWorktree": "이 워크트리에서는 사용할 수 없음"
           },
           "groups": {
-            "needsAttention": "Needs attention",
-            "pending": "Pending",
-            "merged": "Merged",
-            "passing": "Passing",
-            "draftOrNoChecks": "Draft / no checks",
-            "noPr": "No PR",
-            "unavailable": "Unavailable"
+            "needsAttention": "주의 필요",
+            "pending": "대기 중",
+            "merged": "병합됨",
+            "passing": "통과",
+            "draftOrNoChecks": "초안 / 검사 없음",
+            "noPr": "PR 없음",
+            "unavailable": "사용 불가"
           }
         }
       },

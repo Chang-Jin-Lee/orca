@@ -23,6 +23,7 @@ export type ParentPrChecksRowStatus =
   | 'linkedDetailsUnavailable'
   | 'refreshError'
   | 'unsupported'
+  | 'unavailable'
   | 'failing'
   | 'pending'
   | 'success'

@@ -63,9 +63,14 @@ export function summarizeParentPrChecksRows(
     passing: rows.filter((row) => row.group === 'passing').length,
     noPr: rows.filter((row) => row.status === 'noReview').length,
     unknown: rows.filter((row) =>
-      ['notFetched', 'loading', 'linkedDetailsUnavailable', 'refreshError', 'unsupported'].includes(
-        row.status
-      )
+      [
+        'notFetched',
+        'loading',
+        'linkedDetailsUnavailable',
+        'refreshError',
+        'unsupported',
+        'unavailable'
+      ].includes(row.status)
     ).length
   }
 }
