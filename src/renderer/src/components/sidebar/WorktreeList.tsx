@@ -571,8 +571,8 @@ function getHostHeaderDetail(row: HostHeaderRow): { text: string; isWarning: boo
       isWarning: false
     }
   }
-  // Why: the transport suffix only earns space on remote hosts; "This
-  // computer" on Local Mac is noise.
+  // Why: the transport suffix only earns space on remote hosts; repeating
+  // "This computer" under the local host label is noise.
   if (row.kind !== 'local') {
     return { text: row.detail, isWarning: false }
   }

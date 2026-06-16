@@ -13,31 +13,24 @@ export type ParsedExecutionHost =
   | { kind: 'ssh'; id: `ssh:${string}`; targetId: string }
   | { kind: 'runtime'; id: `runtime:${string}`; environmentId: string }
 
-function normalizeHostPart(value: string | null | undefined): string | null {
-  const trimmed = value?.trim()
-  return trimmed ? trimmed : null
+function getCurrentLocalPlatform(): NodeJS.Platform | null {
+  const globalNavigator = (globalThis as { navigator?: { userAgent?: string; platform?: string } })
+    .navigator
+  const userAgent = globalNavigator?.userAgent || globalNavigator?.platform || ''
+  if (/Windows/i.test(userAgent)) {
+    return 'win32'
+  }
+  if (/Mac/i.test(userAgent)) {
+    return 'darwin'
+  }
+  if (/Linux|X11/i.test(userAgent)) {
+    return 'linux'
+  }
+  return typeof process === 'undefined' ? null : process.platform
 }
 
-function getCurrentHostPlatform(): string {
-  if (typeof process !== 'undefined' && typeof process.platform === 'string') {
-    return process.platform
-  }
-  if (typeof navigator !== 'undefined') {
-    if (navigator.userAgent.includes('Windows')) {
-      return 'win32'
-    }
-    if (navigator.userAgent.includes('Linux')) {
-      return 'linux'
-    }
-    if (navigator.userAgent.includes('Mac')) {
-      return 'darwin'
-    }
-  }
-  return ''
-}
-
-export function getLocalExecutionHostLabel(platform = getCurrentHostPlatform()): string {
-  switch (platform) {
+export function getLocalExecutionHostLabel(platform: NodeJS.Platform | null = null): string {
+  switch (platform ?? getCurrentLocalPlatform()) {
     case 'darwin':
       return 'Local Mac'
     case 'win32':
@@ -47,6 +40,11 @@ export function getLocalExecutionHostLabel(platform = getCurrentHostPlatform()):
     default:
       return 'This computer'
   }
+}
+
+function normalizeHostPart(value: string | null | undefined): string | null {
+  const trimmed = value?.trim()
+  return trimmed ? trimmed : null
 }
 
 export function toSshExecutionHostId(targetId: string): `ssh:${string}` {

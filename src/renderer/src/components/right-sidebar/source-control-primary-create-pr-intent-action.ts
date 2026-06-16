@@ -72,9 +72,19 @@ export function resolveCreatePrIntentPrerequisiteAction(
     branchCommitsAhead: inputs.branchCommitsAhead,
     hasCurrentBranch: inputs.hasCurrentBranch
   })
-  if (!createPrIntent.eligible || inputs.stagedCount === 0 || !inputs.hasPartiallyStagedChanges) {
+  if (!createPrIntent.eligible || !inputs.hasStageableChanges) {
     return null
   }
+
+  const title = inputs.hasPartiallyStagedChanges
+    ? translate(
+        'auto.components.right.sidebar.source.control.primary.action.2d8f185fbc',
+        'Stage all changes before committing partially staged files'
+      )
+    : translate(
+        'auto.components.right.sidebar.source.control.primary.action.5a477d80cb',
+        'Stage all changes'
+      )
 
   return {
     kind: 'stage',
@@ -82,10 +92,7 @@ export function resolveCreatePrIntentPrerequisiteAction(
       'auto.components.right.sidebar.source.control.primary.action.18a0fca877',
       'Stage All'
     ),
-    title: translate(
-      'auto.components.right.sidebar.source.control.primary.action.2d8f185fbc',
-      'Stage all changes before committing partially staged files'
-    ),
+    title,
     disabled: false
   }
 }

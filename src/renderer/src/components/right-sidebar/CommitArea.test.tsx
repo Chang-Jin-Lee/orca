@@ -329,13 +329,13 @@ describe('CommitArea', () => {
     expect(button).not.toContain('lucide-check')
   })
 
-  it('shows Stage All beside Create PR intent when partial staging blocks commit', () => {
+  it('shows Stage All beside Create PR intent when unstaged changes need staging', () => {
     const input = buildInputs({
-      stagedCount: 1,
+      stagedCount: 0,
       hasUnstagedChanges: true,
       hasStageableChanges: true,
-      hasPartiallyStagedChanges: true,
-      hasMessage: true,
+      hasPartiallyStagedChanges: false,
+      hasMessage: false,
       upstreamStatus: { hasUpstream: true, ahead: 0, behind: 0 },
       hostedReviewCreation: {
         provider: 'github',
@@ -354,7 +354,12 @@ describe('CommitArea', () => {
     const stageAllButton = buttonContaining(markup, 'Stage All')
     expect(stageAllButton).not.toContain('disabled=""')
     expect(stageAllButton).toContain('lucide-plus')
-    expect(buttonContaining(markup, 'Create PR')).not.toContain('disabled=""')
+    expect(stageAllButton).toContain('rounded-r-none')
+    const createPrButton = buttonContaining(markup, 'Create PR')
+    expect(createPrButton).not.toContain('disabled=""')
+    expect(createPrButton).not.toContain('rounded-r-none')
+    expect(markup).toContain('aria-label="More commit and remote actions"')
+    expect(markup).toContain('Stage all changes')
     expect(
       (markup.match(/<button\b[\s\S]*?<\/button>/g) ?? []).some((button) =>
         button.includes('Commit</button>')

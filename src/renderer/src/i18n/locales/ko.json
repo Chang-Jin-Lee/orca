@@ -8374,13 +8374,22 @@
             "f394c6128a": "이 커밋을 설명할 에이전트가 없습니다",
             "04a5d7239b": "이 저장소에는 지원되는 웹 원격이 없습니다",
             "15b6e834ac": "브라우저에서 커밋을 열지 못했습니다",
-            "d37e68f61d": "Preparing branch for review…",
-            "8d8f5c6c94": "Generating commit message…",
-            "fda060d6ce": "Review the commit message, then retry Create PR.",
-            "b75cb1fd0c": "Committing changes…",
-            "995c5e67ec": "Review setup needs attention.",
-            "d7492cafce": "Could not refresh Source Control. Retry Create PR.",
-            "473f18758e": "Source Control AI settings"
+            "d37e68f61d": "검토를 위해 브랜치를 준비하는 중…",
+            "8d8f5c6c94": "커밋 메시지를 생성하는 중…",
+            "fda060d6ce": "커밋 메시지를 검토한 다음 Create PR을 다시 시도하세요.",
+            "b75cb1fd0c": "변경 사항을 커밋하는 중…",
+            "995c5e67ec": "검토 설정에 확인이 필요합니다.",
+            "d7492cafce": "Source Control을 새로 고칠 수 없습니다. Create PR을 다시 시도하세요.",
+            "473f18758e": "Source Control AI 설정",
+            "createPrIntentConfigureAi": "커밋 메시지를 추가하거나 Source Control AI 설정을 구성하세요.",
+            "createPrIntentGenerateFailed": "커밋 메시지를 생성할 수 없습니다. 메시지를 추가한 다음 다시 시도하세요.",
+            "createPrIntentCommitFailed": "변경 사항을 커밋할 수 없습니다. 문제를 수정한 다음 Create PR을 다시 시도하세요.",
+            "createPrIntentNeedsSync": "리뷰를 만들기 전에 이 브랜치를 동기화하세요.",
+            "createPrIntentBranchNotReady": "브랜치가 아직 리뷰를 만들 준비가 되지 않았습니다.",
+            "createPrIntentPublishing": "브랜치를 게시하는 중…",
+            "createPrIntentForcePushing": "lease로 강제 푸시하는 중…",
+            "createPrIntentPushing": "커밋을 푸시하는 중…",
+            "createPrIntentRemoteFailed": "원격 브랜치를 업데이트할 수 없습니다. Create PR을 다시 시도하세요."
           },
           "SourceControlAgentActionDialog": {
             "8e856842d1": "선택한 agent를 시작할 수 없습니다.",
@@ -8666,10 +8675,10 @@
                   "484f45c439": "{{value0}} 진행 중…",
                   "74fc171e99": "강제 푸시 진행 중…",
                   "16aee3a5c1": "Commit 진행 중…",
-                  "e61b0d7a3c": "Check out a branch before publishing commits.",
-                  "8c6d15a07d": "Create PR",
-                  "d37e68f61d": "Preparing branch for review…",
-                  "c72e5e65d1": "Prepare this branch and create a {{value0}}"
+                  "e61b0d7a3c": "커밋을 게시하기 전에 브랜치를 체크아웃하세요.",
+                  "8c6d15a07d": "PR 생성",
+                  "d37e68f61d": "검토를 위해 브랜치를 준비하는 중…",
+                  "c72e5e65d1": "이 브랜치를 준비하고 {{value0}} 생성"
                 }
               }
             }

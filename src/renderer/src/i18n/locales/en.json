@@ -8366,7 +8366,7 @@
             "e2b7a1c0d9f4": "Failed to create {{value0}}",
             "hugeRepoIgnorePrompt": "This repository has too many active changes. Add \"{{value0}}\" to .gitignore?",
             "hugeRepoIgnoreAction": "Add to .gitignore",
-            "tooManyChanges": "Too many changes detected. Only the first {{value0}} are shown.",
+            "tooManyChanges": "Too many changes detected. Only the first {{value0}} changes are shown.",
             "bf5082de46": "{{value0}} copied",
             "c06193ef57": "Failed to copy {{value0}}",
             "d172a4f068": "Commit hash",
@@ -8380,7 +8380,16 @@
             "b75cb1fd0c": "Committing changes…",
             "995c5e67ec": "Review setup needs attention.",
             "d7492cafce": "Could not refresh Source Control. Retry Create PR.",
-            "473f18758e": "Source Control AI settings"
+            "473f18758e": "Source Control AI settings",
+            "createPrIntentConfigureAi": "Add a commit message or configure Source Control AI settings.",
+            "createPrIntentGenerateFailed": "Could not generate a commit message. Add one and retry.",
+            "createPrIntentCommitFailed": "Could not commit changes. Fix the issue, then retry Create PR.",
+            "createPrIntentNeedsSync": "Sync this branch before creating a review.",
+            "createPrIntentBranchNotReady": "Branch is not ready to create a review yet.",
+            "createPrIntentPublishing": "Publishing branch…",
+            "createPrIntentForcePushing": "Force pushing with lease…",
+            "createPrIntentPushing": "Pushing commits…",
+            "createPrIntentRemoteFailed": "Could not update the remote branch. Retry Create PR."
           },
           "SourceControlAgentActionDialog": {
             "8e856842d1": "Could not start the selected agent.",

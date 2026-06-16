@@ -1,4 +1,3 @@
-/* eslint-disable max-lines -- Why: this state-machine table intentionally keeps every primary-action priority case together so merge regressions are visible in one file. */
 import { describe, expect, it } from 'vitest'
 import { resolvePrimaryAction, type PrimaryActionInputs } from './source-control-primary-action'
 import { resolveCreatePrIntentPrerequisiteAction } from './source-control-primary-create-pr-intent-action'
@@ -240,24 +239,6 @@ describe('resolvePrimaryAction', () => {
     expect(result).toEqual({ kind: 'commit', label: 'Commit', title, disabled: true })
   })
 
-  it('returns Create PR intent for an unpublished clean branch with commits to publish', () => {
-    const result = resolvePrimaryAction(
-      inputs({
-        upstreamStatus: { hasUpstream: false, ahead: 0, behind: 0 },
-        branchCommitsAhead: 2,
-        hostedReviewCreation: {
-          provider: 'github',
-          review: null,
-          canCreate: false,
-          blockedReason: 'no_upstream',
-          nextAction: 'publish'
-        }
-      })
-    )
-    expect(result.kind).toBe('create_pr_intent')
-    expect(result.disabled).toBe(false)
-  })
-
   it('returns Sync when clean + tracked + diverged both ways', () => {
     const result = resolvePrimaryAction(
       inputs({ upstreamStatus: { hasUpstream: true, ahead: 2, behind: 3 } })
@@ -292,30 +273,6 @@ describe('resolvePrimaryAction', () => {
     })
   })
 
-  it('returns Create PR intent for patch-equivalent force-push before review', () => {
-    const result = resolvePrimaryAction(
-      inputs({
-        branchCommitsAhead: 4,
-        upstreamStatus: {
-          hasUpstream: true,
-          upstreamName: 'origin/feature',
-          ahead: 14,
-          behind: 3,
-          behindCommitsArePatchEquivalent: true
-        },
-        hostedReviewCreation: {
-          provider: 'github',
-          review: null,
-          canCreate: false,
-          blockedReason: 'needs_sync',
-          nextAction: 'sync'
-        }
-      })
-    )
-    expect(result.kind).toBe('create_pr_intent')
-    expect(result.disabled).toBe(false)
-  })
-
   it('returns Pull when clean + behind-only', () => {
     const result = resolvePrimaryAction(
       inputs({ upstreamStatus: { hasUpstream: true, ahead: 0, behind: 4 } })
@@ -342,23 +299,6 @@ describe('resolvePrimaryAction', () => {
       title: 'Push 3 commits',
       disabled: false
     })
-  })
-
-  it('returns Create PR intent for a branch that needs a safe push before review', () => {
-    const result = resolvePrimaryAction(
-      inputs({
-        upstreamStatus: { hasUpstream: true, ahead: 2, behind: 0 },
-        hostedReviewCreation: {
-          provider: 'github',
-          review: null,
-          canCreate: false,
-          blockedReason: 'needs_push',
-          nextAction: 'push'
-        }
-      })
-    )
-    expect(result.kind).toBe('create_pr_intent')
-    expect(result.disabled).toBe(false)
   })
 
   it('returns a disabled up-to-date Commit when tracked branch is clean and in sync', () => {
@@ -424,68 +364,6 @@ describe('resolvePrimaryAction', () => {
     expect(result.disabled).toBe(false)
   })
 
-  it('returns Create PR intent for a dirty tree when hosted review prep can commit changes', () => {
-    const result = resolvePrimaryAction(
-      inputs({
-        hasUnstagedChanges: true,
-        hasStageableChanges: true,
-        upstreamStatus: upstreamInSync,
-        hostedReviewCreation: {
-          provider: 'github',
-          review: null,
-          canCreate: false,
-          blockedReason: 'dirty',
-          nextAction: 'commit'
-        }
-      })
-    )
-    expect(result).toEqual({
-      kind: 'create_pr_intent',
-      label: 'Create PR',
-      title: 'Prepare this branch and create a pull request',
-      disabled: false
-    })
-  })
-
-  it('returns Create PR intent for staged changes without a message so the flow can request one', () => {
-    const result = resolvePrimaryAction(
-      inputs({
-        stagedCount: 1,
-        hasMessage: false,
-        upstreamStatus: upstreamInSync,
-        hostedReviewCreation: {
-          provider: 'github',
-          review: null,
-          canCreate: false,
-          blockedReason: 'dirty',
-          nextAction: 'commit'
-        }
-      })
-    )
-    expect(result.kind).toBe('create_pr_intent')
-    expect(result.disabled).toBe(false)
-  })
-
-  it('returns Create MR intent with provider copy for a GitLab dirty branch', () => {
-    const result = resolvePrimaryAction(
-      inputs({
-        stagedCount: 1,
-        hasMessage: true,
-        upstreamStatus: upstreamInSync,
-        hostedReviewCreation: {
-          provider: 'gitlab',
-          review: null,
-          canCreate: false,
-          blockedReason: 'dirty',
-          nextAction: 'commit'
-        }
-      })
-    )
-    expect(result.kind).toBe('create_pr_intent')
-    expect(result.label).toBe('Create MR')
-    expect(result.title).toBe('Prepare this branch and create a merge request')
-  })
-
   it('returns Stage All when a staged file also has unstaged changes', () => {
     const result = resolvePrimaryAction(
       inputs({
@@ -502,7 +380,33 @@ describe('resolvePrimaryAction', () => {
     expect(result.disabled).toBe(false)
   })
 
-  it('keeps a Stage All prerequisite available when Create PR intent owns partial staging', () => {
+  it('keeps a Stage All prerequisite available when Create PR intent owns unstaged changes', () => {
+    const input = inputs({
+      stagedCount: 0,
+      hasUnstagedChanges: true,
+      hasStageableChanges: true,
+      hasPartiallyStagedChanges: false,
+      hasMessage: false,
+      upstreamStatus: upstreamInSync,
+      hostedReviewCreation: {
+        provider: 'github',
+        review: null,
+        canCreate: false,
+        blockedReason: 'dirty',
+        nextAction: 'commit'
+      }
+    })
+
+    expect(resolvePrimaryAction(input).kind).toBe('create_pr_intent')
+    expect(resolveCreatePrIntentPrerequisiteAction(input)).toEqual({
+      kind: 'stage',
+      label: 'Stage All',
+      title: 'Stage all changes',
+      disabled: false
+    })
+  })
+
+  it('keeps the partial-staging reason on the Create PR intent Stage All prerequisite', () => {
     const input = inputs({
       stagedCount: 1,
       hasUnstagedChanges: true,

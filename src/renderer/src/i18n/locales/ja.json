@@ -8374,13 +8374,22 @@
             "f394c6128a": "このコミットを説明できるエージェントがありません",
             "04a5d7239b": "このリポジトリには対応するWebリモートがありません",
             "15b6e834ac": "コミットをブラウザーで開けませんでした",
-            "d37e68f61d": "Preparing branch for review…",
-            "8d8f5c6c94": "Generating commit message…",
-            "fda060d6ce": "Review the commit message, then retry Create PR.",
-            "b75cb1fd0c": "Committing changes…",
-            "995c5e67ec": "Review setup needs attention.",
-            "d7492cafce": "Could not refresh Source Control. Retry Create PR.",
-            "473f18758e": "Source Control AI settings"
+            "d37e68f61d": "レビュー用にブランチを準備中…",
+            "8d8f5c6c94": "コミットメッセージを生成中…",
+            "fda060d6ce": "コミットメッセージを確認してから、Create PR を再試行してください。",
+            "b75cb1fd0c": "変更をコミット中…",
+            "995c5e67ec": "レビュー設定の確認が必要です。",
+            "d7492cafce": "Source Control を更新できませんでした。Create PR を再試行してください。",
+            "473f18758e": "Source Control AI 設定",
+            "createPrIntentConfigureAi": "コミットメッセージを追加するか、Source Control AI 設定を構成してください。",
+            "createPrIntentGenerateFailed": "コミットメッセージを生成できませんでした。追加してから再試行してください。",
+            "createPrIntentCommitFailed": "変更をコミットできませんでした。問題を修正してから Create PR を再試行してください。",
+            "createPrIntentNeedsSync": "レビューを作成する前にこのブランチを同期してください。",
+            "createPrIntentBranchNotReady": "このブランチはまだレビューを作成できる状態ではありません。",
+            "createPrIntentPublishing": "ブランチを公開中…",
+            "createPrIntentForcePushing": "lease 付きで強制プッシュ中…",
+            "createPrIntentPushing": "コミットをプッシュ中…",
+            "createPrIntentRemoteFailed": "リモートブランチを更新できませんでした。Create PR を再試行してください。"
           },
           "SourceControlAgentActionDialog": {
             "8e856842d1": "選択した agent を開始できませんでした。",
@@ -8666,10 +8675,10 @@
                   "484f45c439": "{{value0}} が進行中です…",
                   "74fc171e99": "強制プッシュ中です…",
                   "16aee3a5c1": "Commit 中です…",
-                  "e61b0d7a3c": "Check out a branch before publishing commits.",
-                  "8c6d15a07d": "Create PR",
-                  "d37e68f61d": "Preparing branch for review…",
-                  "c72e5e65d1": "Prepare this branch and create a {{value0}}"
+                  "e61b0d7a3c": "コミットを公開する前にブランチをチェックアウトしてください。",
+                  "8c6d15a07d": "PR を作成",
+                  "d37e68f61d": "レビュー用にブランチを準備中…",
+                  "c72e5e65d1": "このブランチを準備して {{value0}} を作成"
                 }
               }
             }

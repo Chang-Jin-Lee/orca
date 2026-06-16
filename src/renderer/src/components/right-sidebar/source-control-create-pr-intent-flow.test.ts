@@ -10,18 +10,21 @@ import type { GitStatusEntry } from '../../../../shared/types'
 describe('source-control Create PR intent flow helpers', () => {
   it('matches async completions only to the original repo, worktree, path, and branch', () => {
     const now = vi.spyOn(Date, 'now').mockReturnValue(123)
-    const token = createCreatePrIntentRunToken({
-      repoId: 'repo-1',
-      worktreeId: 'wt-1',
-      worktreePath: '/repo',
-      branch: 'feature'
-    })
+    try {
+      const token = createCreatePrIntentRunToken({
+        repoId: 'repo-1',
+        worktreeId: 'wt-1',
+        worktreePath: '/repo',
+        branch: 'feature'
+      })
 
-    expect(token.startedAt).toBe(123)
-    expect(createPrIntentRunTokenMatches(token, token)).toBe(true)
-    expect(createPrIntentRunTokenMatches(token, { ...token, branch: 'other' })).toBe(false)
-    expect(createPrIntentRunTokenMatches(token, { ...token, worktreeId: 'wt-2' })).toBe(false)
-    now.mockRestore()
+      expect(token.startedAt).toBe(123)
+      expect(createPrIntentRunTokenMatches(token, token)).toBe(true)
+      expect(createPrIntentRunTokenMatches(token, { ...token, branch: 'other' })).toBe(false)
+      expect(createPrIntentRunTokenMatches(token, { ...token, worktreeId: 'wt-2' })).toBe(false)
+    } finally {
+      now.mockRestore()
+    }
   })
 
   it('stages only safe unstaged and untracked paths', () => {
