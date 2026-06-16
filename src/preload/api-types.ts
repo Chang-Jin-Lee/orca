@@ -1037,6 +1037,7 @@ export type PreloadApi = {
     ackColdRestore: (id: string) => void
     ackData: (id: string, charCount: number) => void
     setActiveRendererPty: (id: string, active: boolean) => void
+    /** Why: hidden local PTYs suppress live renderer delivery; main-owned output stays authoritative. */
     setVisibleRendererPty: (id: string, visible: boolean) => void
     hasChildProcesses: (id: string) => Promise<boolean>
     getForegroundProcess: (id: string) => Promise<string | null>
@@ -1078,6 +1079,7 @@ export type PreloadApi = {
     ) => () => void
     onReplay: (callback: (data: { id: string; data: string }) => void) => () => void
     onExit: (callback: (data: { id: string; code: number }) => void) => () => void
+    /** Why: marks hidden renderer state stale so restore can blank before replaying the main snapshot. */
     onRendererOutputSkipped: (callback: (data: { id: string }) => void) => () => void
     onSerializeBufferRequest: (
       callback: (data: {

@@ -54,12 +54,18 @@ const EMOJI_TABLE_FIXTURE = readFileSync(
   path.join(__dirname, 'fixtures', 'terminal-emoji-table.md'),
   'utf8'
 )
+const RAW_EMOJI_TABLE_COLUMN_WIDTHS = [5, 17, 10, 25, 23, 12, 10, 10] as const
+const RAW_EMOJI_TABLE_RENDERED_COLUMNS =
+  RAW_EMOJI_TABLE_COLUMN_WIDTHS.reduce((total, width) => total + width, 0) +
+  RAW_EMOJI_TABLE_COLUMN_WIDTHS.length * 3 +
+  1
+const RAW_EMOJI_TABLE_MIN_TERMINAL_COLUMNS = RAW_EMOJI_TABLE_RENDERED_COLUMNS + 1
 
 function rawEmojiFixtureBoxTableScript(table: string, runId: string): string {
   const marker = `RAW_EMOJI_FIXTURE_TABLE_RESTORE_${runId}`
   return `
 const table = ${JSON.stringify(table)}
-const widths = [5, 17, 10, 25, 23, 12, 10, 10]
+const widths = ${JSON.stringify(RAW_EMOJI_TABLE_COLUMN_WIDTHS)}
 const border = {
   top: ['┌', '┬', '┐'],
   middle: ['├', '┼', '┤'],
@@ -156,6 +162,38 @@ async function setWideRenderedTableViewport(page: Page): Promise<void> {
     }
   })
   await page.waitForTimeout(250)
+}
+
+async function readActiveTerminalColumnCount(page: Page): Promise<number> {
+  return page.evaluate(() => {
+    const pane = (window as RawTableDebugWindow).getActiveTestPane?.()
+    return pane?.terminal.cols ?? 0
+  })
+}
+
+async function ensureWideRenderedTableColumns(page: Page): Promise<void> {
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    const cols = await readActiveTerminalColumnCount(page)
+    if (cols >= RAW_EMOJI_TABLE_MIN_TERMINAL_COLUMNS) {
+      return
+    }
+    const viewport = page.viewportSize() ?? { width: 1480, height: 820 }
+    const missingColumns = Math.max(1, RAW_EMOJI_TABLE_MIN_TERMINAL_COLUMNS - cols)
+    await page.setViewportSize({
+      width: viewport.width + Math.max(160, missingColumns * 12),
+      height: viewport.height
+    })
+    await page.waitForTimeout(250)
+  }
+
+  // Why: this golden is about restore/rendering, not table wrapping. Ensure
+  // the fixed-width box table fits before printing so wrap flags are meaningful.
+  await expect
+    .poll(() => readActiveTerminalColumnCount(page), {
+      timeout: 5_000,
+      message: `terminal did not reach ${RAW_EMOJI_TABLE_MIN_TERMINAL_COLUMNS} columns`
+    })
+    .toBeGreaterThanOrEqual(RAW_EMOJI_TABLE_MIN_TERMINAL_COLUMNS)
 }
 
 async function readTerminalBoxTableWrapDiagnostics(page: Page): Promise<{
@@ -454,6 +492,7 @@ test.describe('Terminal raw emoji table scroll restore repro', () => {
     await setWideRenderedTableViewport(orcaPage)
     await ensureTerminalVisible(orcaPage)
     await waitForActiveTerminalManager(orcaPage, 30_000)
+    await ensureWideRenderedTableColumns(orcaPage)
     const ptyId = await waitForActivePanePtyId(orcaPage)
     const runId = randomUUID()
     const scriptPath = path.join(testRepoPath, `.orca-raw-emoji-fixture-table-${runId}.mjs`)

@@ -347,6 +347,7 @@ export default function NewWorkspaceComposerCard({
   const { isFileDragOver, dragHandlers } = useComposerFileDragOver()
   const openModal = useAppStore((s) => s.openModal)
   const activeModal = useAppStore((s) => s.activeModal)
+  const activeContextualTourId = useAppStore((s) => s.activeContextualTourId)
   const defaultTuiAgent = useAppStore((s) => s.settings?.defaultTuiAgent ?? null)
   const disabledTuiAgents = useAppStore((s) => s.settings?.disabledTuiAgents ?? [])
   const updateSettings = useAppStore((s) => s.updateSettings)
@@ -619,6 +620,10 @@ export default function NewWorkspaceComposerCard({
             githubSourceContext={smartNameGitHubSourceContext}
             disabled={selectedRepoRequiresConnection}
             disabledPlaceholder="Connect this repo first"
+            // Why: modal autofocus lands on this field before the workspace
+            // creation tour can move focus; keep its popover from covering
+            // the tour controls while the tour is teaching the form.
+            suppressSuggestions={activeContextualTourId === 'workspace-creation'}
             textOnly={!selectedRepoIsGit}
             branchesEnabled={branchesEnabled}
             onPlainEnter={() => {

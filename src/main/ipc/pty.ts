@@ -1319,6 +1319,23 @@ export function registerPtyHandlers(
     }
   }
 
+  function discardHiddenRendererBacklog(id: string, additionalAckChars = 0): void {
+    const pendingChars = pendingData.get(id)?.data.length ?? 0
+    pendingData.delete(id)
+
+    const inFlightChars = rendererInFlightCharsByPty.get(id) ?? 0
+    rendererInFlightTotalChars = Math.max(0, rendererInFlightTotalChars - inFlightChars)
+    rendererInFlightCharsByPty.delete(id)
+
+    const ackChars = pendingChars + inFlightChars + additionalAckChars
+    if (ackChars > 0) {
+      markRendererOutputSkipped(id)
+      tryGetProviderForPty(id)?.acknowledgeDataEvent(id, ackChars)
+    }
+    clearFlushTimerIfIdle()
+    recordPtyRendererDeliveryPressure()
+  }
+
   function getPendingPtyFlushEntries(): [string, PendingPtyData][] {
     const entries = Array.from(pendingData.entries())
     const active: [string, PendingPtyData][] = []
@@ -1372,6 +1389,10 @@ export function registerPtyHandlers(
     for (const [id, pending] of getPendingPtyFlushEntries()) {
       if (writes >= PTY_BATCH_FLUSH_MAX_WRITES) {
         break
+      }
+      if (shouldSkipRendererDeliveryForHiddenPty(id)) {
+        discardHiddenRendererBacklog(id)
+        continue
       }
       if (!canSendPtyDataToRenderer(id, { interactive: activeRendererPtys.has(id) })) {
         continue
@@ -1445,15 +1466,7 @@ export function registerPtyHandlers(
         return
       }
       if (shouldSkipRendererDeliveryForHiddenPty(payload.id)) {
-        pendingData.delete(payload.id)
-        rendererInFlightTotalChars = Math.max(
-          0,
-          rendererInFlightTotalChars - (rendererInFlightCharsByPty.get(payload.id) ?? 0)
-        )
-        rendererInFlightCharsByPty.delete(payload.id)
-        markRendererOutputSkipped(payload.id)
-        recordPtyRendererDeliveryPressure()
-        tryGetProviderForPty(payload.id)?.acknowledgeDataEvent(payload.id, payload.data.length)
+        discardHiddenRendererBacklog(payload.id, payload.data.length)
         return
       }
       const existing = pendingData.get(payload.id)
@@ -2800,6 +2813,9 @@ export function registerPtyHandlers(
       }
     } else {
       hiddenRendererPtys.add(args.id)
+      if (isLocalPty) {
+        discardHiddenRendererBacklog(args.id)
+      }
     }
     if (pendingData.size > 0 && !flushTimer) {
       schedulePendingDataFlush(0)

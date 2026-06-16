@@ -2328,6 +2328,8 @@ function createPtyApi(): NonNullable<Partial<PreloadApi>['pty']> {
     ackColdRestore: () => {},
     ackData: () => {},
     setActiveRendererPty: () => {},
+    // Why: paired web clients do not own desktop renderer PTY delivery, so
+    // visibility is only a desktop-main scheduling hint here.
     setVisibleRendererPty: () => {},
     hasChildProcesses: () => Promise.resolve(false),
     getForegroundProcess: () => Promise.resolve(null),
@@ -2358,6 +2360,8 @@ function createPtyApi(): NonNullable<Partial<PreloadApi>['pty']> {
     onData: () => noopUnsubscribe,
     onReplay: () => noopUnsubscribe,
     onExit: () => noopUnsubscribe,
+    // Why: desktop main emits skipped-output notices; web has no local PTY
+    // renderer stream to mark stale.
     onRendererOutputSkipped: () => noopUnsubscribe,
     onSerializeBufferRequest: () => noopUnsubscribe,
     onClearBufferRequest: () => noopUnsubscribe,

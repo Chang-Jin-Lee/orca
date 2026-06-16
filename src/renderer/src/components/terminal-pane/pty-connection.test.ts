@@ -516,7 +516,9 @@ describe('connectPanePty', () => {
           getForegroundProcess: vi.fn().mockResolvedValue(null),
           hasChildProcesses: vi.fn().mockResolvedValue(false),
           ackColdRestore: vi.fn(),
+          setVisibleRendererPty: vi.fn(),
           onClearBufferRequest: vi.fn(() => vi.fn()),
+          onRendererOutputSkipped: vi.fn(() => vi.fn()),
           onSerializeBufferRequest: vi.fn(() => vi.fn()),
           declarePendingPaneSerializer: vi.fn().mockResolvedValue(1),
           settlePaneSerializer: vi.fn().mockResolvedValue(undefined),
@@ -2193,6 +2195,33 @@ describe('connectPanePty', () => {
     }
   })
 
+  it('does not forward hidden renderer resize measurements to the PTY', async () => {
+    const { connectPanePty } = await import('./pty-connection')
+    const transport = createMockTransport('pty-id')
+    transportFactoryQueue.push(transport)
+    const pane = createPane(1)
+    let resizeHandler = (_event: { cols: number; rows: number }): void => {
+      throw new Error('expected onResize handler to be registered')
+    }
+    pane.terminal.onResize = vi.fn(((handler: (event: { cols: number; rows: number }) => void) => {
+      resizeHandler = handler
+      return { dispose: vi.fn() }
+    }) as typeof pane.terminal.onResize)
+    const deps = createDeps({ isVisibleRef: { current: true } })
+
+    const binding = connectPanePty(pane as never, createManager(1) as never, deps as never)
+
+    resizeHandler({ cols: 180, rows: 50 })
+    expect(transport.resize).toHaveBeenCalledWith(180, 50)
+
+    transport.resize.mockClear()
+    ;(deps.isVisibleRef as { current: boolean }).current = false
+    resizeHandler({ cols: 104, rows: 47 })
+    expect(transport.resize).not.toHaveBeenCalled()
+
+    binding.dispose()
+  })
+
   it('drops xterm protocol replies from live TUI output while mobile presence lock is active', async () => {
     const { connectPanePty } = await import('./pty-connection')
     const { setDriverForPty } = await import('@/lib/pane-manager/mobile-driver-state')
@@ -2655,6 +2684,7 @@ describe('connectPanePty', () => {
     expect(transport.attach).not.toHaveBeenCalled()
     await Promise.resolve()
     expect(deps.syncPanePtyLayoutBinding).toHaveBeenCalledWith(2, 'leaf-pty-2')
+    expect(window.api.pty.setVisibleRendererPty).toHaveBeenCalledWith('leaf-pty-2', true)
   })
 
   it('adopts a still-live background PTY via attach instead of reattaching when an eager buffer exists', async () => {
@@ -2697,6 +2727,7 @@ describe('connectPanePty', () => {
     expect(transport.connect).not.toHaveBeenCalledWith(
       expect.objectContaining({ sessionId: eagerPtyId })
     )
+    expect(window.api.pty.setVisibleRendererPty).toHaveBeenCalledWith(eagerPtyId, true)
     const { hasPtySerializer } = await import('./pty-buffer-serializer')
     expect(hasPtySerializer(eagerPtyId)).toBe(true)
   })

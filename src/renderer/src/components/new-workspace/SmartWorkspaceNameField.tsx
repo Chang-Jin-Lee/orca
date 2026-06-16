@@ -96,6 +96,7 @@ type SmartWorkspaceNameFieldProps = {
   inputRef?: React.RefObject<HTMLInputElement | null>
   onPlainEnter?: () => void
   disabled?: boolean
+  suppressSuggestions?: boolean
   disabledPlaceholder?: string
   textOnly?: boolean
   branchesEnabled?: boolean
@@ -141,6 +142,7 @@ export default function SmartWorkspaceNameField({
   inputRef,
   onPlainEnter,
   disabled = false,
+  suppressSuggestions = false,
   disabledPlaceholder,
   textOnly = false,
   branchesEnabled = true
@@ -323,7 +325,7 @@ export default function SmartWorkspaceNameField({
   )
 
   useEffect(() => {
-    if (disabled || textOnly) {
+    if (disabled || suppressSuggestions || textOnly) {
       return
     }
     if (!preflightStatusChecked || !preflightStatusCurrent) {
@@ -339,6 +341,7 @@ export default function SmartWorkspaceNameField({
     preflightStatusChecked,
     preflightStatusCurrent,
     refreshPreflightStatus,
+    suppressSuggestions,
     textOnly
   ])
 
@@ -365,7 +368,7 @@ export default function SmartWorkspaceNameField({
   }, [gitlabAvailable, linearAvailable, mode, textOnly])
 
   useEffect(() => {
-    if (!disabled) {
+    if (!disabled && !suppressSuggestions) {
       return
     }
     setOpen(false)
@@ -380,7 +383,7 @@ export default function SmartWorkspaceNameField({
     setLinearLoading(false)
     setCommandValue('')
     setCrossRepoPrompt(null)
-  }, [disabled])
+  }, [disabled, suppressSuggestions])
 
   useEffect(() => {
     const timer = window.setTimeout(() => setDebouncedQuery(value), SEARCH_DEBOUNCE_MS)
@@ -978,7 +981,9 @@ export default function SmartWorkspaceNameField({
         onValueChange={(next) => {
           const nextMode = next as SmartNameMode
           setMode(nextMode)
-          setOpen(!disabled && nextMode !== 'text' && selectedSource === null)
+          setOpen(
+            !disabled && !suppressSuggestions && nextMode !== 'text' && selectedSource === null
+          )
           cancelLocalInputFocusFrame()
           localInputFocusFrameRef.current = requestAnimationFrame(() => {
             localInputFocusFrameRef.current = null
@@ -1028,8 +1033,12 @@ export default function SmartWorkspaceNameField({
       </Tabs>
 
       <Popover
-        open={!disabled && open && mode !== 'text' && selectedSource === null}
-        onOpenChange={(next) => setOpen(disabled || selectedSource ? false : next)}
+        open={
+          !disabled && !suppressSuggestions && open && mode !== 'text' && selectedSource === null
+        }
+        onOpenChange={(next) =>
+          setOpen(disabled || suppressSuggestions || selectedSource ? false : next)
+        }
       >
         <Command
           value={resolvedCommandValue}
@@ -1131,12 +1140,12 @@ export default function SmartWorkspaceNameField({
                     value={value}
                     onChange={(event) => {
                       onValueChange(event.target.value)
-                      if (!disabled && mode !== 'text') {
+                      if (!disabled && !suppressSuggestions && mode !== 'text') {
                         setOpen(true)
                       }
                     }}
                     onFocus={() => {
-                      if (!disabled && mode !== 'text') {
+                      if (!disabled && !suppressSuggestions && mode !== 'text') {
                         setOpen(true)
                       }
                     }}

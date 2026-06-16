@@ -1330,14 +1330,19 @@ export function connectPanePty(
   })
   const observeTerminalGitHubPRLink = createTerminalGitHubPRLinkDetector()
 
+  const reportRendererPtyVisibility = (ptyId: string | null | undefined): void => {
+    if (!ptyId || isRemoteRuntimePtyId(ptyId)) {
+      return
+    }
+    window.api.pty.setVisibleRendererPty?.(
+      ptyId,
+      shouldWritePtyOutputForeground(deps.isVisibleRef.current)
+    )
+  }
+
   const onPtySpawn = (ptyId: string): void => {
     setPanePtyFitBinding(ptyId)
-    if (!isRemoteRuntimePtyId(ptyId)) {
-      window.api.pty.setVisibleRendererPty?.(
-        ptyId,
-        shouldWritePtyOutputForeground(deps.isVisibleRef.current)
-      )
-    }
+    reportRendererPtyVisibility(ptyId)
     deps.syncPanePtyLayoutBinding(pane.id, ptyId)
     deps.updateTabPtyId(deps.tabId, ptyId)
     // Why: Command Code has no prompt-start hook. Seed the visible working row
@@ -1697,15 +1702,7 @@ export function connectPanePty(
     ? createRemoteRuntimePtyTransport(runtimeEnvironmentId, transportOptions)
     : createIpcPtyTransport(transportOptions)
   deps.paneTransportsRef.current.set(pane.id, transport)
-  {
-    const ptyId = transport.getPtyId()
-    if (ptyId && !isRemoteRuntimePtyId(ptyId)) {
-      window.api.pty.setVisibleRendererPty?.(
-        ptyId,
-        shouldWritePtyOutputForeground(deps.isVisibleRef.current)
-      )
-    }
-  }
+  reportRendererPtyVisibility(transport.getPtyId())
   const conptyDeviceAttributesDisposable = isNativeWindowsConpty
     ? installConptyDeviceAttributesHandler({
         parser: pane.terminal.parser,
@@ -1793,6 +1790,11 @@ export function connectPanePty(
 
   const shouldSuppressDesktopPtyResize = (): boolean => {
     const currentPtyId = transport.getPtyId()
+    if (!shouldWritePtyOutputForeground(deps.isVisibleRef.current)) {
+      // Why: hidden layout measurements can collapse to stale/narrow widths;
+      // the main/headless parser must keep the last visible PTY geometry.
+      return true
+    }
     return Boolean(
       currentPtyId && (getFitOverrideForPty(currentPtyId) || isPtyLocked(currentPtyId))
     )
@@ -3075,6 +3077,7 @@ export function connectPanePty(
       setPanePtyFitBinding(ptyId)
       deps.syncPanePtyLayoutBinding(pane.id, ptyId)
       deps.updateTabPtyId(deps.tabId, ptyId)
+      reportRendererPtyVisibility(ptyId)
       agentCompletionCoordinator.startProcessTracking()
 
       // Why: mobile terminal streaming needs the exact screen state from
@@ -3584,6 +3587,7 @@ export function connectPanePty(
             onError: reportError
           }
         })
+        reportRendererPtyVisibility(attachPtyId)
         deps.syncPanePtyLayoutBinding(pane.id, attachPtyId)
         deps.updateTabPtyId(deps.tabId, attachPtyId)
         agentCompletionCoordinator.startProcessTracking()
@@ -3640,6 +3644,7 @@ export function connectPanePty(
                 onError: reportError
               }
             })
+            reportRendererPtyVisibility(spawnedPtyId)
             // Why: attach sets the transport's PTY id; starting process
             // tracking before this point no-ops because getPtyId() is empty.
             agentCompletionCoordinator.startProcessTracking()

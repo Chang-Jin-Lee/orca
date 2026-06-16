@@ -4172,6 +4172,61 @@ describe('OrcaRuntimeService', () => {
     })
   })
 
+  it('keeps spooled hidden bytes before visible bytes that arrive during spool restore', async () => {
+    const runtime = createRuntime()
+    syncSinglePty(runtime, 'pty-1')
+    const hiddenOutput = `${'x'.repeat(9 * 1024 * 1024)}\nSPOOLED_BEFORE_VISIBLE\n`
+    const visibleOutput = 'VISIBLE_DURING_RESTORE\n'
+
+    runtime.setPtyHeadlessTerminalVisible('pty-1', false)
+    runtime.onPtyData('pty-1', hiddenOutput, hiddenOutput.length)
+
+    const headless = (
+      runtime as unknown as {
+        headlessTerminals: Map<
+          string,
+          {
+            deferredChunks: { data: string; outputSequence: number }[]
+            deferredChars: number
+            deferredSpoolChars: number
+            deferredSpoolPath?: string
+            deferredSpoolWriteChain: Promise<void>
+            restoringFromSpool: boolean
+          }
+        >
+      }
+    ).headlessTerminals.get('pty-1')
+    if (!headless) {
+      throw new Error('expected headless terminal state')
+    }
+
+    const internals = runtime as unknown as {
+      drainOneDeferredHeadlessChunk: (state: typeof headless) => Promise<void>
+    }
+    while (headless.deferredChunks.length > 0) {
+      await internals.drainOneDeferredHeadlessChunk(headless)
+    }
+    await headless.deferredSpoolWriteChain
+    const restoreGate = deferred<void>()
+    headless.deferredSpoolWriteChain = restoreGate.promise
+
+    runtime.setPtyHeadlessTerminalVisible('pty-1', true)
+    for (let index = 0; index < 10 && !headless.restoringFromSpool; index++) {
+      await Promise.resolve()
+    }
+    expect(headless.restoringFromSpool).toBe(true)
+
+    runtime.onPtyData('pty-1', visibleOutput, hiddenOutput.length + visibleOutput.length)
+    restoreGate.resolve()
+
+    const snapshot = await runtime.serializeMainTerminalBuffer('pty-1', { scrollbackRows: 1000 })
+    const spooledIndex = snapshot?.data.indexOf('SPOOLED_BEFORE_VISIBLE') ?? -1
+    const visibleIndex = snapshot?.data.indexOf('VISIBLE_DURING_RESTORE') ?? -1
+    expect(spooledIndex).toBeGreaterThanOrEqual(0)
+    expect(visibleIndex).toBeGreaterThan(spooledIndex)
+    expect(snapshot?.seq).toBe(hiddenOutput.length + visibleOutput.length)
+  })
+
   it('preserves deferred hidden headless order when visible output resumes', async () => {
     const runtime = createRuntime()
     syncSinglePty(runtime, 'pty-1')

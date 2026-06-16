@@ -881,6 +881,8 @@ type RuntimeHeadlessTerminal = {
   deferredSpoolStartSequence?: number
   deferredSpoolChars: number
   deferredSpoolWriteChain: Promise<void>
+  deferredSpoolRestoreInFlight?: Promise<void>
+  restoringFromSpool: boolean
 }
 
 type HeadlessSeedMetadata = {
@@ -4153,7 +4155,8 @@ export class OrcaRuntimeService {
       deferredChunks: [],
       deferredChars: 0,
       deferredSpoolChars: 0,
-      deferredSpoolWriteChain: Promise.resolve()
+      deferredSpoolWriteChain: Promise.resolve(),
+      restoringFromSpool: false
     }
     this.headlessTerminals.set(ptyId, state)
     state.writeChain = state.writeChain
@@ -4203,7 +4206,8 @@ export class OrcaRuntimeService {
       deferredChunks: [],
       deferredChars: 0,
       deferredSpoolChars: 0,
-      deferredSpoolWriteChain: Promise.resolve()
+      deferredSpoolWriteChain: Promise.resolve(),
+      restoringFromSpool: false
     }
     this.headlessTerminals.set(ptyId, state)
 
@@ -4278,7 +4282,7 @@ export class OrcaRuntimeService {
   private trackHeadlessTerminalData(ptyId: string, data: string, outputSequence: number): void {
     const state = this.getOrCreateHeadlessTerminal(ptyId)
     if (this.hiddenHeadlessPtys.has(ptyId) || this.hasDeferredHeadlessTerminalDataForState(state)) {
-      this.deferHeadlessTerminalData(ptyId, state, data, outputSequence)
+      this.deferHeadlessTerminalData(state, data, outputSequence)
       return
     }
     this.enqueueHeadlessTerminalWrite(state, data, outputSequence)
@@ -4302,7 +4306,6 @@ export class OrcaRuntimeService {
   }
 
   private deferHeadlessTerminalData(
-    ptyId: string,
     state: RuntimeHeadlessTerminal,
     data: string,
     outputSequence: number
@@ -4387,7 +4390,11 @@ export class OrcaRuntimeService {
   }
 
   private hasDeferredHeadlessTerminalDataForState(state: RuntimeHeadlessTerminal): boolean {
-    return (state.deferredChunks?.length ?? 0) > 0 || (state.deferredSpoolChars ?? 0) > 0
+    return (
+      (state.deferredChunks?.length ?? 0) > 0 ||
+      (state.deferredSpoolChars ?? 0) > 0 ||
+      state.restoringFromSpool
+    )
   }
 
   private async drainDeferredHeadlessTerminalsWithinBudget(): Promise<void> {
@@ -4426,6 +4433,9 @@ export class OrcaRuntimeService {
   }
 
   private async drainOneDeferredHeadlessChunk(state: RuntimeHeadlessTerminal): Promise<void> {
+    if (state.deferredSpoolRestoreInFlight) {
+      await state.deferredSpoolRestoreInFlight
+    }
     if ((state.deferredChunks?.length ?? 0) === 0 && (state.deferredSpoolChars ?? 0) > 0) {
       await this.restoreDeferredHeadlessSpoolToMemory(state)
     }
@@ -4440,6 +4450,10 @@ export class OrcaRuntimeService {
   private async restoreDeferredHeadlessSpoolToMemory(
     state: RuntimeHeadlessTerminal
   ): Promise<void> {
+    if (state.deferredSpoolRestoreInFlight) {
+      await state.deferredSpoolRestoreInFlight
+      return
+    }
     const path = state.deferredSpoolPath
     const startSequence = state.deferredSpoolStartSequence
     const writeChain = state.deferredSpoolWriteChain ?? Promise.resolve()
@@ -4450,34 +4464,51 @@ export class OrcaRuntimeService {
       state.deferredSpoolWriteChain = Promise.resolve()
       return
     }
+    state.restoringFromSpool = true
     state.deferredSpoolPath = undefined
     state.deferredSpoolStartSequence = undefined
     state.deferredSpoolChars = 0
     state.deferredSpoolWriteChain = Promise.resolve()
-    await writeChain
-    let data = ''
-    try {
-      data = await readFile(path, 'utf8')
-    } finally {
-      await unlink(path).catch(() => undefined)
-    }
-    for (let offset = 0; offset < data.length; offset += HIDDEN_HEADLESS_DRAIN_CHUNK_CHARS) {
-      const chunk = data.slice(offset, offset + HIDDEN_HEADLESS_DRAIN_CHUNK_CHARS)
-      state.deferredChunks.push({
-        data: chunk,
-        outputSequence: startSequence + offset + chunk.length
-      })
-      state.deferredChars += chunk.length
-    }
+    state.deferredSpoolRestoreInFlight = (async () => {
+      await writeChain
+      let data = ''
+      try {
+        data = await readFile(path, 'utf8')
+      } finally {
+        await unlink(path).catch(() => undefined)
+      }
+      const restoredChunks: { data: string; outputSequence: number }[] = []
+      for (let offset = 0; offset < data.length; offset += HIDDEN_HEADLESS_DRAIN_CHUNK_CHARS) {
+        const chunk = data.slice(offset, offset + HIDDEN_HEADLESS_DRAIN_CHUNK_CHARS)
+        restoredChunks.push({
+          data: chunk,
+          outputSequence: startSequence + offset + chunk.length
+        })
+      }
+      // Why: visible PTY data can arrive while old hidden spill bytes are
+      // being read back. Prepend restored bytes to preserve PTY order.
+      state.deferredChunks = [...restoredChunks, ...state.deferredChunks]
+      state.deferredChars += data.length
+    })().finally(() => {
+      state.restoringFromSpool = false
+      state.deferredSpoolRestoreInFlight = undefined
+    })
+    await state.deferredSpoolRestoreInFlight
   }
 
   private async clearDeferredHeadlessSpool(state: RuntimeHeadlessTerminal): Promise<void> {
     const path = state.deferredSpoolPath
     const writeChain = state.deferredSpoolWriteChain ?? Promise.resolve()
+    const restoreInFlight = state.deferredSpoolRestoreInFlight
     state.deferredSpoolPath = undefined
     state.deferredSpoolStartSequence = undefined
     state.deferredSpoolChars = 0
     state.deferredSpoolWriteChain = Promise.resolve()
+    state.deferredSpoolRestoreInFlight = undefined
+    state.restoringFromSpool = false
+    await restoreInFlight?.catch(() => undefined)
+    state.deferredChunks = []
+    state.deferredChars = 0
     if (!path) {
       return
     }
@@ -4498,7 +4529,8 @@ export class OrcaRuntimeService {
       deferredChunks: [],
       deferredChars: 0,
       deferredSpoolChars: 0,
-      deferredSpoolWriteChain: Promise.resolve()
+      deferredSpoolWriteChain: Promise.resolve(),
+      restoringFromSpool: false
     }
     this.headlessTerminals.set(ptyId, state)
     return state

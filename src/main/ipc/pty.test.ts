@@ -427,6 +427,7 @@ describe('registerPtyHandlers', () => {
     const spawn = vi.fn(async (options: { sessionId?: string }) => ({
       id: options.sessionId ?? 'daemon-pty'
     }))
+    const acknowledgeDataEvent = vi.fn()
     let dataHandler: ((payload: { id: string; data: string }) => void) | null = null
     let exitHandler: ((payload: { id: string; code: number }) => void) | null = null
     setLocalPtyProvider({
@@ -439,7 +440,7 @@ describe('registerPtyHandlers', () => {
       getCwd: vi.fn(),
       getInitialCwd: vi.fn(),
       clearBuffer: vi.fn(),
-      acknowledgeDataEvent: vi.fn(),
+      acknowledgeDataEvent,
       hasChildProcesses: vi.fn(),
       getForegroundProcess: vi.fn(),
       serialize: vi.fn(),
@@ -460,6 +461,7 @@ describe('registerPtyHandlers', () => {
     } as never)
     return {
       spawn,
+      acknowledgeDataEvent,
       emitData: (id: string, data: string) => dataHandler?.({ id, data }),
       emitExit: (id: string, code = 0) => exitHandler?.({ id, code })
     }
@@ -4818,6 +4820,10 @@ describe('registerPtyHandlers', () => {
         pendingPtyCount: 0,
         rendererInFlightChars: 0
       })
+      expect(provider.acknowledgeDataEvent).toHaveBeenCalledWith(
+        spawnResult.id,
+        'hidden-output'.length
+      )
 
       setVisibleRendererPty(null, { id: spawnResult.id, visible: true })
       provider.emitData(spawnResult.id, 'visible-output')
@@ -4835,7 +4841,7 @@ describe('registerPtyHandlers', () => {
     }
   })
 
-  it('does not suppress renderer delivery for hidden remote-owned PTYs', async () => {
+  it('acks and discards queued renderer bytes when a local PTY becomes hidden', async () => {
     vi.useFakeTimers()
     const provider = installObservableDaemonTestProvider()
     const runtime = {
@@ -4856,6 +4862,57 @@ describe('registerPtyHandlers', () => {
         rows: 24,
         cwd: tmpdir()
       })) as { id: string }
+      const setVisibleRendererPty = getPtySetVisibleRendererPtyListener()
+      mainWindow.webContents.send.mockClear()
+
+      provider.emitData(spawnResult.id, 'queued-before-hide')
+      setVisibleRendererPty(null, { id: spawnResult.id, visible: false })
+      vi.advanceTimersByTime(8)
+
+      expect(mainWindow.webContents.send).toHaveBeenCalledTimes(1)
+      expect(mainWindow.webContents.send).toHaveBeenCalledWith('pty:rendererOutputSkipped', {
+        id: spawnResult.id
+      })
+      expect(mainWindow.webContents.send).not.toHaveBeenCalledWith(
+        'pty:data',
+        expect.objectContaining({ id: spawnResult.id })
+      )
+      expect(provider.acknowledgeDataEvent).toHaveBeenCalledWith(
+        spawnResult.id,
+        'queued-before-hide'.length
+      )
+      expect(getPtyRendererDeliveryDebugSnapshot()).toMatchObject({
+        pendingPtyCount: 0,
+        rendererInFlightChars: 0
+      })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('does not suppress renderer delivery for hidden remote-owned PTYs', async () => {
+    vi.useFakeTimers()
+    const provider = installObservableDaemonTestProvider()
+    let spawnedPtyId: string | null = null
+    const runtime = {
+      onPtyData: vi.fn((_id: string, data: string) => data.length),
+      getPtyOutputSequence: vi.fn(() => 0),
+      onPtySpawned: vi.fn(),
+      onPtyExit: vi.fn(),
+      setPtyHeadlessTerminalVisible: vi.fn(),
+      setPtyController: vi.fn(),
+      createPreAllocatedTerminalHandle: vi.fn(() => 'term-preallocated'),
+      registerPreAllocatedHandleForPty: vi.fn()
+    }
+
+    try {
+      registerPtyHandlers(mainWindow as never, runtime as never)
+      const spawnResult = (await handlers.get('pty:spawn')!(null, {
+        cols: 80,
+        rows: 24,
+        cwd: tmpdir()
+      })) as { id: string }
+      spawnedPtyId = spawnResult.id
       setPtyOwnership(spawnResult.id, 'ssh-1')
       const setVisibleRendererPty = getPtySetVisibleRendererPtyListener()
       mainWindow.webContents.send.mockClear()
@@ -4875,7 +4932,9 @@ describe('registerPtyHandlers', () => {
         id: spawnResult.id
       })
     } finally {
-      deletePtyOwnership('daemon-pty')
+      if (spawnedPtyId) {
+        deletePtyOwnership(spawnedPtyId)
+      }
       vi.useRealTimers()
     }
   })
