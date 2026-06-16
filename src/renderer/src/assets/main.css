@@ -17,6 +17,12 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* Why: hover-reveal controls (sidebar/row action buttons) hide with `opacity-0`
+   and fade in via `group-hover`. Touch devices have no hover, so those controls
+   stay invisible. Gate the hide behind `can-hover:` so touch (hover: none) keeps
+   them visible while pointer devices preserve the reveal-on-hover behavior. */
+@custom-variant can-hover (@media (hover: hover));
+
 .theme-transition-disabled *,
 .theme-transition-disabled *::before,
 .theme-transition-disabled *::after {
@@ -317,7 +323,11 @@
     margin: 0;
     padding: 0;
     overflow: hidden;
-    height: 100vh;
+    /* Why: dvh tracks the visible viewport so the web app shell isn't taller
+       than the screen when a mobile browser's URL bar is shown (100vh = the
+       large viewport, which forces a ~40-100px scroll). In Electron there is
+       no browser chrome, so dvh resolves identically to the window height. */
+    height: 100dvh;
     font-family: var(
       --app-font-family,
       'Geist',
@@ -506,7 +516,7 @@
 /* ── Layout ──────────────────────────────────────────── */
 
 #root {
-  height: 100vh;
+  height: 100dvh;
   width: 100vw;
   overflow: hidden;
 }
@@ -514,7 +524,7 @@
 .app-layout {
   display: flex;
   flex-direction: column;
-  height: 100vh;
+  height: 100dvh;
   width: 100vw;
   overflow: hidden;
 }

@@ -1148,6 +1148,78 @@ describe('createEditorSlice untitled cleanup routing', () => {
   })
 })
 
+describe('createEditorSlice recently closed editor tabs', () => {
+  function openMirroredEditor(store: StoreApi<AppState>, filePath: string, preview = false): void {
+    store.getState().openFile(
+      {
+        filePath,
+        relativePath: filePath.replace('/repo/', ''),
+        worktreeId: 'wt-1',
+        language: 'markdown',
+        runtimeEnvironmentId: 'env-1',
+        mirroredFromRuntimeSession: true,
+        mode: 'edit'
+      },
+      { preview }
+    )
+  }
+
+  it('reopens a closed mirrored editor tab as a local tab', () => {
+    const store = createEditorStore()
+    openMirroredEditor(store, '/repo/notes.md')
+
+    store.getState().closeFile('/repo/notes.md')
+
+    const recent = store.getState().recentlyClosedEditorTabsByWorktree['wt-1']?.[0]
+    expect(recent).toMatchObject({ filePath: '/repo/notes.md' })
+    expect(recent).not.toHaveProperty('mirroredFromRuntimeSession')
+
+    expect(store.getState().reopenClosedEditorTab('wt-1')).toBe(true)
+    expect(store.getState().openFiles[0]).toMatchObject({ filePath: '/repo/notes.md' })
+    expect(store.getState().openFiles[0]).not.toHaveProperty('mirroredFromRuntimeSession')
+  })
+
+  it('reopens close-all mirrored editor tabs as local tabs', () => {
+    const store = createEditorStore()
+    openMirroredEditor(store, '/repo/notes.md')
+
+    store.getState().closeAllFiles()
+
+    const recent = store.getState().recentlyClosedEditorTabsByWorktree['wt-1']?.[0]
+    expect(recent).toMatchObject({ filePath: '/repo/notes.md' })
+    expect(recent).not.toHaveProperty('mirroredFromRuntimeSession')
+
+    expect(store.getState().reopenClosedEditorTab('wt-1')).toBe(true)
+    expect(store.getState().openFiles[0]).toMatchObject({ filePath: '/repo/notes.md' })
+    expect(store.getState().openFiles[0]).not.toHaveProperty('mirroredFromRuntimeSession')
+  })
+
+  it('reopens replaced mirrored preview tabs as local tabs', () => {
+    const store = createEditorStore()
+    openMirroredEditor(store, '/repo/notes.md', true)
+
+    store.getState().openFile(
+      {
+        filePath: '/repo/guide.md',
+        relativePath: 'guide.md',
+        worktreeId: 'wt-1',
+        language: 'markdown',
+        runtimeEnvironmentId: 'env-1',
+        mode: 'edit'
+      },
+      { preview: true, recordReplacedPreview: true }
+    )
+
+    const recent = store.getState().recentlyClosedEditorTabsByWorktree['wt-1']?.[0]
+    expect(recent).toMatchObject({ filePath: '/repo/notes.md' })
+    expect(recent).not.toHaveProperty('mirroredFromRuntimeSession')
+
+    expect(store.getState().reopenClosedEditorTab('wt-1')).toBe(true)
+    expect(store.getState().openFiles.at(-1)).toMatchObject({ filePath: '/repo/notes.md' })
+    expect(store.getState().openFiles.at(-1)).not.toHaveProperty('mirroredFromRuntimeSession')
+  })
+})
+
 describe('createEditorSlice markdown view state', () => {
   it('updates stale language metadata when reopening an existing file', () => {
     const store = createEditorStore()

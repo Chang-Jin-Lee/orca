@@ -238,6 +238,74 @@ describe('keybindings', () => {
     ])
   })
 
+  it('binds close-all editor tabs to Mod+Alt+W beside tab.close', () => {
+    expect(getEffectiveKeybindingsForAction('tab.closeAll', 'darwin')).toEqual(['Mod+Alt+W'])
+    expect(getEffectiveKeybindingsForAction('tab.closeAll', 'linux')).toEqual(['Mod+Alt+W'])
+    expect(getEffectiveKeybindingsForAction('tab.closeAll', 'win32')).toEqual(['Mod+Alt+W'])
+    expect(formatKeybindingList(['Mod+Alt+W'], 'darwin')).toBe('⌘⌥W')
+    expect(formatKeybindingList(['Mod+Alt+W'], 'linux')).toBe('Ctrl+Alt+W')
+
+    // Why: macOS Option+W composes to a glyph (∑), so the chord must resolve
+    // through the physical-code fallback rather than the logical key.
+    const macComposedCloseAll = {
+      key: '∑',
+      code: 'KeyW',
+      meta: true,
+      control: false,
+      alt: true,
+      shift: false
+    }
+    expect(keybindingMatchesAction('tab.closeAll', macComposedCloseAll, 'darwin')).toBe(true)
+    const linuxCloseAll = {
+      key: 'w',
+      code: 'KeyW',
+      meta: false,
+      control: true,
+      alt: true,
+      shift: false
+    }
+    expect(keybindingMatchesAction('tab.closeAll', linuxCloseAll, 'linux')).toBe(true)
+    expect(
+      keybindingMatchesAction('tab.closeAll', linuxCloseAll, 'linux', undefined, {
+        context: 'terminal',
+        terminalShortcutPolicy: 'orca-first'
+      })
+    ).toBe(true)
+    // Why: close-all is a workspace tab command, so terminal-first mode should
+    // keep passing the chord through to shells and TUIs.
+    expect(
+      keybindingMatchesAction('tab.closeAll', linuxCloseAll, 'linux', undefined, {
+        context: 'terminal',
+        terminalShortcutPolicy: 'terminal-first'
+      })
+    ).toBe(false)
+
+    // Why: Mod+Alt+W and Mod+W are neighbors; the extra Alt must keep the two
+    // actions from firing on each other's chord.
+    const macCloseActive = {
+      key: 'w',
+      code: 'KeyW',
+      meta: true,
+      control: false,
+      alt: false,
+      shift: false
+    }
+    expect(keybindingMatchesAction('tab.close', macComposedCloseAll, 'darwin')).toBe(false)
+    expect(keybindingMatchesAction('tab.closeAll', macCloseActive, 'darwin')).toBe(false)
+
+    // Stays in the Tabs group/scope so Settings → Shortcuts lists it for rebinding.
+    const definition = getKeybindingDefinition('tab.closeAll')
+    expect(definition?.group).toBe('Tabs')
+    expect(definition?.scope).toBe('tabs')
+
+    // Why: both live in the Tabs scope, so rebinding closeAll onto Mod+W must
+    // surface as a conflict with tab.close in Settings.
+    expect(findKeybindingConflicts('darwin', { 'tab.closeAll': ['Mod+W'] })).toContainEqual({
+      binding: 'Mod+W',
+      actionIds: expect.arrayContaining(['tab.close', 'tab.closeAll'])
+    })
+  })
+
   it('keeps equalize pane sizes unassigned until users customize it', () => {
     expect(getEffectiveKeybindingsForAction('terminal.equalizePaneSizes', 'darwin')).toEqual([])
     expect(

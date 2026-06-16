@@ -16,7 +16,7 @@
 
 <p align="center">
   <strong>The AI Orchestrator for 100x builders.</strong><br/>
-  Run Claude Code, OpenClaude, Codex, or OpenCode side-by-side — each in its own worktree, tracked in one place.
+  Run Codex, ClaudeCode, OpenCode or Pi side-by-side — each in its own worktree, tracked in one place.
 </p>
 
 <h3 align="center"><a href="https://onorca.dev/download"><ins>Download Orca</ins></a></h3>

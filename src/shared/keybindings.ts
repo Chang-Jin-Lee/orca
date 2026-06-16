@@ -62,6 +62,7 @@ export type KeybindingActionId =
   | 'tab.newMarkdown'
   | 'tab.openMarkdown'
   | 'tab.close'
+  | 'tab.closeAll'
   | 'tab.rename'
   | 'tab.reopenClosed'
   | 'tab.nextSameType'
@@ -481,6 +482,14 @@ export const KEYBINDING_DEFINITIONS: readonly KeybindingDefinition[] = [
     scope: 'tabs',
     searchKeywords: ['shortcut', 'close', 'tab', 'pane'],
     defaultBindings: platformBindings(['Mod+W'])
+  },
+  {
+    id: 'tab.closeAll',
+    title: 'Close all editor tabs',
+    group: 'Tabs',
+    scope: 'tabs',
+    searchKeywords: ['shortcut', 'close', 'all', 'tabs', 'files', 'editors'],
+    defaultBindings: platformBindings(['Mod+Alt+W'])
   },
   {
     id: 'tab.rename',

@@ -1054,6 +1054,7 @@ export function registerWorktreeHandlers(
         repoId: string
         prNumber: number
         headRefName?: string
+        baseRefName?: string
         isCrossRepository?: boolean
       }
     ): Promise<GitHubPrStartPoint | { error: string }> => {
@@ -1090,6 +1091,7 @@ export function registerWorktreeHandlers(
         repoPath: repo.path,
         prNumber: args.prNumber,
         headRefName: args.headRefName,
+        baseRefName: args.baseRefName,
         isCrossRepository: args.isCrossRepository,
         connectionId: repo.connectionId ?? null,
         gitExec,
@@ -1120,13 +1122,18 @@ export function registerWorktreeHandlers(
         repoId: string
         mrIid: number
         sourceBranch?: string
+        targetBranch?: string
         isCrossRepository?: boolean
       }
-    ): Promise<{ baseBranch: string; pushTarget?: GitPushTarget } | { error: string }> => {
+    ): Promise<
+      | { baseBranch: string; compareBaseRef?: string; pushTarget?: GitPushTarget }
+      | { error: string }
+    > => {
       return runtime.resolveManagedMrBase({
         repoSelector: `id:${args.repoId}`,
         mrIid: args.mrIid,
         sourceBranch: args.sourceBranch,
+        targetBranch: args.targetBranch,
         isCrossRepository: args.isCrossRepository
       })
     }
@@ -1392,9 +1399,15 @@ export function registerWorktreeHandlers(
         try {
           removalResult = preserveBranchHeadFallback(
             await (deleteBranch
-              ? removeWorktree(repo.path, canonicalWorktreePath, args.force ?? false)
+              ? removeWorktree(repo.path, canonicalWorktreePath, args.force ?? false, {
+                  // Why: this handler already paid for an authoritative worktree
+                  // list to validate the target; reuse it instead of rescanning
+                  // every sibling worktree during the hot delete path.
+                  knownRemovedWorktree: registeredWorktree
+                })
               : removeWorktree(repo.path, canonicalWorktreePath, args.force ?? false, {
-                  deleteBranch
+                  deleteBranch,
+                  knownRemovedWorktree: registeredWorktree
                 })),
             registeredWorktree.head
           )
