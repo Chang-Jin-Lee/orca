@@ -3617,13 +3617,13 @@
           "activeRuntimeHost": "Active server",
           "projectRuntimeHost": "Project server",
           "631b97eea9": "Host scope",
-          "2d4f0eb933": "Default",
-          "1a0eec0d35": "Status",
-          "b5536d5a88": "Tasks",
-          "8d62c68b35": "Notes",
-          "2d74665a56": "Ports",
-          "65a9820bd1": "Agent statuses",
-          "219ebf1961": "Branch name"
+          "2d4f0eb933": "Predeterminado",
+          "1a0eec0d35": "Estado",
+          "b5536d5a88": "Tareas",
+          "8d62c68b35": "Notas",
+          "2d74665a56": "Puertos",
+          "65a9820bd1": "Estados del agente",
+          "219ebf1961": "Nombre de rama"
         },
         "SshDisconnectedDialog": {
           "ca4a7892af": "Conectando...",

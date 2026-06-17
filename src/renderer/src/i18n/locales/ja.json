@@ -3598,13 +3598,13 @@
           "activeRuntimeHost": "Active server",
           "projectRuntimeHost": "Project server",
           "631b97eea9": "Host scope",
-          "2d4f0eb933": "Default",
-          "1a0eec0d35": "Status",
-          "b5536d5a88": "Tasks",
-          "8d62c68b35": "Notes",
-          "2d74665a56": "Ports",
-          "65a9820bd1": "Agent statuses",
-          "219ebf1961": "Branch name"
+          "2d4f0eb933": "デフォルト",
+          "1a0eec0d35": "ステータス",
+          "b5536d5a88": "タスク",
+          "8d62c68b35": "ノート",
+          "2d74665a56": "ポート",
+          "65a9820bd1": "Agent ステータス",
+          "219ebf1961": "ブランチ名"
         },
         "SshDisconnectedDialog": {
           "ca4a7892af": "接続中...",
