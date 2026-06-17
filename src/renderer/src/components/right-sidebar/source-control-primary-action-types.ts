@@ -66,6 +66,10 @@ export type PrimaryActionInputs = {
   // Why: detached HEAD can look like an unpublished branch from upstream
   // status alone, but it has no branch ref that Publish Branch can push.
   hasCurrentBranch?: boolean
+  // Why: linked review branches without upstream counts are pushable only when
+  // Orca has a persisted or Git-configured target. Otherwise Push could fall
+  // through to the default publish-to-origin behavior.
+  canPushLinkedReviewWithoutUpstream?: boolean
   isPrIntentInFlight?: boolean
 }
 

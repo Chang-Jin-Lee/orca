@@ -3416,6 +3416,8 @@ function SourceControlInner(): React.JSX.Element {
       branchCommitsAhead:
         branchSummary?.status === 'ready' ? (branchSummary.commitsAhead ?? 0) : undefined,
       hasCurrentBranch: Boolean(branchName),
+      canPushLinkedReviewWithoutUpstream:
+        Boolean(activeWorktree?.pushTarget) || remoteStatus?.hasConfiguredPushTarget === true,
       isPrIntentInFlight: isCreatePrIntentInFlight
     })
   }, [
@@ -3431,6 +3433,7 @@ function SourceControlInner(): React.JSX.Element {
     hostedReviewCreation,
     isHostedReviewStateLoading,
     hostedReview?.state,
+    activeWorktree?.pushTarget,
     isCreatePrIntentInFlight,
     branchSummary?.commitsAhead,
     branchSummary?.status,
@@ -3522,6 +3525,8 @@ function SourceControlInner(): React.JSX.Element {
         branchCommitsAhead:
           branchSummary?.status === 'ready' ? (branchSummary.commitsAhead ?? 0) : undefined,
         hasCurrentBranch: Boolean(branchName),
+        canPushLinkedReviewWithoutUpstream:
+          Boolean(activeWorktree?.pushTarget) || remoteStatus?.hasConfiguredPushTarget === true,
         rebaseBaseRef: effectiveBaseRef
       }),
     [
@@ -3541,6 +3546,7 @@ function SourceControlInner(): React.JSX.Element {
       isHostedReviewStateLoading,
       hostedReview?.state,
       prGenerating,
+      activeWorktree?.pushTarget,
       branchSummary?.commitsAhead,
       branchSummary?.status,
       branchName,

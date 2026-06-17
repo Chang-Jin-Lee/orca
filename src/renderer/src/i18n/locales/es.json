@@ -8696,6 +8696,8 @@
                   "74fc171e99": "Empuje forzado en progreso...",
                   "16aee3a5c1": "Compromiso en progreso...",
                   "e61b0d7a3c": "Cambia a una rama antes de publicar commits.",
+                  "1d47e850cf": "Envía actualizaciones a la rama de revisión vinculada",
+                  "c39d0c75c3": "El destino de la rama de revisión vinculada no está disponible.",
                   "8c6d15a07d": "Crear PR",
                   "d37e68f61d": "Preparando la rama para revisión…",
                   "c72e5e65d1": "Prepara esta rama y crea un {{value0}}"
