@@ -361,6 +361,7 @@ function containsHiddenStartupRendererQuery(data: string): boolean {
 
 const HIDDEN_STARTUP_RENDERER_QUERY_PENDING_CHARS = 64
 const HIDDEN_STARTUP_OSC_COLOR_QUERY_PREFIXES = ['\x1b]10;?', '\x1b]11;?'] as const
+const HIDDEN_STARTUP_RENDERER_QUERY_WINDOW_MS = 10_000
 
 function findOscTerminatorIndex(data: string, offset: number): number {
   for (let index = offset; index < data.length; index++) {
@@ -2392,6 +2393,9 @@ export function connectPanePty(
     let foregroundImmediateBudgetWindowStart = 0
     let hiddenMode2031ScanTail = ''
     const shouldSnapshotHiddenCodexOutput = shouldKeepHiddenStartupRendererQueriesLive(paneStartup)
+    const hiddenStartupRendererQueryWindowEndsAt = shouldSnapshotHiddenCodexOutput
+      ? Date.now() + HIDDEN_STARTUP_RENDERER_QUERY_WINDOW_MS
+      : 0
     let hiddenStartupRendererQueryPending = ''
 
     function canUseMainBufferSnapshot(ptyId: string | null): ptyId is string {
@@ -2425,10 +2429,11 @@ export function connectPanePty(
       return transport.serializeBuffer(opts)
     }
 
-    function isHiddenStartupRendererQueryWindowActive(): boolean {
+    function isHiddenStartupDeliveryGateHoldActive(): boolean {
       return (
         shouldSnapshotHiddenCodexOutput &&
-        !shouldWritePtyOutputForeground(deps.isVisibleRef.current)
+        !shouldWritePtyOutputForeground(deps.isVisibleRef.current) &&
+        Date.now() <= hiddenStartupRendererQueryWindowEndsAt
       )
     }
 
@@ -2507,7 +2512,7 @@ export function connectPanePty(
         !shouldWritePtyOutputForeground(deps.isVisibleRef.current) &&
         // Why: codex startup probes need the live xterm to answer renderer
         // queries for 10s — never gate delivery while the window is active.
-        !isHiddenStartupRendererQueryWindowActive()
+        !isHiddenStartupDeliveryGateHoldActive()
       const isFirstSyncForPty = hiddenDeliverySyncedPtyId !== ptyId
       hiddenDeliverySyncedPtyId = ptyId
       if (shouldHide) {
