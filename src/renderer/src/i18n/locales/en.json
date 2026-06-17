@@ -4683,6 +4683,12 @@
             "title": "Agent hibernation",
             "toggleLabel": "Toggle agent hibernation"
           },
+          "newWorktreeCardStyle": {
+            "copy": "Preview updated worktree-card layout, metadata placement, card-display menu options, and status presentation.",
+            "description": "Preview updated worktree-card layout, metadata placement, card-display menu options, and status presentation.",
+            "title": "New card style",
+            "toggleLabel": "Toggle new card style"
+          },
           "ca2219fe5e": "Shows a small animated pet pinned to the bottom-right corner. Pick a character (Claudino, OpenCode, Gremlin) or upload your own PNG, APNG, GIF, WebP, JPG, or SVG from the status-bar pet menu. Hide it any time from the same menu without disabling this setting.",
           "dd6f0a1d45": "Pet",
           "0e89a574ae": "Floating animated pet in the bottom-right corner."
@@ -6765,6 +6771,17 @@
               "sleep": "sleep",
               "terminal": "terminal",
               "title": "Agent hibernation"
+            },
+            "newWorktreeCardStyle": {
+              "card": "card",
+              "cards": "cards",
+              "description": "Preview updated worktree-card layout, metadata placement, card-display menu options, and status presentation.",
+              "menu": "menu",
+              "metadata": "metadata",
+              "status": "status",
+              "title": "New card style",
+              "worktree": "worktree",
+              "worktrees": "worktrees"
             },
             "fe5688b761": "sidebar",
             "ca5d1f3f46": "timeline",

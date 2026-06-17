@@ -4670,6 +4670,12 @@
             "idleMinutesSuffix": "分钟",
             "title": "Agent 休眠",
             "toggleLabel": "切换 agent 休眠"
+          },
+          "newWorktreeCardStyle": {
+            "copy": "预览更新后的 worktree 卡片布局、元数据位置、卡片显示菜单选项和状态呈现。",
+            "description": "预览更新后的 worktree 卡片布局、元数据位置、卡片显示菜单选项和状态呈现。",
+            "title": "新卡片样式",
+            "toggleLabel": "切换新卡片样式"
           }
         },
         "FloatingWorkspacePane": {
@@ -6730,6 +6736,17 @@
               "sleep": "睡眠",
               "terminal": "终端",
               "title": "Agent 休眠"
+            },
+            "newWorktreeCardStyle": {
+              "card": "卡片",
+              "cards": "卡片",
+              "description": "预览更新后的 worktree 卡片布局、元数据位置、卡片显示菜单选项和状态呈现。",
+              "menu": "菜单",
+              "metadata": "元数据",
+              "status": "状态",
+              "title": "新卡片样式",
+              "worktree": "worktree",
+              "worktrees": "worktrees"
             }
           }
         },

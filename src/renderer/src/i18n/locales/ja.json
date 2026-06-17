@@ -4670,6 +4670,12 @@
             "idleMinutesSuffix": "分",
             "title": "Agent の休止",
             "toggleLabel": "Agent の休止を切り替え"
+          },
+          "newWorktreeCardStyle": {
+            "copy": "更新された worktree カードのレイアウト、メタデータ配置、カード表示メニュー項目、ステータス表示をプレビューします。",
+            "description": "更新された worktree カードのレイアウト、メタデータ配置、カード表示メニュー項目、ステータス表示をプレビューします。",
+            "title": "新しいカードスタイル",
+            "toggleLabel": "新しいカードスタイルを切り替え"
           }
         },
         "FloatingWorkspacePane": {
@@ -6767,6 +6773,17 @@
               "sleep": "スリープ",
               "terminal": "ターミナル",
               "title": "Agent の休止"
+            },
+            "newWorktreeCardStyle": {
+              "card": "カード",
+              "cards": "カード",
+              "description": "更新された worktree カードのレイアウト、メタデータ配置、カード表示メニュー項目、ステータス表示をプレビューします。",
+              "menu": "メニュー",
+              "metadata": "メタデータ",
+              "status": "ステータス",
+              "title": "新しいカードスタイル",
+              "worktree": "worktree",
+              "worktrees": "worktrees"
             }
           }
         },

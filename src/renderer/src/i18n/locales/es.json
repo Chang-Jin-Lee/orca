@@ -4685,6 +4685,12 @@
             "idleMinutesSuffix": "minutos",
             "title": "Hibernación de agentes",
             "toggleLabel": "Alternar hibernación de agentes"
+          },
+          "newWorktreeCardStyle": {
+            "copy": "Previsualiza el diseño actualizado de tarjetas de worktree, la ubicación de metadatos, las opciones del menú de visualización de tarjeta y la presentación de estado.",
+            "description": "Previsualiza el diseño actualizado de tarjetas de worktree, la ubicación de metadatos, las opciones del menú de visualización de tarjeta y la presentación de estado.",
+            "title": "Nuevo estilo de tarjeta",
+            "toggleLabel": "Alternar nuevo estilo de tarjeta"
           }
         },
         "FloatingWorkspacePane": {
@@ -6745,6 +6751,17 @@
               "sleep": "suspender",
               "terminal": "terminal",
               "title": "Hibernación de agentes"
+            },
+            "newWorktreeCardStyle": {
+              "card": "tarjeta",
+              "cards": "tarjetas",
+              "description": "Previsualiza el diseño actualizado de tarjetas de worktree, la ubicación de metadatos, las opciones del menú de visualización de tarjeta y la presentación de estado.",
+              "menu": "menú",
+              "metadata": "metadatos",
+              "status": "estado",
+              "title": "Nuevo estilo de tarjeta",
+              "worktree": "worktree",
+              "worktrees": "worktrees"
             }
           }
         },
