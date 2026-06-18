@@ -477,9 +477,8 @@ export class LocalPtyProvider implements IPtyProvider {
         recognizeAgentProcessFromCommandLine(args.command)?.agent === 'codex'
       let shellLaunch: ReturnType<typeof getShellReadyLaunchConfig> | null = null
       if (args.command && isCodexStartupCommand) {
-        // Why: Codex startup is the first visible payload. Keep Orca's
-        // env-restoring wrapper, but skip the marker wait that can delay
-        // zsh startup by multiple seconds on user-customized shells.
+        // Why: Codex needs the env-restoring wrapper, but waiting for a shell
+        // marker delays the first useful TUI frame.
         getFallbackShellReadyConfig = (shell) => getAttributionShellLaunchConfig(shell)
         shellLaunch = getAttributionShellLaunchConfig(shellPath)
       } else if (args.command) {

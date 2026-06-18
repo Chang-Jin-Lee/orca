@@ -11,6 +11,8 @@ import type {
 } from './types'
 
 const SHELL_READY_TIMEOUT_MS = 15_000
+// Why: Codex startup skips marker-gated command delivery; this only bounds
+// older daemon/local paths that still report shell-ready support for Codex.
 export const CODEX_SHELL_READY_TIMEOUT_MS = 300
 const KILL_TIMEOUT_MS = 5_000
 const SHELL_READY_MARKER = '\x1b]777;orca-shell-ready\x07'

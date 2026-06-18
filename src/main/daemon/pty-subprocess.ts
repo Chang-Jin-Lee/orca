@@ -504,9 +504,8 @@ export function createPtySubprocess(opts: PtySubprocessOptions): SubprocessHandl
     // needs the wrapper so the post-rc restore line runs.
     let shellLaunch: ReturnType<typeof getShellReadyLaunchConfig> | null = null
     if (opts.command && isCodexStartupCommand) {
-      // Why: Codex startup is the first visible payload. Keep Orca's
-      // env-restoring wrapper, but skip the marker wait that can delay
-      // zsh startup by multiple seconds on user-customized shells.
+      // Why: Codex needs the env-restoring wrapper, but waiting for a shell
+      // marker delays the first useful TUI frame.
       shellLaunch = getAttributionShellLaunchConfig(shellPath)
     } else if (opts.command) {
       shellLaunch = getShellReadyLaunchConfig(shellPath)
