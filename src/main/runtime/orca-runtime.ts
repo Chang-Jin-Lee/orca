@@ -11538,6 +11538,8 @@ export class OrcaRuntimeService {
         {
           cwd: repoPath,
           ...gitOptions,
+          // Why: exact remote-base refresh is the network gate for worktree
+          // creation, so honor repo SSH routing and bound custom wrappers.
           useConfiguredSshCommandForNetwork: true,
           timeout: 60_000
         }
