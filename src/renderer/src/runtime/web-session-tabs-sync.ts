@@ -687,11 +687,14 @@ function buildBrowserUnifiedTab(
     contentType: 'browser',
     label: tab.title,
     customLabel: null,
-    color: existingUnifiedTab ? existingUnifiedTab.color : (hostTab.color ?? null),
+    color: hostTab.color !== undefined ? hostTab.color : (existingUnifiedTab?.color ?? null),
     sortOrder: tab.createdAt,
     createdAt: tab.createdAt,
     isPreview: false,
-    isPinned: existingUnifiedTab ? existingUnifiedTab.isPinned === true : hostTab.isPinned === true
+    isPinned:
+      hostTab.isPinned !== undefined
+        ? hostTab.isPinned === true
+        : existingUnifiedTab?.isPinned === true
   }
 }
 
@@ -713,11 +716,12 @@ function buildEditorUnifiedTab(
     contentType: 'editor',
     label,
     customLabel: null,
-    color: existingUnifiedTab ? existingUnifiedTab.color : (tab.color ?? null),
+    color: tab.color !== undefined ? tab.color : (existingUnifiedTab?.color ?? null),
     sortOrder,
     createdAt,
     isPreview: false,
-    isPinned: existingUnifiedTab ? existingUnifiedTab.isPinned === true : tab.isPinned === true
+    isPinned:
+      tab.isPinned !== undefined ? tab.isPinned === true : existingUnifiedTab?.isPinned === true
   }
 }
 

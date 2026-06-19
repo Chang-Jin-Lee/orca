@@ -3185,7 +3185,7 @@ export class OrcaRuntimeService {
         canGoBack: false,
         canGoForward: false,
         ...(persistedProps ? { color: persistedProps.color } : {}),
-        ...(persistedProps?.isPinned ? { isPinned: true } : {}),
+        ...(persistedProps ? { isPinned: persistedProps.isPinned === true } : {}),
         isActive: tab.active === true
       }
     })

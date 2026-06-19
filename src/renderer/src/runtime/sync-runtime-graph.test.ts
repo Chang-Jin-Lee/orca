@@ -552,7 +552,7 @@ describe('getRuntimeMobileSessionSyncKey', () => {
 })
 
 describe('buildMobileSessionTabSnapshots', () => {
-  it('publishes browser and editor color + pin from unified tabs', () => {
+  it('publishes browser and editor color + pin state from unified tabs', () => {
     const fileId = '/repo/README.md'
     const state = makeState({
       activeGroupIdByWorktree: { 'wt-1': 'group-1' },
@@ -581,7 +581,7 @@ describe('buildMobileSessionTabSnapshots', () => {
             sortOrder: 0,
             createdAt: 1,
             isPreview: false,
-            isPinned: true
+            isPinned: false
           },
           {
             id: 'editor-tab-1',
@@ -595,7 +595,7 @@ describe('buildMobileSessionTabSnapshots', () => {
             sortOrder: 1,
             createdAt: 2,
             isPreview: false,
-            isPinned: true
+            isPinned: false
           }
         ]
       },
@@ -655,13 +655,13 @@ describe('buildMobileSessionTabSnapshots', () => {
           type: 'browser',
           id: 'browser-tab-1',
           color: '#3b82f6',
-          isPinned: true
+          isPinned: false
         }),
         expect.objectContaining({
           type: 'markdown',
           id: 'editor-tab-1',
           color: '#16a34a',
-          isPinned: true
+          isPinned: false
         })
       ])
     )

@@ -11064,6 +11064,27 @@ describe('OrcaRuntimeService', () => {
     )
     expect(surface?.type === 'browser' && surface.color).toBe('#3b82f6')
     expect(surface?.type === 'browser' && surface.isPinned).toBe(true)
+
+    await runtime.setMobileSessionTabProps(`id:${TEST_WORKTREE_ID}`, {
+      tabId: 'browser-page-1',
+      color: null,
+      isPinned: false
+    })
+
+    const cleared = getSession().unifiedTabs?.[TEST_WORKTREE_ID]?.find(
+      (tab) => tab.id === 'browser-page-1'
+    )
+    expect(cleared?.color).toBeNull()
+    expect(cleared?.isPinned).toBe(false)
+
+    runtime['mobileSessionTabsByWorktree'].delete(TEST_WORKTREE_ID)
+    runtime['hydrateHeadlessMobileSessionTabsFromWorkspaceSession'](TEST_WORKTREE_ID)
+    const rehydratedCleared = await runtime.listMobileSessionTabs(`id:${TEST_WORKTREE_ID}`)
+    const clearedSurface = rehydratedCleared.tabs.find(
+      (tab) => tab.type === 'browser' && tab.id === 'browser-page-1'
+    )
+    expect(clearedSurface?.type === 'browser' && clearedSurface.color).toBeNull()
+    expect(clearedSurface?.type === 'browser' && clearedSurface.isPinned).toBe(false)
   })
 
   it('still persists tab props in serve mode after syncWindowGraph(0) (gate does not fire)', async () => {

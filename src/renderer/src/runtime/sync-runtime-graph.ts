@@ -1367,7 +1367,7 @@ function buildMobileMarkdownTab(
     sourceRelativePath: sourceFile.relativePath,
     documentVersion: draftVersion ?? `file:${sourceFile.id}`,
     color: unifiedTab?.color ?? null,
-    ...(unifiedTab?.isPinned ? { isPinned: true } : {})
+    isPinned: unifiedTab?.isPinned === true
   }
 }
 
@@ -1391,7 +1391,7 @@ function buildMobileFileTab(
     ...(diffSource ? { diffSource } : {}),
     isDirty: file.isDirty,
     color: unifiedTab?.color ?? null,
-    ...(unifiedTab?.isPinned ? { isPinned: true } : {}),
+    isPinned: unifiedTab?.isPinned === true,
     isActive: unifiedTabId
       ? isUnifiedTabActiveInActiveGroup(state, file.worktreeId, unifiedTabId)
       : isFileActiveEditorSurface(state, file)
@@ -1440,7 +1440,7 @@ function buildMobileBrowserTab(
     canGoBack: activePage?.canGoBack ?? workspace.canGoBack,
     canGoForward: activePage?.canGoForward ?? workspace.canGoForward,
     color: unifiedTab?.color ?? null,
-    ...(unifiedTab?.isPinned ? { isPinned: true } : {}),
+    isPinned: unifiedTab?.isPinned === true,
     isActive: unifiedTabId
       ? isUnifiedTabActiveInActiveGroup(state, workspace.worktreeId, unifiedTabId)
       : state.activeBrowserTabIdByWorktree[workspace.worktreeId] === workspace.id
