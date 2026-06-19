@@ -3805,7 +3805,7 @@
           "e091caab15": "The project could not be found",
           "439fa94d53": "Update",
           "579b1a8e61": "Remove from Parent",
-          "8d9cd19d09": "Open Parent Workspace",
+          "8d9cd19d09": "Open Parent Worktree",
           "d35dfeae58": "Remove from group",
           "76865d827f": "Move to group",
           "503ec0f8e6": "New group from project",
@@ -3822,8 +3822,8 @@
           "3baa7d6507": "Pin",
           "697d0f6e1b": "Unpin",
           "250de158fd": "Remove Workspace",
-          "changeParentWorkspace": "Change Parent Workspace...",
-          "setParentWorkspace": "Set Parent Workspace..."
+          "changeParentWorkspace": "Change Parent Worktree...",
+          "setParentWorkspace": "Set Parent Worktree..."
         },
         "WorktreeList": {
           "7a8b9c0d1e": "Update required",
@@ -4176,10 +4176,10 @@
           "e9f0a1b2c3": "{{value0}} failed"
         },
         "WorktreeParentPickerPopover": {
-          "failedSetParent": "Failed to set parent workspace",
+          "failedSetParent": "Failed to set parent worktree",
           "current": "Current",
-          "searchPlaceholder": "Search workspaces...",
-          "empty": "No matching eligible workspaces."
+          "searchPlaceholder": "Search worktrees...",
+          "empty": "No matching eligible worktrees."
         }
       },
       "shared": {

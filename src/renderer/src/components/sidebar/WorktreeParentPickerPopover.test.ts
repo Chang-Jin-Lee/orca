@@ -20,7 +20,7 @@ function makeWorktree(overrides: Partial<Worktree> = {}): Worktree {
     isBare: false,
     isMainWorktree: false,
     isSparse: false,
-    displayName: 'Parent Workspace',
+    displayName: 'Parent Worktree',
     comment: '',
     linkedIssue: null,
     linkedPR: null,
@@ -69,7 +69,7 @@ describe('selectWorktreeParent', () => {
     await Promise.resolve()
 
     expect(close).toHaveBeenCalledTimes(1)
-    expect(showError).toHaveBeenCalledWith('Failed to set parent workspace')
+    expect(showError).toHaveBeenCalledWith('Failed to set parent worktree')
   })
 
   it('does nothing without a captured child id', () => {
@@ -91,7 +91,7 @@ describe('selectWorktreeParent', () => {
 
 describe('getWorktreeParentPickerItemValue', () => {
   it('includes workspace-facing fields used by command filtering', () => {
-    expect(getWorktreeParentPickerItemValue(makeWorktree())).toContain('Parent Workspace')
+    expect(getWorktreeParentPickerItemValue(makeWorktree())).toContain('Parent Worktree')
     expect(getWorktreeParentPickerItemValue(makeWorktree())).toContain('feature/parent')
     expect(getWorktreeParentPickerItemValue(makeWorktree())).toContain('/workspaces/parent')
   })

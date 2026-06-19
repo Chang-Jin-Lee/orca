@@ -3772,7 +3772,7 @@
           "e091caab15": "找不到该项目",
           "439fa94d53": "更新",
           "579b1a8e61": "从父级中删除",
-          "8d9cd19d09": "打开父工作区",
+          "8d9cd19d09": "打开父工作树",
           "d35dfeae58": "从组中删除",
           "76865d827f": "移至群组",
           "503ec0f8e6": "来自项目的新组",
@@ -3789,8 +3789,8 @@
           "3baa7d6507": "别针",
           "697d0f6e1b": "取消固定",
           "250de158fd": "移除工作区",
-          "changeParentWorkspace": "更改父工作区...",
-          "setParentWorkspace": "设置父工作区..."
+          "changeParentWorkspace": "更改父工作树...",
+          "setParentWorkspace": "设置父工作树..."
         },
         "WorktreeList": {
           "d880ea0744": "创建一个组并将该项目移入其中。",
@@ -4176,10 +4176,10 @@
           "e9f0a1b2c3": "失败 {{value0}} 个"
         },
         "WorktreeParentPickerPopover": {
-          "failedSetParent": "无法设置父工作区",
+          "failedSetParent": "无法设置父工作树",
           "current": "当前",
-          "searchPlaceholder": "搜索工作区...",
-          "empty": "没有匹配的可用工作区。"
+          "searchPlaceholder": "搜索工作树...",
+          "empty": "没有匹配的可用工作树。"
         }
       },
       "shared": {

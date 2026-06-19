@@ -108,11 +108,11 @@ function getWorktreeParentPickerLabel(validParentWorktreeId: string | null): str
   return validParentWorktreeId
     ? translate(
         'auto.components.sidebar.WorktreeContextMenu.changeParentWorkspace',
-        'Change Parent Workspace...'
+        'Change Parent Worktree...'
       )
     : translate(
         'auto.components.sidebar.WorktreeContextMenu.setParentWorkspace',
-        'Set Parent Workspace...'
+        'Set Parent Worktree...'
       )
 }
 
@@ -735,7 +735,7 @@ const WorktreeContextMenu = React.memo(function WorktreeContextMenu({
                       <Workflow className="size-3.5" />
                       {translate(
                         'auto.components.sidebar.WorktreeContextMenu.8d9cd19d09',
-                        'Open Parent Workspace'
+                        'Open Parent Worktree'
                       )}
                     </DropdownMenuItem>
                   )}

@@ -3772,7 +3772,7 @@
           "e091caab15": "프로젝트를 찾을 수 없습니다.",
           "439fa94d53": "업데이트",
           "579b1a8e61": "상위에서 제거",
-          "8d9cd19d09": "상위 워크스페이스 열기",
+          "8d9cd19d09": "상위 워크트리 열기",
           "d35dfeae58": "그룹에서 제거",
           "76865d827f": "그룹으로 이동",
           "503ec0f8e6": "프로젝트의 새 그룹",
@@ -3789,8 +3789,8 @@
           "3baa7d6507": "핀",
           "697d0f6e1b": "고정 해제",
           "250de158fd": "Remove Workspace",
-          "changeParentWorkspace": "상위 워크스페이스 변경...",
-          "setParentWorkspace": "상위 워크스페이스 설정..."
+          "changeParentWorkspace": "상위 워크트리 변경...",
+          "setParentWorkspace": "상위 워크트리 설정..."
         },
         "WorktreeList": {
           "d880ea0744": "그룹을 만들고 이 프로젝트를 그룹으로 이동하세요.",
@@ -4176,10 +4176,10 @@
           "e9f0a1b2c3": "{{value0}}개 실패"
         },
         "WorktreeParentPickerPopover": {
-          "failedSetParent": "상위 워크스페이스를 설정하지 못했습니다",
+          "failedSetParent": "상위 워크트리를 설정하지 못했습니다",
           "current": "현재",
-          "searchPlaceholder": "워크스페이스 검색...",
-          "empty": "일치하는 적격 워크스페이스가 없습니다."
+          "searchPlaceholder": "워크트리 검색...",
+          "empty": "일치하는 적격 워크트리가 없습니다."
         }
       },
       "shared": {

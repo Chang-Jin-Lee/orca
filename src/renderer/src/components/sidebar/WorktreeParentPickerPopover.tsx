@@ -55,11 +55,11 @@ export function selectWorktreeParent({
   }
   close()
   void assignWorktreeParent(childWorktreeId, { parentWorktreeId }).catch((error) => {
-    console.error('Failed to set parent workspace:', error)
+    console.error('Failed to set parent worktree:', error)
     showError(
       translate(
         'auto.components.sidebar.WorktreeParentPickerPopover.failedSetParent',
-        'Failed to set parent workspace'
+        'Failed to set parent worktree'
       )
     )
   })
@@ -208,7 +208,7 @@ export function WorktreeParentPickerPopover({
           <CommandInput
             placeholder={translate(
               'auto.components.sidebar.WorktreeParentPickerPopover.searchPlaceholder',
-              'Search workspaces...'
+              'Search worktrees...'
             )}
             autoFocus
           />
@@ -216,7 +216,7 @@ export function WorktreeParentPickerPopover({
             <CommandEmpty>
               {translate(
                 'auto.components.sidebar.WorktreeParentPickerPopover.empty',
-                'No matching eligible workspaces.'
+                'No matching eligible worktrees.'
               )}
             </CommandEmpty>
             {candidates.map((candidate) => (
