@@ -65,8 +65,16 @@ const localModel: SpeechModelManifest = {
   files: ['encoder.onnx']
 }
 
+const secondLocalModel: SpeechModelManifest = {
+  ...localModel,
+  id: 'model-b',
+  label: 'Second Local Model'
+}
+
 function renderSection(args: {
-  deleteModel: () => Promise<void>
+  deleteModel: (modelId: string) => Promise<void>
+  catalog?: SpeechModelManifest[]
+  modelStates?: SpeechModelState[]
   refreshModelStates?: () => void
 }): { container: HTMLDivElement; root: Root } {
   Object.assign(window, {
@@ -82,12 +90,13 @@ function renderSection(args: {
   document.body.appendChild(container)
   const root = createRoot(container)
   const voiceSettings = { ...getDefaultVoiceSettings(), enabled: true, sttModel: localModel.id }
-  const modelStates: SpeechModelState[] = [{ id: localModel.id, status: 'ready' }]
+  const catalog = args.catalog ?? [localModel]
+  const modelStates = args.modelStates ?? [{ id: localModel.id, status: 'ready' }]
   act(() => {
     root.render(
       <VoiceSpeechModelSection
         voiceSettings={voiceSettings}
-        catalog={[localModel]}
+        catalog={catalog}
         modelStates={modelStates}
         onUpdateVoiceSettings={vi.fn()}
         onOpenOpenAiDialog={vi.fn()}
@@ -138,6 +147,55 @@ describe('VoiceSpeechModelSection', () => {
 
     expect(window.api.speech.deleteModel).toHaveBeenCalledTimes(1)
     expect(refreshModelStates).toHaveBeenCalledTimes(1)
+    root.unmount()
+  })
+
+  it('keeps another row delete disabled until its own request finishes', async () => {
+    const deleteResolvers = new Map<string, () => void>()
+    const refreshModelStates = vi.fn()
+    const { container, root } = renderSection({
+      refreshModelStates,
+      catalog: [localModel, secondLocalModel],
+      modelStates: [
+        { id: localModel.id, status: 'ready' },
+        { id: secondLocalModel.id, status: 'ready' }
+      ],
+      deleteModel: (modelId) =>
+        new Promise<void>((resolve) => {
+          deleteResolvers.set(modelId, resolve)
+        })
+    })
+    const firstDeleteButton = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Delete Local Model"]'
+    )
+    const secondDeleteButton = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Delete Second Local Model"]'
+    )
+
+    await act(async () => {
+      firstDeleteButton!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await act(async () => {
+      secondDeleteButton!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(firstDeleteButton!.disabled).toBe(true)
+    expect(secondDeleteButton!.disabled).toBe(true)
+
+    await act(async () => {
+      deleteResolvers.get(localModel.id)!()
+      await Promise.resolve()
+    })
+
+    expect(firstDeleteButton!.disabled).toBe(false)
+    expect(secondDeleteButton!.disabled).toBe(true)
+
+    await act(async () => {
+      deleteResolvers.get(secondLocalModel.id)!()
+      await Promise.resolve()
+    })
+
+    expect(refreshModelStates).toHaveBeenCalledTimes(2)
     root.unmount()
   })
 

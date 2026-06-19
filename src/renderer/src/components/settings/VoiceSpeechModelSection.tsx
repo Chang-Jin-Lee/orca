@@ -30,7 +30,7 @@ export function VoiceSpeechModelSection({
   onOpenOpenAiDialog,
   onRefreshModelStates
 }: VoiceSpeechModelSectionProps): React.JSX.Element {
-  const [pendingDeleteModelId, setPendingDeleteModelId] = useState<string | null>(null)
+  const [pendingDeleteModelIds, setPendingDeleteModelIds] = useState<Set<string>>(() => new Set())
   const getModelState = (id: string): SpeechModelState | undefined =>
     modelStates.find((s) => s.id === id)
 
@@ -75,7 +75,7 @@ export function VoiceSpeechModelSection({
               mState?.status === 'downloading' || mState?.status === 'extracting'
             const isActive = voiceSettings.sttModel === manifest.id
             const isCloud = manifest.provider === 'openai'
-            const deletePending = pendingDeleteModelId === manifest.id
+            const deletePending = pendingDeleteModelIds.has(manifest.id)
             const sizeMb = manifest.sizeBytes ? Math.round(manifest.sizeBytes / 1_000_000) : null
 
             return (
@@ -150,8 +150,10 @@ export function VoiceSpeechModelSection({
                   </p>
                 </div>
                 {!isCloud && isReady ? (
-                  <button
+                  <Button
                     type="button"
+                    variant="ghost"
+                    size="icon-xs"
                     aria-label={translate(
                       'auto.components.settings.VoicePane.6fa734ed95',
                       'Delete {{value0}}',
@@ -170,7 +172,11 @@ export function VoiceSpeechModelSection({
                       if (deletePending) {
                         return
                       }
-                      setPendingDeleteModelId(manifest.id)
+                      setPendingDeleteModelIds((prev) => {
+                        const next = new Set(prev)
+                        next.add(manifest.id)
+                        return next
+                      })
                       void window.api.speech
                         .deleteModel(manifest.id)
                         .then(onRefreshModelStates)
@@ -182,16 +188,22 @@ export function VoiceSpeechModelSection({
                             )
                           )
                         )
-                        .finally(() => setPendingDeleteModelId(null))
+                        .finally(() =>
+                          setPendingDeleteModelIds((prev) => {
+                            const next = new Set(prev)
+                            next.delete(manifest.id)
+                            return next
+                          })
+                        )
                     }}
-                    className="shrink-0 p-1 text-muted-foreground can-hover:opacity-0 group-hover:opacity-100 hover:text-destructive disabled:opacity-60 disabled:hover:text-muted-foreground transition-all rounded"
+                    className="shrink-0 text-muted-foreground can-hover:opacity-0 group-hover:opacity-100 hover:text-destructive disabled:opacity-60 disabled:hover:text-muted-foreground"
                   >
                     {deletePending ? (
                       <Loader2 className="size-3 animate-spin" />
                     ) : (
                       <Trash2 className="size-3" />
                     )}
-                  </button>
+                  </Button>
                 ) : !isCloud && !isReady && !isDownloading ? (
                   <span className="shrink-0 p-1 text-muted-foreground can-hover:opacity-0 group-hover:opacity-100 transition-opacity">
                     <Download className="size-3" />

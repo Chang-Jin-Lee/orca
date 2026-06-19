@@ -51,6 +51,7 @@ export function VoiceModelList({
   return (
     <View style={disabled ? styles.disabled : undefined} pointerEvents={disabled ? 'none' : 'auto'}>
       {setup.models.map((model, idx) => {
+        const anyBusy = busyAction !== null
         const isSelected = model.id === setup.selectedModelId
         const inFlight = isModelInFlight(model)
         const rowBusy = busyAction?.modelId === model.id
@@ -87,7 +88,7 @@ export function VoiceModelList({
                         styles.actionButton,
                         pressed && styles.actionPressed
                       ]}
-                      disabled={rowBusy}
+                      disabled={anyBusy}
                       onPress={() => onUseModel(model)}
                     >
                       {selectBusy ? (
@@ -99,7 +100,7 @@ export function VoiceModelList({
                   )}
                   <Pressable
                     style={({ pressed }) => [styles.iconButton, pressed && styles.actionPressed]}
-                    disabled={rowBusy}
+                    disabled={anyBusy}
                     onPress={() => onDelete(model)}
                     accessibilityLabel={'Delete ' + model.label}
                   >
@@ -115,7 +116,7 @@ export function VoiceModelList({
               ) : (
                 <Pressable
                   style={({ pressed }) => [styles.iconButton, pressed && styles.actionPressed]}
-                  disabled={rowBusy}
+                  disabled={anyBusy}
                   onPress={() => onDownload(model)}
                   accessibilityLabel={'Download ' + model.label}
                 >

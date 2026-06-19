@@ -5552,6 +5552,7 @@ export class OrcaRuntimeService {
     }
     const store = this.store
     try {
+      // The runtime store is adapted to the minimal speech settings contract used by deletion.
       await deleteLocalSpeechModel({
         store: {
           getSettings: () => store.getSettings(),
