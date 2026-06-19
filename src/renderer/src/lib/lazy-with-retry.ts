@@ -67,9 +67,12 @@ function recordReloadBreadcrumb(reloadKey: string, message: string): void {
 
 const wait = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
 
-// Suspends the React.lazy boundary while window.location.reload() tears the page
-// down, so the error fallback never flashes in the moment before the reload lands.
-const SUSPEND_UNTIL_RELOAD = new Promise<never>(() => undefined)
+// How long to suspend the React.lazy boundary after window.location.reload() so
+// the error fallback never flashes in the moment before the reload tears the
+// page down. A real reload destroys the renderer well within this window; if the
+// page is still alive afterwards the reload was cancelled (e.g. a dirty-file
+// beforeunload guard vetoed it), so we stop suspending and surface the error.
+const RELOAD_SETTLE_GRACE_MS = 10_000
 
 export async function loadLazyWithRetry<T extends AnyComponent>(
   factory: LazyFactory<T>,
@@ -98,7 +101,15 @@ export async function loadLazyWithRetry<T extends AnyComponent>(
       lastError instanceof Error ? lastError.message : String(lastError)
     )
     window.location.reload()
-    return SUSPEND_UNTIL_RELOAD
+    // Why: a programmatic reload can be cancelled (e.g. a dirty-file
+    // beforeunload guard calls preventDefault), in which case the page is never
+    // torn down. Without a bound, this promise would never settle and the
+    // React.lazy boundary would suspend forever — a permanently blank/dead pane
+    // with no error surfaced. Re-throw after a grace period so the reload still
+    // hides the fallback when it lands, but a cancelled reload falls through to
+    // RecoverableRenderErrorBoundary instead of hanging.
+    await wait(RELOAD_SETTLE_GRACE_MS)
+    throw lastError
   }
 
   // Already reloaded once this session, or no window (SSR / node): re-throw so
