@@ -152,6 +152,9 @@ export type RuntimeMobileSessionMarkdownTab = {
   sourceFilePath: string
   sourceRelativePath: string
   documentVersion: string
+  /** Tab-level color/pin, host-persisted for remote servers. */
+  color?: string | null
+  isPinned?: boolean
 }
 
 export type RuntimeMobileSessionFileTab = {
@@ -164,6 +167,9 @@ export type RuntimeMobileSessionFileTab = {
   mode?: 'edit' | 'diff'
   diffSource?: 'staged' | 'unstaged'
   isDirty: boolean
+  /** Tab-level color/pin, host-persisted for remote servers. */
+  color?: string | null
+  isPinned?: boolean
   isActive: boolean
 }
 
