@@ -36,6 +36,8 @@ const NUDGE_POLL_INTERVAL_MS = 30 * 60 * 1000
 const NUDGE_ACTIVATION_COOLDOWN_MS = 5 * 60 * 1000
 const QUIT_AND_INSTALL_DELAY_MS = 100
 const PRE_QUIT_CLEANUP_TIMEOUT_MS = 2_500
+const UPDATE_CHECK_SILENT_SETTLE_DELAY_MS = 1_000
+const UPDATE_CHECK_STALL_TIMEOUT_MS = 45_000
 
 let mainWindowRef: BrowserWindow | null = null
 let currentStatus: UpdateStatus = { state: 'idle' }
@@ -60,6 +62,11 @@ let backgroundCheckLaunchPending = false
 // Why: a manually promoted background check can emit an error event before the
 // paired promise catch runs; keep the promotion attached to that launch.
 let backgroundCheckPromotedToUserInitiated = false
+let updateCheckStallTimer: ReturnType<typeof setTimeout> | null = null
+let updateCheckSilentSettleTimer: ReturnType<typeof setTimeout> | null = null
+let updateCheckAttemptSequence = 0
+let activeUpdateCheckAttemptId: number | null = null
+let updateAvailableEventPendingAttemptId: number | null = null
 let pendingPrereleaseUserInitiatedCheckAfterInFlight = false
 let activeUpdateNudgeId: string | null = null
 let awaitingNudgeCheckOutcome = false
@@ -194,6 +201,10 @@ function sendStatus(status: UpdateStatus): void {
 
   const decoratedStatus = decorateStatusWithActiveNudge(status)
 
+  if (isUpdateCheckResultState(status.state)) {
+    finishActiveUpdateCheckAttempt()
+  }
+
   if (
     status.state === 'idle' ||
     status.state === 'not-available' ||
@@ -238,6 +249,174 @@ function launchPendingPrereleaseUserInitiatedCheckAfterInFlight(): void {
 
 function clearBackgroundCheckLaunchPending(): void {
   backgroundCheckLaunchPending = false
+}
+
+function clearUpdateCheckStallTimer(): void {
+  if (!updateCheckStallTimer) {
+    return
+  }
+  clearTimeout(updateCheckStallTimer)
+  updateCheckStallTimer = null
+}
+
+function clearUpdateCheckSilentSettleTimer(): void {
+  if (!updateCheckSilentSettleTimer) {
+    return
+  }
+  clearTimeout(updateCheckSilentSettleTimer)
+  updateCheckSilentSettleTimer = null
+}
+
+function clearUpdateCheckTimers(): void {
+  clearUpdateCheckStallTimer()
+  clearUpdateCheckSilentSettleTimer()
+}
+
+function finishActiveUpdateCheckAttempt(): void {
+  activeUpdateCheckAttemptId = null
+  clearUpdateCheckTimers()
+}
+
+function getActiveUpdateCheckAttemptId(): number | null {
+  return activeUpdateCheckAttemptId
+}
+
+function isActiveUpdateCheckAttempt(attemptId: number): boolean {
+  return activeUpdateCheckAttemptId === attemptId
+}
+
+function markUpdateAvailableEventPending(attemptId: number | null): void {
+  updateAvailableEventPendingAttemptId = attemptId
+}
+
+function clearUpdateAvailableEventPending(attemptId: number | null): void {
+  if (updateAvailableEventPendingAttemptId !== attemptId) {
+    return
+  }
+  updateAvailableEventPendingAttemptId = null
+}
+
+function armUpdateCheckStallTimer(attemptId: number): void {
+  clearUpdateCheckStallTimer()
+  updateCheckStallTimer = setTimeout(() => {
+    updateCheckStallTimer = null
+    if (!isActiveUpdateCheckAttempt(attemptId)) {
+      return
+    }
+    const wasUserInitiated = getSettledCheckUserInitiated()
+    if (currentStatus.state === 'checking') {
+      finishActiveUpdateCheckAttempt()
+      backgroundCheckLaunchPending = false
+      backgroundCheckPromotedToUserInitiated = false
+      userInitiatedCheck = false
+      void sendCheckFailureStatus(
+        'Update check timed out. Try again in a few minutes.',
+        wasUserInitiated,
+        'promise'
+      )
+      return
+    }
+    if (backgroundCheckLaunchPending) {
+      finishActiveUpdateCheckAttempt()
+      backgroundCheckLaunchPending = false
+      backgroundCheckPromotedToUserInitiated = false
+      userInitiatedCheck = false
+      scheduleAutomaticUpdateCheck(AUTO_UPDATE_RETRY_INTERVAL_MS)
+    }
+  }, UPDATE_CHECK_STALL_TIMEOUT_MS)
+}
+
+function beginUpdateCheckAttempt(): number {
+  finishActiveUpdateCheckAttempt()
+  updateAvailableEventPendingAttemptId = null
+  updateCheckAttemptSequence += 1
+  activeUpdateCheckAttemptId = updateCheckAttemptSequence
+  armUpdateCheckStallTimer(activeUpdateCheckAttemptId)
+  return activeUpdateCheckAttemptId
+}
+
+function rearmActiveUpdateCheckStallTimer(): void {
+  if (activeUpdateCheckAttemptId === null) {
+    return
+  }
+  armUpdateCheckStallTimer(activeUpdateCheckAttemptId)
+}
+
+function getSettledCheckUserInitiated(): boolean | undefined {
+  return userInitiatedCheck || backgroundCheckPromotedToUserInitiated || undefined
+}
+
+function isUpdateCheckResultState(state: UpdateStatus['state']): boolean {
+  return (
+    state === 'idle' ||
+    state === 'not-available' ||
+    state === 'available' ||
+    state === 'error' ||
+    state === 'downloading' ||
+    state === 'downloaded'
+  )
+}
+
+function consumeSilentCheckShortRetryReason(): boolean {
+  if (publishingWindowLastGoodCheck !== null) {
+    return true
+  }
+  return consumeMissingManifestPrereleaseFallbackResult() !== null
+}
+
+function completeSilentUpdateCheck(userInitiated: boolean | undefined): void {
+  const shouldRetrySoon = consumeSilentCheckShortRetryReason()
+  clearAvailableUpdateContext()
+  if (shouldRetrySoon) {
+    // Why: a silent result against a temporary last-good feed is still part of
+    // a release transition, so it must not suppress the short publish retry.
+    scheduleAutomaticUpdateCheck(AUTO_UPDATE_RETRY_INTERVAL_MS)
+    return
+  }
+  recordCompletedUpdateCheck()
+  if (!userInitiated) {
+    scheduleAutomaticUpdateCheck(AUTO_UPDATE_CHECK_INTERVAL_MS)
+  }
+}
+
+function settleSilentUpdateCheck(attemptId: number, userInitiated: boolean | undefined): void {
+  if (!isActiveUpdateCheckAttempt(attemptId)) {
+    return
+  }
+  if (updateAvailableEventPendingAttemptId === attemptId) {
+    return
+  }
+  if (currentStatus.state !== 'checking') {
+    if (backgroundCheckLaunchPending) {
+      finishActiveUpdateCheckAttempt()
+      clearBackgroundCheckLaunchPending()
+      backgroundCheckPromotedToUserInitiated = false
+      userInitiatedCheck = false
+      completeSilentUpdateCheck(userInitiated)
+    }
+    return
+  }
+  finishActiveUpdateCheckAttempt()
+  clearBackgroundCheckLaunchPending()
+  backgroundCheckPromotedToUserInitiated = false
+  userInitiatedCheck = false
+  completeSilentUpdateCheck(userInitiated)
+  sendStatus({ state: 'not-available', userInitiated })
+}
+
+function handleSettledUpdateCheckPromise(attemptId: number): void {
+  if (!isActiveUpdateCheckAttempt(attemptId)) {
+    return
+  }
+  const wasUserInitiated = getSettledCheckUserInitiated()
+  clearUpdateCheckSilentSettleTimer()
+  // Why: electron-updater can resolve its promise before the terminal event
+  // reaches our handlers. Give that event a short grace period, then unstick
+  // checks that genuinely resolved without one.
+  updateCheckSilentSettleTimer = setTimeout(() => {
+    updateCheckSilentSettleTimer = null
+    settleSilentUpdateCheck(attemptId, wasUserInitiated)
+  }, UPDATE_CHECK_SILENT_SETTLE_DELAY_MS)
 }
 
 function sendErrorStatus(message: string, userInitiated?: boolean): void {
@@ -630,6 +809,10 @@ function retryPrereleaseFallbackAfterMissingManifest(
   ) {
     return false
   }
+  const attemptId = activeUpdateCheckAttemptId
+  if (attemptId === null) {
+    return false
+  }
 
   // Why: a published tag can briefly point at a missing platform manifest
   // during GitHub release transitions. Walk back once to the previous feed
@@ -650,17 +833,24 @@ function retryPrereleaseFallbackAfterMissingManifest(
   autoUpdater.setFeedURL({ provider: 'generic', url })
   userInitiatedCheck = Boolean(userInitiated)
   backgroundCheckLaunchPending = !userInitiated
-  void autoUpdater.checkForUpdates().catch((err) => {
-    const message = String(err?.message ?? err)
-    if (userInitiated) {
-      userInitiatedCheck = false
-    } else {
-      backgroundCheckLaunchPending = false
-    }
-    markMissingManifestPrereleaseFallbackPromiseHandled(message)
-    consumeMissingManifestPrereleaseFallbackResult()
-    void sendCheckFailureStatus(message, userInitiated, 'fallback-promise', err)
-  })
+  armUpdateCheckStallTimer(attemptId)
+  void autoUpdater
+    .checkForUpdates()
+    .then(() => handleSettledUpdateCheckPromise(attemptId))
+    .catch((err) => {
+      if (!isActiveUpdateCheckAttempt(attemptId)) {
+        return
+      }
+      const message = String(err?.message ?? err)
+      if (userInitiated) {
+        userInitiatedCheck = false
+      } else {
+        backgroundCheckLaunchPending = false
+      }
+      markMissingManifestPrereleaseFallbackPromiseHandled(message)
+      consumeMissingManifestPrereleaseFallbackResult()
+      void sendCheckFailureStatus(message, userInitiated, 'fallback-promise', err)
+    })
   return true
 }
 
@@ -686,21 +876,31 @@ function runBackgroundUpdateCheck(
   // that gap without persisting a successful-check timestamp before the result.
   backgroundCheckLaunchPending = true
   backgroundCheckPromotedToUserInitiated = false
+  const attemptId = beginUpdateCheckAttempt()
   // Don't send 'checking' here — the 'checking-for-update' event handler does it,
   // and sending it from both places causes duplicate notifications (issue #35).
   const autoUpdater = getAutoUpdater()
-  const launch = (): Promise<unknown> => autoUpdater.checkForUpdates()
-  const run = pinDefaultReleaseFeed().then(launch)
-  void Promise.resolve(run).catch((err) => {
-    const wasUserInitiated =
-      userInitiatedCheck || backgroundCheckPromotedToUserInitiated || undefined
-    backgroundCheckLaunchPending = false
-    backgroundCheckPromotedToUserInitiated = false
-    if (wasUserInitiated) {
-      userInitiatedCheck = false
+  const launch = (): Promise<unknown> | undefined => {
+    if (!isActiveUpdateCheckAttempt(attemptId)) {
+      return undefined
     }
-    void sendCheckFailureStatus(String(err?.message ?? err), wasUserInitiated, 'promise', err)
-  })
+    return autoUpdater.checkForUpdates()
+  }
+  const run = pinDefaultReleaseFeed().then(launch)
+  void Promise.resolve(run)
+    .then(() => handleSettledUpdateCheckPromise(attemptId))
+    .catch((err) => {
+      if (!isActiveUpdateCheckAttempt(attemptId)) {
+        return
+      }
+      const wasUserInitiated = getSettledCheckUserInitiated()
+      backgroundCheckLaunchPending = false
+      backgroundCheckPromotedToUserInitiated = false
+      if (wasUserInitiated) {
+        userInitiatedCheck = false
+      }
+      void sendCheckFailureStatus(String(err?.message ?? err), wasUserInitiated, 'promise', err)
+    })
 }
 
 export function checkForUpdates(): void {
@@ -758,6 +958,7 @@ export function checkForUpdatesFromMenu(options?: { includePrerelease?: boolean 
   sendStatus({ state: 'checking', userInitiated: true })
   if (checkAlreadyInFlight) {
     backgroundCheckPromotedToUserInitiated = true
+    rearmActiveUpdateCheckStallTimer()
     if (options?.includePrerelease) {
       // Why: the in-flight check may have already pinned the stable feed.
       // Queue a fresh RC check so Shift-click doesn't inherit a stable result.
@@ -766,13 +967,24 @@ export function checkForUpdatesFromMenu(options?: { includePrerelease?: boolean 
     return
   }
 
+  const attemptId = beginUpdateCheckAttempt()
   const autoUpdater = getAutoUpdater()
-  const launch = (): Promise<unknown> => autoUpdater.checkForUpdates()
+  const launch = (): Promise<unknown> | undefined => {
+    if (!isActiveUpdateCheckAttempt(attemptId)) {
+      return undefined
+    }
+    return autoUpdater.checkForUpdates()
+  }
   const run = pinDefaultReleaseFeed().then(launch)
-  void Promise.resolve(run).catch((err) => {
-    userInitiatedCheck = false
-    void sendCheckFailureStatus(String(err?.message ?? err), true, 'promise', err)
-  })
+  void Promise.resolve(run)
+    .then(() => handleSettledUpdateCheckPromise(attemptId))
+    .catch((err) => {
+      if (!isActiveUpdateCheckAttempt(attemptId)) {
+        return
+      }
+      userInitiatedCheck = false
+      void sendCheckFailureStatus(String(err?.message ?? err), true, 'promise', err)
+    })
 }
 
 export function isQuittingForUpdate(): boolean {
@@ -949,12 +1161,16 @@ export function setupAutoUpdater(
     consumeMissingManifestPrereleaseFallbackResult,
     getMissingManifestPrereleaseFallbackUserInitiated,
     getPublishingWindowLastGoodCheck,
+    getActiveUpdateCheckAttemptId,
     getCurrentStatus: () => currentStatus,
     getKnownReleaseUrl,
     getPendingInstallVersion,
     getUserInitiatedCheck: () => userInitiatedCheck,
     hasNewerDownloadedVersion,
     performQuitAndInstall,
+    clearUpdateAvailableEventPending,
+    isActiveUpdateCheckAttempt,
+    markUpdateAvailableEventPending,
     sendCheckFailureStatus,
     sendErrorStatus,
     markMissingManifestPrereleaseFallbackChecking,
