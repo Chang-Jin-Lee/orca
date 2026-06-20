@@ -635,7 +635,7 @@ describe('getPRForBranch', () => {
     })
   })
 
-  it('ignores merged PRs discovered only by branch lookup', async () => {
+  it('ignores merged PRs discovered only by branch lookup when the branch moved on', async () => {
     getOwnerRepoMock.mockResolvedValueOnce({ owner: 'acme', repo: 'widgets' })
     ghExecFileAsyncMock
       .mockResolvedValueOnce({
@@ -670,10 +670,67 @@ describe('getPRForBranch', () => {
           headRefOid: 'head-oid'
         })
       })
+    gitExecFileAsyncMock.mockResolvedValueOnce({
+      stdout: 'new-local-head-oid\n',
+      stderr: ''
+    })
 
     const pr = await getPRForBranch('/repo-root', 'add-guide-for-mobile-emulator-use')
 
     expect(pr).toBeNull()
+  })
+
+  it('shows a merged branch PR when it still matches the current HEAD', async () => {
+    getOwnerRepoMock.mockResolvedValueOnce({ owner: 'acme', repo: 'widgets' })
+    ghExecFileAsyncMock
+      .mockResolvedValueOnce({
+        stdout: JSON.stringify([
+          {
+            number: 5875,
+            title: 'Merged current branch PR',
+            state: 'closed',
+            merged_at: '2026-06-20T04:53:05Z',
+            html_url: 'https://github.com/acme/widgets/pull/5875',
+            updated_at: '2026-06-20T04:53:05Z',
+            draft: false,
+            mergeable_state: 'clean',
+            head: { ref: 'fix-tab-strip-layout-test', sha: 'current-head-oid' },
+            base: { ref: 'main', sha: 'base-oid' }
+          }
+        ])
+      })
+      .mockResolvedValueOnce({
+        stdout: JSON.stringify({
+          number: 5875,
+          title: 'Merged current branch PR',
+          state: 'MERGED',
+          url: 'https://github.com/acme/widgets/pull/5875',
+          statusCheckRollup: [],
+          updatedAt: '2026-06-20T04:53:05Z',
+          isDraft: false,
+          mergeable: 'MERGEABLE',
+          baseRefName: 'main',
+          headRefName: 'fix-tab-strip-layout-test',
+          baseRefOid: 'base-oid',
+          headRefOid: 'current-head-oid'
+        })
+      })
+    gitExecFileAsyncMock.mockResolvedValueOnce({
+      stdout: 'current-head-oid\n',
+      stderr: ''
+    })
+
+    const pr = await getPRForBranch('/repo-root', 'fix-tab-strip-layout-test')
+
+    expect(gitExecFileAsyncMock).toHaveBeenCalledWith(['rev-parse', 'HEAD'], {
+      cwd: '/repo-root'
+    })
+    expect(pr).toMatchObject({
+      number: 5875,
+      title: 'Merged current branch PR',
+      state: 'merged',
+      headSha: 'current-head-oid'
+    })
   })
 
   it('prefers branch lookup over a fallback PR number', async () => {
