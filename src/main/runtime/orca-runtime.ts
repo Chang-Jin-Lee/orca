@@ -550,6 +550,7 @@ import {
 import { hasLocalCommitObject } from '../git/commit-object-ref'
 import {
   listWorktrees,
+  listWorktreesStrict,
   addWorktree,
   addSparseWorktree,
   assertWorktreeCleanForRemoval,
@@ -13930,8 +13931,8 @@ export class OrcaRuntimeService {
       const registeredWorktrees = repo.connectionId
         ? await provider!.listWorktrees(repo.path)
         : hasLocalWorktreeGitOptions
-          ? await listWorktrees(repo.path, localWorktreeGitOptions)
-          : await listWorktrees(repo.path)
+          ? await listWorktreesStrict(repo.path, localWorktreeGitOptions)
+          : await listWorktreesStrict(repo.path)
       const removedMeta = store.getWorktreeMeta(removalTarget.id)
       const removedPushTarget = removedMeta?.pushTarget ?? removalTarget.pushTarget
       const registeredWorktree = findRegisteredDeletableWorktree(
@@ -13996,7 +13997,8 @@ export class OrcaRuntimeService {
               repo.path,
               removalTarget.id,
               removedPushTarget,
-              store
+              store,
+              localWorktreeGitOptions
             )
           }
           this.clearOptimisticReconcileToken(removalTarget.id)
@@ -14028,7 +14030,8 @@ export class OrcaRuntimeService {
                 repo.path,
                 removalTarget.id,
                 removedPushTarget,
-                store
+                store,
+                localWorktreeGitOptions
               ))
           this.clearOptimisticReconcileToken(removalTarget.id)
           this.removeWorktreeMetadataAndHistory(store, removalTarget.id)
@@ -14079,7 +14082,7 @@ export class OrcaRuntimeService {
           canonicalWorktreePath,
           repo,
           undefined,
-          this.getLocalGitExecutionOptionArgs(repo)[0]
+          hasLocalWorktreeGitOptions ? localWorktreeGitOptions : undefined
         )
         if (!result.success) {
           console.error(`[hooks] archive hook failed for ${canonicalWorktreePath}:`, result.output)
@@ -14140,15 +14143,15 @@ export class OrcaRuntimeService {
 
       let removalResult: RemoveWorktreeResult | undefined
       try {
-        const removeOptions = hasLocalWorktreeGitOptions
-          ? { ...(!deleteBranch ? { deleteBranch } : {}), ...localWorktreeGitOptions }
-          : !deleteBranch
-            ? { deleteBranch }
-            : undefined
+        const removeOptions = {
+          ...(!deleteBranch ? { deleteBranch } : {}),
+          // Why: removal already validated the Git row under the selected
+          // project runtime; keep branch cleanup on that same canonical row.
+          knownRemovedWorktree: registeredWorktree,
+          ...localWorktreeGitOptions
+        }
         removalResult = this.preserveBranchHeadFallback(
-          await (removeOptions
-            ? removeWorktree(repo.path, canonicalWorktreePath, force, removeOptions)
-            : removeWorktree(repo.path, canonicalWorktreePath, force)),
+          await removeWorktree(repo.path, canonicalWorktreePath, force, removeOptions),
           registeredWorktree.head
         )
       } catch (error) {
@@ -14177,10 +14180,10 @@ export class OrcaRuntimeService {
           // (`.git/worktrees/<name>`) is still intact. Without pruning, `git worktree
           // list` continues to show the stale entry and the branch it had checked out
           // remains locked — other worktrees cannot check it out.
-          await gitExecFileAsync(
-            ['worktree', 'prune'],
-            getLocalProjectGitExecOptions(this.requireStore(), repo)
-          ).catch(() => {})
+          await gitExecFileAsync(['worktree', 'prune'], {
+            cwd: repo.path,
+            ...localWorktreeGitOptions
+          }).catch(() => {})
           await cleanupUnusedWorktreePushTargetRemote(
             repo.path,
             removalTarget.id,
@@ -16236,7 +16239,13 @@ export class OrcaRuntimeService {
 
   private async listRepoWorktreesForResolution(repo: Repo): Promise<RuntimeWorktreeScanResult> {
     if (!repo.connectionId) {
-      return { ok: true, worktrees: await listRepoWorktrees(repo) }
+      return {
+        ok: true,
+        worktrees: await listRepoWorktrees(
+          repo,
+          getLocalProjectWorktreeGitOptions(this.requireStore(), repo)
+        )
+      }
     }
     const provider = getSshGitProvider(repo.connectionId)
     if (!provider) {
