@@ -67,6 +67,7 @@ const WORKTREE_REFRESH_CONCURRENCY = 5
 const pendingActivationTerminalPrepCancels = new Map<string, () => void>()
 const detachedHeadAutoDerivedDisplayNames = new Map<string, string>()
 const folderWorkspaceWorktreeCache = new WeakMap<FolderWorkspace, Worktree>()
+const hostedReviewPushTargetLookupsInFlight = new Set<string>()
 
 async function mapReposForWorktreeRefresh<T>(
   repos: readonly { id: string }[],
@@ -924,7 +925,7 @@ async function persistWorktreeMeta(
   )
 }
 
-async function resolveLinkedPrPushTarget(
+async function resolveGitHubReviewPushTarget(
   settings: AppState['settings'],
   repoId: string,
   prNumber: number
@@ -952,6 +953,57 @@ async function resolveLinkedPrPushTarget(
     )
     return undefined
   }
+}
+
+async function resolveGitLabReviewPushTarget(
+  settings: AppState['settings'],
+  repoId: string,
+  mrIid: number
+): Promise<GitPushTarget | undefined> {
+  try {
+    const target = getActiveRuntimeTarget(settings)
+    const result =
+      target.kind === 'local'
+        ? await window.api.worktrees.resolveMrBase({ repoId, mrIid })
+        : await callRuntimeRpc<
+            | { baseBranch: string; compareBaseRef?: string; pushTarget?: GitPushTarget }
+            | {
+                error: string
+              }
+          >(target, 'worktree.resolveMrBase', { repo: repoId, mrIid }, { timeoutMs: 30_000 })
+    if ('error' in result) {
+      console.warn(`Failed to resolve push target for MR !${mrIid}: ${result.error}`)
+      return undefined
+    }
+    return result.pushTarget
+  } catch (error) {
+    console.warn(
+      `Failed to resolve push target for MR !${mrIid}:`,
+      error instanceof Error ? error.message : error
+    )
+    return undefined
+  }
+}
+
+function getHostedReviewPushTargetLookup(worktree: Worktree): {
+  key: string
+  resolve: (settings: AppState['settings']) => Promise<GitPushTarget | undefined>
+} | null {
+  if (typeof worktree.linkedPR === 'number' && Number.isFinite(worktree.linkedPR)) {
+    const prNumber = worktree.linkedPR
+    return {
+      key: `${worktree.id}:github:${prNumber}`,
+      resolve: (settings) => resolveGitHubReviewPushTarget(settings, worktree.repoId, prNumber)
+    }
+  }
+  if (typeof worktree.linkedGitLabMR === 'number' && Number.isFinite(worktree.linkedGitLabMR)) {
+    const mrIid = worktree.linkedGitLabMR
+    return {
+      key: `${worktree.id}:gitlab:${mrIid}`,
+      resolve: (settings) => resolveGitLabReviewPushTarget(settings, worktree.repoId, mrIid)
+    }
+  }
+  return null
 }
 
 // Every worktree-id-keyed store map the rename path re-keys on a folder move, so a
@@ -2402,7 +2454,7 @@ export const createWorktreeSlice: StateCreator<AppState, [], [], WorktreeSlice> 
       existingWorktree &&
       existingWorktree.linkedPR !== linkedPrForPushTarget &&
       !existingWorktree.pushTarget
-        ? await resolveLinkedPrPushTarget(
+        ? await resolveGitHubReviewPushTarget(
             settingsForRepoOwner(get(), existingWorktree.repoId),
             existingWorktree.repoId,
             linkedPrForPushTarget
@@ -2563,6 +2615,37 @@ export const createWorktreeSlice: StateCreator<AppState, [], [], WorktreeSlice> 
       }
       console.error('Failed to update worktree meta:', err)
       void get().fetchWorktrees(getRepoIdFromWorktreeId(worktreeId))
+    }
+  },
+
+  ensureHostedReviewPushTarget: async (worktreeId) => {
+    const worktree = get().getKnownWorktreeById(worktreeId)
+    if (!worktree || worktree.pushTarget) {
+      return
+    }
+    const lookup = getHostedReviewPushTargetLookup(worktree)
+    if (!lookup || hostedReviewPushTargetLookupsInFlight.has(lookup.key)) {
+      return
+    }
+    hostedReviewPushTargetLookupsInFlight.add(lookup.key)
+    try {
+      const resolvedPushTarget = await lookup.resolve(settingsForRepoOwner(get(), worktree.repoId))
+      if (!resolvedPushTarget) {
+        return
+      }
+      const current = get().getKnownWorktreeById(worktreeId)
+      if (!current || current.pushTarget) {
+        return
+      }
+      const currentLookup = getHostedReviewPushTargetLookup(current)
+      if (currentLookup?.key !== lookup.key) {
+        return
+      }
+      // Why: old linked-review worktrees can lose metadata while their branch
+      // tracks a helper ref; restoring the review head target keeps push/status aligned.
+      await get().updateWorktreeMeta(worktreeId, { pushTarget: resolvedPushTarget })
+    } finally {
+      hostedReviewPushTargetLookupsInFlight.delete(lookup.key)
     }
   },
 

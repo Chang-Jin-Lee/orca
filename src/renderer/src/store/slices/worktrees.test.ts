@@ -65,6 +65,7 @@ const mockApi = {
     remove: vi.fn().mockResolvedValue(undefined),
     forceDeletePreservedBranch: vi.fn().mockResolvedValue({ deleted: true }),
     resolvePrBase: vi.fn(),
+    resolveMrBase: vi.fn(),
     updateMeta: vi.fn().mockResolvedValue(undefined),
     updateLineage: vi.fn().mockResolvedValue(null)
   },
@@ -2836,6 +2837,194 @@ describe('worktree remote runtime mutations', () => {
       worktreeId: wt.id,
       updates: { linkedPR: 2548 }
     })
+  })
+
+  it('hydrates a missing push target for an existing linked GitHub PR', async () => {
+    const store = createTestStore()
+    const pushTarget = {
+      remoteName: 'pr-tmchow-orca',
+      branchName: 'tmchow/worktree-delete-button'
+    }
+    const wt = makeWorktree({
+      id: 'repo1::/path/wt1',
+      repoId: 'repo1',
+      path: '/path/wt1',
+      linkedPR: 5571
+    })
+    mockApi.worktrees.resolvePrBase.mockResolvedValueOnce({
+      baseBranch: 'fork-head',
+      pushTarget
+    })
+    store.setState({
+      repos: [
+        { id: 'repo1', path: '/repo1', displayName: 'Repo 1', badgeColor: '#000', addedAt: 0 }
+      ],
+      worktreesByRepo: { repo1: [wt] }
+    } as Partial<AppState>)
+
+    await store.getState().ensureHostedReviewPushTarget(wt.id)
+
+    expect(mockApi.worktrees.resolvePrBase).toHaveBeenCalledWith({
+      repoId: 'repo1',
+      prNumber: 5571
+    })
+    expect(mockApi.worktrees.updateMeta).toHaveBeenCalledWith({
+      worktreeId: wt.id,
+      updates: { pushTarget }
+    })
+    expect(store.getState().worktreesByRepo.repo1[0]?.pushTarget).toEqual(pushTarget)
+  })
+
+  it('hydrates a missing linked GitHub PR push target through the active remote runtime', async () => {
+    const store = createTestStore()
+    const pushTarget = { remoteName: 'fork', branchName: 'feature/runtime-pr' }
+    const wt = makeWorktree({
+      id: 'repo1::/path/runtime-wt',
+      repoId: 'repo1',
+      path: '/path/runtime-wt',
+      linkedPR: 5571
+    })
+    runtimeEnvironmentCall.mockImplementation(({ method }: RuntimeEnvironmentCallRequest) => {
+      if (method === 'worktree.resolvePrBase') {
+        return Promise.resolve({
+          id: 'rpc-resolve-pr-base',
+          ok: true,
+          result: { baseBranch: 'fork-head', pushTarget },
+          _meta: { runtimeId: 'runtime-remote' }
+        })
+      }
+      if (method === 'worktree.set') {
+        return Promise.resolve({
+          id: 'rpc-set-worktree',
+          ok: true,
+          result: { worktree: { ...wt, pushTarget } },
+          _meta: { runtimeId: 'runtime-remote' }
+        })
+      }
+      throw new Error(`Unexpected runtime method ${method}`)
+    })
+    store.setState({
+      settings: { activeRuntimeEnvironmentId: 'env-1' } as never,
+      repos: [
+        { id: 'repo1', path: '/repo1', displayName: 'Repo 1', badgeColor: '#000', addedAt: 0 }
+      ],
+      worktreesByRepo: { repo1: [wt] }
+    } as Partial<AppState>)
+
+    await store.getState().ensureHostedReviewPushTarget(wt.id)
+
+    expect(runtimeEnvironmentCall).toHaveBeenCalledWith({
+      selector: 'env-1',
+      method: 'worktree.resolvePrBase',
+      params: { repo: 'repo1', prNumber: 5571 },
+      timeoutMs: 30_000
+    })
+    expect(runtimeEnvironmentCall).toHaveBeenCalledWith({
+      selector: 'env-1',
+      method: 'worktree.set',
+      params: { worktree: `id:${wt.id}`, pushTarget },
+      timeoutMs: 15_000
+    })
+    expect(mockApi.worktrees.resolvePrBase).not.toHaveBeenCalled()
+    expect(mockApi.worktrees.updateMeta).not.toHaveBeenCalled()
+    expect(store.getState().worktreesByRepo.repo1[0]?.pushTarget).toEqual(pushTarget)
+  })
+
+  it('hydrates an SSH-owned linked GitHub PR push target through local IPC when a runtime is focused', async () => {
+    const store = createTestStore()
+    const pushTarget = { remoteName: 'fork', branchName: 'feature/ssh-pr' }
+    const wt = makeWorktree({
+      id: 'repo-ssh::/home/orca/runtime-wt',
+      repoId: 'repo-ssh',
+      path: '/home/orca/runtime-wt',
+      linkedPR: 5571
+    })
+    mockApi.worktrees.resolvePrBase.mockResolvedValueOnce({
+      baseBranch: 'fork-head',
+      pushTarget
+    })
+    store.setState({
+      settings: { activeRuntimeEnvironmentId: 'env-1' } as never,
+      repos: [
+        {
+          id: 'repo-ssh',
+          path: '/home/orca/repo',
+          displayName: 'SSH Repo',
+          badgeColor: '#000',
+          addedAt: 0,
+          connectionId: 'ssh-1'
+        }
+      ],
+      worktreesByRepo: { 'repo-ssh': [wt] }
+    } as Partial<AppState>)
+
+    await store.getState().ensureHostedReviewPushTarget(wt.id)
+
+    expect(mockApi.worktrees.resolvePrBase).toHaveBeenCalledWith({
+      repoId: 'repo-ssh',
+      prNumber: 5571
+    })
+    expect(mockApi.worktrees.updateMeta).toHaveBeenCalledWith({
+      worktreeId: wt.id,
+      updates: { pushTarget }
+    })
+    expect(runtimeEnvironmentCall).not.toHaveBeenCalled()
+    expect(store.getState().worktreesByRepo['repo-ssh'][0]?.pushTarget).toEqual(pushTarget)
+  })
+
+  it('keeps a linked review without a derivable target unmodified', async () => {
+    const store = createTestStore()
+    const wt = makeWorktree({
+      id: 'repo1::/path/wt1',
+      repoId: 'repo1',
+      path: '/path/wt1',
+      linkedPR: 5571
+    })
+    mockApi.worktrees.resolvePrBase.mockResolvedValueOnce({ baseBranch: 'fork-head' })
+    store.setState({
+      repos: [
+        { id: 'repo1', path: '/repo1', displayName: 'Repo 1', badgeColor: '#000', addedAt: 0 }
+      ],
+      worktreesByRepo: { repo1: [wt] }
+    } as Partial<AppState>)
+
+    await store.getState().ensureHostedReviewPushTarget(wt.id)
+
+    expect(mockApi.worktrees.updateMeta).not.toHaveBeenCalled()
+    expect(store.getState().worktreesByRepo.repo1[0]?.pushTarget).toBeUndefined()
+  })
+
+  it('hydrates a missing push target for an existing linked GitLab MR when supported', async () => {
+    const store = createTestStore()
+    const pushTarget = { remoteName: 'upstream', branchName: 'feature/mr' }
+    const wt = makeWorktree({
+      id: 'repo1::/path/wt1',
+      repoId: 'repo1',
+      path: '/path/wt1',
+      linkedGitLabMR: 42
+    })
+    mockApi.worktrees.resolveMrBase.mockResolvedValueOnce({
+      baseBranch: 'upstream/feature/mr',
+      pushTarget
+    })
+    store.setState({
+      repos: [
+        { id: 'repo1', path: '/repo1', displayName: 'Repo 1', badgeColor: '#000', addedAt: 0 }
+      ],
+      worktreesByRepo: { repo1: [wt] }
+    } as Partial<AppState>)
+
+    await store.getState().ensureHostedReviewPushTarget(wt.id)
+
+    expect(mockApi.worktrees.resolveMrBase).toHaveBeenCalledWith({
+      repoId: 'repo1',
+      mrIid: 42
+    })
+    expect(mockApi.worktrees.updateMeta).toHaveBeenCalledWith({
+      worktreeId: wt.id,
+      updates: { pushTarget }
+    })
+    expect(store.getState().worktreesByRepo.repo1[0]?.pushTarget).toEqual(pushTarget)
   })
 
   it('waits for branch confirmation before linking a terminal PR URL for a known push target', async () => {
