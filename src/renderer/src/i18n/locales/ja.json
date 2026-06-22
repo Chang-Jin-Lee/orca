@@ -222,7 +222,12 @@
           "0216895fb5": "ブランチの削除に失敗しました",
           "19db0085fb": "ローカルブランチが削除されました",
           "2b0afc7f14": "ローカル {{value0}} を最新の状態に維持できませんでした",
-          "670864ab52": "ローカル {{value0}} を最新の状態に保つ"
+          "670864ab52": "ローカル {{value0}} を最新の状態に保つ",
+          "5366d13eec": "Workspace deleted, branch kept",
+          "2e17f825d4": "Worktree deleted, branch kept",
+          "78e08cd877": "Git could not safely delete branch \"{{value0}}\", so Orca kept it to avoid losing local commits.",
+          "3b57982bf6": "Git could not safely delete branch \"{{value0}}\" after deleting workspace \"{{value1}}\", so Orca kept it to avoid losing local commits.",
+          "81f13f48d2": "Git could not safely delete branch \"{{value0}}\" after deleting worktree \"{{value1}}\", so Orca kept it to avoid losing local commits."
         },
         "repos": {
           "b7e14472ae": "フォルダーの追加に失敗しました",
