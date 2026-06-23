@@ -9,6 +9,7 @@ import {
   AlertCircle,
   ArrowDownUp,
   ArrowRight,
+  Ban,
   Check,
   CheckCircle2,
   ChevronDown,
@@ -16,6 +17,7 @@ import {
   ChevronRight,
   CircleDot,
   Clock3,
+  Copy,
   EllipsisVertical,
   ExternalLink,
   Eye,
@@ -217,6 +219,11 @@ import {
   isTaskPageGitHubDraftPR
 } from '@/components/task-page-github-work-item-status'
 import {
+  buildTaskPageGitHubCloseUpdate,
+  validateTaskPageGitHubDuplicateTarget,
+  type TaskPageGitHubCloseAction
+} from '@/components/task-page-github-status-actions'
+import {
   createTaskPageJiraLoadFailureState,
   type TaskPageJiraLoadError
 } from '@/components/task-page-jira-load-state'
@@ -231,6 +238,7 @@ import type {
   GitHubOwnerRepo,
   GitHubAssignableUser,
   GitHubPRMergeMethod,
+  GitHubIssueUpdate,
   GitHubWorkItem,
   GitLabTodo,
   GitLabWorkItem,
@@ -1038,7 +1046,11 @@ function GHStatusCell({
     createTaskPageGitHubStatusStateDraft(item)
   )
   const [open, setOpen] = useState(false)
+  const [duplicateFormOpen, setDuplicateFormOpen] = useState(false)
+  const [duplicateIssueNumber, setDuplicateIssueNumber] = useState('')
+  const [duplicateError, setDuplicateError] = useState<string | null>(null)
   const reqRef = useRef(0)
+  const parsedIssueLink = useMemo(() => parseGitHubIssueOrPRLink(item.url), [item.url])
 
   const resolvedStatusStateDraft = resolveTaskPageGitHubStatusStateDraft(statusStateDraft, item)
   if (resolvedStatusStateDraft !== statusStateDraft) {
@@ -1057,38 +1069,69 @@ function GHStatusCell({
   )
 
   const handleStateChange = useCallback(
-    (newState: 'open' | 'closed') => {
-      if (newState === localState || !repo || item.type !== 'issue') {
+    (newState: 'open' | 'closed', closeAction?: TaskPageGitHubCloseAction) => {
+      if (newState === localState || item.type !== 'issue') {
+        return
+      }
+      const parsedOwnerRepo = parsedIssueLink?.slug
+      if (!repo && !parsedOwnerRepo) {
         return
       }
       reqRef.current += 1
       const reqId = reqRef.current
+      const updates: GitHubIssueUpdate =
+        newState === 'closed' && closeAction
+          ? buildTaskPageGitHubCloseUpdate(closeAction)
+          : { state: newState }
       updateLocalState(newState)
       patchWorkItem(item.id, { state: newState }, item.repoId, { sourceContext })
       const target = getActiveRuntimeTarget(sourceSettings)
-      const runtimeRepoId =
-        sourceContext?.provider === 'github' ? (sourceContext.repoId ?? repo.id) : repo.id
-      const updatePromise =
-        target.kind === 'environment'
-          ? callRuntimeRpc<{ ok?: boolean; error?: string }>(
+      const updatePromise = parsedOwnerRepo
+        ? target.kind === 'environment'
+          ? callRuntimeRpc<{ ok?: boolean; error?: { message?: string } | string }>(
               target,
-              'github.updateIssue',
-              { repo: runtimeRepoId, number: item.number, updates: { state: newState } },
+              'github.project.updateIssueBySlug',
+              {
+                owner: parsedOwnerRepo.owner,
+                repo: parsedOwnerRepo.repo,
+                number: item.number,
+                updates
+              },
               { timeoutMs: 30_000 }
             )
-          : window.api.gh.updateIssue({
-              repoPath: repo.path,
-              repoId: repo.id,
-              sourceContext,
+          : window.api.gh.updateIssueBySlug({
+              owner: parsedOwnerRepo.owner,
+              repo: parsedOwnerRepo.repo,
               number: item.number,
-              updates: { state: newState }
+              updates
             })
+        : (() => {
+            if (!repo) {
+              throw new Error('No GitHub repository context available for this issue.')
+            }
+            const runtimeRepoId =
+              sourceContext?.provider === 'github' ? (sourceContext.repoId ?? repo.id) : repo.id
+            return target.kind === 'environment'
+              ? callRuntimeRpc<{ ok?: boolean; error?: string }>(
+                  target,
+                  'github.updateIssue',
+                  { repo: runtimeRepoId, number: item.number, updates },
+                  { timeoutMs: 30_000 }
+                )
+              : window.api.gh.updateIssue({
+                  repoPath: repo.path,
+                  repoId: repo.id,
+                  sourceContext,
+                  number: item.number,
+                  updates
+                })
+          })()
       updatePromise
         .then((result) => {
           if (reqId !== reqRef.current) {
             return
           }
-          const typed = result as { ok?: boolean; error?: string }
+          const typed = result as { ok?: boolean; error?: string | { message?: string } }
           if (typed && typed.ok === false) {
             updateLocalState(newState === 'closed' ? 'open' : 'closed')
             patchWorkItem(
@@ -1098,10 +1141,15 @@ function GHStatusCell({
               { sourceContext }
             )
             toast.error(
-              typed.error ??
-                translate('auto.components.TaskPage.1c893195ac', 'Failed to update state')
+              typeof typed.error === 'string'
+                ? typed.error
+                : (typed.error?.message ??
+                    translate('auto.components.TaskPage.1c893195ac', 'Failed to update state'))
             )
             return
+          }
+          if (repo) {
+            useAppStore.getState().evictGitHubRepoCaches(repo.id, repo.path)
           }
           useAppStore.getState().recordFeatureInteraction('github-tasks')
         })
@@ -1121,10 +1169,51 @@ function GHStatusCell({
           toast.error(translate('auto.components.TaskPage.1c893195ac', 'Failed to update state'))
         })
     },
-    [item, localState, patchWorkItem, repo, sourceContext, sourceSettings, updateLocalState]
+    [
+      item,
+      localState,
+      parsedIssueLink,
+      patchWorkItem,
+      repo,
+      sourceContext,
+      sourceSettings,
+      updateLocalState
+    ]
   )
 
-  if (item.type !== 'issue' || !repo) {
+  const handleDuplicateSubmit = useCallback(() => {
+    const validation = validateTaskPageGitHubDuplicateTarget(duplicateIssueNumber, item.number)
+    if (!validation.ok) {
+      setDuplicateError(
+        validation.reason === 'missing'
+          ? translate(
+              'auto.components.TaskPage.duplicateIssueMissing',
+              'Enter an issue number in this repository.'
+            )
+          : validation.reason === 'not_integer'
+            ? translate(
+                'auto.components.TaskPage.duplicateIssueNotInteger',
+                'Use a whole issue number.'
+              )
+            : validation.reason === 'not_positive'
+              ? translate(
+                  'auto.components.TaskPage.duplicateIssueNotPositive',
+                  'Use a positive issue number.'
+                )
+              : translate(
+                  'auto.components.TaskPage.duplicateIssueSameIssue',
+                  'Choose a different issue.'
+                )
+      )
+      return
+    }
+    setDuplicateError(null)
+    handleStateChange('closed', { stateReason: 'duplicate', duplicateOf: validation.duplicateOf })
+    setOpen(false)
+    setDuplicateFormOpen(false)
+  }, [duplicateIssueNumber, handleStateChange, item.number])
+
+  if (item.type !== 'issue' || (!repo && !parsedIssueLink?.slug)) {
     return <TaskPageGitHubWorkItemStateBadge item={item} />
   }
 
@@ -1137,7 +1226,7 @@ function GHStatusCell({
           className={cn(
             'group/status inline-flex cursor-pointer items-center gap-0.5 rounded-full border px-2 py-0.5 text-[10px] font-medium transition hover:brightness-125 hover:ring-1 hover:ring-white/10',
             localState === 'closed'
-              ? 'border-rose-500/30 bg-rose-500/10 text-rose-600 dark:text-rose-300'
+              ? 'border-ring/50 bg-primary/10 text-foreground'
               : 'border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-300'
           )}
         >
@@ -1147,7 +1236,7 @@ function GHStatusCell({
           <ChevronDown className="size-2.5 opacity-50" />
         </button>
       </PopoverTrigger>
-      <PopoverContent className="w-36 p-1" align="start" onClick={(e) => e.stopPropagation()}>
+      <PopoverContent className="w-72 p-1" align="start" onClick={(e) => e.stopPropagation()}>
         <button
           type="button"
           onClick={() => {
@@ -1159,23 +1248,114 @@ function GHStatusCell({
             localState === 'open' && 'bg-accent/50'
           )}
         >
-          <CircleDot className="size-3 text-emerald-500" />
+          <CircleDot className="size-4 text-emerald-500" />
           {translate('auto.components.TaskPage.606a85c774', 'Open')}
         </button>
         <button
           type="button"
           onClick={() => {
-            handleStateChange('closed')
+            handleStateChange('closed', { stateReason: 'completed' })
             setOpen(false)
           }}
           className={cn(
-            'flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-[12px] hover:bg-accent',
+            'flex w-full items-start gap-2 rounded-sm px-2 py-1.5 text-left hover:bg-accent',
             localState === 'closed' && 'bg-accent/50'
           )}
         >
-          <CircleDot className="size-3 text-rose-500" />
-          {translate('auto.components.TaskPage.d09bf34db7', 'Closed')}
+          <CheckCircle2 className="mt-0.5 size-4 text-primary" />
+          <span className="min-w-0">
+            <span className="block text-[12px] font-medium">
+              {translate('auto.components.TaskPage.closeAsCompleted', 'Close as completed')}
+            </span>
+            <span className="block text-[11px] text-muted-foreground">
+              {translate(
+                'auto.components.TaskPage.closeAsCompletedDescription',
+                'Done, closed, fixed, resolved'
+              )}
+            </span>
+          </span>
         </button>
+        <button
+          type="button"
+          onClick={() => {
+            handleStateChange('closed', { stateReason: 'not_planned' })
+            setOpen(false)
+          }}
+          className="flex w-full items-start gap-2 rounded-sm px-2 py-1.5 text-left hover:bg-accent"
+        >
+          <Ban className="mt-0.5 size-4 text-muted-foreground" />
+          <span className="min-w-0">
+            <span className="block text-[12px] font-medium">
+              {translate('auto.components.TaskPage.closeAsNotPlanned', 'Close as not planned')}
+            </span>
+            <span className="block text-[11px] text-muted-foreground">
+              {translate(
+                'auto.components.TaskPage.closeAsNotPlannedDescription',
+                "Won't fix, can't repro, stale"
+              )}
+            </span>
+          </span>
+        </button>
+        <div>
+          <button
+            type="button"
+            onClick={() => {
+              setDuplicateFormOpen((current) => !current)
+              setDuplicateError(null)
+            }}
+            className="flex w-full items-start gap-2 rounded-sm px-2 py-1.5 text-left hover:bg-accent"
+          >
+            <Copy className="mt-0.5 size-4 text-muted-foreground" />
+            <span className="min-w-0 flex-1">
+              <span className="block text-[12px] font-medium">
+                {translate('auto.components.TaskPage.closeAsDuplicate', 'Close as duplicate')}
+              </span>
+              <span className="block text-[11px] text-muted-foreground">
+                {translate(
+                  'auto.components.TaskPage.closeAsDuplicateDescription',
+                  'Duplicate of another issue in this repository'
+                )}
+              </span>
+            </span>
+            <ChevronRight
+              className={cn(
+                'mt-1 size-3.5 text-muted-foreground transition-transform',
+                duplicateFormOpen && 'rotate-90'
+              )}
+            />
+          </button>
+          {duplicateFormOpen ? (
+            <form
+              className="space-y-2 px-2 pb-2 pt-1"
+              onSubmit={(event) => {
+                event.preventDefault()
+                handleDuplicateSubmit()
+              }}
+            >
+              <Input
+                value={duplicateIssueNumber}
+                onChange={(event) => {
+                  setDuplicateIssueNumber(event.target.value)
+                  setDuplicateError(null)
+                }}
+                inputMode="numeric"
+                pattern="[0-9]*"
+                placeholder={translate(
+                  'auto.components.TaskPage.duplicateIssueNumberPlaceholder',
+                  'Issue number'
+                )}
+                className="h-8 text-xs"
+                aria-invalid={duplicateError ? true : undefined}
+              />
+              {duplicateError ? (
+                <p className="text-[11px] text-destructive">{duplicateError}</p>
+              ) : null}
+              <Button type="submit" size="xs" variant="secondary" className="w-full">
+                {translate('auto.components.TaskPage.closeAsDuplicateSubmit', 'Close duplicate')}
+              </Button>
+            </form>
+          ) : null}
+        </div>
       </PopoverContent>
     </Popover>
   )
