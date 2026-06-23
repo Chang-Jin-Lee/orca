@@ -4898,7 +4898,11 @@
           "70bb30feb1": "잠시 후에 편집기 및 편집 가능한 diff 변경 사항을 자동으로 저장합니다.",
           "0df2e4fd12": "자동 저장 파일",
           "d21136d9ef": "Orca가 파일 편집을 유지하는 방법을 구성합니다.",
-          "45c6e85c4d": "편집기"
+          "45c6e85c4d": "편집기",
+          "8f1afdfbd8": "Diff Word Wrap",
+          "4aa4d9fb73": "Wrap long lines in diff editors instead of requiring horizontal scrolling.",
+          "bf16ef0af2": "Off",
+          "3f6892f307": "On"
         },
         "AdvancedNetworkSettingsSection": {
           "3e431564b5": "로컬호스트, 127.0.0.1, *.internal",
@@ -10437,7 +10441,9 @@
           "8368d256ec": "결합 브랜치",
           "8f68ad9ca9": "{{value0}} AI {{value1}} 표시",
           "724a13568d": "{{value0}}에서",
-          "6094135eec": "대 {{value0}}"
+          "6094135eec": "대 {{value0}}",
+          "a4420ca1f7": "Wrap On",
+          "dde325ddfe": "Wrap Off"
         },
         "ConflictComponents": {
           "f338288514": "충돌 콘텐츠 로드 중...",
@@ -10525,7 +10531,8 @@
           "3e0ce48c24": "PDF로 내보내기",
           "561251019a": "추가 작업",
           "8c8b7f5ff5": "머리말 표시",
-          "10c39d58c1": "머리말 숨기기"
+          "10c39d58c1": "머리말 숨기기",
+          "1eef809708": "Word Wrap"
         },
         "EditorPanelShell": {
           "e2c4dec350": "편집기 로드 중..."
