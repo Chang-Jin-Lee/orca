@@ -83,8 +83,35 @@ type ForwardedReplayFingerprint = {
   deliveredAt: number
 }
 
+type PendingPtyDataPayload = {
+  id: string
+  data: string
+  seq?: number
+  rawLength?: number
+}
+
+type PendingPtyData = {
+  firstAttemptAt: number
+  payloads: PendingPtyDataPayload[]
+  totalChars: number
+  timer: NodeJS.Timeout | null
+}
+
+type PendingPtyExit = {
+  code: number
+}
+
+type PendingReplayRetry = {
+  firstAttemptAt: number
+  timer: NodeJS.Timeout | null
+}
+
 const RECONNECT_REPLAY_DUPLICATE_WINDOW_MS = 1000
 const REPLAY_FINGERPRINT_EDGE_CHARS = 128
+const RECONNECT_REPLAY_OWNER_RETRY_MS = 50
+const RECONNECT_REPLAY_OWNER_MAX_AGE_MS = 2_000
+const PENDING_PTY_DATA_OWNER_RETRY_MS = 25
+const PENDING_PTY_DATA_OWNER_MAX_AGE_MS = 2_000
 
 function normalizeRelayGracePeriodSeconds(graceTimeSeconds: number | undefined): number {
   const raw = graceTimeSeconds ?? DEFAULT_SSH_RELAY_GRACE_PERIOD_SECONDS
@@ -125,6 +152,10 @@ export class SshRelaySession {
   private hostPlatform: RemoteHostPlatform | null = null
   private remoteCliBridgeEnv: RemoteCliBridgeEnv | null = null
   private forwardedReattachReplayByPty = new Map<string, ForwardedReplayFingerprint>()
+  private pendingPtyDataByPty = new Map<string, PendingPtyData>()
+  private pendingPtyExitByPty = new Map<string, PendingPtyExit>()
+  private pendingReplayRetriesByPty = new Map<string, PendingReplayRetry>()
+  private providerGeneration = 0
 
   constructor(
     readonly targetId: string,
@@ -844,6 +875,9 @@ export class SshRelaySession {
   }
 
   private teardownProviders(reason: 'shutdown' | 'connection_lost'): void {
+    this.providerGeneration += 1
+    this.clearAllPendingPtyData()
+    this.clearAllPendingReplayRetries()
     this.muxDisposeCleanup?.()
     this.muxDisposeCleanup = null
     this.muxNotificationCleanup?.()
@@ -943,12 +977,16 @@ export class SshRelaySession {
     ptyProvider.onData((payload) => {
       const seq = this.runtime?.onPtyData(payload.id, payload.data, Date.now())
       const win = this.getOwnerWindowForPty(payload.id)
-      if (win) {
-        sendToWindow(win, 'pty:data', {
-          ...payload,
-          ...(typeof seq === 'number' ? { seq, rawLength: payload.data.length } : {})
-        })
+      const payloadForRenderer = {
+        ...payload,
+        ...(typeof seq === 'number' ? { seq, rawLength: payload.data.length } : {})
       }
+      if (win) {
+        this.flushPendingPtyData(payload.id, win)
+        sendToWindow(win, 'pty:data', payloadForRenderer)
+        return
+      }
+      this.enqueuePtyDataUntilOwned(payloadForRenderer)
     })
     ptyProvider.onReplay((payload) => {
       const win = this.getOwnerWindowForPty(payload.id)
@@ -962,11 +1000,15 @@ export class SshRelaySession {
       clearProviderPtyState(payload.id)
       deletePtyOwnership(payload.id)
       this.forwardedReattachReplayByPty.delete(payload.id)
+      this.clearPendingReplayRetry(payload.id)
       this.store.markSshRemotePtyLease(this.targetId, relayPtyId, 'terminated')
       this.runtime?.onPtyExit(payload.id, payload.code)
       if (win) {
+        this.flushPendingPtyData(payload.id, win)
         sendToWindow(win, 'pty:exit', payload)
+        return
       }
+      this.enqueuePtyExitUntilOwned(payload)
     })
   }
 
@@ -979,6 +1021,128 @@ export class SshRelaySession {
       return getMainWindowById(ownerWindowId)
     }
     return null
+  }
+
+  private enqueuePtyDataUntilOwned(payload: PendingPtyDataPayload): void {
+    const pending = this.ensurePendingPtyDataRetry(payload.id)
+    pending.payloads.push(payload)
+    pending.totalChars += payload.data.length
+    this.schedulePendingPtyDataFlush(payload.id, pending)
+  }
+
+  private ensurePendingPtyDataRetry(ptyId: string): PendingPtyData {
+    const now = Date.now()
+    let pending = this.pendingPtyDataByPty.get(ptyId)
+    if (!pending) {
+      pending = { firstAttemptAt: now, payloads: [], totalChars: 0, timer: null }
+      this.pendingPtyDataByPty.set(ptyId, pending)
+    }
+    return pending
+  }
+
+  private enqueuePtyExitUntilOwned(payload: { id: string; code: number }): void {
+    const pending = this.ensurePendingPtyDataRetry(payload.id)
+    this.pendingPtyExitByPty.set(payload.id, { code: payload.code })
+    this.schedulePendingPtyDataFlush(payload.id, pending)
+  }
+
+  private schedulePendingPtyDataFlush(ptyId: string, pending: PendingPtyData): void {
+    if (pending.timer) {
+      return
+    }
+    pending.timer = setTimeout(() => {
+      pending.timer = null
+      this.tryFlushPendingPtyData(ptyId)
+    }, PENDING_PTY_DATA_OWNER_RETRY_MS)
+  }
+
+  private tryFlushPendingPtyData(ptyId: string): void {
+    if (this.isDisposed()) {
+      this.clearPendingPtyData(ptyId)
+      this.clearPendingPtyExit(ptyId)
+      return
+    }
+    const pending = this.pendingPtyDataByPty.get(ptyId)
+    const pendingExit = this.pendingPtyExitByPty.get(ptyId)
+    if (!pending && !pendingExit) {
+      return
+    }
+    const win = this.getOwnerWindowForPty(ptyId)
+    if (win) {
+      this.flushPendingPtyData(ptyId, win)
+      this.flushPendingPtyExit(ptyId, win)
+      return
+    }
+    if (pending && Date.now() - pending.firstAttemptAt > PENDING_PTY_DATA_OWNER_MAX_AGE_MS) {
+      this.clearPendingPtyData(ptyId)
+      this.clearPendingPtyExit(ptyId)
+      return
+    }
+    if (pending) {
+      this.schedulePendingPtyDataFlush(ptyId, pending)
+    }
+  }
+
+  private flushPendingPtyData(ptyId: string, win: BrowserWindow): void {
+    const pending = this.pendingPtyDataByPty.get(ptyId)
+    if (!pending) {
+      return
+    }
+    if (pending.timer) {
+      clearTimeout(pending.timer)
+    }
+    this.pendingPtyDataByPty.delete(ptyId)
+    for (const queued of pending.payloads) {
+      sendToWindow(win, 'pty:data', queued)
+    }
+  }
+
+  private flushPendingPtyExit(ptyId: string, win: BrowserWindow): void {
+    const pendingExit = this.pendingPtyExitByPty.get(ptyId)
+    if (!pendingExit) {
+      return
+    }
+    this.pendingPtyExitByPty.delete(ptyId)
+    sendToWindow(win, 'pty:exit', { id: ptyId, code: pendingExit.code })
+  }
+
+  private clearPendingPtyData(ptyId: string): void {
+    const pending = this.pendingPtyDataByPty.get(ptyId)
+    if (!pending) {
+      return
+    }
+    if (pending.timer) {
+      clearTimeout(pending.timer)
+    }
+    this.pendingPtyDataByPty.delete(ptyId)
+  }
+
+  private clearPendingPtyExit(ptyId: string): void {
+    this.pendingPtyExitByPty.delete(ptyId)
+  }
+
+  private clearAllPendingPtyData(): void {
+    for (const ptyId of this.pendingPtyDataByPty.keys()) {
+      this.clearPendingPtyData(ptyId)
+    }
+    this.pendingPtyExitByPty.clear()
+  }
+
+  private clearPendingReplayRetry(appPtyId: string): void {
+    const pending = this.pendingReplayRetriesByPty.get(appPtyId)
+    if (!pending) {
+      return
+    }
+    if (pending.timer) {
+      clearTimeout(pending.timer)
+    }
+    this.pendingReplayRetriesByPty.delete(appPtyId)
+  }
+
+  private clearAllPendingReplayRetries(): void {
+    for (const appPtyId of this.pendingReplayRetriesByPty.keys()) {
+      this.clearPendingReplayRetry(appPtyId)
+    }
   }
 
   private replayFingerprint(data: string): string {
@@ -999,14 +1163,39 @@ export class SshRelaySession {
     )
   }
 
-  private forwardReattachReplay(appPtyId: string, data: string): void {
-    if (!data || !this.shouldForwardReattachReplay(appPtyId, data)) {
+  private forwardReattachReplay(
+    appPtyId: string,
+    data: string,
+    firstAttemptAt = Date.now(),
+    generation = this.providerGeneration
+  ): void {
+    if (!data || this.isDisposed() || generation !== this.providerGeneration) {
+      this.clearPendingReplayRetry(appPtyId)
       return
     }
     const win = this.getOwnerWindowForPty(appPtyId)
     if (win) {
+      this.clearPendingReplayRetry(appPtyId)
+      if (!this.shouldForwardReattachReplay(appPtyId, data)) {
+        return
+      }
       sendToWindow(win, 'pty:replay', { id: appPtyId, data })
+      return
     }
+    if (Date.now() - firstAttemptAt > RECONNECT_REPLAY_OWNER_MAX_AGE_MS) {
+      this.clearPendingReplayRetry(appPtyId)
+      return
+    }
+    const previous = this.pendingReplayRetriesByPty.get(appPtyId)
+    if (previous?.timer) {
+      return
+    }
+    const pending = previous ?? { firstAttemptAt, timer: null }
+    pending.timer = setTimeout(() => {
+      pending.timer = null
+      this.forwardReattachReplay(appPtyId, data, pending.firstAttemptAt, generation)
+    }, RECONNECT_REPLAY_OWNER_RETRY_MS)
+    this.pendingReplayRetriesByPty.set(appPtyId, pending)
   }
 
   private async reattachKnownPtys(shouldContinue: () => boolean): Promise<void> {
@@ -1056,11 +1245,14 @@ export class SshRelaySession {
         deletePtyOwnership(appPtyId)
         this.forwardedReattachReplayByPty.delete(appPtyId)
         this.store.markSshRemotePtyLease(this.targetId, ptyId, 'expired')
+        this.runtime?.onPtyExit(appPtyId, -1)
         // Why: if the new relay cannot reattach this id, the remote backing
         // process is gone. Tell the renderer so it clears stale pane bindings
         // instead of keeping a cursor-only terminal.
         if (win) {
           sendToWindow(win, 'pty:exit', { id: appPtyId, code: -1 })
+        } else {
+          this.enqueuePtyExitUntilOwned({ id: appPtyId, code: -1 })
         }
       }
     }

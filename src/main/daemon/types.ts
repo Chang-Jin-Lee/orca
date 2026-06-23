@@ -7,9 +7,9 @@ import type { StartupCommandDelivery } from '../../shared/codex-startup-delivery
 // when daemon-baked behavior cannot be delivered by on-disk wrapper refresh.
 // Why: bump when adding daemon wire behavior so same-version old daemons do
 // not silently accept the handshake and then reject new RPCs.
-export const PROTOCOL_VERSION = 18
+export const PROTOCOL_VERSION = 19
 export const PREVIOUS_DAEMON_PROTOCOL_VERSIONS = [
-  1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17
+  1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18
 ] as const
 
 // ─── Session State Machine ──────────────────────────────────────────
@@ -137,6 +137,12 @@ export type ResizeRequest = {
     cols: number
     rows: number
   }
+}
+
+export type SetDataFlowPausedRequest = {
+  id: string
+  type: 'setDataFlowPaused'
+  payload: { sessionId: string; paused: boolean }
 }
 
 export type KillRequest = {
@@ -271,6 +277,7 @@ export type DaemonRequest =
   | CancelCreateOrAttachRequest
   | WriteRequest
   | ResizeRequest
+  | SetDataFlowPausedRequest
   | KillRequest
   | SignalRequest
   | ListSessionsRequest

@@ -290,6 +290,18 @@ describe('registerAppMenu', () => {
     expect(options.onNewWindow).not.toHaveBeenCalled()
   })
 
+  it('omits an empty macOS File menu when experimental multi-window support is disabled', () => {
+    const options = { ...buildMenuOptions(), multiWindowEnabled: false }
+    registerAppMenu(options)
+
+    const fileMenu = getTemplate().find((entry) => entry.label === 'File')
+    if (isMac) {
+      expect(fileMenu).toBeUndefined()
+    } else {
+      expect(fileMenu).toBeDefined()
+    }
+  })
+
   it('routes Feature tour through its callback', () => {
     const options = buildMenuOptions()
     registerAppMenu(options)

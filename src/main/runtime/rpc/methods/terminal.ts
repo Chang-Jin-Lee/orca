@@ -1054,9 +1054,10 @@ export const TERMINAL_METHODS: RpcAnyMethod[] = [
   defineMethod({
     name: 'terminal.stopExact',
     params: TerminalStopExact,
-    handler: async (params, { runtime }) =>
+    handler: async (params, { runtime, senderWindowId }) =>
       runtime.stopExactTerminalsForWorktree(params.worktree, params.expectedPtyIds, {
         keepHistory: params.keepHistory,
+        senderWindowId,
         targetOnly: params.targetOnly
       })
   }),

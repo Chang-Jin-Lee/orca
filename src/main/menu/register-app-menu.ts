@@ -155,6 +155,8 @@ function buildAndApplyMenu(options: RegisterAppMenuOptions): void {
           ] satisfies Electron.MenuItemConstructorOptions[]))
     ]
   }
+  const shouldIncludeFileMenu =
+    Array.isArray(fileMenu.submenu) && fileMenu.submenu.some((item) => item.type !== 'separator')
 
   const editMenu: Electron.MenuItemConstructorOptions = {
     label: translateMain('menu.edit', 'Edit'),
@@ -242,7 +244,7 @@ function buildAndApplyMenu(options: RegisterAppMenuOptions): void {
 
   const template: Electron.MenuItemConstructorOptions[] = [
     ...(isMac ? [macAppMenu] : []),
-    fileMenu,
+    ...(shouldIncludeFileMenu ? [fileMenu] : []),
     editMenu,
     viewMenu,
     windowMenu,

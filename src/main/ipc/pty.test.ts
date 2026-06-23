@@ -190,6 +190,7 @@ import {
   deletePtyOwnership,
   getPtyRendererDeliveryDebugSnapshot,
   resetPtyRendererDeliveryDebug,
+  resetPtyHandlerRegistrationStateForTests,
   getPtyIdForPaneKey,
   hasPendingRendererSerializerForPaneKey,
   setPtyOwnership,
@@ -257,6 +258,7 @@ describe('registerPtyHandlers', () => {
   const savedProcessPlatform = Object.getOwnPropertyDescriptor(process, 'platform')
 
   beforeEach(() => {
+    resetPtyHandlerRegistrationStateForTests()
     // Why: most PTY spawn tests assert POSIX shell behavior; Windows-specific
     // cases opt into win32 explicitly below.
     Object.defineProperty(process, 'platform', {
@@ -352,6 +354,8 @@ describe('registerPtyHandlers', () => {
       write: vi.fn(),
       resize: vi.fn(),
       kill: vi.fn(),
+      pause: vi.fn(),
+      resume: vi.fn(),
       process: 'zsh',
       pid: 12345
     })
@@ -438,7 +442,9 @@ describe('registerPtyHandlers', () => {
         }),
         write: vi.fn(),
         resize: vi.fn(),
-        kill: vi.fn()
+        kill: vi.fn(),
+        pause: vi.fn(),
+        resume: vi.fn()
       },
       emitData(data: string) {
         dataHandler?.(data)
@@ -533,7 +539,7 @@ describe('registerPtyHandlers', () => {
     event: unknown,
     args: { id: string; charCount: number }
   ) => void {
-    const ackCall = onMock.mock.calls.find((call: unknown[]) => call[0] === 'pty:ackData')
+    const ackCall = onMock.mock.calls.filter((call: unknown[]) => call[0] === 'pty:ackData').at(-1)
     if (!ackCall) {
       throw new Error('missing pty:ackData listener')
     }
@@ -5701,6 +5707,68 @@ describe('registerPtyHandlers', () => {
     }
   })
 
+  it('carries renderer in-flight ACK credit across handler re-registration', async () => {
+    vi.useFakeTimers()
+    const acknowledgeDataEvent = vi.fn()
+    const mockProc = createMockProc()
+    spawnMock.mockReturnValue(mockProc.proc)
+
+    try {
+      setLocalPtyProvider({
+        spawn: vi.fn(async () => ({ id: 'remote-like-pty' })),
+        write: vi.fn(),
+        resize: vi.fn(),
+        shutdown: vi.fn(),
+        sendSignal: vi.fn(),
+        getCwd: vi.fn(),
+        getInitialCwd: vi.fn(),
+        clearBuffer: vi.fn(),
+        acknowledgeDataEvent,
+        hasChildProcesses: vi.fn(),
+        getForegroundProcess: vi.fn(),
+        serialize: vi.fn(),
+        revive: vi.fn(),
+        onData: vi.fn((callback) => {
+          mockProc.proc.onData((data: string) => callback({ id: 'remote-like-pty', data }))
+          return () => {}
+        }),
+        onReplay: vi.fn(() => () => {}),
+        onExit: vi.fn(() => () => {}),
+        listProcesses: vi.fn(async () => []),
+        attach: vi.fn(),
+        getDefaultShell: vi.fn(),
+        getProfiles: vi.fn()
+      } as never)
+      registerPtyHandlers(mainWindow as never)
+      mainWindow.webContents.send.mockClear()
+
+      mockProc.emitData('remote-output')
+      vi.advanceTimersByTime(8)
+
+      expect(getPtyRendererDeliveryDebugSnapshot()).toMatchObject({
+        rendererInFlightPtyCount: 1,
+        rendererInFlightChars: 'remote-output'.length
+      })
+
+      registerPtyHandlers(mainWindow as never)
+      expect(getPtyRendererDeliveryDebugSnapshot()).toMatchObject({
+        rendererInFlightPtyCount: 1,
+        rendererInFlightChars: 'remote-output'.length
+      })
+
+      const ackData = getPtyAckDataListener()
+      ackData(null, { id: 'remote-like-pty', charCount: 1024 })
+
+      expect(acknowledgeDataEvent).toHaveBeenCalledWith('remote-like-pty', 'remote-output'.length)
+      expect(getPtyRendererDeliveryDebugSnapshot()).toMatchObject({
+        rendererInFlightPtyCount: 0,
+        rendererInFlightChars: 0
+      })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('reserves a bounded renderer lane for interactive output when bulk output is saturated', async () => {
     vi.useFakeTimers()
     const bulkProcs = Array.from({ length: 16 }, () => createMockProc())
@@ -5734,7 +5802,12 @@ describe('registerPtyHandlers', () => {
         vi.advanceTimersByTime(1)
       }
       expect(mainWindow.webContents.send).toHaveBeenCalledTimes(512)
-      expect(vi.getTimerCount()).toBe(0)
+      expect(getPtyRendererDeliveryDebugSnapshot()).toMatchObject({
+        sourcePausedPtyCount: 16
+      })
+      // Why: source-level pause keeps a sparse watchdog alive so paused
+      // PTYs cannot get stranded if a release edge is missed.
+      expect(vi.getTimerCount()).toBe(1)
 
       writeListener(mainWindowIpcEvent, {
         id: interactiveSpawn.id,
@@ -5770,7 +5843,184 @@ describe('registerPtyHandlers', () => {
     }
   })
 
+  it('lets fresh post-input output through after the active renderer reserve is occupied', async () => {
+    vi.useFakeTimers()
+    const bulkProcs = Array.from({ length: 16 }, () => createMockProc())
+    const backgroundInteractiveProc = createMockProc()
+    const interactiveProc = createMockProc()
+    for (const proc of [...bulkProcs, backgroundInteractiveProc, interactiveProc]) {
+      spawnMock.mockReturnValueOnce(proc.proc)
+    }
+
+    try {
+      registerPtyHandlers(mainWindow as never)
+      for (const _proc of bulkProcs) {
+        await handlers.get('pty:spawn')!(null, {
+          cols: 80,
+          rows: 24,
+          cwd: '/tmp'
+        })
+      }
+      const backgroundInteractiveSpawn = (await handlers.get('pty:spawn')!(null, {
+        cols: 80,
+        rows: 24,
+        cwd: '/tmp'
+      })) as { id: string }
+      const interactiveSpawn = (await handlers.get('pty:spawn')!(null, {
+        cols: 80,
+        rows: 24,
+        cwd: '/tmp'
+      })) as { id: string }
+      const writeListener = getPtyWriteListener()
+      const setActiveRendererPty = getPtySetActiveRendererPtyListener()
+      mainWindow.webContents.send.mockClear()
+
+      for (const proc of bulkProcs) {
+        proc.emitData('x'.repeat(600 * 1024))
+      }
+      vi.advanceTimersByTime(8)
+      for (let index = 0; index < 400; index++) {
+        vi.advanceTimersByTime(1)
+      }
+      expect(mainWindow.webContents.send).toHaveBeenCalledTimes(512)
+
+      setActiveRendererPty(null, { id: interactiveSpawn.id, active: true })
+      interactiveProc.emitData('r'.repeat(256 * 1024))
+      vi.advanceTimersByTime(8)
+      for (let index = 0; index < 400; index++) {
+        vi.advanceTimersByTime(1)
+      }
+      expect(mainWindow.webContents.send).toHaveBeenCalledTimes(528)
+      expect(getPtyRendererDeliveryDebugSnapshot()).toMatchObject({
+        rendererInFlightChars: 8 * 1024 * 1024 + 256 * 1024
+      })
+
+      writeListener(mainWindowIpcEvent, {
+        id: backgroundInteractiveSpawn.id,
+        data: 'a'
+      })
+      backgroundInteractiveProc.emitData('background-ready')
+      expect(mainWindow.webContents.send).toHaveBeenCalledTimes(528)
+
+      writeListener(mainWindowIpcEvent, {
+        id: interactiveSpawn.id,
+        data: 'a'
+      })
+      interactiveProc.emitData('OPENCODE_TYPING_READY_test\n')
+
+      expect(mainWindow.webContents.send).toHaveBeenCalledTimes(529)
+      expect(mainWindow.webContents.send).toHaveBeenNthCalledWith(529, 'pty:data', {
+        id: interactiveSpawn.id,
+        data: 'OPENCODE_TYPING_READY_test\n'
+      })
+      setActiveRendererPty(null, { id: interactiveSpawn.id, active: false })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('keeps the active renderer reserve exclusive per sender window', async () => {
+    vi.useFakeTimers()
+    const bulkProcs = Array.from({ length: 16 }, () => createMockProc())
+    const staleActiveProc = createMockProc()
+    const activeProc = createMockProc()
+    for (const proc of [...bulkProcs, staleActiveProc, activeProc]) {
+      spawnMock.mockReturnValueOnce(proc.proc)
+    }
+
+    try {
+      registerPtyHandlers(mainWindow as never)
+      for (const _proc of bulkProcs) {
+        await handlers.get('pty:spawn')!(mainWindowIpcEvent, {
+          cols: 80,
+          rows: 24,
+          cwd: '/tmp'
+        })
+      }
+      const staleActiveSpawn = (await handlers.get('pty:spawn')!(mainWindowIpcEvent, {
+        cols: 80,
+        rows: 24,
+        cwd: '/tmp'
+      })) as { id: string }
+      const activeSpawn = (await handlers.get('pty:spawn')!(mainWindowIpcEvent, {
+        cols: 80,
+        rows: 24,
+        cwd: '/tmp'
+      })) as { id: string }
+      const setActiveRendererPty = getPtySetActiveRendererPtyListener()
+      mainWindow.webContents.send.mockClear()
+
+      vi.advanceTimersByTime(501)
+      for (const proc of bulkProcs) {
+        proc.emitData('x'.repeat(600 * 1024))
+      }
+      vi.advanceTimersByTime(8)
+      for (let index = 0; index < 400; index++) {
+        vi.advanceTimersByTime(1)
+      }
+      expect(mainWindow.webContents.send).toHaveBeenCalledTimes(512)
+
+      setActiveRendererPty(mainWindowIpcEvent, { id: staleActiveSpawn.id, active: true })
+      setActiveRendererPty(mainWindowIpcEvent, { id: activeSpawn.id, active: true })
+      staleActiveProc.emitData('stale-active-output')
+      activeProc.emitData('current-active-output')
+      vi.advanceTimersByTime(8)
+
+      expect(getPtyRendererDeliveryDebugSnapshot()).toMatchObject({
+        activeRendererPtyCount: 1
+      })
+      expect(mainWindow.webContents.send).toHaveBeenCalledTimes(513)
+      expect(mainWindow.webContents.send).toHaveBeenNthCalledWith(513, 'pty:data', {
+        id: activeSpawn.id,
+        data: 'current-active-output'
+      })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('caps total renderer in-flight output across many PTYs', async () => {
+    vi.useFakeTimers()
+    const procs = Array.from({ length: 17 }, () => createMockProc())
+    for (const proc of procs) {
+      spawnMock.mockReturnValueOnce(proc.proc)
+    }
+
+    try {
+      registerPtyHandlers(mainWindow as never)
+      const spawns: { id: string }[] = []
+      for (const _proc of procs) {
+        spawns.push(
+          (await handlers.get('pty:spawn')!(null, {
+            cols: 80,
+            rows: 24,
+            cwd: '/tmp'
+          })) as { id: string }
+        )
+      }
+      const ackData = getPtyAckDataListener()
+      mainWindow.webContents.send.mockClear()
+
+      vi.advanceTimersByTime(501)
+      for (const proc of procs) {
+        proc.emitData('x'.repeat(600 * 1024))
+      }
+      vi.advanceTimersByTime(8)
+      for (let index = 0; index < 400; index++) {
+        vi.advanceTimersByTime(1)
+      }
+
+      expect(mainWindow.webContents.send).toHaveBeenCalledTimes(512)
+      ackData(null, { id: spawns[0].id, charCount: 16 * 1024 })
+      vi.advanceTimersByTime(1)
+
+      expect(mainWindow.webContents.send).toHaveBeenCalledTimes(513)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('pauses inactive local PTY reads while renderer ACK pressure is saturated', async () => {
     vi.useFakeTimers()
     const procs = Array.from({ length: 17 }, () => createMockProc())
     for (const proc of procs) {
@@ -5801,13 +6051,880 @@ describe('registerPtyHandlers', () => {
       }
 
       expect(mainWindow.webContents.send).toHaveBeenCalledTimes(512)
-      ackData(null, { id: spawns[0].id, charCount: 16 * 1024 })
+      expect(getPtyRendererDeliveryDebugSnapshot()).toMatchObject({
+        rendererInFlightChars: 8 * 1024 * 1024,
+        sourcePausedPtyCount: 17
+      })
+      expect(procs[0]!.proc.pause).toHaveBeenCalledTimes(1)
+
+      for (const spawn of spawns.slice(0, 14)) {
+        ackData(null, { id: spawn.id, charCount: 512 * 1024 })
+      }
       vi.advanceTimersByTime(1)
 
-      expect(mainWindow.webContents.send).toHaveBeenCalledTimes(513)
+      for (const proc of procs) {
+        expect(proc.proc.resume).toHaveBeenCalledTimes(1)
+      }
+      expect(getPtyRendererDeliveryDebugSnapshot()).toMatchObject({
+        sourcePausedPtyCount: 0
+      })
     } finally {
       vi.useRealTimers()
     }
+  })
+
+  it('caps active-window background ACK backlog before interactive output', async () => {
+    vi.useFakeTimers()
+    const backgroundProcs = Array.from({ length: 17 }, () => createMockProc())
+    const activeProc = createMockProc()
+    for (const proc of [...backgroundProcs, activeProc]) {
+      spawnMock.mockReturnValueOnce(proc.proc)
+    }
+
+    try {
+      registerPtyHandlers(mainWindow as never)
+      for (const _proc of backgroundProcs) {
+        await handlers.get('pty:spawn')!(null, {
+          cols: 80,
+          rows: 24,
+          cwd: '/tmp'
+        })
+      }
+      const activeSpawn = (await handlers.get('pty:spawn')!(null, {
+        cols: 80,
+        rows: 24,
+        cwd: '/tmp'
+      })) as { id: string }
+      const writeListener = getPtyWriteListener()
+      const setActiveRendererPty = getPtySetActiveRendererPtyListener()
+      mainWindow.webContents.send.mockClear()
+
+      setActiveRendererPty(mainWindowIpcEvent, { id: activeSpawn.id, active: true })
+      for (const proc of backgroundProcs) {
+        proc.emitData('x'.repeat(600 * 1024))
+      }
+      vi.advanceTimersByTime(8)
+      for (let index = 0; index < 400; index++) {
+        vi.advanceTimersByTime(1)
+      }
+
+      expect(mainWindow.webContents.send).toHaveBeenCalledTimes(32)
+      expect(getPtyRendererDeliveryDebugSnapshot()).toMatchObject({
+        pendingPtyCount: 17,
+        rendererInFlightChars: 512 * 1024,
+        sourcePausedPtyCount: 17
+      })
+
+      writeListener(mainWindowIpcEvent, {
+        id: activeSpawn.id,
+        data: 'a'
+      })
+      activeProc.emitData('OPENCODE_TYPING_READY_test\n')
+
+      expect(mainWindow.webContents.send).toHaveBeenCalledTimes(33)
+      expect(mainWindow.webContents.send).toHaveBeenNthCalledWith(33, 'pty:data', {
+        id: activeSpawn.id,
+        data: 'OPENCODE_TYPING_READY_test\n'
+      })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('does not mark a PTY source-paused when provider pause fails', async () => {
+    vi.useFakeTimers()
+    const procs = Array.from({ length: 17 }, () => createMockProc())
+    procs[0]!.proc.pause.mockImplementation(() => {
+      throw new Error('pause failed')
+    })
+    for (const proc of procs) {
+      spawnMock.mockReturnValueOnce(proc.proc)
+    }
+
+    try {
+      registerPtyHandlers(mainWindow as never)
+      for (const _proc of procs) {
+        await handlers.get('pty:spawn')!(null, {
+          cols: 80,
+          rows: 24,
+          cwd: '/tmp'
+        })
+      }
+      mainWindow.webContents.send.mockClear()
+
+      for (const proc of procs) {
+        proc.emitData('x'.repeat(600 * 1024))
+      }
+      vi.advanceTimersByTime(8)
+      for (let index = 0; index < 400; index++) {
+        vi.advanceTimersByTime(1)
+      }
+
+      expect(procs[0]!.proc.pause).toHaveBeenCalled()
+      expect(getPtyRendererDeliveryDebugSnapshot()).toMatchObject({
+        sourcePausedPtyCount: 16
+      })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('keeps a PTY source-paused when resume throws and retries later', async () => {
+    vi.useFakeTimers()
+    const procs = Array.from({ length: 17 }, () => createMockProc())
+    for (const proc of procs) {
+      spawnMock.mockReturnValueOnce(proc.proc)
+    }
+
+    try {
+      registerPtyHandlers(mainWindow as never)
+      const spawns: { id: string }[] = []
+      for (const _proc of procs) {
+        spawns.push(
+          (await handlers.get('pty:spawn')!(null, {
+            cols: 80,
+            rows: 24,
+            cwd: '/tmp'
+          })) as { id: string }
+        )
+      }
+      const ackData = getPtyAckDataListener()
+      mainWindow.webContents.send.mockClear()
+
+      for (const proc of procs) {
+        proc.emitData('x'.repeat(600 * 1024))
+      }
+      vi.advanceTimersByTime(8)
+      for (let index = 0; index < 400; index++) {
+        vi.advanceTimersByTime(1)
+      }
+
+      expect(getPtyRendererDeliveryDebugSnapshot()).toMatchObject({
+        sourcePausedPtyCount: 17
+      })
+      procs[0]!.proc.resume.mockImplementation(() => {
+        throw new Error('resume failed')
+      })
+
+      for (const spawn of spawns.slice(0, 14)) {
+        ackData(null, { id: spawn.id, charCount: 512 * 1024 })
+      }
+      vi.advanceTimersByTime(1)
+
+      expect(procs[0]!.proc.resume).toHaveBeenCalled()
+      expect(getPtyRendererDeliveryDebugSnapshot()).toMatchObject({
+        sourcePausedPtyCount: 1
+      })
+
+      const failedResumeAttempts = procs[0]!.proc.resume.mock.calls.length
+      procs[0]!.proc.resume.mockImplementation(() => {})
+      ackData(null, { id: spawns[14]!.id, charCount: 512 * 1024 })
+      vi.advanceTimersByTime(1)
+
+      expect(procs[0]!.proc.resume).toHaveBeenCalledTimes(failedResumeAttempts + 1)
+      expect(getPtyRendererDeliveryDebugSnapshot()).toMatchObject({
+        sourcePausedPtyCount: 0
+      })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('carries a source-paused PTY across handler re-registration when resume throws', async () => {
+    vi.useFakeTimers()
+    const procs = Array.from({ length: 17 }, () => createMockProc())
+    for (const proc of procs) {
+      spawnMock.mockReturnValueOnce(proc.proc)
+    }
+
+    try {
+      registerPtyHandlers(mainWindow as never)
+      for (const _proc of procs) {
+        await handlers.get('pty:spawn')!(null, {
+          cols: 80,
+          rows: 24,
+          cwd: '/tmp'
+        })
+      }
+      mainWindow.webContents.send.mockClear()
+
+      for (const proc of procs) {
+        proc.emitData('x'.repeat(600 * 1024))
+      }
+      vi.advanceTimersByTime(8)
+      for (let index = 0; index < 400; index++) {
+        vi.advanceTimersByTime(1)
+      }
+
+      expect(getPtyRendererDeliveryDebugSnapshot()).toMatchObject({
+        sourcePausedPtyCount: 17
+      })
+      procs[0]!.proc.resume.mockImplementation(() => {
+        throw new Error('resume failed')
+      })
+
+      expect(() => registerPtyHandlers(mainWindow as never)).not.toThrow()
+      expect(getPtyRendererDeliveryDebugSnapshot().sourcePausedPtyCount).toBeGreaterThan(0)
+    } finally {
+      procs[0]?.proc.resume.mockImplementation(() => {})
+      resetPtyHandlerRegistrationStateForTests()
+      vi.useRealTimers()
+    }
+  })
+
+  it('ignores provider data-flow pause methods without the lossless capability', async () => {
+    vi.useFakeTimers()
+    const dataListeners: ((payload: { id: string; data: string }) => void)[] = []
+    let nextId = 0
+    const setDataFlowPaused = vi.fn(() => true)
+    setLocalPtyProvider({
+      spawn: vi.fn(async () => ({ id: `provider-pty-${++nextId}` })),
+      write: vi.fn(),
+      resize: vi.fn(),
+      shutdown: vi.fn(),
+      sendSignal: vi.fn(),
+      getCwd: vi.fn(),
+      getInitialCwd: vi.fn(),
+      clearBuffer: vi.fn(),
+      acknowledgeDataEvent: vi.fn(),
+      setDataFlowPaused,
+      hasChildProcesses: vi.fn(),
+      getForegroundProcess: vi.fn(),
+      serialize: vi.fn(),
+      revive: vi.fn(),
+      onData: vi.fn((callback) => {
+        dataListeners.push(callback)
+        return () => {}
+      }),
+      onReplay: vi.fn(() => () => {}),
+      onExit: vi.fn(() => () => {}),
+      listProcesses: vi.fn(async () => []),
+      attach: vi.fn(),
+      getDefaultShell: vi.fn(),
+      getProfiles: vi.fn()
+    } as never)
+
+    try {
+      registerPtyHandlers(mainWindow as never)
+      const spawns: { id: string }[] = []
+      for (let index = 0; index < 17; index++) {
+        spawns.push(
+          (await handlers.get('pty:spawn')!(null, {
+            cols: 80,
+            rows: 24,
+            cwd: '/tmp'
+          })) as { id: string }
+        )
+      }
+      mainWindow.webContents.send.mockClear()
+
+      for (const spawn of spawns) {
+        for (const listener of dataListeners) {
+          listener({ id: spawn.id, data: 'x'.repeat(600 * 1024) })
+        }
+      }
+      vi.advanceTimersByTime(8)
+      for (let index = 0; index < 400; index++) {
+        vi.advanceTimersByTime(1)
+      }
+
+      expect(setDataFlowPaused).not.toHaveBeenCalled()
+      expect(getPtyRendererDeliveryDebugSnapshot()).toMatchObject({
+        rendererInFlightChars: 8 * 1024 * 1024,
+        sourcePausedPtyCount: 0
+      })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('keeps a PTY source-paused if provider support disappears before resume', async () => {
+    vi.useFakeTimers()
+    const dataListeners: ((payload: { id: string; data: string }) => void)[] = []
+    let nextId = 0
+    const provider = {
+      supportsLosslessDataFlowPause: true,
+      spawn: vi.fn(async () => ({ id: `provider-pty-${++nextId}` })),
+      write: vi.fn(),
+      resize: vi.fn(),
+      shutdown: vi.fn(),
+      sendSignal: vi.fn(),
+      getCwd: vi.fn(),
+      getInitialCwd: vi.fn(),
+      clearBuffer: vi.fn(),
+      acknowledgeDataEvent: vi.fn(),
+      setDataFlowPaused: vi.fn(() => true),
+      hasChildProcesses: vi.fn(),
+      getForegroundProcess: vi.fn(),
+      serialize: vi.fn(),
+      revive: vi.fn(),
+      onData: vi.fn((callback) => {
+        dataListeners.push(callback)
+        return () => {}
+      }),
+      onReplay: vi.fn(() => () => {}),
+      onExit: vi.fn(() => () => {}),
+      listProcesses: vi.fn(async () => []),
+      attach: vi.fn(),
+      getDefaultShell: vi.fn(),
+      getProfiles: vi.fn()
+    }
+    setLocalPtyProvider(provider as never)
+    const spawns: { id: string }[] = []
+    let ackData: ((event: unknown, args: { id: string; charCount: number }) => void) | null = null
+
+    try {
+      registerPtyHandlers(mainWindow as never)
+      for (let index = 0; index < 17; index++) {
+        spawns.push(
+          (await handlers.get('pty:spawn')!(null, {
+            cols: 80,
+            rows: 24,
+            cwd: '/tmp'
+          })) as { id: string }
+        )
+      }
+      ackData = getPtyAckDataListener()
+      mainWindow.webContents.send.mockClear()
+
+      for (const spawn of spawns) {
+        for (const listener of dataListeners) {
+          listener({ id: spawn.id, data: 'x'.repeat(600 * 1024) })
+        }
+      }
+      vi.advanceTimersByTime(8)
+      for (let index = 0; index < 400; index++) {
+        vi.advanceTimersByTime(1)
+      }
+      expect(getPtyRendererDeliveryDebugSnapshot()).toMatchObject({
+        sourcePausedPtyCount: 17
+      })
+
+      provider.supportsLosslessDataFlowPause = false
+      for (const spawn of spawns.slice(0, 14)) {
+        ackData(null, { id: spawn.id, charCount: 512 * 1024 })
+      }
+      vi.advanceTimersByTime(1)
+
+      expect(getPtyRendererDeliveryDebugSnapshot()).toMatchObject({
+        sourcePausedPtyCount: 17
+      })
+
+      provider.supportsLosslessDataFlowPause = true
+      for (const spawn of spawns.slice(14)) {
+        ackData(null, { id: spawn.id, charCount: 512 * 1024 })
+      }
+      vi.advanceTimersByTime(1)
+      expect(getPtyRendererDeliveryDebugSnapshot()).toMatchObject({
+        sourcePausedPtyCount: 0
+      })
+    } finally {
+      provider.supportsLosslessDataFlowPause = true
+      if (ackData) {
+        for (const spawn of spawns) {
+          ackData(null, { id: spawn.id, charCount: 512 * 1024 })
+        }
+        vi.advanceTimersByTime(1)
+      }
+      vi.useRealTimers()
+    }
+  })
+
+  it('keeps renderer backpressure behavior when provider has no pause method', async () => {
+    vi.useFakeTimers()
+    const dataListeners: ((payload: { id: string; data: string }) => void)[] = []
+    let nextId = 0
+    setLocalPtyProvider({
+      spawn: vi.fn(async () => ({ id: `no-pause-pty-${++nextId}` })),
+      write: vi.fn(),
+      resize: vi.fn(),
+      shutdown: vi.fn(),
+      sendSignal: vi.fn(),
+      getCwd: vi.fn(),
+      getInitialCwd: vi.fn(),
+      clearBuffer: vi.fn(),
+      acknowledgeDataEvent: vi.fn(),
+      supportsLosslessDataFlowPause: true,
+      hasChildProcesses: vi.fn(),
+      getForegroundProcess: vi.fn(),
+      serialize: vi.fn(),
+      revive: vi.fn(),
+      onData: vi.fn((callback) => {
+        dataListeners.push(callback)
+        return () => {}
+      }),
+      onReplay: vi.fn(() => () => {}),
+      onExit: vi.fn(() => () => {}),
+      listProcesses: vi.fn(async () => []),
+      attach: vi.fn(),
+      getDefaultShell: vi.fn(),
+      getProfiles: vi.fn()
+    } as never)
+
+    try {
+      registerPtyHandlers(mainWindow as never)
+      const spawns: { id: string }[] = []
+      for (let index = 0; index < 17; index++) {
+        spawns.push(
+          (await handlers.get('pty:spawn')!(null, {
+            cols: 80,
+            rows: 24,
+            cwd: '/tmp'
+          })) as { id: string }
+        )
+      }
+      mainWindow.webContents.send.mockClear()
+
+      for (const spawn of spawns) {
+        for (const listener of dataListeners) {
+          listener({ id: spawn.id, data: 'x'.repeat(600 * 1024) })
+        }
+      }
+      vi.advanceTimersByTime(8)
+      for (let index = 0; index < 400; index++) {
+        vi.advanceTimersByTime(1)
+      }
+
+      expect(getPtyRendererDeliveryDebugSnapshot()).toMatchObject({
+        rendererInFlightChars: 8 * 1024 * 1024,
+        sourcePausedPtyCount: 0
+      })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('keeps inactive PTY reads paused during the post-input quiet window', async () => {
+    vi.useFakeTimers()
+    const backgroundProcs = Array.from({ length: 17 }, () => createMockProc())
+    const activeProc = createMockProc()
+    for (const proc of [...backgroundProcs, activeProc]) {
+      spawnMock.mockReturnValueOnce(proc.proc)
+    }
+
+    try {
+      registerPtyHandlers(mainWindow as never)
+      const backgroundSpawns: { id: string }[] = []
+      for (const _proc of backgroundProcs) {
+        backgroundSpawns.push(
+          (await handlers.get('pty:spawn')!(null, {
+            cols: 80,
+            rows: 24,
+            cwd: '/tmp'
+          })) as { id: string }
+        )
+      }
+      const activeSpawn = (await handlers.get('pty:spawn')!(null, {
+        cols: 80,
+        rows: 24,
+        cwd: '/tmp'
+      })) as { id: string }
+      const ackData = getPtyAckDataListener()
+      const writeListener = getPtyWriteListener()
+      const setActiveRendererPty = getPtySetActiveRendererPtyListener()
+      mainWindow.webContents.send.mockClear()
+
+      for (const proc of backgroundProcs) {
+        proc.emitData('x'.repeat(600 * 1024))
+      }
+      vi.advanceTimersByTime(8)
+      for (let index = 0; index < 400; index++) {
+        vi.advanceTimersByTime(1)
+      }
+      expect(getPtyRendererDeliveryDebugSnapshot()).toMatchObject({
+        rendererInFlightChars: 8 * 1024 * 1024,
+        sourcePausedPtyCount: 17
+      })
+
+      setActiveRendererPty(null, { id: activeSpawn.id, active: true })
+      vi.advanceTimersByTime(2_001)
+      writeListener(mainWindowIpcEvent, {
+        id: activeSpawn.id,
+        data: 'a'
+      })
+      for (const spawn of backgroundSpawns.slice(0, 14)) {
+        ackData(null, { id: spawn.id, charCount: 512 * 1024 })
+      }
+      vi.advanceTimersByTime(1)
+
+      for (const proc of backgroundProcs) {
+        expect(proc.proc.resume).not.toHaveBeenCalled()
+      }
+      expect(getPtyRendererDeliveryDebugSnapshot()).toMatchObject({
+        sourcePausedPtyCount: 17
+      })
+
+      vi.advanceTimersByTime(1_000)
+
+      for (const proc of backgroundProcs) {
+        expect(proc.proc.resume).not.toHaveBeenCalled()
+      }
+      expect(getPtyRendererDeliveryDebugSnapshot()).toMatchObject({
+        sourcePausedPtyCount: 17
+      })
+
+      for (const spawn of backgroundSpawns.slice(14)) {
+        ackData(null, { id: spawn.id, charCount: 512 * 1024 })
+      }
+      vi.advanceTimersByTime(1)
+
+      for (const proc of backgroundProcs) {
+        expect(proc.proc.resume).toHaveBeenCalledTimes(1)
+      }
+      expect(getPtyRendererDeliveryDebugSnapshot()).toMatchObject({
+        sourcePausedPtyCount: 0
+      })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('does not poll deferred background flushes during the post-input quiet window', async () => {
+    vi.useFakeTimers()
+    const backgroundProcs = Array.from({ length: 17 }, () => createMockProc())
+    const activeProc = createMockProc()
+    for (const proc of [...backgroundProcs, activeProc]) {
+      spawnMock.mockReturnValueOnce(proc.proc)
+    }
+
+    try {
+      registerPtyHandlers(mainWindow as never)
+      const backgroundSpawns: { id: string }[] = []
+      for (const _proc of backgroundProcs) {
+        backgroundSpawns.push(
+          (await handlers.get('pty:spawn')!(null, {
+            cols: 80,
+            rows: 24,
+            cwd: '/tmp'
+          })) as { id: string }
+        )
+      }
+      const activeSpawn = (await handlers.get('pty:spawn')!(null, {
+        cols: 80,
+        rows: 24,
+        cwd: '/tmp'
+      })) as { id: string }
+      const ackData = getPtyAckDataListener()
+      const writeListener = getPtyWriteListener()
+      const setActiveRendererPty = getPtySetActiveRendererPtyListener()
+      mainWindow.webContents.send.mockClear()
+
+      setActiveRendererPty(null, { id: activeSpawn.id, active: true })
+      for (const proc of backgroundProcs) {
+        proc.emitData('x'.repeat(600 * 1024))
+      }
+      vi.advanceTimersByTime(8)
+      for (let index = 0; index < 400; index++) {
+        vi.advanceTimersByTime(1)
+      }
+      expect(getPtyRendererDeliveryDebugSnapshot()).toMatchObject({
+        sourcePausedPtyCount: 17
+      })
+
+      vi.advanceTimersByTime(2_001)
+      writeListener(mainWindowIpcEvent, {
+        id: activeSpawn.id,
+        data: 'a'
+      })
+      backgroundProcs[0]!.emitData('y'.repeat(16 * 1024))
+      for (const spawn of backgroundSpawns.slice(0, 4)) {
+        ackData(null, { id: spawn.id, charCount: 128 * 1024 })
+      }
+      vi.advanceTimersByTime(1)
+
+      const beforeNextFlush = performance.now()
+      vi.advanceTimersToNextTimer()
+
+      expect(performance.now() - beforeNextFlush).toBeGreaterThanOrEqual(900)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('resumes a paused inactive PTY immediately when it becomes active', async () => {
+    vi.useFakeTimers()
+    const procs = Array.from({ length: 17 }, () => createMockProc())
+    for (const proc of procs) {
+      spawnMock.mockReturnValueOnce(proc.proc)
+    }
+
+    try {
+      registerPtyHandlers(mainWindow as never)
+      const spawns: { id: string }[] = []
+      for (const _proc of procs) {
+        spawns.push(
+          (await handlers.get('pty:spawn')!(null, {
+            cols: 80,
+            rows: 24,
+            cwd: '/tmp'
+          })) as { id: string }
+        )
+      }
+      const setActiveRendererPty = getPtySetActiveRendererPtyListener()
+      mainWindow.webContents.send.mockClear()
+
+      for (const proc of procs) {
+        proc.emitData('x'.repeat(600 * 1024))
+      }
+      vi.advanceTimersByTime(8)
+      for (let index = 0; index < 400; index++) {
+        vi.advanceTimersByTime(1)
+      }
+
+      expect(getPtyRendererDeliveryDebugSnapshot()).toMatchObject({
+        sourcePausedPtyCount: 17
+      })
+
+      setActiveRendererPty(mainWindowIpcEvent, { id: spawns[0]!.id, active: true })
+
+      expect(procs[0]!.proc.resume).toHaveBeenCalledTimes(1)
+      expect(getPtyRendererDeliveryDebugSnapshot()).toMatchObject({
+        sourcePausedPtyCount: 16
+      })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('clears local provider pause state when a paused PTY exits', async () => {
+    vi.useFakeTimers()
+    const firstProcs = Array.from({ length: 17 }, () => createMockProc())
+    const secondProc = createMockProc()
+    for (const proc of firstProcs) {
+      spawnMock.mockReturnValueOnce(proc.proc)
+    }
+    spawnMock.mockReturnValueOnce(secondProc.proc)
+
+    try {
+      registerPtyHandlers(mainWindow as never)
+      const spawns: { id: string }[] = []
+      for (let index = 0; index < firstProcs.length; index++) {
+        spawns.push(
+          (await handlers.get('pty:spawn')!(null, {
+            cols: 80,
+            rows: 24,
+            cwd: '/tmp',
+            sessionId: index === 0 ? 'reused-local-pty' : undefined
+          })) as { id: string }
+        )
+      }
+      mainWindow.webContents.send.mockClear()
+
+      for (const proc of firstProcs) {
+        proc.emitData('x'.repeat(600 * 1024))
+      }
+      vi.advanceTimersByTime(8)
+      for (let index = 0; index < 400; index++) {
+        vi.advanceTimersByTime(1)
+      }
+      expect(firstProcs[0]!.proc.pause).toHaveBeenCalledTimes(1)
+
+      firstProcs[0]!.emitExit(0)
+      await handlers.get('pty:spawn')!(null, {
+        cols: 80,
+        rows: 24,
+        cwd: '/tmp',
+        sessionId: spawns[0]!.id
+      })
+      mainWindow.webContents.send.mockClear()
+
+      secondProc.emitData('x'.repeat(600 * 1024))
+      vi.advanceTimersByTime(8)
+      for (let index = 0; index < 400; index++) {
+        vi.advanceTimersByTime(1)
+      }
+
+      expect(secondProc.proc.pause).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('pauses inactive PTY reads with renderer in-flight output and no pending buffer', async () => {
+    vi.useFakeTimers()
+    const backgroundProc = createMockProc()
+    const activeProc = createMockProc()
+    spawnMock.mockReturnValueOnce(backgroundProc.proc).mockReturnValueOnce(activeProc.proc)
+
+    try {
+      registerPtyHandlers(mainWindow as never)
+      await handlers.get('pty:spawn')!(null, {
+        cols: 80,
+        rows: 24,
+        cwd: '/tmp'
+      })
+      const activeSpawn = (await handlers.get('pty:spawn')!(null, {
+        cols: 80,
+        rows: 24,
+        cwd: '/tmp'
+      })) as { id: string }
+      const setActiveRendererPty = getPtySetActiveRendererPtyListener()
+      mainWindow.webContents.send.mockClear()
+
+      backgroundProc.emitData('background-output')
+      vi.advanceTimersByTime(8)
+
+      expect(mainWindow.webContents.send).toHaveBeenCalledTimes(1)
+      expect(getPtyRendererDeliveryDebugSnapshot()).toMatchObject({
+        pendingPtyCount: 0,
+        rendererInFlightChars: 'background-output'.length,
+        sourcePausedPtyCount: 0
+      })
+
+      setActiveRendererPty(null, { id: activeSpawn.id, active: true })
+
+      // Why: active input quieting must cover ACK-held renderer output even
+      // after the main-side pending buffer has already drained.
+      expect(backgroundProc.proc.pause).toHaveBeenCalledTimes(1)
+      expect(getPtyRendererDeliveryDebugSnapshot()).toMatchObject({
+        pendingPtyCount: 0,
+        sourcePausedPtyCount: 1
+      })
+
+      vi.advanceTimersByTime(2_001)
+
+      expect(backgroundProc.proc.resume).toHaveBeenCalledTimes(1)
+      expect(getPtyRendererDeliveryDebugSnapshot()).toMatchObject({
+        sourcePausedPtyCount: 0
+      })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('preserves source backpressure after handler re-registration while renderer ACKs are in flight', async () => {
+    vi.useFakeTimers()
+    const procs = Array.from({ length: 17 }, () => createMockProc())
+    for (const proc of procs) {
+      spawnMock.mockReturnValueOnce(proc.proc)
+    }
+
+    try {
+      registerPtyHandlers(mainWindow as never)
+      for (const _proc of procs) {
+        await handlers.get('pty:spawn')!(null, {
+          cols: 80,
+          rows: 24,
+          cwd: '/tmp'
+        })
+      }
+      mainWindow.webContents.send.mockClear()
+
+      for (const proc of procs) {
+        proc.emitData('x'.repeat(600 * 1024))
+      }
+      vi.advanceTimersByTime(8)
+      for (let index = 0; index < 400; index++) {
+        vi.advanceTimersByTime(1)
+      }
+
+      expect(getPtyRendererDeliveryDebugSnapshot()).toMatchObject({
+        sourcePausedPtyCount: 17
+      })
+
+      registerPtyHandlers(mainWindow as never)
+
+      for (const proc of procs) {
+        expect(proc.proc.resume).toHaveBeenCalledTimes(1)
+      }
+      expect(getPtyRendererDeliveryDebugSnapshot()).toMatchObject({
+        rendererInFlightChars: 8 * 1024 * 1024,
+        sourcePausedPtyCount: 17
+      })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('carries pending PTY output across handler re-registration', async () => {
+    vi.useFakeTimers()
+    const proc = createMockProc()
+    spawnMock.mockReturnValueOnce(proc.proc)
+
+    try {
+      registerPtyHandlers(mainWindow as never)
+      const result = (await handlers.get('pty:spawn')!(null, {
+        cols: 80,
+        rows: 24,
+        cwd: '/tmp'
+      })) as { id: string }
+      mainWindow.webContents.send.mockClear()
+
+      proc.emitData('queued output')
+      expect(getPtyRendererDeliveryDebugSnapshot()).toMatchObject({
+        pendingPtyCount: 1
+      })
+
+      registerPtyHandlers(mainWindow as never)
+      vi.advanceTimersByTime(0)
+
+      expect(mainWindow.webContents.send).toHaveBeenCalledWith('pty:data', {
+        id: result.id,
+        data: 'queued output'
+      })
+      expect(getPtyRendererDeliveryDebugSnapshot()).toMatchObject({
+        pendingPtyCount: 0
+      })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('ignores empty provider data without touching delivery or pause state', async () => {
+    const dataListeners: ((payload: { id: string; data: string }) => void)[] = []
+    const onPtyData = vi.fn()
+    setLocalPtyProvider({
+      spawn: vi.fn(async () => ({ id: 'empty-provider-pty' })),
+      write: vi.fn(),
+      resize: vi.fn(),
+      kill: vi.fn(),
+      shutdown: vi.fn(),
+      sendSignal: vi.fn(),
+      getCwd: vi.fn(),
+      getInitialCwd: vi.fn(),
+      clearBuffer: vi.fn(),
+      acknowledgeDataEvent: vi.fn(),
+      hasChildProcesses: vi.fn(),
+      getForegroundProcess: vi.fn(),
+      serialize: vi.fn(),
+      revive: vi.fn(),
+      onData: vi.fn((listener) => {
+        dataListeners.push(listener)
+        return () => {}
+      }),
+      onReplay: vi.fn(() => () => {}),
+      onExit: vi.fn(() => () => {}),
+      listProcesses: vi.fn(async () => []),
+      attach: vi.fn(),
+      getDefaultShell: vi.fn(),
+      getProfiles: vi.fn()
+    } as never)
+
+    registerPtyHandlers(
+      mainWindow as never,
+      {
+        onPtyData,
+        setPtyController: vi.fn(),
+        createPreAllocatedTerminalHandle: vi.fn(() => 'empty-provider-handle'),
+        registerPreAllocatedHandleForPty: vi.fn()
+      } as never
+    )
+    await handlers.get('pty:spawn')!(null, {
+      cols: 80,
+      rows: 24,
+      cwd: '/tmp'
+    })
+    mainWindow.webContents.send.mockClear()
+
+    expect(dataListeners).toHaveLength(1)
+    dataListeners[0]!({ id: 'empty-provider-pty', data: '' })
+
+    expect(onPtyData).not.toHaveBeenCalled()
+    expect(mainWindow.webContents.send).not.toHaveBeenCalled()
+    expect(getPtyRendererDeliveryDebugSnapshot()).toMatchObject({
+      pendingPtyCount: 0,
+      sourcePausedPtyCount: 0
+    })
   })
 
   it('prioritizes active PTY pending output during renderer backpressure', async () => {
@@ -5928,7 +7045,7 @@ describe('registerPtyHandlers', () => {
         id: spawnResult.id,
         data: 'a'
       })
-      vi.advanceTimersByTime(101)
+      vi.advanceTimersByTime(2_001)
       mainWindow.webContents.send.mockClear()
 
       mockProc.emitData('stale redraw')
@@ -6238,6 +7355,371 @@ describe('registerPtyHandlers', () => {
     expect(mockProc.proc.write).toHaveBeenCalledWith('allowed')
     expect(mockProc.proc.resize).toHaveBeenCalledWith(100, 30)
     expect(runtime.onExternalPtyResize).toHaveBeenCalledWith(result.id, 100, 30)
+  })
+
+  it('accepts renderer data ACKs from the delivery window while ownership is reloading', async () => {
+    vi.useFakeTimers()
+    try {
+      const mockProc = createMockProc()
+      spawnMock.mockReturnValue(mockProc.proc)
+      const ownerWindow = {
+        id: 1,
+        isDestroyed: () => false,
+        webContents: { on: vi.fn(), send: vi.fn(), removeListener: vi.fn() }
+      }
+      const otherWindow = {
+        id: 2,
+        isDestroyed: () => false,
+        webContents: { on: vi.fn(), send: vi.fn(), removeListener: vi.fn() }
+      }
+      getMainWindowByIdMock.mockImplementation((windowId: number) =>
+        windowId === ownerWindow.id ? ownerWindow : null
+      )
+      getMainWindowForWebContentsMock.mockImplementation((sender) => {
+        if (sender === ownerWindow.webContents) {
+          return ownerWindow
+        }
+        if (sender === otherWindow.webContents) {
+          return otherWindow
+        }
+        return null
+      })
+      let ownerWindowId: number | null = ownerWindow.id
+      const runtime = {
+        resolveOwnerWindowIdForPtyId: vi.fn(() => ownerWindowId),
+        getDriver: vi.fn(() => ({ kind: 'desktop' })),
+        getPtyOutputSequence: vi.fn(),
+        onPtySpawned: vi.fn(),
+        onPtyData: vi.fn(),
+        preAllocateHandleForPty: vi.fn(() => 'term-delivery-window-ack-test'),
+        registerPreAllocatedHandleForPty: vi.fn(),
+        registerPtyOwnerWindow: vi.fn(),
+        setPtyController: vi.fn()
+      }
+
+      registerPtyHandlers(ownerWindow as never, runtime as never)
+      const result = (await handlers.get('pty:spawn')!(
+        { sender: ownerWindow.webContents },
+        { cols: 80, rows: 24 }
+      )) as { id: string }
+      const ackData = getPtyAckDataListener()
+      ownerWindow.webContents.send.mockClear()
+
+      mockProc.emitData('x'.repeat(600 * 1024))
+      vi.advanceTimersByTime(8)
+      for (let index = 0; index < 31; index++) {
+        vi.advanceTimersByTime(1)
+      }
+      expect(ownerWindow.webContents.send).toHaveBeenCalledTimes(32)
+
+      ownerWindowId = null
+      ackData({ sender: otherWindow.webContents }, { id: result.id, charCount: 16 * 1024 })
+      vi.advanceTimersByTime(1)
+      expect(ownerWindow.webContents.send).toHaveBeenCalledTimes(32)
+
+      ackData({ sender: ownerWindow.webContents }, { id: result.id, charCount: 16 * 1024 })
+      vi.advanceTimersByTime(1)
+
+      expect(ownerWindow.webContents.send).toHaveBeenCalledTimes(32)
+      expect(getPtyRendererDeliveryDebugSnapshot()).toMatchObject({
+        rendererInFlightChars: 496 * 1024
+      })
+
+      ownerWindowId = ownerWindow.id
+      vi.advanceTimersByTime(8)
+
+      expect(ownerWindow.webContents.send).toHaveBeenCalledTimes(33)
+      expect(ownerWindow.webContents.send).toHaveBeenNthCalledWith(33, 'pty:data', {
+        id: result.id,
+        data: 'x'.repeat(16 * 1024)
+      })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('keeps renderer ACK credits for earlier delivery windows after PTY ownership moves', async () => {
+    vi.useFakeTimers()
+    try {
+      const mockProc = createMockProc()
+      spawnMock.mockReturnValue(mockProc.proc)
+      const firstWindow = {
+        id: 1,
+        isDestroyed: () => false,
+        webContents: { on: vi.fn(), send: vi.fn(), removeListener: vi.fn() }
+      }
+      const secondWindow = {
+        id: 2,
+        isDestroyed: () => false,
+        webContents: { on: vi.fn(), send: vi.fn(), removeListener: vi.fn() }
+      }
+      getMainWindowByIdMock.mockImplementation((windowId: number) => {
+        if (windowId === firstWindow.id) {
+          return firstWindow
+        }
+        if (windowId === secondWindow.id) {
+          return secondWindow
+        }
+        return null
+      })
+      getMainWindowForWebContentsMock.mockImplementation((sender) => {
+        if (sender === firstWindow.webContents) {
+          return firstWindow
+        }
+        if (sender === secondWindow.webContents) {
+          return secondWindow
+        }
+        return null
+      })
+      let ownerWindowId = firstWindow.id
+      const runtime = {
+        resolveOwnerWindowIdForPtyId: vi.fn(() => ownerWindowId),
+        getDriver: vi.fn(() => ({ kind: 'desktop' })),
+        getPtyOutputSequence: vi.fn(),
+        onPtySpawned: vi.fn(),
+        onPtyData: vi.fn(),
+        preAllocateHandleForPty: vi.fn(() => 'term-moved-owner-ack-test'),
+        registerPreAllocatedHandleForPty: vi.fn(),
+        registerPtyOwnerWindow: vi.fn(),
+        setPtyController: vi.fn()
+      }
+
+      registerPtyHandlers(firstWindow as never, runtime as never)
+      const result = (await handlers.get('pty:spawn')!(
+        { sender: firstWindow.webContents },
+        { cols: 80, rows: 24 }
+      )) as { id: string }
+      const ackData = getPtyAckDataListener()
+
+      mockProc.emitData('a')
+      vi.advanceTimersByTime(8)
+      expect(firstWindow.webContents.send).toHaveBeenCalledWith('pty:data', {
+        id: result.id,
+        data: 'a'
+      })
+
+      ownerWindowId = secondWindow.id
+      mockProc.emitData('b')
+      vi.advanceTimersByTime(8)
+      expect(secondWindow.webContents.send).toHaveBeenCalledWith('pty:data', {
+        id: result.id,
+        data: 'b'
+      })
+      expect(getPtyRendererDeliveryDebugSnapshot()).toMatchObject({
+        rendererInFlightChars: 2
+      })
+
+      ackData({ sender: firstWindow.webContents }, { id: result.id, charCount: 1 })
+      expect(getPtyRendererDeliveryDebugSnapshot()).toMatchObject({
+        rendererInFlightChars: 1
+      })
+
+      ackData({ sender: secondWindow.webContents }, { id: result.id, charCount: 1 })
+      expect(getPtyRendererDeliveryDebugSnapshot()).toMatchObject({
+        rendererInFlightChars: 0
+      })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('releases renderer ACK credits when the delivery window closes before ACKing', async () => {
+    vi.useFakeTimers()
+    try {
+      const closeHandlers: (() => void)[] = []
+      const ownerWindow = {
+        id: 1,
+        isDestroyed: () => false,
+        on: vi.fn((event: string, handler: () => void) => {
+          if (event === 'closed') {
+            closeHandlers.push(handler)
+          }
+        }),
+        webContents: { on: vi.fn(), send: vi.fn(), removeListener: vi.fn() }
+      }
+      getMainWindowByIdMock.mockImplementation((windowId: number) =>
+        windowId === ownerWindow.id ? ownerWindow : null
+      )
+      getMainWindowForWebContentsMock.mockImplementation((sender) =>
+        sender === ownerWindow.webContents ? ownerWindow : null
+      )
+
+      const acknowledgeDataEvent = vi.fn()
+      const dataListeners: ((payload: { id: string; data: string }) => void)[] = []
+      setLocalPtyProvider({
+        spawn: vi.fn(async () => ({ id: 'remote-like-close-pty' })),
+        write: vi.fn(),
+        resize: vi.fn(),
+        shutdown: vi.fn(),
+        sendSignal: vi.fn(),
+        getCwd: vi.fn(),
+        getInitialCwd: vi.fn(),
+        clearBuffer: vi.fn(),
+        acknowledgeDataEvent,
+        hasChildProcesses: vi.fn(),
+        getForegroundProcess: vi.fn(),
+        serialize: vi.fn(),
+        revive: vi.fn(),
+        onData: vi.fn((callback) => {
+          dataListeners.push(callback)
+          return () => {}
+        }),
+        onReplay: vi.fn(() => () => {}),
+        onExit: vi.fn(() => () => {}),
+        listProcesses: vi.fn(async () => []),
+        attach: vi.fn(),
+        getDefaultShell: vi.fn(),
+        getProfiles: vi.fn()
+      } as never)
+      const runtime = {
+        resolveOwnerWindowIdForPtyId: vi.fn(() => ownerWindow.id),
+        getDriver: vi.fn(() => ({ kind: 'desktop' })),
+        onPtySpawned: vi.fn(),
+        onPtyData: vi.fn(),
+        createPreAllocatedTerminalHandle: vi.fn(() => 'term-window-close-ack-test'),
+        preAllocateHandleForPty: vi.fn(() => 'term-window-close-ack-test'),
+        registerPreAllocatedHandleForPty: vi.fn(),
+        registerPtyOwnerWindow: vi.fn(),
+        setPtyController: vi.fn()
+      }
+
+      registerPtyHandlers(ownerWindow as never, runtime as never)
+      const result = (await handlers.get('pty:spawn')!(
+        { sender: ownerWindow.webContents },
+        { cols: 80, rows: 24 }
+      )) as { id: string }
+
+      expect(dataListeners).toHaveLength(1)
+      dataListeners[0]!({ id: result.id, data: 'remote-output' })
+      vi.advanceTimersByTime(8)
+      expect(getPtyRendererDeliveryDebugSnapshot()).toMatchObject({
+        rendererInFlightChars: 'remote-output'.length
+      })
+
+      expect(closeHandlers.length).toBeGreaterThan(0)
+      for (const emitClosed of closeHandlers) {
+        emitClosed()
+      }
+
+      expect(acknowledgeDataEvent).toHaveBeenCalledWith(result.id, 'remote-output'.length)
+      expect(getPtyRendererDeliveryDebugSnapshot()).toMatchObject({
+        rendererInFlightPtyCount: 0,
+        rendererInFlightChars: 0
+      })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('releases carried renderer ACK credits when an earlier delivery window closes after re-registration', async () => {
+    vi.useFakeTimers()
+    try {
+      const firstCloseHandlers: (() => void)[] = []
+      const firstWindow = {
+        id: 1,
+        isDestroyed: () => false,
+        on: vi.fn((event: string, handler: () => void) => {
+          if (event === 'closed') {
+            firstCloseHandlers.push(handler)
+          }
+        }),
+        webContents: { on: vi.fn(), send: vi.fn(), removeListener: vi.fn() }
+      }
+      const secondWindow = {
+        id: 2,
+        isDestroyed: () => false,
+        on: vi.fn(),
+        webContents: { on: vi.fn(), send: vi.fn(), removeListener: vi.fn() }
+      }
+      getMainWindowByIdMock.mockImplementation((windowId: number) => {
+        if (windowId === firstWindow.id) {
+          return firstWindow
+        }
+        if (windowId === secondWindow.id) {
+          return secondWindow
+        }
+        return null
+      })
+      getMainWindowForWebContentsMock.mockImplementation((sender) => {
+        if (sender === firstWindow.webContents) {
+          return firstWindow
+        }
+        if (sender === secondWindow.webContents) {
+          return secondWindow
+        }
+        return null
+      })
+
+      const acknowledgeDataEvent = vi.fn()
+      const dataListeners: ((payload: { id: string; data: string }) => void)[] = []
+      setLocalPtyProvider({
+        spawn: vi.fn(async () => ({ id: 'remote-like-carried-close-pty' })),
+        write: vi.fn(),
+        resize: vi.fn(),
+        shutdown: vi.fn(),
+        sendSignal: vi.fn(),
+        getCwd: vi.fn(),
+        getInitialCwd: vi.fn(),
+        clearBuffer: vi.fn(),
+        acknowledgeDataEvent,
+        hasChildProcesses: vi.fn(),
+        getForegroundProcess: vi.fn(),
+        serialize: vi.fn(),
+        revive: vi.fn(),
+        onData: vi.fn((callback) => {
+          dataListeners.push(callback)
+          return () => {}
+        }),
+        onReplay: vi.fn(() => () => {}),
+        onExit: vi.fn(() => () => {}),
+        listProcesses: vi.fn(async () => []),
+        attach: vi.fn(),
+        getDefaultShell: vi.fn(),
+        getProfiles: vi.fn()
+      } as never)
+      const runtime = {
+        resolveOwnerWindowIdForPtyId: vi.fn(() => firstWindow.id),
+        getDriver: vi.fn(() => ({ kind: 'desktop' })),
+        onPtySpawned: vi.fn(),
+        onPtyData: vi.fn(),
+        createPreAllocatedTerminalHandle: vi.fn(() => 'term-carried-window-close-ack-test'),
+        preAllocateHandleForPty: vi.fn(() => 'term-carried-window-close-ack-test'),
+        registerPreAllocatedHandleForPty: vi.fn(),
+        registerPtyOwnerWindow: vi.fn(),
+        setPtyController: vi.fn()
+      }
+
+      registerPtyHandlers(firstWindow as never, runtime as never)
+      const result = (await handlers.get('pty:spawn')!(
+        { sender: firstWindow.webContents },
+        { cols: 80, rows: 24 }
+      )) as { id: string }
+
+      expect(dataListeners).toHaveLength(1)
+      dataListeners[0]!({ id: result.id, data: 'remote-output' })
+      vi.advanceTimersByTime(8)
+      expect(getPtyRendererDeliveryDebugSnapshot()).toMatchObject({
+        rendererInFlightChars: 'remote-output'.length
+      })
+
+      registerPtyHandlers(secondWindow as never, runtime as never)
+      expect(getPtyRendererDeliveryDebugSnapshot()).toMatchObject({
+        rendererInFlightChars: 'remote-output'.length
+      })
+
+      expect(firstCloseHandlers.length).toBeGreaterThan(0)
+      for (const emitClosed of firstCloseHandlers) {
+        emitClosed()
+      }
+
+      expect(acknowledgeDataEvent).toHaveBeenCalledWith(result.id, 'remote-output'.length)
+      expect(getPtyRendererDeliveryDebugSnapshot()).toMatchObject({
+        rendererInFlightPtyCount: 0,
+        rendererInFlightChars: 0
+      })
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('upgrades legacy numeric pane keys when the spawn metadata proves the stable leaf', async () => {
@@ -7018,6 +8500,170 @@ describe('registerPtyHandlers', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+
+  it('notifies runtime when ownerless PTY output and exit expire before ownership appears', () => {
+    vi.useFakeTimers()
+    try {
+      let onData: ((payload: { id: string; data: string }) => void) | undefined
+      let onExit: ((payload: { id: string; code: number }) => void) | undefined
+      const runtime = {
+        setPtyController: vi.fn(),
+        onPtyData: vi.fn(() => undefined),
+        onPtyExit: vi.fn(),
+        resolveOwnerWindowIdForPtyId: vi.fn(() => null)
+      }
+      getMainWindowByIdMock.mockReturnValue(null)
+      setLocalPtyProvider({
+        spawn: vi.fn(),
+        write: vi.fn(),
+        resize: vi.fn(),
+        kill: vi.fn(),
+        shutdown: vi.fn(),
+        onData: vi.fn((listener) => {
+          onData = listener
+          return vi.fn()
+        }),
+        onExit: vi.fn((listener) => {
+          onExit = listener
+          return vi.fn()
+        }),
+        listProcesses: vi.fn(async () => []),
+        getForegroundProcess: vi.fn(async () => null)
+      } as never)
+
+      registerPtyHandlers(mainWindow as never, runtime as never)
+      onData?.({ id: 'ownerless-daemon-pty', data: 'final ownerless output' })
+      onExit?.({ id: 'ownerless-daemon-pty', code: 0 })
+
+      vi.advanceTimersByTime(2_100)
+
+      expect(mainWindow.webContents.send).not.toHaveBeenCalledWith('pty:exit', expect.anything())
+      expect(runtime.onPtyExit).toHaveBeenCalledWith('ownerless-daemon-pty', 0)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('notifies runtime once when provider exits before spawn ownership is registered', async () => {
+    vi.useFakeTimers()
+    try {
+      let onData: ((payload: { id: string; data: string }) => void) | undefined
+      let onExit: ((payload: { id: string; code: number }) => void) | undefined
+      let ownerWindowId: number | null = null
+      const ownerWindow = {
+        id: 1,
+        isDestroyed: () => false,
+        webContents: {
+          on: vi.fn(),
+          send: vi.fn(),
+          removeListener: vi.fn()
+        }
+      }
+      const runtime = {
+        setPtyController: vi.fn(),
+        onPtyData: vi.fn(() => undefined),
+        onPtyExit: vi.fn(),
+        createPreAllocatedTerminalHandle: vi.fn(() => 'terminal-handle-early-exit'),
+        registerPreAllocatedHandleForPty: vi.fn(),
+        registerPty: vi.fn(() => {
+          ownerWindowId = 1
+        }),
+        resolveOwnerWindowIdForPtyId: vi.fn(() => ownerWindowId)
+      }
+      getMainWindowByIdMock.mockImplementation((windowId: number) =>
+        windowId === 1 ? ownerWindow : null
+      )
+      setLocalPtyProvider({
+        spawn: vi.fn(async () => {
+          onData?.({ id: 'early-exit-pty', data: 'early final output' })
+          onExit?.({ id: 'early-exit-pty', code: 0 })
+          return { id: 'early-exit-pty' }
+        }),
+        write: vi.fn(),
+        resize: vi.fn(),
+        kill: vi.fn(),
+        shutdown: vi.fn(),
+        onData: vi.fn((listener) => {
+          onData = listener
+          return vi.fn()
+        }),
+        onExit: vi.fn((listener) => {
+          onExit = listener
+          return vi.fn()
+        }),
+        listProcesses: vi.fn(async () => []),
+        getForegroundProcess: vi.fn(async () => null)
+      } as never)
+
+      registerPtyHandlers(ownerWindow as never, runtime as never)
+      await handlers.get('pty:spawn')!(null, {
+        cols: 80,
+        rows: 24,
+        worktreeId: 'worktree-1'
+      })
+      vi.advanceTimersByTime(8)
+
+      expect(runtime.onPtyExit).toHaveBeenCalledTimes(1)
+      expect(runtime.onPtyExit).toHaveBeenCalledWith('early-exit-pty', 0)
+      expect(ownerWindow.webContents.send).toHaveBeenCalledWith('pty:exit', {
+        id: 'early-exit-pty',
+        code: 0
+      })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('delivers provider exit before notifying runtime that clears PTY ownership', () => {
+    let onExit: ((payload: { id: string; code: number }) => void) | undefined
+    let ownerWindowId: number | null = 1
+    const ownerWindow = {
+      id: 1,
+      isDestroyed: () => false,
+      webContents: {
+        on: vi.fn(),
+        send: vi.fn(),
+        removeListener: vi.fn()
+      }
+    }
+    const runtime = {
+      setPtyController: vi.fn(),
+      onPtyData: vi.fn(() => undefined),
+      onPtyExit: vi.fn(() => {
+        ownerWindowId = null
+      }),
+      resolveOwnerWindowIdForPtyId: vi.fn(() => ownerWindowId)
+    }
+    getMainWindowByIdMock.mockImplementation((windowId: number) =>
+      windowId === 1 ? ownerWindow : null
+    )
+    setLocalPtyProvider({
+      spawn: vi.fn(),
+      write: vi.fn(),
+      resize: vi.fn(),
+      kill: vi.fn(),
+      shutdown: vi.fn(),
+      onData: vi.fn(() => () => {}),
+      onExit: vi.fn((listener) => {
+        onExit = listener
+        return vi.fn()
+      }),
+      listProcesses: vi.fn(async () => []),
+      getForegroundProcess: vi.fn(async () => null)
+    } as never)
+
+    registerPtyHandlers(ownerWindow as never, runtime as never)
+    onExit?.({ id: 'daemon-pty', code: 0 })
+
+    expect(ownerWindow.webContents.send).toHaveBeenCalledWith('pty:exit', {
+      id: 'daemon-pty',
+      code: 0
+    })
+    expect(runtime.onPtyExit).toHaveBeenCalledWith('daemon-pty', 0)
+    const sendOrder = ownerWindow.webContents.send.mock.invocationCallOrder[0] ?? 0
+    const runtimeOrder = runtime.onPtyExit.mock.invocationCallOrder[0] ?? 0
+    expect(sendOrder).toBeLessThan(runtimeOrder)
   })
 
   it('blocks signal and kill requests from non-owning windows', async () => {

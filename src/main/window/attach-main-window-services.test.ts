@@ -839,12 +839,14 @@ describe('attachMainWindowServices', () => {
     const runtime = createRuntime()
     const oldWindowOnMock = vi.fn()
     const oldWindow = createMainWindow()
+    oldWindow.id = 1
     oldWindow.on = oldWindowOnMock
     attachMainWindowServices(oldWindow as never, createStore(), runtime as never)
     const oldClosedHandlers = getClosedHandlers(oldWindowOnMock)
 
     const newWindowOnMock = vi.fn()
     const newWindow = createMainWindow()
+    newWindow.id = 2
     newWindow.on = newWindowOnMock
     attachMainWindowServices(newWindow as never, createStore(), runtime as never)
 
@@ -856,6 +858,34 @@ describe('attachMainWindowServices', () => {
     expect(runtime.setNotifier).not.toHaveBeenCalledWith(null)
 
     for (const handler of getClosedHandlers(newWindowOnMock)) {
+      handler()
+    }
+    expect(runtime.setNotifier).toHaveBeenCalledWith(null)
+  })
+
+  it('keeps the registry-backed runtime notifier when the newest window closes first', () => {
+    const runtime = createRuntime()
+    const oldWindowOnMock = vi.fn()
+    const oldWindow = createMainWindow()
+    oldWindow.id = 1
+    oldWindow.on = oldWindowOnMock
+    attachMainWindowServices(oldWindow as never, createStore(), runtime as never)
+
+    const newWindowOnMock = vi.fn()
+    const newWindow = createMainWindow()
+    newWindow.id = 2
+    newWindow.on = newWindowOnMock
+    attachMainWindowServices(newWindow as never, createStore(), runtime as never)
+
+    runtime.setNotifier.mockClear()
+    for (const handler of getClosedHandlers(newWindowOnMock)) {
+      handler()
+    }
+
+    expect(runtime.markGraphUnavailable).toHaveBeenCalledWith(2)
+    expect(runtime.setNotifier).not.toHaveBeenCalledWith(null)
+
+    for (const handler of getClosedHandlers(oldWindowOnMock)) {
       handler()
     }
     expect(runtime.setNotifier).toHaveBeenCalledWith(null)

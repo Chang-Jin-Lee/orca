@@ -15653,7 +15653,7 @@ export class OrcaRuntimeService {
   async stopExactTerminalsForWorktree(
     worktreeSelector: string,
     expectedPtyIds: readonly string[],
-    opts: { keepHistory?: boolean; targetOnly?: boolean } = {}
+    opts: { keepHistory?: boolean; senderWindowId?: number; targetOnly?: boolean } = {}
   ): Promise<{
     stopped: number
     stoppedPtyIds: string[]
@@ -15678,11 +15678,19 @@ export class OrcaRuntimeService {
       throw new Error('terminal_liveness_unavailable')
     }
     const livePtyIds = this.getLivePtyIdsForWorktree(worktree.id, refreshedPtyLiveness)
+    const ownedLivePtyIds =
+      opts.senderWindowId === undefined
+        ? livePtyIds
+        : new Set(
+            [...livePtyIds].filter(
+              (ptyId) => this.resolveOwnerWindowIdForPtyId(ptyId) === opts.senderWindowId
+            )
+          )
     const targetOnly = opts.targetOnly === true
-    const expectedIsLive = [...expected].every((ptyId) => livePtyIds.has(ptyId))
-    if (targetOnly ? !expectedIsLive : !setsEqual(livePtyIds, expected)) {
+    const expectedIsLive = [...expected].every((ptyId) => ownedLivePtyIds.has(ptyId))
+    if (targetOnly ? !expectedIsLive : !setsEqual(ownedLivePtyIds, expected)) {
       const error = Object.assign(new Error('terminal_stop_pty_set_mismatch'), {
-        livePtyIds: [...livePtyIds].sort(),
+        livePtyIds: [...ownedLivePtyIds].sort(),
         expectedPtyIds: [...expected].sort()
       })
       throw error
@@ -15704,30 +15712,40 @@ export class OrcaRuntimeService {
       return {
         stopped: stoppedPtyIds.length,
         stoppedPtyIds,
-        livePtyIds: [...livePtyIds].sort(),
+        livePtyIds: [...ownedLivePtyIds].sort(),
         postStopVerified: false,
         postStopFailure: 'terminal_liveness_unavailable'
       }
     }
     const remainingLivePtyIds = this.getLivePtyIdsForWorktree(worktree.id, postStopLiveness)
-    const stoppedTargetsStillLive = [...expected].filter((ptyId) => remainingLivePtyIds.has(ptyId))
-    if (targetOnly ? stoppedTargetsStillLive.length > 0 : remainingLivePtyIds.size > 0) {
+    const remainingOwnedLivePtyIds =
+      opts.senderWindowId === undefined
+        ? remainingLivePtyIds
+        : new Set(
+            [...remainingLivePtyIds].filter(
+              (ptyId) => this.resolveOwnerWindowIdForPtyId(ptyId) === opts.senderWindowId
+            )
+          )
+    const stoppedTargetsStillLive = [...expected].filter((ptyId) =>
+      remainingOwnedLivePtyIds.has(ptyId)
+    )
+    if (targetOnly ? stoppedTargetsStillLive.length > 0 : remainingOwnedLivePtyIds.size > 0) {
       return {
         stopped: stoppedPtyIds.length,
         stoppedPtyIds,
-        livePtyIds: [...livePtyIds].sort(),
+        livePtyIds: [...ownedLivePtyIds].sort(),
         postStopVerified: false,
         postStopFailure: 'terminal_exact_stop_still_live',
-        remainingLivePtyIds: [...remainingLivePtyIds].sort()
+        remainingLivePtyIds: [...remainingOwnedLivePtyIds].sort()
       }
     }
     return {
       stopped: stoppedPtyIds.length,
       stoppedPtyIds,
-      livePtyIds: [...livePtyIds].sort(),
+      livePtyIds: [...ownedLivePtyIds].sort(),
       postStopVerified: true,
-      ...(targetOnly && remainingLivePtyIds.size > 0
-        ? { remainingLivePtyIds: [...remainingLivePtyIds].sort() }
+      ...(targetOnly && remainingOwnedLivePtyIds.size > 0
+        ? { remainingLivePtyIds: [...remainingOwnedLivePtyIds].sort() }
         : {})
     }
   }
@@ -15851,8 +15869,7 @@ export class OrcaRuntimeService {
   }
 
   private assertStableReadyGraph(expectedGraphEpoch: number): void {
-    void expectedGraphEpoch
-    if (this.graphStatus !== 'ready') {
+    if (this.graphStatus !== 'ready' || this.rendererGraphEpoch !== expectedGraphEpoch) {
       throw new Error('runtime_unavailable')
     }
   }

@@ -6,7 +6,6 @@ import { matchesSettingsSearch } from './settings-search'
 import { getExperimentalPaneSearchEntries, getExperimentalSearchEntry } from './experimental-search'
 import { HiddenExperimentalGroup } from './HiddenExperimentalGroup'
 import { ExperimentalMultiWindowSetting } from './ExperimentalMultiWindowSetting'
-import { ExperimentalSmartNewTabSetting } from './ExperimentalSmartNewTabSetting'
 import { NumberField, SettingsSwitch } from './SettingsFormControls'
 import { translate } from '@/i18n/i18n'
 import {
@@ -42,9 +41,6 @@ export function ExperimentalPane({
   ])
   const showWorktreeSymlinks = matchesSettingsSearch(searchQuery, [
     getExperimentalSearchEntry().symlinksOnWorktrees
-  ])
-  const showUnifiedNewTabLauncher = matchesSettingsSearch(searchQuery, [
-    getExperimentalSearchEntry().unifiedNewTabLauncher
   ])
   const showMultiWindow = matchesSettingsSearch(searchQuery, [
     getExperimentalSearchEntry().multiWindow
@@ -369,13 +365,6 @@ export function ExperimentalPane({
             </button>
           </div>
         </SearchableSetting>
-      ) : null}
-
-      {showUnifiedNewTabLauncher ? (
-        <ExperimentalSmartNewTabSetting
-          enabled={settings.experimentalUnifiedNewTabLauncher}
-          updateSettings={updateSettings}
-        />
       ) : null}
 
       {showMultiWindow ? (

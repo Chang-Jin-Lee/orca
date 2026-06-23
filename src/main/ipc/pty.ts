@@ -5,12 +5,7 @@ boundary. Splitting it by line count would scatter tightly coupled terminal
 process behavior across files without a cleaner ownership seam. */
 import { join, delimiter } from 'path'
 import { randomUUID } from 'crypto'
-import {
-  type BrowserWindow,
-  type WebContents,
-  ipcMain,
-  app
-} from 'electron'
+import { type BrowserWindow, type WebContents, ipcMain, app } from 'electron'
 export { getBashShellReadyRcfileContent } from '../providers/local-pty-shell-ready'
 import type { OrcaRuntimeService } from '../runtime/orca-runtime'
 import type { Store } from '../persistence'
@@ -976,7 +971,25 @@ export function setPtyOwnership(id: string, connectionId: string | null): void {
 // duplicate listeners that forward every event twice.
 let localDataUnsub: (() => void) | null = null
 let localExitUnsub: (() => void) | null = null
+let cleanupCurrentPtyHandlerRegistration: (() => void) | null = null
+type CarriedPendingPtyData = {
+  data: string
+  startSeq?: number
+  latencySensitive?: boolean
+}
+type CarriedPendingPtyExit = {
+  id: string
+  code: number
+  notifyRuntime?: boolean
+}
+const pendingPtyDataCarriedAcrossRegistrations = new Map<string, CarriedPendingPtyData>()
+const pendingPtyExitCarriedAcrossRegistrations = new Map<string, CarriedPendingPtyExit>()
+const ownerlessPendingDataSinceCarriedAcrossRegistrations = new Map<string, number>()
+const sourcePausedPtysCarriedAcrossRegistrations = new Set<string>()
+const rendererInFlightCharsCarriedAcrossRegistrations = new Map<string, number>()
+const rendererInFlightWindowCharsCarriedAcrossRegistrations = new Map<string, Map<number, number>>()
 const didFinishLoadHandlersByWebContents = new Map<WebContents, () => void>()
+let releaseRendererInFlightForClosedWindow: ((windowId: number) => void) | null = null
 
 // Why: the "Restart daemon" path needs to re-bind provider→renderer listeners
 // against the freshly-created adapter after replaceDaemonProvider swaps the
@@ -998,6 +1011,9 @@ export type PtyRendererDeliveryDebugSnapshot = {
   rendererInFlightChars: number
   maxRendererInFlightCharsByPty: number
   activeRendererPtyCount: number
+  sourcePausedPtyCount: number
+  inputTrackedPtyCount: number
+  latestInputAgeMs: number | null
   flushScheduled: boolean
   peakPendingChars: number
   peakMaxPendingCharsByPty: number
@@ -1014,6 +1030,9 @@ const EMPTY_PTY_RENDERER_DELIVERY_DEBUG_SNAPSHOT: PtyRendererDeliveryDebugSnapsh
   rendererInFlightChars: 0,
   maxRendererInFlightCharsByPty: 0,
   activeRendererPtyCount: 0,
+  sourcePausedPtyCount: 0,
+  inputTrackedPtyCount: 0,
+  latestInputAgeMs: null,
   flushScheduled: false,
   peakPendingChars: 0,
   peakMaxPendingCharsByPty: 0,
@@ -1033,6 +1052,18 @@ export function getPtyRendererDeliveryDebugSnapshot(): PtyRendererDeliveryDebugS
 
 export function resetPtyRendererDeliveryDebug(): void {
   resetPtyRendererDeliveryDebugSnapshot()
+}
+
+export function resetPtyHandlerRegistrationStateForTests(): void {
+  cleanupCurrentPtyHandlerRegistration?.()
+  cleanupCurrentPtyHandlerRegistration = null
+  pendingPtyDataCarriedAcrossRegistrations.clear()
+  pendingPtyExitCarriedAcrossRegistrations.clear()
+  ownerlessPendingDataSinceCarriedAcrossRegistrations.clear()
+  sourcePausedPtysCarriedAcrossRegistrations.clear()
+  rendererInFlightCharsCarriedAcrossRegistrations.clear()
+  rendererInFlightWindowCharsCarriedAcrossRegistrations.clear()
+  releaseRendererInFlightForClosedWindow = null
 }
 
 function clearDidFinishLoadHandlers(): void {
@@ -1067,6 +1098,9 @@ export function registerPtyHandlers(
     awaitLocalPtyStartup?: () => Promise<void>
   }
 ): void {
+  cleanupCurrentPtyHandlerRegistration?.()
+  cleanupCurrentPtyHandlerRegistration = null
+
   const getLocalPtyStartupPromise = (connectionId?: string | null): Promise<void> | undefined => {
     if (connectionId) {
       return undefined
@@ -1096,6 +1130,11 @@ export function registerPtyHandlers(
   ipcMain.removeAllListeners('pty:ackColdRestore')
   ipcMain.removeAllListeners('pty:ackData')
   ipcMain.removeAllListeners('pty:serializeBuffer:response')
+  // Why: handler re-registration can happen after window recreation or in
+  // focused tests; stale input timestamps must not keep background PTYs quiet.
+  lastInputAtByPty.clear()
+  interactiveOutputCharsByPty.clear()
+  activeRendererPtys.clear()
 
   // Configure the local provider with app-specific hooks.
   // Why: only LocalPtyProvider has the configure() method — daemon-backed
@@ -1168,38 +1207,64 @@ export function registerPtyHandlers(
   type PendingPtyData = {
     data: string
     startSeq?: number
+    latencySensitive?: boolean
   }
   type PendingPtyExit = {
     id: string
     code: number
+    notifyRuntime?: boolean
   }
-
   const pendingData = new Map<string, PendingPtyData>()
-  const rendererInFlightCharsByPty = new Map<string, number>()
+  const rendererInFlightCharsByPty = new Map(rendererInFlightCharsCarriedAcrossRegistrations)
+  rendererInFlightCharsCarriedAcrossRegistrations.clear()
+  const rendererInFlightWindowCharsByPty = new Map(
+    Array.from(rendererInFlightWindowCharsCarriedAcrossRegistrations, ([id, credits]) => [
+      id,
+      new Map(credits)
+    ])
+  )
+  rendererInFlightWindowCharsCarriedAcrossRegistrations.clear()
+  const sourcePausedPtys = new Set<string>()
   const pendingExit = new Map<string, PendingPtyExit>()
   const earlyProviderExitByPty = new Map<string, number>()
   const ownerlessPendingDataSinceByPty = new Map<string, number>()
   const trustedTerminalHandleEnv = new Set<string>()
   let flushTimer: ReturnType<typeof setTimeout> | null = null
-  let rendererInFlightTotalChars = 0
+  let rendererInFlightTotalChars = [...rendererInFlightCharsByPty.values()].reduce(
+    (total, chars) => total + chars,
+    0
+  )
   const PTY_BATCH_INTERVAL_MS = 8
   const PTY_BATCH_DRAIN_CONTINUE_MS = 1
   const PTY_BATCH_FLUSH_CHUNK_CHARS = 16 * 1024
   const PTY_BATCH_FLUSH_MAX_WRITES = 2
   const PTY_RENDERER_IN_FLIGHT_HIGH_WATER_CHARS = 512 * 1024
   const PTY_RENDERER_TOTAL_IN_FLIGHT_HIGH_WATER_CHARS = 8 * 1024 * 1024
+  const PTY_SOURCE_PAUSE_TOTAL_IN_FLIGHT_HIGH_WATER_CHARS = 2 * 1024 * 1024
+  const PTY_ACTIVE_RENDERER_BACKGROUND_IN_FLIGHT_HIGH_WATER_CHARS = 512 * 1024
   const PTY_RENDERER_INTERACTIVE_RESERVE_CHARS = 256 * 1024
   // Why: active panes need a bounded lane through old hidden bulk output so a
   // keystroke redraw can reach the renderer before every background ACK lands.
   const PTY_RENDERER_ACTIVE_PTY_IN_FLIGHT_RESERVE_CHARS = 512 * 1024
+  const PTY_SOURCE_PAUSE_PENDING_HIGH_WATER_CHARS = 1
+  const PTY_SOURCE_PAUSE_PENDING_LOW_WATER_CHARS = 0
+  const PTY_SOURCE_RESUME_AFTER_ACTIVE_RENDERER_MS = 2_000
+  const PTY_SOURCE_BACKPRESSURE_WATCHDOG_MS = 500
   const OWNERLESS_PTY_OUTPUT_RETRY_MS = 8
   const OWNERLESS_PTY_OUTPUT_MAX_AGE_MS = 2_000
   // Why: keep the immediate path bounded to keystroke-sized TUI redraws;
   // large output and non-interactive output must still use the batcher.
-  const INTERACTIVE_OUTPUT_WINDOW_MS = 100
+  // Why: ACK-held background PTYs can delay shell echo/command startup past a
+  // frame or two; keep recent active input responsive without unbounding bulk.
+  const INTERACTIVE_OUTPUT_WINDOW_MS = 2_000
   const INTERACTIVE_OUTPUT_MAX_CHARS = 1024
   const INTERACTIVE_REDRAW_MAX_CHARS = PTY_BATCH_FLUSH_CHUNK_CHARS
   const INTERACTIVE_OUTPUT_BUDGET_CHARS = 32 * 1024
+  const BACKGROUND_FLUSH_AFTER_INPUT_QUIET_MS = 1_000
+  let activeRendererPtyChangedAt = 0
+  let sourceBackpressureRefreshTimer: ReturnType<typeof setTimeout> | null = null
+  let inputBackpressureRefreshImmediate: ReturnType<typeof setImmediate> | null = null
+  let flushTimerDueAt: number | null = null
   let peakPendingChars = 0
   let peakMaxPendingCharsByPty = 0
   let peakRendererInFlightChars = 0
@@ -1222,6 +1287,7 @@ export function registerPtyHandlers(
       pendingChars += chars
       maxPendingCharsByPty = Math.max(maxPendingCharsByPty, chars)
     }
+    const latestInputAt = Math.max(0, ...lastInputAtByPty.values())
     return {
       pendingPtyCount: pendingData.size,
       pendingChars,
@@ -1230,6 +1296,9 @@ export function registerPtyHandlers(
       rendererInFlightChars: rendererInFlightTotalChars,
       maxRendererInFlightCharsByPty: getMaxMapValue(rendererInFlightCharsByPty.values()),
       activeRendererPtyCount: activeRendererPtys.size,
+      sourcePausedPtyCount: sourcePausedPtys.size,
+      inputTrackedPtyCount: lastInputAtByPty.size,
+      latestInputAgeMs: latestInputAt > 0 ? performance.now() - latestInputAt : null,
       flushScheduled: flushTimer !== null,
       peakPendingChars,
       peakMaxPendingCharsByPty,
@@ -1289,6 +1358,29 @@ export function registerPtyHandlers(
     return true
   }
 
+  function getLatestInputAt(): number {
+    return Math.max(0, ...lastInputAtByPty.values())
+  }
+
+  function getBackgroundFlushDelayForRecentInput(id: string, now: number): number {
+    if (activeRendererPtys.has(id)) {
+      return 0
+    }
+    const latestInputAt = getLatestInputAt()
+    if (latestInputAt === 0 || now - latestInputAt > BACKGROUND_FLUSH_AFTER_INPUT_QUIET_MS) {
+      return 0
+    }
+    const ptyInputAt = lastInputAtByPty.get(id)
+    if (ptyInputAt !== undefined && now - ptyInputAt <= BACKGROUND_FLUSH_AFTER_INPUT_QUIET_MS) {
+      return 0
+    }
+    return Math.max(1, BACKGROUND_FLUSH_AFTER_INPUT_QUIET_MS - (now - latestInputAt))
+  }
+
+  function shouldDeferBackgroundFlushForRecentInput(id: string, now: number): boolean {
+    return getBackgroundFlushDelayForRecentInput(id, now) > 0
+  }
+
   function getChunkStartSeq(endSeq: number | undefined, data: string): number | undefined {
     return typeof endSeq === 'number' ? Math.max(0, endSeq - data.length) : undefined
   }
@@ -1309,6 +1401,28 @@ export function registerPtyHandlers(
       payload.rawLength = data.length
     }
     return payload
+  }
+
+  function makePtyExitPayload(exit: PendingPtyExit): { id: string; code: number } {
+    return { id: exit.id, code: exit.code }
+  }
+
+  function notifyRuntimeForPtyExit(exit: PendingPtyExit): void {
+    if (exit.notifyRuntime === true) {
+      runtime?.onPtyExit(exit.id, exit.code)
+    }
+  }
+
+  function notifyRuntimeForDroppedOwnerlessPtyExit(exit: PendingPtyExit): void {
+    if (exit.notifyRuntime === true) {
+      runtime?.onPtyExit(exit.id, exit.code)
+      return
+    }
+    if (earlyProviderExitByPty.get(exit.id) !== exit.code) {
+      return
+    }
+    earlyProviderExitByPty.delete(exit.id)
+    runtime?.onPtyExit(exit.id, exit.code)
   }
 
   function isWindowSendable(window: BrowserWindow): boolean {
@@ -1356,6 +1470,50 @@ export function registerPtyHandlers(
     )
   }
 
+  function senderReceivedInFlightPtyData(
+    event: Electron.IpcMainEvent | Electron.IpcMainInvokeEvent | null,
+    ptyId: string
+  ): boolean {
+    if (!event?.sender || (rendererInFlightCharsByPty.get(ptyId) ?? 0) <= 0) {
+      return false
+    }
+    const senderWindow = getMainWindowForWebContents(event.sender)
+    if (typeof senderWindow?.id !== 'number') {
+      return false
+    }
+    return (rendererInFlightWindowCharsByPty.get(ptyId)?.get(senderWindow.id) ?? 0) > 0
+  }
+
+  function getRendererHintWindowForEvent(
+    event: Electron.IpcMainEvent | Electron.IpcMainInvokeEvent | null
+  ): BrowserWindow | null {
+    if (event?.sender) {
+      return getMainWindowForWebContents(event.sender)
+    }
+    return typeof runtime?.resolveOwnerWindowIdForPtyId !== 'function' ? mainWindow : null
+  }
+
+  function getOwnerWindowIdForActiveHint(ptyId: string): number | null {
+    const ownerWindowId =
+      typeof runtime?.resolveOwnerWindowIdForPtyId === 'function'
+        ? runtime.resolveOwnerWindowIdForPtyId(ptyId)
+        : null
+    if (ownerWindowId !== null) {
+      return ownerWindowId
+    }
+    return typeof runtime?.resolveOwnerWindowIdForPtyId !== 'function'
+      ? ((mainWindow as { id?: number }).id ?? 0)
+      : null
+  }
+
+  function clearActiveRendererPtysForWindow(windowId: number): void {
+    for (const activePtyId of activeRendererPtys) {
+      if (getOwnerWindowIdForActiveHint(activePtyId) === windowId) {
+        activeRendererPtys.delete(activePtyId)
+      }
+    }
+  }
+
   function sendToPtyOwnerWindow(
     target: BrowserWindow | null,
     channel: string,
@@ -1377,19 +1535,119 @@ export function registerPtyHandlers(
     return Math.max(0, payload.rawLength ?? payload.data.length)
   }
 
-  function canSendPtyDataToRenderer(id: string, options: { interactive?: boolean } = {}): boolean {
+  function canSendPtyDataToRenderer(
+    id: string,
+    options: { interactive?: boolean; latencySensitive?: boolean } = {}
+  ): boolean {
+    const provider = tryGetProviderForPty(id)
+    const canPauseSource =
+      provider?.supportsLosslessDataFlowPause === true &&
+      typeof provider.setDataFlowPaused === 'function'
+    // Why: once a renderer has an active pane, pause-capable background PTYs
+    // should stop near the source-pause ceiling instead of filling the older
+    // bulk throughput cap ahead of keystroke echo.
+    const backgroundTotalLimit =
+      activeRendererPtys.size > 0 && canPauseSource
+        ? PTY_ACTIVE_RENDERER_BACKGROUND_IN_FLIGHT_HIGH_WATER_CHARS
+        : PTY_RENDERER_TOTAL_IN_FLIGHT_HIGH_WATER_CHARS
     const totalLimit =
-      PTY_RENDERER_TOTAL_IN_FLIGHT_HIGH_WATER_CHARS +
+      (options.interactive === true
+        ? PTY_RENDERER_TOTAL_IN_FLIGHT_HIGH_WATER_CHARS
+        : backgroundTotalLimit) +
       (options.interactive === true ? PTY_RENDERER_INTERACTIVE_RESERVE_CHARS : 0)
     // Why: the reserve is per active PTY, not global; one active pane should
     // stay responsive without letting every background pane burst past the cap.
     const ptyLimit =
       PTY_RENDERER_IN_FLIGHT_HIGH_WATER_CHARS +
       (options.interactive === true ? PTY_RENDERER_ACTIVE_PTY_IN_FLIGHT_RESERVE_CHARS : 0)
-    return (
-      (rendererInFlightCharsByPty.get(id) ?? 0) < ptyLimit &&
-      rendererInFlightTotalChars < totalLimit
+    if ((rendererInFlightCharsByPty.get(id) ?? 0) >= ptyLimit) {
+      return false
+    }
+    if (options.latencySensitive === true) {
+      return true
+    }
+    return rendererInFlightTotalChars < totalLimit
+  }
+
+  function clearRendererInFlightForPty(id: string): void {
+    rendererInFlightTotalChars = Math.max(
+      0,
+      rendererInFlightTotalChars - (rendererInFlightCharsByPty.get(id) ?? 0)
     )
+    rendererInFlightCharsByPty.delete(id)
+    rendererInFlightWindowCharsByPty.delete(id)
+  }
+
+  function releaseRendererInFlightForWindow(windowId: number): void {
+    for (const [ptyId, credits] of rendererInFlightWindowCharsByPty) {
+      const released = credits.get(windowId) ?? 0
+      if (released <= 0) {
+        continue
+      }
+      credits.delete(windowId)
+      if (credits.size === 0) {
+        rendererInFlightWindowCharsByPty.delete(ptyId)
+      }
+      const current = rendererInFlightCharsByPty.get(ptyId) ?? 0
+      const next = Math.max(0, current - released)
+      if (next === 0) {
+        rendererInFlightCharsByPty.delete(ptyId)
+      } else {
+        rendererInFlightCharsByPty.set(ptyId, next)
+      }
+      rendererInFlightTotalChars = Math.max(0, rendererInFlightTotalChars - released)
+      tryGetProviderForPty(ptyId)?.acknowledgeDataEvent(ptyId, released)
+    }
+    recordPtyRendererDeliveryPressure()
+    refreshAllPtySourceBackpressure()
+    if (pendingData.size > 0 && !flushTimer) {
+      schedulePendingDataFlushForPendingData(0)
+    }
+  }
+
+  function addRendererInFlightForWindow(
+    id: string,
+    target: BrowserWindow,
+    charCount: number
+  ): void {
+    const windowId = (target as { id?: number }).id
+    if (typeof windowId !== 'number') {
+      return
+    }
+    const credits = rendererInFlightWindowCharsByPty.get(id) ?? new Map<number, number>()
+    credits.set(windowId, (credits.get(windowId) ?? 0) + charCount)
+    rendererInFlightWindowCharsByPty.set(id, credits)
+  }
+
+  function acknowledgeRendererInFlightWindow(
+    event: Electron.IpcMainEvent | Electron.IpcMainInvokeEvent | null,
+    ptyId: string,
+    charCount: number
+  ): number {
+    if (!event?.sender) {
+      return Math.min(rendererInFlightCharsByPty.get(ptyId) ?? 0, charCount)
+    }
+    const senderWindow = getMainWindowForWebContents(event.sender)
+    const senderWindowId = senderWindow?.id
+    if (typeof senderWindowId !== 'number') {
+      return 0
+    }
+    const credits = rendererInFlightWindowCharsByPty.get(ptyId)
+    const windowInFlight = credits?.get(senderWindowId) ?? 0
+    if (windowInFlight <= 0) {
+      return 0
+    }
+    const acknowledged = Math.min(windowInFlight, charCount)
+    const nextWindowInFlight = Math.max(0, windowInFlight - acknowledged)
+    if (nextWindowInFlight === 0) {
+      credits?.delete(senderWindowId)
+      if (credits?.size === 0) {
+        rendererInFlightWindowCharsByPty.delete(ptyId)
+      }
+    } else {
+      credits?.set(senderWindowId, nextWindowInFlight)
+    }
+    return acknowledged
   }
 
   function sendPtyDataToRenderer(
@@ -1397,11 +1655,13 @@ export function registerPtyHandlers(
     payload: { id: string; data: string; seq?: number; rawLength?: number },
     target: BrowserWindow | null = getOwnerWindowForPty(id)
   ): boolean {
-    if (!sendToPtyOwnerWindow(target, 'pty:data', payload)) {
+    const ownerWindow = target
+    if (!ownerWindow || !sendToPtyOwnerWindow(ownerWindow, 'pty:data', payload)) {
       return false
     }
     const charCount = getPtyPayloadCharCount(payload)
     rendererInFlightCharsByPty.set(id, (rendererInFlightCharsByPty.get(id) ?? 0) + charCount)
+    addRendererInFlightForWindow(id, ownerWindow, charCount)
     rendererInFlightTotalChars += charCount
     recordPtyRendererDeliveryPressure()
     return true
@@ -1424,10 +1684,15 @@ export function registerPtyHandlers(
   function appendPendingPtyData(
     existing: PendingPtyData | undefined,
     data: string,
-    startSeq: number | undefined
+    startSeq: number | undefined,
+    options: { latencySensitive?: boolean } = {}
   ): PendingPtyData {
     if (!existing) {
-      return typeof startSeq === 'number' ? { data, startSeq } : { data }
+      const pending: PendingPtyData = typeof startSeq === 'number' ? { data, startSeq } : { data }
+      if (options.latencySensitive === true) {
+        pending.latencySensitive = true
+      }
+      return pending
     }
     const next: PendingPtyData = { data: existing.data + data }
     if (typeof existing.startSeq === 'number') {
@@ -1435,31 +1700,332 @@ export function registerPtyHandlers(
     } else if (typeof startSeq === 'number') {
       next.startSeq = startSeq
     }
+    if (existing.latencySensitive === true || options.latencySensitive === true) {
+      next.latencySensitive = true
+    }
     return next
   }
 
-  function schedulePendingDataFlush(delayMs: number): void {
-    if (flushTimer) {
+  function shouldPausePtySource(id: string): boolean {
+    if (activeRendererPtys.has(id)) {
+      return false
+    }
+    const now = performance.now()
+    if (shouldDeferBackgroundFlushForRecentInput(id, now)) {
+      return true
+    }
+    if (
+      activeRendererPtys.size > 0 &&
+      now - activeRendererPtyChangedAt <= PTY_SOURCE_RESUME_AFTER_ACTIVE_RENDERER_MS
+    ) {
+      return true
+    }
+    const pendingChars = pendingData.get(id)?.data.length ?? 0
+    const rendererInFlightChars = rendererInFlightCharsByPty.get(id) ?? 0
+    const pendingThreshold = sourcePausedPtys.has(id)
+      ? PTY_SOURCE_PAUSE_PENDING_LOW_WATER_CHARS
+      : PTY_SOURCE_PAUSE_PENDING_HIGH_WATER_CHARS
+    const totalPauseThreshold =
+      activeRendererPtys.size > 0
+        ? PTY_ACTIVE_RENDERER_BACKGROUND_IN_FLIGHT_HIGH_WATER_CHARS
+        : PTY_SOURCE_PAUSE_TOTAL_IN_FLIGHT_HIGH_WATER_CHARS
+    return (
+      rendererInFlightTotalChars >= totalPauseThreshold &&
+      (rendererInFlightChars > 0 || pendingChars >= pendingThreshold)
+    )
+  }
+
+  function trySetPtySourcePausedAtProvider(id: string, paused: boolean): boolean {
+    const provider = tryGetProviderForPty(id)
+    if (
+      provider?.supportsLosslessDataFlowPause !== true ||
+      typeof provider.setDataFlowPaused !== 'function'
+    ) {
+      return false
+    }
+    try {
+      return provider.setDataFlowPaused(id, paused)
+    } catch {
+      return false
+    }
+  }
+
+  function setPtySourcePaused(id: string, paused: boolean): void {
+    if (sourcePausedPtys.has(id) === paused) {
       return
     }
+    if (!trySetPtySourcePausedAtProvider(id, paused)) {
+      if (paused) {
+        sourcePausedPtys.delete(id)
+      }
+      return
+    }
+    if (paused) {
+      sourcePausedPtys.add(id)
+    } else {
+      sourcePausedPtys.delete(id)
+    }
+  }
+
+  function refreshPtySourceBackpressure(id: string): void {
+    setPtySourcePaused(id, shouldPausePtySource(id))
+  }
+
+  function refreshAllPtySourceBackpressure(): void {
+    const ids = new Set([
+      ...sourcePausedPtys,
+      ...pendingData.keys(),
+      ...rendererInFlightCharsByPty.keys()
+    ])
+    for (const id of ids) {
+      refreshPtySourceBackpressure(id)
+    }
+    scheduleNextTimedSourceBackpressureRefresh()
+  }
+
+  function scheduleNextTimedSourceBackpressureRefresh(): void {
+    if (sourcePausedPtys.size === 0) {
+      return
+    }
+    const now = performance.now()
+    const delays: number[] = []
+    if (
+      activeRendererPtys.size > 0 &&
+      now - activeRendererPtyChangedAt <= PTY_SOURCE_RESUME_AFTER_ACTIVE_RENDERER_MS
+    ) {
+      delays.push(PTY_SOURCE_RESUME_AFTER_ACTIVE_RENDERER_MS - (now - activeRendererPtyChangedAt))
+    }
+    const latestInputAt = getLatestInputAt()
+    if (latestInputAt > 0 && now - latestInputAt <= BACKGROUND_FLUSH_AFTER_INPUT_QUIET_MS) {
+      delays.push(BACKGROUND_FLUSH_AFTER_INPUT_QUIET_MS - (now - latestInputAt))
+    }
+    if (delays.length > 0) {
+      scheduleSourceBackpressureRefresh(Math.max(1, Math.min(...delays)))
+      return
+    }
+    // Why: ACKs and active-hint changes are fire-and-forget IPC. If the event
+    // that should release a paused source races with a quiet-window decision,
+    // keep a sparse watchdog alive so hidden PTYs cannot stay paused forever.
+    scheduleSourceBackpressureRefresh(PTY_SOURCE_BACKPRESSURE_WATCHDOG_MS)
+  }
+
+  function scheduleSourceBackpressureRefresh(delayMs: number): void {
+    if (sourceBackpressureRefreshTimer) {
+      clearTimeout(sourceBackpressureRefreshTimer)
+    }
+    sourceBackpressureRefreshTimer = setTimeout(() => {
+      sourceBackpressureRefreshTimer = null
+      refreshAllPtySourceBackpressure()
+    }, delayMs)
+  }
+
+  cleanupCurrentPtyHandlerRegistration = () => {
+    if (inputBackpressureRefreshImmediate) {
+      clearImmediate(inputBackpressureRefreshImmediate)
+      inputBackpressureRefreshImmediate = null
+    }
+    if (sourceBackpressureRefreshTimer) {
+      clearTimeout(sourceBackpressureRefreshTimer)
+      sourceBackpressureRefreshTimer = null
+    }
+    if (flushTimer) {
+      clearTimeout(flushTimer)
+      flushTimer = null
+      flushTimerDueAt = null
+    }
+    for (const [id, pending] of pendingData) {
+      const existing = pendingPtyDataCarriedAcrossRegistrations.get(id)
+      pendingPtyDataCarriedAcrossRegistrations.set(
+        id,
+        existing
+          ? appendPendingPtyData(existing, pending.data, pending.startSeq, {
+              latencySensitive: pending.latencySensitive
+            })
+          : pending
+      )
+    }
+    for (const [id, exit] of pendingExit) {
+      pendingPtyExitCarriedAcrossRegistrations.set(id, exit)
+    }
+    for (const [id, since] of ownerlessPendingDataSinceByPty) {
+      ownerlessPendingDataSinceCarriedAcrossRegistrations.set(id, since)
+    }
+    for (const [id, chars] of rendererInFlightCharsByPty) {
+      rendererInFlightCharsCarriedAcrossRegistrations.set(
+        id,
+        (rendererInFlightCharsCarriedAcrossRegistrations.get(id) ?? 0) + chars
+      )
+      const windowCredits = rendererInFlightWindowCharsByPty.get(id)
+      if (windowCredits) {
+        const carriedCredits =
+          rendererInFlightWindowCharsCarriedAcrossRegistrations.get(id) ?? new Map<number, number>()
+        for (const [windowId, windowChars] of windowCredits) {
+          carriedCredits.set(windowId, (carriedCredits.get(windowId) ?? 0) + windowChars)
+        }
+        rendererInFlightWindowCharsCarriedAcrossRegistrations.set(id, carriedCredits)
+      }
+    }
+    pendingData.clear()
+    pendingExit.clear()
+    ownerlessPendingDataSinceByPty.clear()
+    rendererInFlightCharsByPty.clear()
+    rendererInFlightWindowCharsByPty.clear()
+    rendererInFlightTotalChars = 0
+    for (const id of sourcePausedPtys) {
+      if (!trySetPtySourcePausedAtProvider(id, false)) {
+        sourcePausedPtysCarriedAcrossRegistrations.add(id)
+      }
+    }
+    sourcePausedPtys.clear()
+  }
+
+  if (sourcePausedPtysCarriedAcrossRegistrations.size > 0) {
+    for (const id of sourcePausedPtysCarriedAcrossRegistrations) {
+      sourcePausedPtys.add(id)
+    }
+    sourcePausedPtysCarriedAcrossRegistrations.clear()
+    refreshAllPtySourceBackpressure()
+  }
+  if (
+    pendingPtyDataCarriedAcrossRegistrations.size > 0 ||
+    pendingPtyExitCarriedAcrossRegistrations.size > 0
+  ) {
+    for (const [id, pending] of pendingPtyDataCarriedAcrossRegistrations) {
+      const existing = pendingData.get(id)
+      pendingData.set(
+        id,
+        existing
+          ? appendPendingPtyData(existing, pending.data, pending.startSeq, {
+              latencySensitive: pending.latencySensitive
+            })
+          : pending
+      )
+    }
+    for (const [id, exit] of pendingPtyExitCarriedAcrossRegistrations) {
+      pendingExit.set(id, exit)
+    }
+    for (const [id, since] of ownerlessPendingDataSinceCarriedAcrossRegistrations) {
+      ownerlessPendingDataSinceByPty.set(id, since)
+    }
+    pendingPtyDataCarriedAcrossRegistrations.clear()
+    pendingPtyExitCarriedAcrossRegistrations.clear()
+    ownerlessPendingDataSinceCarriedAcrossRegistrations.clear()
+    schedulePendingDataFlush(0)
+  }
+  if (rendererInFlightCharsByPty.size > 0) {
+    recordPtyRendererDeliveryPressure()
+    refreshAllPtySourceBackpressure()
+  }
+  releaseRendererInFlightForClosedWindow = releaseRendererInFlightForWindow
+  mainWindow.on?.('closed', () => {
+    const windowId = (mainWindow as { id?: number }).id
+    if (typeof windowId !== 'number') {
+      return
+    }
+    releaseRendererInFlightForClosedWindow?.(windowId)
+  })
+
+  function applyPostInputBackpressure(): void {
+    refreshAllPtySourceBackpressure()
+    if (pendingData.size > 0 && flushTimer) {
+      reschedulePendingDataFlushForPendingData(PTY_BATCH_INTERVAL_MS)
+    }
+  }
+
+  function schedulePostInputBackpressure(): void {
+    if (inputBackpressureRefreshImmediate !== null) {
+      return
+    }
+    inputBackpressureRefreshImmediate = setImmediate(() => {
+      inputBackpressureRefreshImmediate = null
+      applyPostInputBackpressure()
+    })
+  }
+
+  function recordPtyInput(id: string): void {
+    const now = performance.now()
+    lastInputAtByPty.set(id, now)
+    interactiveOutputCharsByPty.set(id, 0)
+    // Why: source-pause bookkeeping can touch every pressured PTY. Keep it off
+    // the keystroke write path so the active PTY receives input first.
+    schedulePostInputBackpressure()
+  }
+
+  function schedulePendingDataFlush(delayMs: number): void {
+    const dueAt = performance.now() + Math.max(0, delayMs)
+    if (flushTimer) {
+      if (flushTimerDueAt !== null && flushTimerDueAt <= dueAt) {
+        return
+      }
+      clearTimeout(flushTimer)
+    }
+    flushTimerDueAt = dueAt
     flushTimer = setTimeout(flushPendingData, delayMs)
+  }
+
+  function getPendingDataFlushDelay(delayMs: number): number {
+    let deferredDelayMs: number | null = null
+    for (const [id, pending] of pendingData) {
+      if (activeRendererPtys.has(id) || pending.latencySensitive === true) {
+        return Math.max(0, delayMs)
+      }
+      const backgroundFlushDelayMs = getBackgroundFlushDelayForRecentInput(id, performance.now())
+      if (backgroundFlushDelayMs === 0) {
+        return Math.max(0, delayMs)
+      }
+      deferredDelayMs =
+        deferredDelayMs === null
+          ? backgroundFlushDelayMs
+          : Math.min(deferredDelayMs, backgroundFlushDelayMs)
+    }
+    return deferredDelayMs ?? Math.max(0, delayMs)
+  }
+
+  function schedulePendingDataFlushForPendingData(delayMs: number): void {
+    schedulePendingDataFlush(getPendingDataFlushDelay(delayMs))
+  }
+
+  function reschedulePendingDataFlushForPendingData(delayMs: number): void {
+    if (flushTimer) {
+      clearTimeout(flushTimer)
+      flushTimer = null
+      flushTimerDueAt = null
+    }
+    schedulePendingDataFlushForPendingData(delayMs)
+  }
+
+  function schedulePendingDataFlushForPty(id: string, delayMs: number): void {
+    const backgroundFlushDelayMs = getBackgroundFlushDelayForRecentInput(id, performance.now())
+    schedulePendingDataFlush(backgroundFlushDelayMs > 0 ? backgroundFlushDelayMs : delayMs)
   }
 
   function flushPendingData(): void {
     flushTimer = null
+    flushTimerDueAt = null
     let writes = 0
     let deferredOwnerlessDeliveries = 0
+    let deferredForRecentInputDelayMs: number | null = null
     let ackBlocked = false
     for (const [id, pending] of getPendingPtyFlushEntries()) {
       if (writes >= PTY_BATCH_FLUSH_MAX_WRITES) {
         break
       }
+      const backgroundFlushDelayMs = getBackgroundFlushDelayForRecentInput(id, performance.now())
+      if (backgroundFlushDelayMs > 0) {
+        deferredForRecentInputDelayMs =
+          deferredForRecentInputDelayMs === null
+            ? backgroundFlushDelayMs
+            : Math.min(deferredForRecentInputDelayMs, backgroundFlushDelayMs)
+        continue
+      }
       if (
         !canSendPtyDataToRenderer(id, {
-          interactive: activeRendererPtys.has(id)
+          interactive: activeRendererPtys.has(id),
+          latencySensitive: activeRendererPtys.has(id) && pending.latencySensitive === true
         })
       ) {
         ackBlocked = true
+        refreshPtySourceBackpressure(id)
         continue
       }
       const ownerWindow = getOwnerWindowForPty(id)
@@ -1471,9 +2037,13 @@ export function registerPtyHandlers(
           deferredOwnerlessDeliveries += 1
           continue
         }
+        const exit = pendingExit.get(id)
         pendingData.delete(id)
         pendingExit.delete(id)
         ownerlessPendingDataSinceByPty.delete(id)
+        if (exit) {
+          notifyRuntimeForDroppedOwnerlessPtyExit(exit)
+        }
         continue
       }
       ownerlessPendingDataSinceByPty.delete(id)
@@ -1486,13 +2056,18 @@ export function registerPtyHandlers(
         if (typeof pending.startSeq === 'number') {
           nextPending.startSeq = pending.startSeq + chunk.length
         }
+        if (pending.latencySensitive === true) {
+          nextPending.latencySensitive = true
+        }
         pendingData.set(id, nextPending)
       }
       sendPtyDataToRenderer(id, makePtyDataPayload(id, chunk, pending.startSeq), ownerWindow)
+      refreshPtySourceBackpressure(id)
       const exit = pendingExit.get(id)
       if (exit && !pendingData.has(id)) {
         pendingExit.delete(id)
-        sendToPtyOwnerWindow(ownerWindow, 'pty:exit', exit)
+        sendToPtyOwnerWindow(ownerWindow, 'pty:exit', makePtyExitPayload(exit))
+        notifyRuntimeForPtyExit(exit)
       }
       writes++
     }
@@ -1508,6 +2083,7 @@ export function registerPtyHandlers(
         if (now - since > OWNERLESS_PTY_OUTPUT_MAX_AGE_MS) {
           pendingExit.delete(id)
           ownerlessPendingDataSinceByPty.delete(id)
+          notifyRuntimeForDroppedOwnerlessPtyExit(exit)
         } else {
           deferredOwnerlessDeliveries += 1
         }
@@ -1515,17 +2091,23 @@ export function registerPtyHandlers(
       }
       pendingExit.delete(id)
       ownerlessPendingDataSinceByPty.delete(id)
-      sendToPtyOwnerWindow(ownerWindow, 'pty:exit', exit)
+      sendToPtyOwnerWindow(ownerWindow, 'pty:exit', makePtyExitPayload(exit))
+      notifyRuntimeForPtyExit(exit)
     }
     if (pendingData.size > 0 && writes === 0 && ackBlocked) {
       ackGatedFlushSkipCount++
     }
     recordPtyRendererDeliveryPressure()
+    refreshAllPtySourceBackpressure()
     if (pendingData.size > 0 || pendingExit.size > 0) {
       if (deferredOwnerlessDeliveries > 0) {
         // Why: daemon/SSH output can arrive before the renderer publishes its
         // owner graph; retry briefly, but do not route by focus.
         schedulePendingDataFlush(OWNERLESS_PTY_OUTPUT_RETRY_MS)
+      } else if (deferredForRecentInputDelayMs !== null) {
+        // Why: after a keystroke, wake when the quiet window expires instead
+        // of polling hidden bulk every batch tick while echo is in flight.
+        schedulePendingDataFlush(deferredForRecentInputDelayMs)
       } else if (writes > 0) {
         // Why: a background terminal can dump megabytes at once. Yield between
         // small IPC slices so keystroke writes are not stuck behind one flush.
@@ -1540,6 +2122,7 @@ export function registerPtyHandlers(
     }
     clearTimeout(flushTimer)
     flushTimer = null
+    flushTimerDueAt = null
   }
 
   function replayEarlyProviderExit(ptyId: string): void {
@@ -1568,6 +2151,9 @@ export function registerPtyHandlers(
     const isLocalProvider = localProvider instanceof LocalPtyProvider
 
     localDataUnsub = localProvider.onData((payload) => {
+      if (payload.data.length === 0) {
+        return
+      }
       const outputSeq = isLocalProvider
         ? runtime?.getPtyOutputSequence(payload.id)
         : runtime?.onPtyData(payload.id, payload.data, Date.now())
@@ -1594,15 +2180,27 @@ export function registerPtyHandlers(
         performance.now()
       )
       if (isInteractiveOutput) {
+        const isLatencySensitiveOutput = activeRendererPtys.has(payload.id)
         // Why: user-input echo should not be pinned behind unrelated bulk
         // terminal output already handed to the renderer. The reserve is
-        // bounded, and the per-PTY cap still prevents an active TUI runaway.
-        if (!canSendPtyDataToRenderer(payload.id, { interactive: true })) {
+        // active-only and per-PTY capped so background command startup cannot
+        // consume the active pane's lane while its ACKs are held.
+        if (
+          !canSendPtyDataToRenderer(payload.id, {
+            interactive: true,
+            latencySensitive: isLatencySensitiveOutput
+          })
+        ) {
+          if (isLatencySensitiveOutput) {
+            pending.latencySensitive = true
+          }
           pendingData.set(payload.id, pending)
           recordPtyRendererDeliveryPressure()
+          refreshPtySourceBackpressure(payload.id)
           return
         }
         pendingData.delete(payload.id)
+        refreshPtySourceBackpressure(payload.id)
         clearFlushTimerIfIdle()
         // Why: agent TUIs redraw small prompt regions after every keystroke.
         // Waiting for the throughput batch timer adds visible input latency.
@@ -1624,13 +2222,19 @@ export function registerPtyHandlers(
       }
       pendingData.set(payload.id, pending)
       recordPtyRendererDeliveryPressure()
+      refreshPtySourceBackpressure(payload.id)
       if (!flushTimer) {
-        schedulePendingDataFlush(PTY_BATCH_INTERVAL_MS)
+        schedulePendingDataFlushForPty(payload.id, PTY_BATCH_INTERVAL_MS)
       }
     })
     localExitUnsub = localProvider.onExit((payload) => {
+      setPtySourcePaused(payload.id, false)
+      // Why: LocalPtyProvider clears its process table before this listener
+      // runs on natural exit, so a best-effort resume can no longer succeed.
+      // The source is gone; clear main's paused bookkeeping explicitly.
+      sourcePausedPtys.delete(payload.id)
+      const exitedBeforeSpawnRegistered = !isLocalProvider && !ptyOwnership.has(payload.id)
       if (!isLocalProvider) {
-        const exitedBeforeSpawnRegistered = !ptyOwnership.has(payload.id)
         clearProviderPtyState(payload.id)
         ptyOwnership.delete(payload.id)
         markClaudePtyExited(payload.id)
@@ -1639,7 +2243,6 @@ export function registerPtyHandlers(
         } else {
           earlyProviderExitByPty.delete(payload.id)
         }
-        runtime?.onPtyExit(payload.id, payload.code)
       }
       // Why: flush any batched data for this PTY before sending the exit event,
       // otherwise the last ≤8ms of output is silently lost because the renderer
@@ -1650,7 +2253,11 @@ export function registerPtyHandlers(
           payload.id,
           ownerlessPendingDataSinceByPty.get(payload.id) ?? performance.now()
         )
-        pendingExit.set(payload.id, payload)
+        pendingExit.set(payload.id, {
+          id: payload.id,
+          code: payload.code,
+          notifyRuntime: !isLocalProvider && !exitedBeforeSpawnRegistered
+        })
         schedulePendingDataFlush(OWNERLESS_PTY_OUTPUT_RETRY_MS)
         return
       }
@@ -1667,13 +2274,15 @@ export function registerPtyHandlers(
       interactiveOutputCharsByPty.delete(payload.id)
       ownerlessPendingDataSinceByPty.delete(payload.id)
       pendingExit.delete(payload.id)
-      rendererInFlightTotalChars = Math.max(
-        0,
-        rendererInFlightTotalChars - (rendererInFlightCharsByPty.get(payload.id) ?? 0)
-      )
-      rendererInFlightCharsByPty.delete(payload.id)
+      clearRendererInFlightForPty(payload.id)
       recordPtyRendererDeliveryPressure()
-      sendToPtyOwnerWindow(ownerWindow, 'pty:exit', payload)
+      const exit: PendingPtyExit = {
+        id: payload.id,
+        code: payload.code,
+        notifyRuntime: !isLocalProvider
+      }
+      sendToPtyOwnerWindow(ownerWindow, 'pty:exit', makePtyExitPayload(exit))
+      notifyRuntimeForPtyExit(exit)
     })
   }
 
@@ -3041,9 +3650,7 @@ export function registerPtyHandlers(
       return false
     }
     try {
-      const now = performance.now()
-      lastInputAtByPty.set(args.id, now)
-      interactiveOutputCharsByPty.set(args.id, 0)
+      recordPtyInput(args.id)
       return writePtyProviderInput(provider, args.id, args.data)
     } catch {
       return false
@@ -3072,9 +3679,7 @@ export function registerPtyHandlers(
       return false
     }
     try {
-      const now = performance.now()
-      lastInputAtByPty.set(args.id, now)
-      interactiveOutputCharsByPty.set(args.id, 0)
+      recordPtyInput(args.id)
       return writePtyProviderInput(provider, args.id, args.data)
     } catch {
       return false
@@ -3169,23 +3774,25 @@ export function registerPtyHandlers(
   // PTY ingestion. Agent/status consumers still see every chunk through the
   // provider/runtime path while background renderer writes wait their turn.
   ipcMain.on('pty:ackData', (event, args: { id: string; charCount: number }) => {
-    if (!senderOwnsPty(event, args.id)) {
+    if (!senderOwnsPty(event, args.id) && !senderReceivedInFlightPtyData(event, args.id)) {
       return
     }
     const charCount = Number.isFinite(args.charCount) ? Math.max(0, args.charCount) : 0
     const current = rendererInFlightCharsByPty.get(args.id) ?? 0
-    const acknowledged = Math.min(current, charCount)
-    const next = Math.max(0, current - charCount)
+    const acknowledged = acknowledgeRendererInFlightWindow(event, args.id, charCount)
+    const next = Math.max(0, current - acknowledged)
     rendererInFlightTotalChars = Math.max(0, rendererInFlightTotalChars - acknowledged)
     if (next === 0) {
       rendererInFlightCharsByPty.delete(args.id)
+      rendererInFlightWindowCharsByPty.delete(args.id)
     } else {
       rendererInFlightCharsByPty.set(args.id, next)
     }
     tryGetProviderForPty(args.id)?.acknowledgeDataEvent(args.id, acknowledged)
     recordPtyRendererDeliveryPressure()
+    refreshAllPtySourceBackpressure()
     if (pendingData.size > 0 && !flushTimer) {
-      schedulePendingDataFlush(0)
+      schedulePendingDataFlushForPendingData(0)
     }
   })
 
@@ -3195,15 +3802,22 @@ export function registerPtyHandlers(
       return
     }
     // Why: this is a renderer scheduling hint only. PTY reads, runtime state,
-    // and notifications continue for inactive terminals; active panes merely
-    // get first chance at the bounded renderer output reserve.
+    // and notifications continue for inactive terminals; only one pane per
+    // window gets first chance at the bounded renderer output reserve.
     if (args.active) {
+      activeRendererPtyChangedAt = performance.now()
+      const senderWindow = getRendererHintWindowForEvent(event)
+      if (senderWindow) {
+        clearActiveRendererPtysForWindow((senderWindow as { id?: number }).id ?? 0)
+      }
       activeRendererPtys.add(args.id)
+      scheduleSourceBackpressureRefresh(PTY_SOURCE_RESUME_AFTER_ACTIVE_RENDERER_MS)
     } else {
       activeRendererPtys.delete(args.id)
     }
+    refreshAllPtySourceBackpressure()
     if (pendingData.size > 0 && !flushTimer) {
-      schedulePendingDataFlush(0)
+      schedulePendingDataFlushForPendingData(0)
     }
   })
 

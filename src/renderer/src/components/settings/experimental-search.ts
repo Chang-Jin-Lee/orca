@@ -166,27 +166,6 @@ export const getExperimentalPaneSearchEntries = createLocalizedCatalog(
       ]
     },
     entry(
-      'auto.components.settings.experimental.search.4f0b2bb8d1',
-      'Smart New Tab menu',
-      'auto.components.settings.experimental.search.e71f86b9a2',
-      'Type in the New Tab menu to open a terminal, launch an agent, visit a URL, or open/create a file.',
-      [
-        experimentalKeyword,
-        ['auto.components.settings.experimental.search.f515b6259c', 'smart'],
-        ['auto.components.settings.experimental.search.d9e01f4b2c', 'new tab'],
-        ['auto.components.settings.experimental.search.330c22c19f', 'new tab menu'],
-        ['auto.components.settings.experimental.search.18c6b47e01', 'launcher'],
-        ['auto.components.settings.experimental.search.9a2ee68f51', 'unified'],
-        ['auto.components.settings.experimental.search.717c8d2462', 'plus'],
-        ['auto.components.settings.experimental.search.9bb3bd5098', 'terminal'],
-        ['auto.components.settings.experimental.search.fa72e71f05', 'agents'],
-        ['auto.components.settings.experimental.search.49a1e8ebfe', 'claude'],
-        ['auto.components.settings.experimental.search.adadbc75fd', 'codex'],
-        ['auto.components.settings.experimental.search.79f3c739d8', 'url'],
-        ['auto.components.settings.experimental.search.8c7dd922ad', 'file']
-      ]
-    ),
-    entry(
       'auto.components.settings.experimental.search.818dac284f',
       'Multi-window',
       'auto.components.settings.experimental.search.7b91eb5445',
@@ -242,9 +221,6 @@ export function getExperimentalSearchEntry() {
         'auto.components.settings.experimental.search.78c2a8dc74',
         'Shared paths on worktrees'
       )
-    ),
-    unifiedNewTabLauncher: findEntry(
-      translate('auto.components.settings.experimental.search.4f0b2bb8d1', 'Smart New Tab menu')
     ),
     multiWindow: findEntry(
       translate('auto.components.settings.experimental.search.818dac284f', 'Multi-window')

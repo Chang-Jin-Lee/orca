@@ -1,16 +1,8 @@
-import { useAppStore } from '@/store'
-import { pasteDraftWhenAgentReady } from '@/lib/agent-paste-draft'
-import {
-  inspectRuntimeTerminalProcess,
-  sendRuntimePtyInputVerified
-} from '@/runtime/runtime-terminal-inspection'
-import type { AgentStartupPlan } from '@/lib/tui-agent-startup'
-import { isShellProcess } from '@/lib/tui-agent-startup'
 import type { LinkedWorkItemContext } from '@/lib/linked-work-item-context'
 import type { FolderWorkspaceLinkedTask, OrcaHooks, TaskViewPresetId } from '../../../shared/types'
 import { resolveHookCommandSourcePolicy } from '../../../shared/hook-command-source-policy'
-import { isExpectedAgentProcess } from '../../../shared/agent-process-recognition'
 import { slugifyForWorkspaceName } from '../../../shared/workspace-name'
+export { ensureAgentStartupInTerminal } from './agent-startup-terminal-delivery'
 export { getLinkedWorkItemSuggestedName } from '../../../shared/workspace-name'
 export { getLinkedWorkItemWorkspaceName } from '../../../shared/workspace-name'
 export { getWorkspaceIntentName } from '../../../shared/workspace-name'
@@ -232,99 +224,4 @@ export function getWorkspaceSeedName(args: {
   // branch/workspace seed so users can launch an empty draft without first
   // writing a brief or naming the workspace manually.
   return 'workspace'
-}
-
-export async function ensureAgentStartupInTerminal(args: {
-  worktreeId: string
-  primaryTabId?: string | null
-  startup: AgentStartupPlan
-}): Promise<void> {
-  const { worktreeId, primaryTabId, startup } = args
-  const draftPrompt = startup.draftPrompt ?? null
-  if (startup.followupPrompt === null && draftPrompt === null) {
-    return
-  }
-
-  // Why: poll until a terminal tab + PTY exists for the worktree before we
-  // can interact with it. Activation creates the tab synchronously but the
-  // PTY spawn is async, so a brief wait is normal.
-  let tabId: string | null = null
-  let ptyId: string | null = null
-  for (let attempt = 0; attempt < 30; attempt += 1) {
-    if (attempt > 0) {
-      await new Promise((resolve) => window.setTimeout(resolve, 150))
-    }
-    const state = useAppStore.getState()
-    // Why: workspace activation tells us the exact tab that received the agent
-    // startup command. Use it for draft paste instead of re-deriving from
-    // active tab state, which can move while setup/background panes mount.
-    tabId =
-      primaryTabId ??
-      state.activeTabIdByWorktree[worktreeId] ??
-      state.tabsByWorktree[worktreeId]?.[0]?.id ??
-      null
-    if (!tabId) {
-      continue
-    }
-    ptyId = state.ptyIdsByTabId[tabId]?.[0] ?? null
-    if (ptyId) {
-      break
-    }
-  }
-  if (!tabId || !ptyId) {
-    return
-  }
-
-  // Why: followupPrompt is the legacy path for stdin-after-start agents
-  // (aider, goose, etc.) that need their initial prompt typed into the live
-  // session and submitted. Wait until the agent owns the PTY before writing.
-  if (startup.followupPrompt) {
-    await waitForAgentForeground(ptyId, startup.expectedProcess)
-    await sendFollowupPrompt(ptyId, startup.followupPrompt)
-  }
-
-  // Why: draftPrompt uses bracketed-paste so the URL lands atomically in the
-  // agent's input buffer (no per-char echo, no auto-submit). Shared with the
-  // launch-work-item-direct flow so both behave identically.
-  if (draftPrompt) {
-    await pasteDraftWhenAgentReady({
-      tabId,
-      content: draftPrompt,
-      agent: startup.agent
-    })
-  }
-}
-
-async function sendFollowupPrompt(ptyId: string, prompt: string): Promise<boolean> {
-  try {
-    return await sendRuntimePtyInputVerified(useAppStore.getState().settings, ptyId, `${prompt}\r`)
-  } catch {
-    return false
-  }
-}
-
-// Why: legacy followupPrompt path used `agentOwnsForeground` exclusively (with
-// a hasChildProcesses fallback after several polls). Preserve that behavior so
-// stdin-after-start agents still receive their prompt under the same
-// conditions. Returns when the agent appears ready or the budget expires.
-async function waitForAgentForeground(ptyId: string, expectedProcess: string): Promise<void> {
-  for (let attempt = 0; attempt < 30; attempt += 1) {
-    if (attempt > 0) {
-      await new Promise((resolve) => window.setTimeout(resolve, 150))
-    }
-    try {
-      const process = await inspectRuntimeTerminalProcess(useAppStore.getState().settings, ptyId)
-      const foreground = process.foregroundProcess?.toLowerCase() ?? ''
-      if (isExpectedAgentProcess(foreground, expectedProcess)) {
-        return
-      }
-      if (attempt >= 4 && !isShellProcess(foreground)) {
-        if (process.hasChildProcesses) {
-          return
-        }
-      }
-    } catch {
-      // Ignore transient PTY inspection failures and keep polling.
-    }
-  }
 }

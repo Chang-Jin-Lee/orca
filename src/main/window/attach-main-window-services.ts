@@ -52,8 +52,7 @@ import {
 let onBeforeAppRendererReload:
   | ((args: { webContentsId: number; ignoreCache: boolean }) => void)
   | undefined
-let runtimeNotifierTokenCounter = 0
-let activeRuntimeNotifierToken: number | null = null
+const runtimeNotifierWindowIds = new Set<number>()
 
 export function attachMainWindowServices(
   mainWindow: BrowserWindow,
@@ -304,8 +303,7 @@ function registerRuntimeWindowLifecycle(
   mainWindow: BrowserWindow,
   runtime: OrcaRuntimeService
 ): void {
-  const notifierToken = ++runtimeNotifierTokenCounter
-  activeRuntimeNotifierToken = notifierToken
+  runtimeNotifierWindowIds.add(mainWindow.id)
   runtime.attachWindow(mainWindow.id)
   const getWindowByOwnerId = (windowId: number | null): BrowserWindow | null =>
     windowId === null ? null : getMainWindowById(windowId)
@@ -557,11 +555,11 @@ function registerRuntimeWindowLifecycle(
   })
   mainWindow.on('closed', () => {
     runtime.markGraphUnavailable(mainWindow.id)
-    if (activeRuntimeNotifierToken === notifierToken) {
-      // Why: the notifier closes over renderer routing helpers; clear the
-      // active token during no-window gaps so stale closures do not linger.
+    runtimeNotifierWindowIds.delete(mainWindow.id)
+    if (runtimeNotifierWindowIds.size === 0) {
+      // Why: the notifier routes through the live window registry. Keep it
+      // installed while any window remains, and clear it during no-window gaps.
       runtime.setNotifier(null)
-      activeRuntimeNotifierToken = null
     }
   })
 }

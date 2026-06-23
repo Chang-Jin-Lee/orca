@@ -5,6 +5,7 @@ import { useMountedRef } from '../../hooks/useMountedRef'
 import { SearchableSetting } from './SearchableSetting'
 import { SettingsSwitchRow } from './SettingsFormControls'
 import { getExperimentalSearchEntry } from './experimental-search'
+import { Button } from '@/components/ui/button'
 import { translate } from '@/i18n/i18n'
 
 type ExperimentalMultiWindowSettingProps = {
@@ -77,11 +78,13 @@ export function ExperimentalMultiWindowSetting({
               )}
             </p>
           </div>
-          <button
+          <Button
             type="button"
+            variant="outline"
+            size="sm"
             onClick={handleRelaunch}
             disabled={relaunching}
-            className="inline-flex h-8 shrink-0 items-center justify-center gap-1.5 rounded-md border border-input bg-background px-3 text-xs font-medium shadow-xs transition-colors hover:bg-accent hover:text-accent-foreground disabled:pointer-events-none disabled:opacity-50"
+            className="shrink-0"
           >
             {relaunching ? (
               <Loader2 className="size-3.5 animate-spin" />
@@ -89,7 +92,7 @@ export function ExperimentalMultiWindowSetting({
               <RotateCw className="size-3.5" />
             )}
             {translate('auto.components.settings.ExperimentalPane.c709b5448c', 'Restart')}
-          </button>
+          </Button>
         </div>
       ) : null}
     </SearchableSetting>

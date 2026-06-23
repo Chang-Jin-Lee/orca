@@ -46,6 +46,7 @@ import {
   sendToWindow
 } from './main-window-registry'
 import { clearTrustedUIRendererWebContentsId, setTrustedUIRendererWebContentsId } from '../ipc/ui'
+import { clearTrustedClipboardRendererWebContentsId } from './clipboard-ipc-handlers'
 
 function forceRepaint(window: BrowserWindow): void {
   if (window.isDestroyed()) {
@@ -1164,6 +1165,14 @@ export function createMainWindow(
       opts?.onQuitWindowCloseConfirmed?.(mainWindow)
       return
     }
+    if (pendingQuitCloseRequest && opts?.getIsQuitting?.()) {
+      pendingQuitCloseRequest = false
+      windowCloseConfirmed = true
+      if (!mainWindow.isDestroyed()) {
+        mainWindow.close()
+      }
+      return
+    }
     if (pendingQuitCloseRequest) {
       // Why: a quit can be canceled by another window while this renderer is
       // still confirming. Do not reinterpret that stale quit confirmation as a
@@ -1218,6 +1227,7 @@ export function createMainWindow(
     ipcMain.removeListener(floatingTerminalInputFocusChannel, onFloatingTerminalInputFocused)
     ipcMain.removeListener(shortcutRecorderFocusChannel, onShortcutRecorderFocused)
     clearTrustedUIRendererWebContentsId(rendererWebContentsId)
+    clearTrustedClipboardRendererWebContentsId(rendererWebContentsId)
     // Why: on updater-triggered shutdown, BrowserWindow can emit `closed`
     // after its webContents has already been destroyed. The destroyed
     // webContents owns its listeners, so do not touch `mainWindow.webContents`
