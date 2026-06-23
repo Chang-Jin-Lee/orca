@@ -756,7 +756,7 @@
         "5664681624": "显示上面的更多行",
         "b1574e8ac2": "重置代码上下文",
         "d43736d09c": "代码上下文控制",
-        "bd7be7b1fd": "comment L",
+        "bd7be7b1fd": "评论 L",
         "db61d76cd5": "正在加载代码上下文...",
         "f2d02cdf8c": "已查看文件",
         "1257d1435d": "显示文件树",
@@ -1230,7 +1230,7 @@
         "c9de94b07a": "显示上面的更多行",
         "5f3e293517": "重置代码上下文",
         "85d119be40": "代码上下文控制",
-        "791ddede19": "comment L",
+        "791ddede19": "评论 L",
         "4b960e5978": "正在加载代码上下文...",
         "89e80af1c7": "已查看文件",
         "319cf2d54b": "显示文件树",
@@ -1830,7 +1830,7 @@
             "2e26a06c70": "添加标签",
             "36341ffc66": "分配",
             "e369bf4fec": "选择",
-            "ffeff79861": "PULL_REQUEST"
+            "ffeff79861": "拉取请求"
           },
           "ProjectGroupHeader": {
             "82a22d2079": "当前",
@@ -1866,7 +1866,7 @@
           "ProjectRow": {
             "75b5d816e3": "开始工作",
             "e12be8b4d4": "在 GitHub 中打开",
-            "c3b81ddea2": "DRAFT_ISSUE"
+            "c3b81ddea2": "草稿议题"
           },
           "ProjectViewList": {
             "989f81dc2a": "专栏",
@@ -3229,7 +3229,7 @@
         "stats": {
           "search": {
             "cb6a9f0334": "缓存",
-            "eaf251e183": "Token",
+            "eaf251e183": "令牌",
             "6953af58e6": "opencode",
             "b77826fca3": "codex",
             "e9dc37d889": "claude",
@@ -3863,7 +3863,7 @@
           "3e65e11cc6": "工作区元数据",
           "c7fa72ead0": "编辑笔记",
           "93cbea12c2": "笔记",
-          "eace1d2cf6": "Neutral",
+          "eace1d2cf6": "中性",
           "dbe2d18972": "更多 {{value0}} 操作",
           "ae76907ca6": "取消链接 {{value0}}",
           "ad25c3ff05": "在 {{value0}} 上查看",
@@ -4157,8 +4157,8 @@
             "7cebab6d4a": "Amber",
             "1b81da243a": "Violet",
             "6437a8c253": "Sky",
-            "fc3b92756c": "Blue",
-            "52e3c6e2a4": "Neutral"
+            "fc3b92756c": "蓝色",
+            "52e3c6e2a4": "中性"
           }
         },
         "worktree": {
@@ -6689,7 +6689,7 @@
             "c927a155d5": "在状态栏中显示 Kimi 订阅使用情况。",
             "3a6c028ea8": "基米用法",
             "edbf0f63a0": "成本",
-            "afbb6a3767": "Token",
+            "afbb6a3767": "令牌",
             "d77537b580": "opencode-go",
             "a9d56852eb": "opencode",
             "7f72de7cbe": "在状态栏中显示 OpenCode Go Token 和成本使用情况。",
@@ -6789,7 +6789,7 @@
             "072b7f5c1f": "默认缩放",
             "0bb34eacc9": "询问",
             "8b8ed06e4b": "多功能框",
-            "3538b3aaeb": "Token",
+            "3538b3aaeb": "令牌",
             "0732ebe6fb": "私人的",
             "e1c2a57f07": "卡吉",
             "ad40e75d13": "冰",
@@ -7055,7 +7055,7 @@
             "8ea37a05bc": "智能体",
             "e2da948f59": "在新工作区编辑器中预先选择 AI 编码智能体。",
             "db11502270": "默认智能体",
-            "3462308bd3": "Token",
+            "3462308bd3": "令牌",
             "660528b048": "成本",
             "585beac3f8": "TTL",
             "0efc9d96ad": "提示词",
@@ -7444,7 +7444,7 @@
             "d3f1c48677": "当后台终端发出响铃字符时发出通知。",
             "a5edee1d99": "终端响铃",
             "193e1f107c": "任务",
-            "dd9d3e5f0f": "idle",
+            "dd9d3e5f0f": "空闲",
             "5f7472d3fb": "完全的",
             "7fa07e9600": "智能体",
             "10d83ef8dc": "当编码智能体从工作状态转换为空闲状态时发出通知。",
@@ -8203,7 +8203,7 @@
           "checkingTitle": "正在检查计算机控制访问权限。",
           "checkingDescription": "Orca 正在检查计算机控制助手的 macOS 隐私权限。",
           "unavailableTitle": "计算机控制不可用。",
-          "unavailableDescription": "Computer Use permissions are unavailable because {{value0}}.",
+          "unavailableDescription": "计算机使用权限不可用，因为 {{value0}}。",
           "readyTitle": "计算机控制已就绪。",
           "readyDescription": "当你要求时，智能体可以检查并操作应用窗口。",
           "permissionsTitle": "完成设置以使用本地应用。"
@@ -8490,10 +8490,10 @@
             "d0fb0f4bf2": "刷新 commits",
             "9f7535d22b": "引用是指向该确切 commit 的分支或标记名称。它们仅出现在 Git 具有 commit 的命名引用的地方。",
             "9289ba0cb9": "什么是参考文献？",
-            "d836037d02": "Commits",
+            "d836037d02": "提交",
             "8232c8b2f2": "打开 commit {{value0}}: {{value1}}",
             "9a8b85882d": "加载中",
-            "62e685d5ec": "idle",
+            "62e685d5ec": "空闲",
             "111e1d0db4": "错误",
             "e5e81e59a6": "调整 commits 大小",
             "6d1e0a7c3b": "无法加载提交文件"
@@ -8869,7 +8869,7 @@
             "bar": {
               "buttons": {
                 "1fd284e931": "更多侧边栏选项卡",
-                "f1132ea95d": "Neutral"
+                "f1132ea95d": "中性"
               }
             }
           },
@@ -9094,13 +9094,13 @@
                   "9e779995dd": "创建 {{value0}}",
                   "226b85a3a7": "fetch",
                   "323bb614aa": "Commit 并同步",
-                  "2b8e6595fd": "Commit",
+                  "2b8e6595fd": "提交",
                   "04d709801d": "从远程获取但不合并"
                 }
               },
               "primary": {
                 "action": {
-                  "ed93b4f14f": "Commit",
+                  "ed93b4f14f": "提交",
                   "946a8a05ea": "为此分支创建 {{value0}}",
                   "e7ffa46946": "创建 {{value0}}",
                   "95550cff15": "推",
@@ -9133,16 +9133,16 @@
                   "b8e4f2a901": "等待远程操作完成。",
                   "c9f3a1b802": "Resolve conflicts before creating a {{value0}}.",
                   "d2a8c4e703": "No changes on this branch to include in a {{value0}}.",
-                  "e3b9d5f814": "Cannot create a {{value0}} from the default branch.",
-                  "f4c0e6a925": "Commit changes before creating a {{value0}}.",
+                  "e3b9d5f814": "无法从默认分支创建 {{value0}}。",
+                  "f4c0e6a925": "在创建 {{value0}} 前提交更改。",
                   "a5d1f7b036": "Publish commits before creating a {{value0}}.",
                   "b6e2a8c147": "Push commits before creating a {{value0}}.",
                   "c7f3b9d258": "Sync this branch before creating a {{value0}}.",
                   "d8a4c0e369": "Authenticate before creating a {{value0}}.",
-                  "e9b5d1f470": "Check out a branch before creating a {{value0}}.",
+                  "e9b5d1f470": "在创建 {{value0}} 前检出分支。",
                   "f0c6e2a581": "This branch is not ready for a {{value0}} yet.",
                   "8f9a0b1c2d": "Nothing to commit. Branch is up to date.",
-                  "h3i4j5k607": "Checking whether this branch can create a {{value0}}…"
+                  "h3i4j5k607": "正在检查此分支能否创建 {{value0}}…"
                 }
               }
             }
@@ -10289,7 +10289,7 @@
             "5b3577a492": "已连接，可用于评审状态",
             "list_end": "，以及",
             "list_pair": " 和 ",
-            "list_mid": ", ",
+            "list_mid": "，",
             "code_host_tasks_summary": "议题可作为任务使用 · 如果团队在 Linear 或 Jira 中规划工作，也可以添加它们",
             "code_host_tasks_caption": "代码托管平台的议题也可以作为任务使用。",
             "review_step_title": "在智能体工作时查看 PR 状态",
@@ -10677,7 +10677,7 @@
           "9e06ae5d36": "运行笔记本代码？",
           "d6f37a640b": "空笔记本",
           "8c3b21369a": "nb格式",
-          "329764e9fc": "BETA",
+          "329764e9fc": "测试版",
           "15ec40a735": "保存笔记本",
           "07e7d96612": "细胞",
           "c1601b23b2": "无法渲染笔记本",
