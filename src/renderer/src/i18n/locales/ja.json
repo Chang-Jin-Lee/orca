@@ -4829,6 +4829,12 @@
           "c709b5448c": "Restart",
           "847886cf3e": "Smart New Tab menu",
           "523b819a55": "Type in the New Tab menu to open a terminal, launch an agent, visit a URL, or open/create a file.",
+          "multiWindow": {
+            "toggleLabel": "Toggle multi-window"
+          },
+          "smartNewTab": {
+            "toggleLabel": "Toggle Smart New Tab menu"
+          },
           "agentHibernation": {
             "copy": "設定したアイドル時間が経過したバックグラウンド agent terminals を停止し、対応しているセッションは再度開いたときに再開します。Agent のスリープは、Orca から起動した agent の起動オプションを保持します。手動で起動した agent は、現在の Orca のデフォルトで再開される場合があります。安全モデルを調整中の実験的機能です。",
             "description": "設定したアイドル時間が経過したバックグラウンド agent terminals を停止し、対応しているセッションは再度開いたときに再開します。",
@@ -6250,7 +6256,19 @@
           "ab20575a8a": "オフ",
           "ab3a1f9068": "wsl.exe",
           "ask_before_closing_running_terminals_title": "Ask Before Closing Running Terminals",
-          "ask_before_closing_running_terminals_description": "Show a confirmation before closing a terminal that has a running command or agent."
+          "ask_before_closing_running_terminals_description": "Show a confirmation before closing a terminal that has a running command or agent.",
+          "scrollSpeed": {
+            "title": "Scroll Speed",
+            "description": "Tune normal terminal scrollback, fast modifier scrolling, and full-screen TUI wheel speed.",
+            "helper": "Adjust how wheel input feels in scrollback and in mouse-aware terminal apps.",
+            "reset": "Reset",
+            "normal": "Normal",
+            "normalDescription": "Scrollback wheel multiplier.",
+            "fast": "Fast",
+            "fastDescription": "Extra multiplier while scrolling with a modifier key.",
+            "tui": "TUI",
+            "tuiDescription": "Discrete wheel reports for full-screen terminal apps."
+          }
         },
         "TerminalSettingsPreview": {
           "a63953a48a": "{{value0}} テーマのプレビュー",
@@ -6938,9 +6956,29 @@
             "051203d37c": "ペット",
             "6b5a56ac35": "右下隅に浮かぶアニメーションのペット。",
             "87d99e634b": "ペット",
-          "4f0b2bb8d1": "Smart New Tab menu",
-          "818dac284f": "Multi-window",
-          "agentHibernation": {
+            "4f0b2bb8d1": "Smart New Tab menu",
+            "e71f86b9a2": "Type in the New Tab menu to open a terminal, launch an agent, visit a URL, or open/create a file.",
+            "f515b6259c": "smart",
+            "d9e01f4b2c": "new tab",
+            "330c22c19f": "new tab menu",
+            "18c6b47e01": "launcher",
+            "9a2ee68f51": "unified",
+            "717c8d2462": "plus",
+            "79f3c739d8": "url",
+            "8c7dd922ad": "file",
+            "818dac284f": "Multi-window",
+            "7b91eb5445": "Enable File > New Window for multiple monitor workflows. Requires restart.",
+            "80f98894e2": "window",
+            "453f52ca4f": "windows",
+            "0769e2ac8b": "multi-window",
+            "a546df85b7": "multiple windows",
+            "065be2a752": "new window",
+            "f45e79f16d": "monitor",
+            "d7c9a0880c": "monitors",
+            "e6798b719e": "display",
+            "991fc15475": "displays",
+            "834ea7f3aa": "restart",
+            "agentHibernation": {
               "agent": "agent",
               "agents": "agents",
               "description": "設定したアイドル時間が経過したバックグラウンド agent terminals を停止し、再度開いたときに対応セッションを再開します。Agent のスリープは Orca から起動した agent の起動オプションを保持します。手動で起動した agent は現在の Orca のデフォルトで再開される場合があります。",
@@ -7888,7 +7926,11 @@
             "0fe0073f0c": "新規ペインとライブ アップデートのデフォルトの terminal フォント サイズ。",
             "5930244899": "フォントサイズ",
             "ask_before_closing_running_terminals_title": "Ask Before Closing Running Terminals",
-            "ask_before_closing_running_terminals_description": "Show a confirmation before closing a terminal that has a running command or agent."
+            "ask_before_closing_running_terminals_description": "Show a confirmation before closing a terminal that has a running command or agent.",
+            "scrollSpeed": {
+              "title": "Scroll Speed",
+              "description": "Tune normal terminal scrollback, fast modifier scrolling, and full-screen TUI wheel speed."
+            }
           },
           "windows": {
             "search": {

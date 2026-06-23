@@ -204,6 +204,37 @@ describe('registerRuntimeHandlers', () => {
     expect(runtime.reclaimBrowserForDesktop).not.toHaveBeenCalled()
   })
 
+  it('ignores spoofed window ids in direct desktop reclaim IPC args', async () => {
+    const sender = {}
+    const runtime = {
+      syncWindowGraph: vi.fn(),
+      getStatus: vi.fn(),
+      getRuntimeId: vi.fn().mockReturnValue('runtime-1'),
+      resolveOwnerWindowIdForPtyId: vi.fn(() => 23),
+      resolveOwnerWindowIdForBrowserPageId: vi.fn(() => 23),
+      reclaimTerminalForDesktop: vi.fn().mockResolvedValue(true),
+      reclaimBrowserForDesktop: vi.fn().mockReturnValue(true)
+    }
+
+    registerRuntimeHandlers(runtime as never)
+    getMainWindowForWebContentsMock.mockReturnValue({ id: 17 })
+
+    await expect(
+      getRegisteredHandler('runtime:restoreTerminalFit')(
+        { sender },
+        { ptyId: 'pty-other', senderWindowId: 23, windowId: 23 }
+      )
+    ).resolves.toEqual({ restored: false })
+    expect(
+      getRegisteredHandler('runtime:reclaimBrowserForDesktop')(
+        { sender },
+        { browserPageId: 'browser-other', senderWindowId: 23, windowId: 23 }
+      )
+    ).toEqual({ reclaimed: false })
+    expect(runtime.reclaimTerminalForDesktop).not.toHaveBeenCalled()
+    expect(runtime.reclaimBrowserForDesktop).not.toHaveBeenCalled()
+  })
+
   it('allows direct desktop reclaim IPC for the owning window', async () => {
     const sender = {}
     const runtime = {

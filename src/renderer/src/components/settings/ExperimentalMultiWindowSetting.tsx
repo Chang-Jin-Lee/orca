@@ -2,8 +2,8 @@ import { useRef, useState } from 'react'
 import { Loader2, RotateCw } from 'lucide-react'
 import type { GlobalSettings } from '../../../../shared/types'
 import { useMountedRef } from '../../hooks/useMountedRef'
-import { Label } from '../ui/label'
 import { SearchableSetting } from './SearchableSetting'
+import { SettingsSwitchRow } from './SettingsFormControls'
 import { getExperimentalSearchEntry } from './experimental-search'
 import { translate } from '@/i18n/i18n'
 
@@ -47,34 +47,19 @@ export function ExperimentalMultiWindowSetting({
       className="space-y-3 py-2"
       id="experimental-multi-window"
     >
-      <div className="flex items-start justify-between gap-4">
-        <div className="min-w-0 shrink space-y-0.5">
-          <Label>
-            {translate('auto.components.settings.ExperimentalPane.efc5cd3ad7', 'Multi-window')}
-          </Label>
-          <p className="text-xs text-muted-foreground">
-            {translate(
-              'auto.components.settings.ExperimentalPane.73d191586e',
-              'Adds File > New Window for multiple monitor workflows. Requires restart.'
-            )}
-          </p>
-        </div>
-        <button
-          type="button"
-          role="switch"
-          aria-checked={enabled}
-          onClick={() => updateSettings({ experimentalMultiWindow: !enabled })}
-          className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full border border-transparent transition-colors ${
-            enabled ? 'bg-foreground' : 'bg-muted-foreground/30'
-          }`}
-        >
-          <span
-            className={`inline-block h-3.5 w-3.5 transform rounded-full bg-background shadow-sm transition-transform ${
-              enabled ? 'translate-x-4' : 'translate-x-0.5'
-            }`}
-          />
-        </button>
-      </div>
+      <SettingsSwitchRow
+        label={translate('auto.components.settings.ExperimentalPane.efc5cd3ad7', 'Multi-window')}
+        description={translate(
+          'auto.components.settings.ExperimentalPane.73d191586e',
+          'Adds File > New Window for multiple monitor workflows. Requires restart.'
+        )}
+        checked={enabled}
+        onChange={() => updateSettings({ experimentalMultiWindow: !enabled })}
+        ariaLabel={translate(
+          'auto.components.settings.ExperimentalPane.multiWindow.toggleLabel',
+          'Toggle multi-window'
+        )}
+      />
 
       {restartRequired ? (
         <div className="flex items-center justify-between gap-3 rounded-md border border-border/50 bg-muted/30 px-3 py-2">

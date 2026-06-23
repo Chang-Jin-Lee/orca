@@ -391,6 +391,48 @@ describe('SshRelaySession', () => {
     })
   })
 
+  it('does not fallback-broadcast PTY stream events when runtime ownership is unknown', async () => {
+    const { mockConn, mockStore, mockPortForward, getMainWindow, mockWindow } = createMockDeps()
+    const runtime = {
+      resolveOwnerWindowIdForPtyId: vi.fn().mockReturnValue(null),
+      onPtyData: vi.fn().mockReturnValue(42),
+      onPtyExit: vi.fn()
+    }
+    const session = new SshRelaySession(
+      'target-1',
+      getMainWindow,
+      mockStore,
+      mockPortForward,
+      runtime as never
+    )
+    await session.establish(mockConn)
+
+    const ptyProvider = vi.mocked(registerSshPtyProvider).mock.calls[0]?.[1] as unknown as {
+      onData: ReturnType<typeof vi.fn>
+      onReplay: ReturnType<typeof vi.fn>
+      onExit: ReturnType<typeof vi.fn>
+    }
+    const onData = ptyProvider.onData.mock.calls[0]?.[0]
+    const onReplay = ptyProvider.onReplay.mock.calls[0]?.[0]
+    const onExit = ptyProvider.onExit.mock.calls[0]?.[0]
+
+    onData({ id: 'pty-unknown', data: 'hello' })
+    onReplay({ id: 'pty-unknown', data: 'snapshot' })
+    onExit({ id: 'pty-unknown', code: 0 })
+
+    expect(getMainWindow).not.toHaveBeenCalled()
+    expect(mockWindow.webContents.send).not.toHaveBeenCalledWith('pty:data', expect.anything())
+    expect(mockWindow.webContents.send).not.toHaveBeenCalledWith('pty:replay', expect.anything())
+    expect(mockWindow.webContents.send).not.toHaveBeenCalledWith('pty:exit', expect.anything())
+    expect(runtime.onPtyData).toHaveBeenCalledWith('pty-unknown', 'hello', expect.any(Number))
+    expect(runtime.onPtyExit).toHaveBeenCalledWith('pty-unknown', 0)
+    expect(mockStore.markSshRemotePtyLease).toHaveBeenCalledWith(
+      'target-1',
+      'pty-unknown',
+      'terminated'
+    )
+  })
+
   it('drops identical reconnect replay payloads inside one reconnect burst', async () => {
     const { mockConn, mockStore, mockPortForward, getMainWindow, mockWindow } = createMockDeps()
     const session = new SshRelaySession('target-1', getMainWindow, mockStore, mockPortForward)

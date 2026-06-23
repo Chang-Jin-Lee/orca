@@ -64,7 +64,6 @@ import { runRemoteOrcaCli } from './ssh-remote-orca-cli'
 import {
   broadcastToMainWindows,
   getMainWindowById,
-  getSingleMainWindow,
   sendToWindow
 } from '../window/main-window-registry'
 
@@ -979,7 +978,7 @@ export class SshRelaySession {
     if (ownerWindowId !== null) {
       return getMainWindowById(ownerWindowId)
     }
-    return getSingleMainWindow()
+    return null
   }
 
   private replayFingerprint(data: string): string {
