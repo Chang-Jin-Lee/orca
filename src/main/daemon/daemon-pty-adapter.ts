@@ -69,6 +69,7 @@ export class DaemonPtyAdapter implements IPtyProvider {
   private dataListeners: ((payload: { id: string; data: string }) => void)[] = []
   private exitListeners: ((payload: { id: string; code: number }) => void)[] = []
   private removeEventListener: (() => void) | null = null
+  private removeDisconnectedListener: (() => void) | null = null
   private initialCwds = new Map<string, string>()
   // Why: React re-renders and StrictMode double-mounts can call createOrAttach
   // for a session the user just killed. Without tombstones, the daemon would
@@ -90,6 +91,8 @@ export class DaemonPtyAdapter implements IPtyProvider {
   private sessionsNeedingFullCheckpoint = new Set<string>()
   private checkpointTimer: ReturnType<typeof setTimeout> | null = null
   private checkpointInFlight: Promise<void> | null = null
+  private isDisposed = false
+  private disconnectReconcileGeneration = 0
   // Why: checkpoint-based persistence requires the getSnapshot RPC (v4+).
   // Legacy daemons reject it, causing noisy log spam every 5 seconds.
   private supportsCheckpoints: boolean
@@ -112,6 +115,9 @@ export class DaemonPtyAdapter implements IPtyProvider {
     this.respawnFn = opts.respawn ?? null
     this.supportsCheckpoints = this.protocolVersion >= 4
     this.supportsIncrementalCheckpoints = this.protocolVersion >= 13
+    this.removeDisconnectedListener = this.client.onDisconnected(() => {
+      void this.reconcileAfterDaemonDisconnect()
+    })
   }
 
   getHistoryManager(): HistoryManager | null {
@@ -486,11 +492,15 @@ export class DaemonPtyAdapter implements IPtyProvider {
   // path so downstream cleanup (clearProviderPtyState, markClaudePtyExited,
   // renderer pty:exit) runs exactly as it does on natural exit.
   fanoutSyntheticExits(code: number): void {
-    const ids = [...this.activeSessionIds]
-    this.activeSessionIds.clear()
-    this.dirtySessionVersions.clear()
-    this.stopCheckpointTimer()
+    this.fanoutSyntheticExitIds([...this.activeSessionIds], code)
+  }
+
+  private fanoutSyntheticExitIds(ids: string[], code: number): void {
     for (const id of ids) {
+      if (!this.activeSessionIds.delete(id)) {
+        continue
+      }
+      this.dirtySessionVersions.delete(id)
       this.coldRestoreCache.delete(id)
       // Why: listener throws are intentionally *not* caught — matches the
       // natural onExit fanout in setupEventRouting, so synthetic exits don't
@@ -500,6 +510,54 @@ export class DaemonPtyAdapter implements IPtyProvider {
       for (const listener of [...this.exitListeners]) {
         listener({ id, code })
       }
+    }
+    this.stopCheckpointTimerIfIdle()
+  }
+
+  private async reconcileAfterDaemonDisconnect(): Promise<void> {
+    const generation = ++this.disconnectReconcileGeneration
+    const idsAtDisconnect = [...this.activeSessionIds]
+    if (this.isDisposed || idsAtDisconnect.length === 0) {
+      return
+    }
+
+    try {
+      const aliveSessionIds = await this.probeAliveSessionIds()
+      if (this.isDisposed || generation !== this.disconnectReconcileGeneration) {
+        return
+      }
+      const exitedIds = idsAtDisconnect.filter((id) => !aliveSessionIds.has(id))
+      this.fanoutSyntheticExitIds(exitedIds, -1)
+      if (exitedIds.length < idsAtDisconnect.length) {
+        await this.client.ensureConnected()
+        if (this.isDisposed || generation !== this.disconnectReconcileGeneration) {
+          this.client.disconnect()
+        }
+      }
+    } catch {
+      if (this.isDisposed || generation !== this.disconnectReconcileGeneration) {
+        return
+      }
+      // Why: if reconnect/listSessions fails, the adapter cannot know whether
+      // daemon-backed PTYs still exist. Prefer visible exits over dropped input.
+      this.fanoutSyntheticExitIds(idsAtDisconnect, -1)
+    }
+  }
+
+  private async probeAliveSessionIds(): Promise<Set<string>> {
+    const probeClient = new DaemonClient({
+      socketPath: this.socketPath,
+      tokenPath: this.tokenPath,
+      protocolVersion: this.protocolVersion
+    })
+    try {
+      await probeClient.ensureConnected()
+      const result = await probeClient.request<ListSessionsResult>('listSessions', undefined)
+      return new Set(
+        result.sessions.filter((session) => session.isAlive).map((session) => session.sessionId)
+      )
+    } finally {
+      probeClient.disconnect()
     }
   }
 
@@ -546,11 +604,15 @@ export class DaemonPtyAdapter implements IPtyProvider {
   }
 
   dispose(): void {
+    this.isDisposed = true
+    this.disconnectReconcileGeneration++
     this.stopCheckpointTimer()
     this.dirtySessionVersions.clear()
     this.coldRestoreCache.clear()
     this.removeEventListener?.()
     this.removeEventListener = null
+    this.removeDisconnectedListener?.()
+    this.removeDisconnectedListener = null
     // Why: final checkpoints are written daemon-side in TerminalHost.dispose()
     // which has direct access to sessions. The adapter only marks sessions as
     // cleanly ended here so they don't trigger false cold restores.
@@ -569,6 +631,8 @@ export class DaemonPtyAdapter implements IPtyProvider {
   // We write a final checkpoint before disconnecting so that if the daemon
   // later crashes while Orca is closed, checkpoint.json has recovery data.
   async disconnectOnly(): Promise<void> {
+    this.isDisposed = true
+    this.disconnectReconcileGeneration++
     this.stopCheckpointTimer()
     // Why: wait for any in-flight timer pass to finish before starting
     // the final checkpoint. Otherwise both passes race on the shared tmp
@@ -586,6 +650,8 @@ export class DaemonPtyAdapter implements IPtyProvider {
     this.coldRestoreCache.clear()
     this.removeEventListener?.()
     this.removeEventListener = null
+    this.removeDisconnectedListener?.()
+    this.removeDisconnectedListener = null
     this.client.disconnect()
   }
 

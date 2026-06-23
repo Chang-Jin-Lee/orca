@@ -286,6 +286,110 @@ describe('DaemonPtyAdapter (IPtyProvider)', () => {
       await waitFor(() => exits.length > 0)
       expect(exits[0]).toEqual({ id, code: 42 })
     })
+
+    it('fans out synthetic exits when the daemon connection drops', async () => {
+      const exits: { id: string; code: number }[] = []
+      adapter.onExit((payload) => exits.push(payload))
+
+      const { id } = await adapter.spawn({ cols: 80, rows: 24 })
+      await server.shutdown()
+
+      await waitFor(() => exits.length > 0)
+      expect(exits[0]).toEqual({ id, code: -1 })
+      expect(adapter.getActiveSessionIds()).toEqual([])
+    })
+
+    it('keeps sessions active when a dropped socket can reconnect to the same daemon', async () => {
+      const exits: { id: string; code: number }[] = []
+      adapter.onExit((payload) => exits.push(payload))
+
+      const { id } = await adapter.spawn({ cols: 80, rows: 24 })
+      const clients = (
+        server as unknown as {
+          clients: Map<string, { streamSocket: { destroy(): void } | null }>
+        }
+      ).clients
+      const originalStreamSocket = [...clients.values()][0]?.streamSocket
+      expect(originalStreamSocket).toBeTruthy()
+
+      originalStreamSocket?.destroy()
+
+      await waitFor(() =>
+        [...clients.values()].some(
+          (client) => client.streamSocket !== null && client.streamSocket !== originalStreamSocket
+        )
+      )
+      expect(exits).toEqual([])
+      expect(adapter.getActiveSessionIds()).toEqual([id])
+
+      adapter.write(id, 'after-reconnect')
+      await waitFor(() =>
+        vi.mocked(lastSubprocess.write).mock.calls.some(([data]) => data === 'after-reconnect')
+      )
+    })
+
+    it('does not reconnect a disposed adapter when disconnect reconciliation finishes late', async () => {
+      const exits: { id: string; code: number }[] = []
+      adapter.onExit((payload) => exits.push(payload))
+
+      const internals = adapter as unknown as {
+        activeSessionIds: Set<string>
+        probeAliveSessionIds: () => Promise<Set<string>>
+        reconcileAfterDaemonDisconnect: () => Promise<void>
+        client: { ensureConnected: () => Promise<void>; disconnect: () => void }
+      }
+      internals.activeSessionIds.add('sess-a')
+      internals.probeAliveSessionIds = vi.fn(async () => new Set(['sess-a']))
+
+      let releaseReconnect: (() => void) | undefined
+      const reconnectStarted = vi.fn()
+      internals.client = {
+        ensureConnected: vi.fn(
+          () =>
+            new Promise<void>((resolve) => {
+              reconnectStarted()
+              releaseReconnect = resolve
+            })
+        ),
+        disconnect: vi.fn()
+      }
+
+      const reconcile = internals.reconcileAfterDaemonDisconnect()
+      await waitFor(() => reconnectStarted.mock.calls.length > 0)
+      adapter.dispose()
+      releaseReconnect?.()
+      await reconcile
+
+      expect(exits).toEqual([])
+      expect(vi.mocked(internals.client.disconnect).mock.calls.length).toBeGreaterThanOrEqual(2)
+    })
+
+    it('only exits sessions present when a late disconnect reconciliation fails', async () => {
+      const exits: { id: string; code: number }[] = []
+      adapter.onExit((payload) => exits.push(payload))
+
+      const internals = adapter as unknown as {
+        activeSessionIds: Set<string>
+        probeAliveSessionIds: () => Promise<Set<string>>
+        reconcileAfterDaemonDisconnect: () => Promise<void>
+      }
+      let rejectProbe: ((err: Error) => void) | undefined
+      internals.probeAliveSessionIds = vi.fn(
+        () =>
+          new Promise<Set<string>>((_, reject) => {
+            rejectProbe = reject
+          })
+      )
+      internals.activeSessionIds.add('old-session')
+
+      const reconcile = internals.reconcileAfterDaemonDisconnect()
+      internals.activeSessionIds.add('new-session')
+      rejectProbe?.(new Error('probe failed'))
+      await reconcile
+
+      expect(exits).toEqual([{ id: 'old-session', code: -1 }])
+      expect(adapter.getActiveSessionIds()).toEqual(['new-session'])
+    })
   })
 
   describe('spawn with sessionId (reattach)', () => {
