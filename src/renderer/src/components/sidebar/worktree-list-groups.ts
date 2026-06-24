@@ -145,14 +145,24 @@ type ProjectGroupingIndex = {
   multiSetupProjectHostKeys: Set<string>
 }
 
+const projectGroupingIndexCache = new WeakMap<ProjectGroupingModel, ProjectGroupingIndex | null>()
+
 function projectHostKey(projectId: string, hostId: string): string {
   return `${projectId}::${hostId}`
 }
 
 function buildProjectGroupingIndex(model?: ProjectGroupingModel): ProjectGroupingIndex | null {
-  const projects = model?.projects ?? []
-  const projectHostSetups = model?.projectHostSetups ?? []
+  if (!model) {
+    return null
+  }
+  const cached = projectGroupingIndexCache.get(model)
+  if (cached !== undefined) {
+    return cached
+  }
+  const projects = model.projects ?? []
+  const projectHostSetups = model.projectHostSetups ?? []
   if (projects.length === 0 || projectHostSetups.length === 0) {
+    projectGroupingIndexCache.set(model, null)
     return null
   }
   const setupCountByProjectHost = new Map<string, number>()
@@ -166,18 +176,27 @@ function buildProjectGroupingIndex(model?: ProjectGroupingModel): ProjectGroupin
       multiSetupProjectHostKeys.add(key)
     }
   }
-  return {
+  const index = {
     projectById: new Map(projects.map((project) => [project.id, project])),
     setupByRepoId: new Map(projectHostSetups.map((setup) => [setup.repoId, setup])),
     multiSetupProjectHostKeys
   }
+  projectGroupingIndexCache.set(model, index)
+  return index
+}
+
+export type ProjectHeaderRevealTarget = {
+  key: string
+  label: string
+  repo?: Repo
+  projectId?: string
 }
 
 function getProjectGroupingForRepo(
   repoId: string,
   repoMap: Map<string, Repo>,
   projectIndex: ProjectGroupingIndex | null
-): { key: string; label: string; repo?: Repo; projectId?: string } {
+): ProjectHeaderRevealTarget {
   const repo = repoMap.get(repoId)
   const setup = projectIndex?.setupByRepoId.get(repoId)
   const project = setup ? projectIndex?.projectById.get(setup.projectId) : undefined
@@ -205,6 +224,14 @@ function getProjectGroupingForRepo(
     repo,
     projectId: project.id
   }
+}
+
+export function getProjectHeaderRevealTarget(
+  repoId: string,
+  repoMap: Map<string, Repo>,
+  projectGrouping?: ProjectGroupingModel
+): ProjectHeaderRevealTarget {
+  return getProjectGroupingForRepo(repoId, repoMap, buildProjectGroupingIndex(projectGrouping))
 }
 
 function addRepoIdToGroup(group: WorktreeGroupEntry, repoId: string): void {

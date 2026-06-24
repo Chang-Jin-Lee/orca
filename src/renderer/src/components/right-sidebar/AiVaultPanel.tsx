@@ -18,8 +18,9 @@ import {
   groupAiVaultSessions
 } from './ai-vault-session-filters'
 import {
-  normalizeAiVaultScopeForContext,
-  shouldRestoreAiVaultProjectScope
+  DEFAULT_AI_VAULT_SCOPE,
+  getRestorableAiVaultScope,
+  normalizeAiVaultScopeForContext
 } from './ai-vault-scope-state'
 import { buildAiVaultProjectContext } from './ai-vault-session-projects'
 import {
@@ -47,7 +48,7 @@ export default function AiVaultPanel(): React.JSX.Element {
   const projectHostSetupProjection = useProjectHostSetupProjection()
   const agentCmdOverrides = useAppStore((s) => s.settings?.agentCmdOverrides ?? {})
   const [query, setQuery] = useState('')
-  const [scope, setScope] = useState<AiVaultScope>('project')
+  const [scope, setScope] = useState<AiVaultScope>(DEFAULT_AI_VAULT_SCOPE)
   const [sort, setSort] = useState<AiVaultSort>('updated')
   const [group, setGroup] = useState<AiVaultGroup>('project')
   const [hideEmptySessions, setHideEmptySessions] = useState(true)
@@ -61,6 +62,7 @@ export default function AiVaultPanel(): React.JSX.Element {
   const refreshInFlightRef = useRef(false)
   const mountedRef = useRef(true)
   const userChangedScopeRef = useRef(false)
+  const preferredScopeRef = useRef<AiVaultScope>(DEFAULT_AI_VAULT_SCOPE)
 
   const isRemoteWorktree = Boolean(activeWorktreeRepo?.connectionId)
   const activeWorktreePath = activeWorktree?.path ?? null
@@ -91,8 +93,7 @@ export default function AiVaultPanel(): React.JSX.Element {
     (group === 'project' ? 0 : 1) +
     (hideEmptySessions ? 0 : 1)
 
-  // Project scope depends on active project context, but should come back after
-  // transient context loss unless the user intentionally chose another scope.
+  // Workspace is the preferred default, but unavailable context still falls back to All.
   useEffect(() => {
     const normalizedScope = normalizeAiVaultScopeForContext({
       scope,
@@ -105,16 +106,17 @@ export default function AiVaultPanel(): React.JSX.Element {
   }, [activeProjectKey, activeWorktreePath, scope])
 
   useEffect(() => {
-    if (
-      shouldRestoreAiVaultProjectScope({
-        scope,
-        activeProjectKey,
-        userChangedScope: userChangedScopeRef.current
-      })
-    ) {
-      setScope('project')
+    const restorableScope = getRestorableAiVaultScope({
+      scope,
+      activeProjectKey,
+      activeWorktreePath,
+      preferredScope: preferredScopeRef.current,
+      userChangedScope: userChangedScopeRef.current
+    })
+    if (restorableScope) {
+      setScope(restorableScope)
     }
-  }, [activeProjectKey, scope])
+  }, [activeProjectKey, activeWorktreePath, scope])
 
   const refresh = useCallback(async (args: { force?: boolean } = {}): Promise<void> => {
     if (refreshInFlightRef.current) {
@@ -284,7 +286,8 @@ export default function AiVaultPanel(): React.JSX.Element {
   }, [])
 
   const handleScopeChange = useCallback((nextScope: AiVaultScope) => {
-    userChangedScopeRef.current = nextScope !== 'project'
+    preferredScopeRef.current = nextScope
+    userChangedScopeRef.current = nextScope !== DEFAULT_AI_VAULT_SCOPE
     setScope(nextScope)
   }, [])
 

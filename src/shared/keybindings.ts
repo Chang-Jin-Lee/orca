@@ -48,6 +48,7 @@ export type KeybindingActionId =
   | 'sidebar.sourceControl.toggle'
   | 'sidebar.checks.toggle'
   | 'sidebar.ports.toggle'
+  | 'sidebar.sleepingWorkspaces.toggle'
   | 'sidebar.focusWorktreeList'
   | 'floatingTerminal.toggle'
   | 'floatingWorkspace.maximize'
@@ -392,6 +393,26 @@ export const KEYBINDING_DEFINITIONS: readonly KeybindingDefinition[] = [
       linux: [],
       win32: []
     }
+  },
+  {
+    id: 'sidebar.sleepingWorkspaces.toggle',
+    title: 'Toggle Sleeping Workspaces',
+    group: 'Global',
+    scope: 'global',
+    searchKeywords: [
+      'shortcut',
+      'sidebar',
+      'sleeping',
+      'asleep',
+      'workspaces',
+      'worktree',
+      'filter',
+      'show',
+      'hide'
+    ],
+    // Why: ship unbound — issue #5209 asks to "assign a shortcut", so we avoid
+    // claiming a cross-platform chord and let users bind it in Settings.
+    defaultBindings: platformBindings([])
   },
   {
     id: 'sidebar.focusWorktreeList',

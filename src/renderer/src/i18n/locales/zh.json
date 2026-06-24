@@ -1272,7 +1272,10 @@
         "2b4fdb880c": "取消标记已查看",
         "56ec6eafb7": "打开 PR 详情以查看当前评审人。",
         "7f964a365a": "移除评审人",
-        "commentTooLarge": "评论过长，无法安全提交。"
+        "commentTooLarge": "评论过长，无法安全提交。",
+        "8ff5ae8866": "Assignees",
+        "82c87eceb9": "Edit assignees",
+        "1ff5d979df": "No one assigned"
       },
       "QuickOpen": {
         "1dbd3f59ff": "手机",
@@ -1602,7 +1605,25 @@
         "fe28c9821f": "视图",
         "8d1e17a3ef": "在 GitHub 中打开 {{value0}}",
         "4ac8ff2275": "在 Jira 中打开 {{value0}}",
-        "40eaf2c27c": "Details"
+        "40eaf2c27c": "Details",
+        "closeAsCompleted": "Close as completed",
+        "closeAsCompletedDescription": "Done, closed, fixed, resolved",
+        "closeAsNotPlanned": "Close as not planned",
+        "closeAsNotPlannedDescription": "Won't fix, can't repro, stale",
+        "closeAsDuplicate": "Close as duplicate",
+        "closeAsDuplicateDescription": "Duplicate of another issue in this repository",
+        "duplicateIssueNumberPlaceholder": "Issue number",
+        "closeAsDuplicateSubmit": "Close duplicate",
+        "duplicateIssueMissing": "Enter an issue number in this repository.",
+        "duplicateIssueNotInteger": "Use a whole issue number.",
+        "duplicateIssueNotPositive": "Use a positive issue number.",
+        "duplicateIssueSameIssue": "Choose a different issue.",
+        "repository": "Repository",
+        "backToCloseReasons": "Back",
+        "searchIssues": "Search issues",
+        "useIssueNumber": "Use issue #{{value0}}",
+        "noMatchingIssuesLoaded": "No matching issues loaded.",
+        "editReviewersWithCurrent": "Edit reviewers: {{value0}}"
       },
       "Terminal": {
         "73768427cf": "关闭",
@@ -1703,7 +1724,10 @@
         "settingsBadge": "设置",
         "actionBadge": "操作",
         "paletteHostBadge": "主机：{{value0}}",
-        "workspaceTabMissing": "标签页不再存在"
+        "workspaceTabMissing": "标签页不再存在",
+        "projectsGroupsHeader": "Projects & Groups",
+        "projectBadge": "Project",
+        "repoGroupBadge": "Repo group"
       },
       "github": {
         "pr": {
@@ -3334,26 +3358,21 @@
           "496f68cf8c": "扫描存储库。单击停止。",
           "a32bef9516": "停止扫描",
           "2f8298f3c3": "停止扫描",
-          "c157f31a95": "作为组导入",
-          "40199ef7b3": "团体名称",
-          "787412361a": "什么是群组名称？",
           "5f857ba8e6": "在",
           "4df0d08cc5": "成立",
           "8db50afe1a": "从文件夹导入存储库",
           "5b2e6fe3c8": "单独导入",
           "cf9d382ca1": "导入",
           "220dd32d83": "扫描...",
-          "fb33359f69": "这是 Monorepo 吗？",
-          "d75170194e": "如果它们是 Monorepo，或本来就应该放在一起，请将它们作为组导入。Orca 会将它们分组，并让你从父文件夹开始工作。",
+          "fb33359f69": "将这些仓库分组吗？",
+          "d75170194e": "如果这些项目应放在一起（可以是 Monorepo，也可以只是一组相关仓库），请选择此项。Orca 会将它们分组，并让你从父文件夹开始工作。",
           "39d51212cc": "组名称",
           "aa0247680d": "否，单独导入",
-          "a0bc4d1f8e": "作为组导入",
+          "a0bc4d1f8e": "是，作为组导入",
           "8401a7a0d0": "1 个仓库",
           "d4f1df62ef": "{{value0}} 个仓库",
           "b4263a2ac4": "在 {{value1}} 中找到 {{value0}}。",
-          "24eda6c8b2": "正在扫描... {{value0}}",
-          "b20bb7c24f": "Keeps these repos together in one group. Best for related repos like microservices.",
-          "e907ec8935": "What is a monorepo name?"
+          "24eda6c8b2": "正在扫描... {{value0}}"
         },
         "AddRepoRemoteStep": {
           "5b205b5281": "停止扫描",
@@ -3932,7 +3951,8 @@
           "7a8b9c0d1e": "Update required",
           "hostAuthNeeded": "Authentication needed",
           "hostDisconnected": "Disconnected",
-          "failedNestWorkspace": "无法嵌套工作区"
+          "failedNestWorkspace": "无法嵌套工作区",
+          "sidebarRowMissing": "Target no longer exists"
         },
         "WorktreeMetaDialog": {
           "3db0a2a593": "取消",
@@ -11058,6 +11078,14 @@
                 "trashWorktree": "垃圾工作树",
                 "addQuickCommand": "添加快捷命令",
                 "newQuickCommand": "新的快速命令"
+              }
+            }
+          },
+          "palette": {
+            "project": {
+              "results": {
+                "repoGroup": "Repo group",
+                "project": "Project"
               }
             }
           }

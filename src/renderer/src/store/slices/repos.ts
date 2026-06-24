@@ -44,9 +44,14 @@ import { normalizeRepoBadgeColor } from '../../../../shared/repo-badge-color'
 import { getProjectGroupSubtreeIds } from '../../../../shared/project-groups'
 import { isPathInsideOrEqual } from '../../../../shared/cross-platform-path'
 import { selectProjectGroupRemovalTargets } from './project-group-removal-targets'
-import { getRepoIdFromWorktreeId } from './worktree-helpers'
 import { reconcileFetchedRepos } from './repo-identity-reconcile'
 import { splitRepoReorderByHost } from './repo-reorder-host-split'
+import {
+  findRepoForHost,
+  getRepoHostIdentity,
+  getRepoHostIdentityForParts,
+  repoMatchesHostIdentity
+} from './repo-host-identity'
 import {
   assertRuntimeEnvironmentCapability,
   callRuntimeRpc,
@@ -56,7 +61,6 @@ import { syncRuntimeGitForkDefaultBranch } from '../../runtime/runtime-git-clien
 import { toRuntimeWorktreeSelector } from '../../runtime/runtime-worktree-selector'
 import { buildDismissedOnboardingFolderAgentStartup } from '@/lib/onboarding-folder-agent-startup'
 import { markOnboardingProjectAdded } from '@/lib/onboarding-project-checklist'
-import { getSettingsForRepoRuntimeOwner } from '@/lib/repo-runtime-owner'
 import { filterSetupScriptPromptDismissalsToValidRepos } from '@/lib/setup-script-prompt'
 import { notifyInstalledAgentSkillsChanged } from '@/hooks/useInstalledAgentSkills'
 import { translate } from '@/i18n/i18n'
@@ -187,13 +191,21 @@ function getRepoUpdateChains(get: () => AppState): Map<string, Promise<boolean>>
   return chains
 }
 
-function getKnownRepoWorktreeIds(state: AppState, projectId: string): string[] {
+function worktreeBelongsToHost(worktree: { hostId?: string }, hostId: string): boolean {
+  return (worktree.hostId ?? LOCAL_EXECUTION_HOST_ID) === hostId
+}
+
+function getKnownRepoWorktreeIds(state: AppState, projectId: string, hostId?: string): string[] {
   const ids = new Set<string>()
   for (const worktree of state.worktreesByRepo[projectId] ?? []) {
-    ids.add(worktree.id)
+    if (!hostId || worktreeBelongsToHost(worktree, hostId)) {
+      ids.add(worktree.id)
+    }
   }
   for (const worktree of state.detectedWorktreesByRepo[projectId]?.worktrees ?? []) {
-    ids.add(worktree.id)
+    if (!hostId || worktreeBelongsToHost(worktree, hostId)) {
+      ids.add(worktree.id)
+    }
   }
   return [...ids]
 }
@@ -460,21 +472,34 @@ function getCurrentSourceRepoIds(project: Project, currentRepoIds: ReadonlySet<s
   return project.sourceRepoIds.filter((repoId) => currentRepoIds.has(repoId))
 }
 
+function getReposById(repos: readonly Repo[]): Map<string, Repo[]> {
+  const reposById = new Map<string, Repo[]>()
+  for (const repo of repos) {
+    const existing = reposById.get(repo.id)
+    if (existing) {
+      existing.push(repo)
+    } else {
+      reposById.set(repo.id, [repo])
+    }
+  }
+  return reposById
+}
+
 function getSourceRepoIdsOutsideHost(
   project: Project,
-  reposById: ReadonlyMap<string, Repo>,
+  reposById: ReadonlyMap<string, readonly Repo[]>,
   hostId: string
 ): string[] {
   return project.sourceRepoIds.filter((repoId) => {
-    const repo = reposById.get(repoId)
-    return repo && getRepoExecutionHostId(repo) !== hostId
+    const repos = reposById.get(repoId) ?? []
+    return repos.some((repo) => getRepoExecutionHostId(repo) !== hostId)
   })
 }
 
 function getMergedSourceRepoIdsForHostRefresh(
   previous: Project,
   current: Project,
-  reposById: ReadonlyMap<string, Repo>,
+  reposById: ReadonlyMap<string, readonly Repo[]>,
   hostId: string
 ): string[] {
   return [
@@ -498,7 +523,7 @@ function projectWithCurrentSourceRepoIds(
 function mergePreviousProjectMetadata(
   previous: Project,
   current: Project,
-  reposById: ReadonlyMap<string, Repo>,
+  reposById: ReadonlyMap<string, readonly Repo[]>,
   hostId: string
 ): Project {
   const project = mergeProjectCompatibilityProject(previous, current)
@@ -535,7 +560,7 @@ function mergeProjectHostSetupCompatibility(
   const derivedSetups = derived.projectHostSetups.filter(
     (setup) => !fetchedSetupOwners.has(getProjectHostSetupOwnerKey(setup))
   )
-  const projectHostSetups = mergeById(derivedSetups, fetched.setups)
+  const projectHostSetups = mergeProjectHostSetupsByOwner(derivedSetups, fetched.setups)
   const setupProjectIds = new Set(projectHostSetups.map((setup) => setup.projectId))
   const fetchedProjectIds = new Set(fetched.projects.map((project) => project.id))
   return {
@@ -547,7 +572,27 @@ function mergeProjectHostSetupCompatibility(
 }
 
 function getProjectHostSetupOwnerKey(setup: ProjectHostSetup): string {
-  return `${setup.hostId}:${setup.repoId ?? setup.id}`
+  return `${setup.hostId}:${setup.repoId || setup.id}`
+}
+
+function mergeProjectHostSetupsByOwner(
+  base: readonly ProjectHostSetup[],
+  overlay: readonly ProjectHostSetup[]
+): ProjectHostSetup[] {
+  const merged = [...base]
+  const indexByOwner = new Map(
+    merged.map((entry, index) => [getProjectHostSetupOwnerKey(entry), index])
+  )
+  for (const entry of overlay) {
+    const index = indexByOwner.get(getProjectHostSetupOwnerKey(entry))
+    if (index === undefined) {
+      indexByOwner.set(getProjectHostSetupOwnerKey(entry), merged.length)
+      merged.push(entry)
+    } else {
+      merged[index] = entry
+    }
+  }
+  return merged
 }
 
 function getProjectHostIds(
@@ -568,15 +613,14 @@ function getExplicitProjectHostIds(
   repos: readonly Repo[]
 ): Set<string> {
   const hostIds = new Set<string>()
-  const repoById = new Map(repos.map((repo) => [repo.id, repo]))
+  const sourceRepoIds = new Set(project.sourceRepoIds)
   for (const setup of setups) {
     if (setup.projectId === project.id) {
       hostIds.add(setup.hostId)
     }
   }
-  for (const repoId of project.sourceRepoIds) {
-    const repo = repoById.get(repoId)
-    if (repo) {
+  for (const repo of repos) {
+    if (sourceRepoIds.has(repo.id)) {
       hostIds.add(getRepoExecutionHostId(repo))
     }
   }
@@ -596,9 +640,9 @@ function mergeFetchedProjectCompatibilityForHost({
 }): Pick<RepoSlice, 'projects' | 'projectHostSetups'> {
   const fetchedSetupsForHost = fetched.projectHostSetups.filter((setup) => setup.hostId === hostId)
   const preservedSetups = previous.projectHostSetups.filter((setup) => setup.hostId !== hostId)
-  const projectHostSetups = mergeById(preservedSetups, fetchedSetupsForHost)
+  const projectHostSetups = mergeProjectHostSetupsByOwner(preservedSetups, fetchedSetupsForHost)
   const previousProjectById = new Map(previous.projects.map((project) => [project.id, project]))
-  const reposById = new Map(repos.map((repo) => [repo.id, repo]))
+  const reposById = getReposById(repos)
   const currentRepoIds = new Set(repos.map((repo) => repo.id))
   const projectHasHost = (project: Project, setups: readonly ProjectHostSetup[]): boolean =>
     getProjectHostIds(project, setups, repos).has(hostId)
@@ -663,25 +707,41 @@ function mergeFetchedReposForHost(
   fetched: Repo[],
   hostId: string
 ): Repo[] {
-  const fetchedIds = new Set(fetched.map((repo) => repo.id))
+  const fetchedIdentities = new Set(fetched.map(getRepoHostIdentity))
   const preserved = previous.filter((repo) => {
     const existingHostId = getRepoExecutionHostId(repo)
-    return existingHostId !== hostId || fetchedIds.has(repo.id)
+    return existingHostId !== hostId || fetchedIdentities.has(getRepoHostIdentity(repo))
   })
-  const preservedById = new Map(preserved.map((repo) => [repo.id, repo]))
   const merged = [...preserved]
+  const indexByIdentity = new Map(merged.map((repo, index) => [getRepoHostIdentity(repo), index]))
   for (const repo of fetched) {
-    const existingIndex = merged.findIndex((entry) => entry.id === repo.id)
-    if (existingIndex === -1) {
+    const identity = getRepoHostIdentity(repo)
+    const existingIndex = indexByIdentity.get(identity)
+    if (existingIndex === undefined) {
+      indexByIdentity.set(identity, merged.length)
       merged.push(repo)
       continue
     }
     merged[existingIndex] = repo
   }
-  return reconcileFetchedRepos(
+  return reconcileFetchedRepos(previous, merged)
+}
+
+function mergeProjectCompatibilityForHostRepoChange({
+  previous,
+  nextRepos,
+  hostId
+}: {
+  previous: Pick<RepoSlice, 'projects' | 'projectHostSetups'>
+  nextRepos: readonly Repo[]
+  hostId: string
+}): Pick<RepoSlice, 'projects' | 'projectHostSetups'> {
+  return mergeFetchedProjectCompatibilityForHost({
     previous,
-    merged.filter((repo) => preservedById.has(repo.id) || fetchedIds.has(repo.id))
-  )
+    fetched: projectCompatibilityFromRepos(nextRepos),
+    repos: nextRepos,
+    hostId
+  })
 }
 
 function getProjectGroupHostId(group: Pick<ProjectGroup, 'connectionId' | 'executionHostId'>) {
@@ -821,7 +881,26 @@ async function listRuntimeEnvironmentsForAllHostLoad(): Promise<{ id: string }[]
 }
 
 function settingsForRepoOwner(state: Pick<AppState, 'repos' | 'settings'>, repoId: string) {
-  return getSettingsForRepoRuntimeOwner(state, repoId) as AppState['settings']
+  const repo = findRepoForHost(state.repos, repoId, { settings: state.settings })
+  if (!repo) {
+    return state.settings
+  }
+  if (!repo.executionHostId && !repo.connectionId) {
+    return state.settings
+  }
+  const parsed = parseExecutionHostId(getRepoExecutionHostId(repo))
+  if (parsed?.kind === 'runtime') {
+    return state.settings
+      ? { ...state.settings, activeRuntimeEnvironmentId: parsed.environmentId }
+      : ({ activeRuntimeEnvironmentId: parsed.environmentId } as AppState['settings'])
+  }
+  if (
+    (parsed?.kind === 'local' || parsed?.kind === 'ssh') &&
+    state.settings?.activeRuntimeEnvironmentId
+  ) {
+    return { ...state.settings, activeRuntimeEnvironmentId: null }
+  }
+  return state.settings
 }
 
 function getFolderWorkspacePathStatusScopeKey(request: FolderWorkspacePathStatusRequest): string {
@@ -1712,6 +1791,9 @@ export const createRepoSlice: StateCreator<AppState, [], [], RepoSlice> = (set, 
 
   moveProjectToGroup: async (projectId, groupId, order) => {
     try {
+      if (!findRepoForHost(get().repos, projectId, { settings: get().settings })) {
+        return false
+      }
       const target = getActiveRuntimeTarget(settingsForRepoOwner(get(), projectId))
       const moved =
         target.kind === 'local'
@@ -1732,10 +1814,21 @@ export const createRepoSlice: StateCreator<AppState, [], [], RepoSlice> = (set, 
         return false
       }
       const ownedMoved = repoWithFetchedOwner(moved, target)
-      set((s) => ({
-        repos: s.repos.map((repo) => (repo.id === projectId ? ownedMoved : repo)),
-        folderWorkspacePathStatuses: {}
-      }))
+      const movedHostId = getRepoExecutionHostId(ownedMoved)
+      set((s) => {
+        const nextRepos = s.repos.map((repo) =>
+          repoMatchesHostIdentity(repo, projectId, movedHostId) ? ownedMoved : repo
+        )
+        return {
+          repos: nextRepos,
+          ...mergeProjectCompatibilityForHostRepoChange({
+            previous: { projects: s.projects, projectHostSetups: s.projectHostSetups },
+            nextRepos,
+            hostId: movedHostId
+          }),
+          folderWorkspacePathStatuses: {}
+        }
+      })
       return true
     } catch (err) {
       console.error('Failed to move repo to group:', err)
@@ -1778,18 +1871,24 @@ export const createRepoSlice: StateCreator<AppState, [], [], RepoSlice> = (set, 
         return null
       }
       repo = repoWithFetchedOwner(repo, target)
-      const alreadyAdded = get().repos.some((r) => r.id === repo.id)
+      const repoIdentity = getRepoHostIdentity(repo)
+      const alreadyAdded = get().repos.some((r) => getRepoHostIdentity(r) === repoIdentity)
       if (alreadyAdded) {
         get().clearOrcaHookTrustForRepo(repo.id)
       }
       set((s) => {
-        if (s.repos.some((r) => r.id === repo.id)) {
+        if (s.repos.some((r) => getRepoHostIdentity(r) === repoIdentity)) {
           return s
         }
         const nextRepos = [...s.repos, repo]
+        const hostId = getRepoExecutionHostId(repo)
         return {
           repos: nextRepos,
-          ...projectCompatibilityFromRepos(nextRepos),
+          ...mergeProjectCompatibilityForHostRepoChange({
+            previous: { projects: s.projects, projectHostSetups: s.projectHostSetups },
+            nextRepos,
+            hostId
+          }),
           folderWorkspacePathStatuses: {}
         }
       })
@@ -1836,10 +1935,15 @@ export const createRepoSlice: StateCreator<AppState, [], [], RepoSlice> = (set, 
               )
             ).result
       const repo = repoWithFetchedOwner(result.repo, target)
+      const repoHostId = getRepoExecutionHostId(repo)
       const setup = setupWithFetchedOwner(result.setup, target)
       set((s) => {
-        const nextRepos = s.repos.some((entry) => entry.id === repo.id)
-          ? s.repos.map((entry) => (entry.id === repo.id ? repo : entry))
+        const nextRepos = s.repos.some((entry) =>
+          repoMatchesHostIdentity(entry, repo.id, repoHostId)
+        )
+          ? s.repos.map((entry) =>
+              repoMatchesHostIdentity(entry, repo.id, repoHostId) ? repo : entry
+            )
           : [...s.repos, repo]
         const nextProjects = s.projects.some((entry) => entry.id === result.project.id)
           ? s.projects.map((entry) => (entry.id === result.project.id ? result.project : entry))
@@ -1924,10 +2028,13 @@ export const createRepoSlice: StateCreator<AppState, [], [], RepoSlice> = (set, 
             ).result
       const setup = setupWithFetchedOwner(result.setup, target)
       const repo = result.repo ? repoWithFetchedOwner(result.repo, target) : undefined
+      const repoHostId = repo ? getRepoExecutionHostId(repo) : null
       set((s) => ({
         repos: repo
-          ? s.repos.some((entry) => entry.id === repo.id)
-            ? s.repos.map((entry) => (entry.id === repo.id ? repo : entry))
+          ? s.repos.some((entry) => repoMatchesHostIdentity(entry, repo.id, repoHostId!))
+            ? s.repos.map((entry) =>
+                repoMatchesHostIdentity(entry, repo.id, repoHostId!) ? repo : entry
+              )
             : [...s.repos, repo]
           : s.repos,
         projects: s.projects.some((entry) => entry.id === result.project.id)
@@ -1968,11 +2075,15 @@ export const createRepoSlice: StateCreator<AppState, [], [], RepoSlice> = (set, 
               )
             ).result
       const repo = result.repo ? repoWithFetchedOwner(result.repo, target) : undefined
+      const repoHostId = repo ? getRepoExecutionHostId(repo) : null
       set((s) => {
         const projectHostSetups = s.projectHostSetups.filter(
           (setup) => setup.id !== result.setup.id
         )
-        const repos = repo ? s.repos.filter((entry) => entry.id !== repo.id) : s.repos
+        const repos =
+          repo && repoHostId
+            ? s.repos.filter((entry) => !repoMatchesHostIdentity(entry, repo.id, repoHostId))
+            : s.repos
         const projects =
           repo && !projectHostSetups.some((setup) => setup.projectId === result.project.id)
             ? s.projects.filter((project) => project.id !== result.project.id)
@@ -2106,19 +2217,26 @@ export const createRepoSlice: StateCreator<AppState, [], [], RepoSlice> = (set, 
 
   removeProject: async (projectId) => {
     try {
+      const ownerRepo = findRepoForHost(get().repos, projectId, { settings: get().settings })
+      if (!ownerRepo) {
+        return
+      }
+      const ownerHostId = getRepoExecutionHostId(ownerRepo)
       const target = getActiveRuntimeTarget(settingsForRepoOwner(get(), projectId))
       await (target.kind === 'local'
         ? window.api.repos.remove({ repoId: projectId })
         : callRuntimeRpc(target, 'repo.rm', { repo: projectId }, { timeoutMs: 15_000 }))
 
       get().clearOrcaHookTrustForRepo(projectId)
-      const repoPath = get().repos.find((repo) => repo.id === projectId)?.path
+      const repoPath = get().repos.find((repo) =>
+        repoMatchesHostIdentity(repo, projectId, ownerHostId)
+      )?.path
       get().evictGitHubRepoCaches(projectId, repoPath)
       const { clearRepoSlugCacheEntry } = await import('../../lib/repo-slug-index')
       clearRepoSlugCacheEntry(projectId)
 
       // Kill PTYs for all worktrees belonging to this repo
-      const worktreeIds = getKnownRepoWorktreeIds(get(), projectId)
+      const worktreeIds = getKnownRepoWorktreeIds(get(), projectId, ownerHostId)
       const killedTabIds = new Set<string>()
       const killedPtyIds = new Set<string>()
       if (target.kind === 'environment') {
@@ -2155,9 +2273,26 @@ export const createRepoSlice: StateCreator<AppState, [], [], RepoSlice> = (set, 
 
       set((s) => {
         const nextWorktrees = { ...s.worktreesByRepo }
-        delete nextWorktrees[projectId]
+        const remainingWorktrees = (nextWorktrees[projectId] ?? []).filter(
+          (worktree) => !worktreeBelongsToHost(worktree, ownerHostId)
+        )
+        if (remainingWorktrees.length > 0) {
+          nextWorktrees[projectId] = remainingWorktrees
+        } else {
+          delete nextWorktrees[projectId]
+        }
         const nextDetectedWorktrees = { ...s.detectedWorktreesByRepo }
-        delete nextDetectedWorktrees[projectId]
+        const detected = nextDetectedWorktrees[projectId]
+        if (detected) {
+          const remainingDetected = detected.worktrees.filter(
+            (worktree) => !worktreeBelongsToHost(worktree, ownerHostId)
+          )
+          if (remainingDetected.length > 0) {
+            nextDetectedWorktrees[projectId] = { ...detected, worktrees: remainingDetected }
+          } else {
+            delete nextDetectedWorktrees[projectId]
+          }
+        }
         const nextTabs = { ...s.tabsByWorktree }
         const nextLayouts = { ...s.terminalLayoutsByTabId }
         const nextPtyIdsByTabId = { ...s.ptyIdsByTabId }
@@ -2195,17 +2330,21 @@ export const createRepoSlice: StateCreator<AppState, [], [], RepoSlice> = (set, 
         // forever after the repo is removed.
         let nextLastVisitedAtByWorktreeId = s.lastVisitedAtByWorktreeId
         for (const id of Object.keys(s.lastVisitedAtByWorktreeId)) {
-          if (getRepoIdFromWorktreeId(id) === projectId) {
+          if (worktreeIdSet.has(id)) {
             if (nextLastVisitedAtByWorktreeId === s.lastVisitedAtByWorktreeId) {
               nextLastVisitedAtByWorktreeId = { ...s.lastVisitedAtByWorktreeId }
             }
             delete nextLastVisitedAtByWorktreeId[id]
           }
         }
-        const nextRepos = s.repos.filter((r) => r.id !== projectId)
+        const nextRepos = s.repos.filter((r) => !repoMatchesHostIdentity(r, projectId, ownerHostId))
         return {
           repos: nextRepos,
-          ...projectCompatibilityFromRepos(nextRepos),
+          ...mergeProjectCompatibilityForHostRepoChange({
+            previous: { projects: s.projects, projectHostSetups: s.projectHostSetups },
+            nextRepos,
+            hostId: ownerHostId
+          }),
           activeRepoId: s.activeRepoId === projectId ? null : s.activeRepoId,
           filterRepoIds: s.filterRepoIds.filter((id) => id !== projectId),
           worktreesByRepo: nextWorktrees,
@@ -2282,10 +2421,25 @@ export const createRepoSlice: StateCreator<AppState, [], [], RepoSlice> = (set, 
 
   updateRepo: async (projectId, updates) => {
     const updateRepoChains = getRepoUpdateChains(get)
+    const ownerRepo = findRepoForHost(get().repos, projectId, { settings: get().settings })
+    if (!ownerRepo) {
+      return false
+    }
+    const ownerHasExplicitHost = Boolean(
+      ownerRepo.executionHostId?.trim() || ownerRepo.connectionId?.trim()
+    )
+    const explicitOwnerHostId = getRepoExecutionHostId(ownerRepo)
+    const ownerTarget = ownerHasExplicitHost
+      ? getProjectSetupRuntimeTarget(explicitOwnerHostId)
+      : getActiveRuntimeTarget(settingsForRepoOwner(get(), projectId))
+    const ownerHostId = ownerHasExplicitHost
+      ? explicitOwnerHostId
+      : getRuntimeTargetHostId(ownerTarget)
+    const updateChainKey = getRepoHostIdentityForParts(projectId, ownerHostId)
     const applyRepoUpdate = async () => {
       try {
         const sanitizedUpdates = sanitizeRepoUpdate(updates)
-        const target = getActiveRuntimeTarget(settingsForRepoOwner(get(), projectId))
+        const target = ownerTarget
         const updatedRepo =
           target.kind === 'local'
             ? await window.api.repos.update({ repoId: projectId, updates: sanitizedUpdates })
@@ -2299,7 +2453,10 @@ export const createRepoSlice: StateCreator<AppState, [], [], RepoSlice> = (set, 
               ).repo
         set((s) => {
           const nextRepos = s.repos.map((r) => {
-            if (r.id !== projectId) {
+            const matchesOwner = ownerHasExplicitHost
+              ? repoMatchesHostIdentity(r, projectId, ownerHostId)
+              : repoMatchesHostIdentity(r, projectId, ownerHostId) || r === ownerRepo
+            if (!matchesOwner) {
               return r
             }
             if (updatedRepo) {
@@ -2320,7 +2477,11 @@ export const createRepoSlice: StateCreator<AppState, [], [], RepoSlice> = (set, 
           })
           return {
             repos: nextRepos,
-            ...projectCompatibilityFromRepos(nextRepos),
+            ...mergeProjectCompatibilityForHostRepoChange({
+              previous: { projects: s.projects, projectHostSetups: s.projectHostSetups },
+              nextRepos,
+              hostId: ownerHostId
+            }),
             folderWorkspacePathStatuses: {}
           }
         })
@@ -2330,16 +2491,16 @@ export const createRepoSlice: StateCreator<AppState, [], [], RepoSlice> = (set, 
         return false
       }
     }
-    const previous = updateRepoChains.get(projectId)
+    const previous = updateRepoChains.get(updateChainKey)
     // Why: repo settings are persisted as full nested values. Preserve call
     // order per repo so a slower IPC/RPC response cannot overwrite newer state.
     const next = previous
       ? previous.catch(() => undefined).then(applyRepoUpdate)
       : applyRepoUpdate()
-    updateRepoChains.set(projectId, next)
+    updateRepoChains.set(updateChainKey, next)
     const cleanup = () => {
-      if (updateRepoChains.get(projectId) === next) {
-        updateRepoChains.delete(projectId)
+      if (updateRepoChains.get(updateChainKey) === next) {
+        updateRepoChains.delete(updateChainKey)
       }
     }
     void next.then(cleanup, cleanup)
@@ -2352,10 +2513,22 @@ export const createRepoSlice: StateCreator<AppState, [], [], RepoSlice> = (set, 
     // Optimistically apply the new order so the sidebar updates instantly;
     // resync only if main rejects (stale permutation due to a racing add/remove).
     const previous = get().repos
-    const byId = new Map(previous.map((r) => [r.id, r]))
+    const remainingById = new Map<string, { repos: Repo[]; nextIndex: number }>()
+    for (const repo of previous) {
+      const existing = remainingById.get(repo.id)
+      if (existing) {
+        existing.repos.push(repo)
+      } else {
+        remainingById.set(repo.id, { repos: [repo], nextIndex: 0 })
+      }
+    }
     const next: Repo[] = []
     for (const id of orderedIds) {
-      const repo = byId.get(id)
+      const remaining = remainingById.get(id)
+      const repo = remaining?.repos[remaining.nextIndex]
+      if (remaining) {
+        remaining.nextIndex += 1
+      }
       if (repo) {
         next.push(repo)
       }
@@ -2366,7 +2539,6 @@ export const createRepoSlice: StateCreator<AppState, [], [], RepoSlice> = (set, 
     }
     set({
       repos: next,
-      ...projectCompatibilityFromRepos(next),
       folderWorkspacePathStatuses: {}
     })
     try {
@@ -2392,11 +2564,11 @@ export const createRepoSlice: StateCreator<AppState, [], [], RepoSlice> = (set, 
         })
       )
       if (results.some((result) => result.status === 'rejected')) {
-        await get().fetchRepos()
+        await get().fetchReposForAllHosts()
       }
     } catch (err) {
       console.error('Failed to reorder repos:', err)
-      await get().fetchRepos()
+      await get().fetchReposForAllHosts()
     }
   }
 })

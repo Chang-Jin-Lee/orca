@@ -1102,7 +1102,8 @@
         "importHostSetup": "가져오기",
         "notePasteTooLarge": "메모 필드에 붙여넣을 내용이 너무 큽니다.",
         "reuseExistingBranch": "Reuse branch",
-        "reuseExistingBranchHint": "Check out the existing branch instead of creating a new one from it."
+        "reuseExistingBranchHint": "Check out the existing branch instead of creating a new one from it.",
+        "createMultiple": "Create more"
       },
       "NewWorkspaceComposerModal": {
         "fa90f739a5": "워크스페이스를 만들기 전에 프로젝트, 워크스페이스 이름, agent를 선택하세요."
@@ -1272,7 +1273,10 @@
         "2b4fdb880c": "본 표시 해제",
         "56ec6eafb7": "현재 리뷰어를 보려면 PR 세부정보를 엽니다.",
         "7f964a365a": "리뷰어 삭제",
-        "commentTooLarge": "Comment is too large to submit safely."
+        "commentTooLarge": "Comment is too large to submit safely.",
+        "8ff5ae8866": "Assignees",
+        "82c87eceb9": "Edit assignees",
+        "1ff5d979df": "No one assigned"
       },
       "QuickOpen": {
         "1dbd3f59ff": "이동",
@@ -1602,7 +1606,25 @@
         "fe28c9821f": "보기",
         "8d1e17a3ef": "GitHub에서 {{value0}} 열기",
         "4ac8ff2275": "Jira에서 {{value0}} 열기",
-        "40eaf2c27c": "Details"
+        "40eaf2c27c": "Details",
+        "closeAsCompleted": "Close as completed",
+        "closeAsCompletedDescription": "Done, closed, fixed, resolved",
+        "closeAsNotPlanned": "Close as not planned",
+        "closeAsNotPlannedDescription": "Won't fix, can't repro, stale",
+        "closeAsDuplicate": "Close as duplicate",
+        "closeAsDuplicateDescription": "Duplicate of another issue in this repository",
+        "duplicateIssueNumberPlaceholder": "Issue number",
+        "closeAsDuplicateSubmit": "Close duplicate",
+        "duplicateIssueMissing": "Enter an issue number in this repository.",
+        "duplicateIssueNotInteger": "Use a whole issue number.",
+        "duplicateIssueNotPositive": "Use a positive issue number.",
+        "duplicateIssueSameIssue": "Choose a different issue.",
+        "repository": "Repository",
+        "backToCloseReasons": "Back",
+        "searchIssues": "Search issues",
+        "useIssueNumber": "Use issue #{{value0}}",
+        "noMatchingIssuesLoaded": "No matching issues loaded.",
+        "editReviewersWithCurrent": "Edit reviewers: {{value0}}"
       },
       "Terminal": {
         "73768427cf": "닫기",
@@ -1703,7 +1725,10 @@
         "settingsBadge": "설정",
         "actionBadge": "작업",
         "paletteHostBadge": "호스트: {{value0}}",
-        "workspaceTabMissing": "탭이 더 이상 존재하지 않습니다"
+        "workspaceTabMissing": "탭이 더 이상 존재하지 않습니다",
+        "projectsGroupsHeader": "Projects & Groups",
+        "projectBadge": "Project",
+        "repoGroupBadge": "Repo group"
       },
       "github": {
         "pr": {
@@ -3334,26 +3359,21 @@
           "496f68cf8c": "repos를 스캔하는 중입니다. 중지하려면 클릭하세요.",
           "a32bef9516": "스캔 중지",
           "2f8298f3c3": "스캔 중지",
-          "c157f31a95": "그룹으로 가져오기",
-          "40199ef7b3": "그룹 이름",
-          "787412361a": "그룹 이름은 무엇입니까?",
           "5f857ba8e6": "~에",
           "4df0d08cc5": "발견됨",
           "8db50afe1a": "폴더에서 repos 가져오기",
           "5b2e6fe3c8": "별도로 가져오기",
           "cf9d382ca1": "가져오기",
           "220dd32d83": "스캔 중...",
-          "fb33359f69": "이 폴더가 모노 repo 인가요?",
-          "d75170194e": "모노레포이거나 함께 속한 프로젝트라면 그룹으로 가져오세요. Orca가 그룹으로 묶고 상위 폴더에서 작업할 수 있게 합니다.",
+          "fb33359f69": "이 저장소들을 그룹으로 묶을까요?",
+          "d75170194e": "이 프로젝트들이 함께 속한 경우(모노레포이거나 단순히 관련된 저장소 모음) 이 옵션을 선택하세요. Orca가 그룹으로 묶고 상위 폴더에서 작업할 수 있게 합니다.",
           "39d51212cc": "그룹 이름",
           "aa0247680d": "아니요, 별도로 가져오기",
-          "a0bc4d1f8e": "그룹으로 가져오기",
+          "a0bc4d1f8e": "예, 그룹으로 가져오기",
           "8401a7a0d0": "repos 1개",
           "d4f1df62ef": "repos {{value0}}개",
           "b4263a2ac4": "{{value1}}에서 {{value0}}을(를) 찾았습니다.",
-          "24eda6c8b2": "스캔 중... {{value0}}",
-          "b20bb7c24f": "이 리포지토리들을 하나의 그룹으로 묶어 둡니다. 마이크로서비스처럼 서로 관련된 리포지토리에 적합합니다.",
-          "e907ec8935": "모노 repo 이름이란?"
+          "24eda6c8b2": "스캔 중... {{value0}}"
         },
         "AddRepoRemoteStep": {
           "5b205b5281": "스캔 중지",
@@ -3932,7 +3952,8 @@
           "7a8b9c0d1e": "업데이트 필요",
           "hostAuthNeeded": "인증 필요",
           "hostDisconnected": "Disconnected",
-          "failedNestWorkspace": "워크스페이스를 중첩하지 못했습니다"
+          "failedNestWorkspace": "워크스페이스를 중첩하지 못했습니다",
+          "sidebarRowMissing": "Target no longer exists"
         },
         "WorktreeMetaDialog": {
           "3db0a2a593": "취소",
@@ -11058,6 +11079,14 @@
                 "trashWorktree": "워크트리 휴지통으로 이동",
                 "addQuickCommand": "빠른 명령 추가",
                 "newQuickCommand": "새로운 빠른 명령"
+              }
+            }
+          },
+          "palette": {
+            "project": {
+              "results": {
+                "repoGroup": "Repo group",
+                "project": "Project"
               }
             }
           }

@@ -456,6 +456,42 @@ describe('keybindings', () => {
     )
   })
 
+  it('keeps the sleeping-workspaces toggle unassigned until users customize it', () => {
+    const binding = {
+      key: 's',
+      code: 'KeyS',
+      control: true,
+      meta: false,
+      alt: true,
+      shift: false
+    }
+
+    // Ships unbound on every platform (issue #5209): assign-it-yourself.
+    expect(getEffectiveKeybindingsForAction('sidebar.sleepingWorkspaces.toggle', 'darwin')).toEqual(
+      []
+    )
+    expect(getEffectiveKeybindingsForAction('sidebar.sleepingWorkspaces.toggle', 'linux')).toEqual(
+      []
+    )
+    expect(getEffectiveKeybindingsForAction('sidebar.sleepingWorkspaces.toggle', 'win32')).toEqual(
+      []
+    )
+    expect(keybindingMatchesAction('sidebar.sleepingWorkspaces.toggle', binding, 'linux')).toBe(
+      false
+    )
+    expect(
+      keybindingMatchesAction('sidebar.sleepingWorkspaces.toggle', binding, 'linux', {
+        'sidebar.sleepingWorkspaces.toggle': ['Mod+Alt+S']
+      })
+    ).toBe(true)
+
+    const definition = getKeybindingDefinition('sidebar.sleepingWorkspaces.toggle')
+    expect(definition?.title).toBe('Toggle Sleeping Workspaces')
+    expect(definition?.searchKeywords).toEqual(
+      expect.arrayContaining(['sleeping', 'workspaces', 'filter'])
+    )
+  })
+
   it('defines floating workspace panel action metadata', () => {
     const actionIds = [
       'floatingWorkspace.maximize' as KeybindingActionId,

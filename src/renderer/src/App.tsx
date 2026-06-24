@@ -1604,6 +1604,21 @@ function App(): React.JSX.Element {
         return
       }
 
+      // Toggle the "show sleeping workspaces" sidebar filter without opening the
+      // filters menu (issue #5209). When revealing them, open the left sidebar
+      // so the now-visible sleeping worktrees are actually reachable.
+      if (matchShortcut('sidebar.sleepingWorkspaces.toggle')) {
+        input.preventDefault()
+        notifyTerminalCapture('sidebar.sleepingWorkspaces.toggle')
+        const store = useAppStore.getState()
+        const nextShowSleeping = !store.showSleepingWorkspaces
+        store.setShowSleepingWorkspaces(nextShowSleeping)
+        if (nextShowSleeping) {
+          store.setSidebarOpen(true)
+        }
+        return
+      }
+
       // Why: rename the active terminal tab. Cmd+R is free in the app/terminal
       // focus zone because the browser pane owns its own Cmd+R reload and that
       // focus never reaches this renderer-window handler. Only terminal tabs
