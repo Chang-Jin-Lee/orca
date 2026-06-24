@@ -38,12 +38,6 @@ orca status --json
 
 Prefer `--json` for agent-driven calls. If the CLI is missing, say so explicitly instead of inspecting source files first.
 
-## Credentials and Secrets
-
-- Do not put literal secrets in examples or generated `orca` commands. Use placeholders or environment variables.
-- Example: `orca fill --element <ref> --value "$CREDENTIAL_VALUE" --json` or `orca fill --element <ref> --value <CREDENTIAL_VALUE> --json`.
-- Do not print, log, summarize, or `echo` secret values.
-
 ## Worktrees
 
 An Orca worktree is Orca's tracked view of a repo checkout, its metadata, terminals, browser tabs, and UI state.
