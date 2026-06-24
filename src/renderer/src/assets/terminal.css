@@ -360,13 +360,6 @@
   pointer-events: auto;
 }
 
-.pane-title-bar[data-chromeless] .pane-title-split-trigger,
-.pane-title-bar[data-chromeless] .pane-title-close {
-  /* Why: these controls intentionally overlap row-one terminal text. The
-     button surface must be opaque, not just the icon stroke. */
-  background: var(--orca-pane-title-bg, var(--background));
-}
-
 .pane-title-close {
   flex-shrink: 0;
   margin-left: auto;
@@ -387,6 +380,13 @@
   color: var(--orca-pane-title-button-fg, rgb(255 255 255 / 0.3));
   opacity: 0;
   transition: opacity 120ms ease;
+}
+
+.pane-title-bar[data-chromeless] .pane-title-split-trigger svg,
+.pane-title-bar[data-chromeless] .pane-title-close svg {
+  /* Why: chromeless controls overlap row-one terminal text, so the glyphs
+     need enough opaque stroke weight without adding a blocking button fill. */
+  stroke-width: 2.75px;
 }
 
 .pane-title-bar[data-active-pane] .pane-title-split-trigger,
@@ -412,17 +412,6 @@
 .pane-title-split-trigger[data-state='instant-open'] {
   background: transparent;
   color: var(--orca-pane-title-button-hover-fg, rgb(255 255 255 / 0.8));
-}
-
-.pane-title-bar[data-chromeless] .pane-title-close:hover,
-.pane-title-bar[data-chromeless] .pane-title-close:active,
-.pane-title-bar[data-chromeless] .pane-title-close[data-state='delayed-open'],
-.pane-title-bar[data-chromeless] .pane-title-close[data-state='instant-open'],
-.pane-title-bar[data-chromeless] .pane-title-split-trigger:hover,
-.pane-title-bar[data-chromeless] .pane-title-split-trigger:active,
-.pane-title-bar[data-chromeless] .pane-title-split-trigger[data-state='delayed-open'],
-.pane-title-bar[data-chromeless] .pane-title-split-trigger[data-state='instant-open'] {
-  background: var(--orca-pane-title-bg, var(--background));
 }
 
 /* Inline edit input — matches the title text styling exactly to prevent
