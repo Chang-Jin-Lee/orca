@@ -15,7 +15,7 @@ export function describeLazyChunkError(
   return {
     reloadKey: sanitizeReloadKey(reloadKey),
     errorName,
-    errorCategory: classifyErrorCategory(messageClass),
+    errorCategory: classifyErrorCategory(messageClass, errorName),
     messageClass
   }
 }
@@ -30,6 +30,7 @@ function classifyErrorName(error: unknown): string {
   }
   switch (error.name) {
     case 'AggregateError':
+    case 'ChunkLoadError':
     case 'DOMException':
     case 'EvalError':
     case 'Error':
@@ -62,6 +63,7 @@ function classifyErrorMessage(message: string): string {
     normalized.includes('failed to fetch dynamically imported module') ||
     normalized.includes('error loading dynamically imported module') ||
     normalized.includes('importing a module script failed') ||
+    normalized.includes('failed to load module script') ||
     normalized.includes('loading chunk') ||
     normalized.includes('chunkloaderror') ||
     normalized.includes('networkerror')
@@ -71,11 +73,11 @@ function classifyErrorMessage(message: string): string {
   return 'unknown'
 }
 
-function classifyErrorCategory(messageClass: string): string {
+function classifyErrorCategory(messageClass: string, errorName: string): string {
   if (messageClass === 'syntax') {
     return 'syntax'
   }
-  if (messageClass === 'fetch') {
+  if (messageClass === 'fetch' || errorName === 'ChunkLoadError') {
     return 'fetch'
   }
   return 'unknown'

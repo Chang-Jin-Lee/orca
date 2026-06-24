@@ -13,6 +13,15 @@ const chunkFetchError = (): TypeError =>
   new TypeError(
     'Failed to fetch dynamically imported module: https://assets.example.test/chunks/panel.js?v=secret /Users/test/orca/panel.js'
   )
+const chunkLoadErrorByName = (): Error => {
+  const error = new Error('async route asset request failed')
+  error.name = 'ChunkLoadError'
+  return error
+}
+const failedModuleScriptError = (): TypeError =>
+  new TypeError(
+    'Failed to load module script: Expected a JavaScript-or-Wasm module script but the server responded with a MIME type of "text/html".'
+  )
 
 function markChunkReloadAttemptedInPriorRenderer(): void {
   window.sessionStorage.setItem(RELOAD_RENDERER_BOOT_KEY, 'previous-renderer-boot')
@@ -328,6 +337,34 @@ describe('loadLazyWithRetry', () => {
     expect(reload).not.toHaveBeenCalled()
     const caught = await loaded.catch((rejection) => rejection)
     expect(isLazyChunkLoadError(caught)).toBe(true)
+  })
+
+  it.each([
+    ['ChunkLoadError name', chunkLoadErrorByName],
+    ['failed module script message', failedModuleScriptError]
+  ])('restarts the app for post-reload %s failures', async (_label, createError) => {
+    const reload = spyOnReload()
+    const api = stubPreloadRecoveryApi()
+    markChunkReloadAttemptedInPriorRenderer()
+    const factory = vi.fn(() => Promise.reject(createError()))
+
+    const loaded = loadLazyWithRetry(factory, { retries: 0, reloadKey: 'route-panel' })
+    let settled = false
+    void loaded.then(
+      () => {
+        settled = true
+      },
+      () => {
+        settled = true
+      }
+    )
+    await vi.advanceTimersByTimeAsync(5000)
+
+    expect(api.getVersion).toHaveBeenCalledTimes(1)
+    expect(api.restart).toHaveBeenCalledTimes(1)
+    expect(window.localStorage.getItem(APP_RESTART_GUARD_KEY)).toBe('1')
+    expect(reload).not.toHaveBeenCalled()
+    expect(settled).toBe(false)
   })
 
   it('does not restart the app for non-chunk lazy module failures after renderer reload', async () => {
