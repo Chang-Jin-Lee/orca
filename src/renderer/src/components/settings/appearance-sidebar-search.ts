@@ -83,11 +83,11 @@ export const getShowPinnedWorktreesInGroupsEntry = createLocalizedCatalog(
   (): SettingsSearchEntry => ({
     title: translate(
       'auto.components.settings.appearance.search.showPinnedWorktreesInGroups.title',
-      'Show pinned worktrees in other groups'
+      'Also show pinned worktrees in groups'
     ),
     description: translate(
       'auto.components.settings.appearance.search.showPinnedWorktreesInGroups.description',
-      'Pinned worktrees also appear in All, Project, Status, and PR groups.'
+      'Keeps pinned worktrees in Pinned and also shows them in All, Project, Status, and PR groups.'
     ),
     keywords: [
       ...translateSearchKeyword(

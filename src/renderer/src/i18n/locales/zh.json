@@ -4510,8 +4510,8 @@
           "2edf606c46": "关闭时最小化到托盘",
           "b707773a0d": "启用后，关闭窗口会让 Orca 继续在系统托盘中运行，而不是退出。",
           "showPinnedWorktreesInGroups": {
-            "title": "在其他分组中显示已固定的工作树",
-            "description": "已固定的工作树也会显示在全部、项目、状态和 PR 分组中。"
+            "title": "也在分组中显示已固定的工作树",
+            "description": "将已固定的工作树保留在 Pinned 中，同时也显示在全部、项目、状态和 PR 分组中。"
           }
         },
         "AutoRenameBranchFromWorkSetting": {
@@ -6636,8 +6636,8 @@
             "9a115966d3": "关闭时最小化到托盘",
             "4d5b9427b5": "启用后，关闭窗口会让 Orca 继续在系统托盘中运行，而不是退出。",
             "showPinnedWorktreesInGroups": {
-              "title": "在其他分组中显示已固定的工作树",
-              "description": "已固定的工作树也会显示在全部、项目、状态和 PR 分组中。"
+              "title": "也在分组中显示已固定的工作树",
+              "description": "将已固定的工作树保留在 Pinned 中，同时也显示在全部、项目、状态和 PR 分组中。"
             }
           }
         },

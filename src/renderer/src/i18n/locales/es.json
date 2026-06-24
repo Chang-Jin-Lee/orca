@@ -4525,8 +4525,8 @@
           "2edf606c46": "Minimizar a la bandeja al cerrar",
           "b707773a0d": "Cuando está activado, cerrar la ventana mantiene Orca en ejecución en la bandeja del sistema en lugar de salir.",
           "showPinnedWorktreesInGroups": {
-            "title": "Mostrar worktrees fijados en otros grupos",
-            "description": "Los worktrees fijados también aparecen en los grupos Todos, Proyecto, Estado y PR."
+            "title": "Mostrar también los worktrees fijados en grupos",
+            "description": "Mantiene los worktrees fijados en Fijados y también los muestra en los grupos Todos, Proyecto, Estado y PR."
           }
         },
         "AutoRenameBranchFromWorkSetting": {
@@ -6651,8 +6651,8 @@
             "9a115966d3": "Minimizar a la bandeja al cerrar",
             "4d5b9427b5": "Cuando está activado, cerrar la ventana mantiene Orca en ejecución en la bandeja del sistema en lugar de salir.",
             "showPinnedWorktreesInGroups": {
-              "title": "Mostrar worktrees fijados en otros grupos",
-              "description": "Los worktrees fijados también aparecen en los grupos Todos, Proyecto, Estado y PR."
+              "title": "Mostrar también los worktrees fijados en grupos",
+              "description": "Mantiene los worktrees fijados en Fijados y también los muestra en los grupos Todos, Proyecto, Estado y PR."
             }
           }
         },

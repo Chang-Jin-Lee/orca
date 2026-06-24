@@ -60,6 +60,7 @@ type SettingsRowProps = {
   label: React.ReactNode
   description?: React.ReactNode
   control: React.ReactNode
+  className?: string
   /** Optional id applied to the label so the control can reference it via aria-labelledby. */
   labelId?: string
   /** When true, top-align label/description and control. Useful for tall control columns. */
@@ -71,12 +72,17 @@ export function SettingsRow({
   label,
   description,
   control,
+  className,
   labelId,
   alignTop
 }: SettingsRowProps): React.JSX.Element {
   return (
     <div
-      className={cn('flex gap-4 py-2', alignTop ? 'items-start' : 'items-center justify-between')}
+      className={cn(
+        'flex gap-4 py-2',
+        alignTop ? 'items-start' : 'items-center justify-between',
+        className
+      )}
     >
       <div className="min-w-0 flex-1 space-y-0.5">
         <Label id={labelId}>{label}</Label>
@@ -92,6 +98,7 @@ type SettingsSwitchRowProps = {
   description?: React.ReactNode
   checked: boolean
   onChange: () => void
+  className?: string
   ariaLabel?: string
 }
 
@@ -100,12 +107,14 @@ export function SettingsSwitchRow({
   description,
   checked,
   onChange,
+  className,
   ariaLabel
 }: SettingsSwitchRowProps): React.JSX.Element {
   return (
     <SettingsRow
       label={label}
       description={description}
+      className={className}
       control={
         <SettingsSwitch
           checked={checked}

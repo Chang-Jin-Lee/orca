@@ -4525,8 +4525,8 @@
           },
           "workspaceCardLayoutGuidance": "Use the workspace sidebar options menu > Card layout > Compact.",
           "showPinnedWorktreesInGroups": {
-            "title": "Show pinned worktrees in other groups",
-            "description": "Pinned worktrees also appear in All, Project, Status, and PR groups."
+            "title": "Also show pinned worktrees in groups",
+            "description": "Keeps pinned worktrees in Pinned and also shows them in All, Project, Status, and PR groups."
           }
         },
         "AutoRenameBranchFromWorkSetting": {
@@ -6688,8 +6688,8 @@
               "detailed": "detailed"
             },
             "showPinnedWorktreesInGroups": {
-              "title": "Show pinned worktrees in other groups",
-              "description": "Pinned worktrees also appear in All, Project, Status, and PR groups."
+              "title": "Also show pinned worktrees in groups",
+              "description": "Keeps pinned worktrees in Pinned and also shows them in All, Project, Status, and PR groups."
             }
           }
         },
