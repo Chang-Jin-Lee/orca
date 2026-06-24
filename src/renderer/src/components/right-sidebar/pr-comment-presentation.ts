@@ -96,9 +96,14 @@ const COMMENT_AVATAR =
 const RESOLVED_SECTION_LABEL =
   'text-[11px] font-semibold uppercase tracking-wider text-muted-foreground'
 
-// Why: cards and focus vary spacing only; PR comment text stays at dense sidebar scale.
+// Why: cards and focus share dense sidebar scale so PR comments do not read oversized.
 const CARD_COMMENT_BODY_SIZE = 'text-[13px] leading-relaxed'
 const CARD_COMMENT_AUTHOR_SIZE = 'text-[13px]'
+const CARD_COMMENT_LIST_GAP = 'gap-2'
+const CARD_COMMENT_BODY_PADDING = 'px-4 py-2.5'
+const CARD_COMMENT_HEADER_PADDING = 'px-3 py-2'
+const CARD_COMMENT_META_INDENT = 'pl-7'
+const CARD_COMMENT_META_SELECTION_INDENT = 'pl-[3.25rem]'
 
 const RESOLVED_SECTION_TRIGGER = cn(
   RESOLVED_SECTION_LABEL,
@@ -176,25 +181,19 @@ export function getPRCommentPresentationClasses(
     }
   }
 
-  const isFocus = variant === 'focus'
-  const listGap = isFocus ? 'gap-3' : 'gap-2'
-  const bodyPadding = isFocus ? 'px-4 py-3' : 'px-4 py-2.5'
-  const headerPadding = isFocus ? 'px-3.5 py-2.5' : 'px-3 py-2'
-  const metaIndent = isFocus ? 'pl-8' : 'pl-7'
-
   return {
     variant,
     useCardLayout: true,
-    list: `flex flex-col ${listGap} px-3 py-2`,
+    list: `flex flex-col ${CARD_COMMENT_LIST_GAP} px-3 py-2`,
     group: COMMENT_CARD_SURFACE,
     groupStandalone: '',
     groupThread: '',
     commentRow: 'group/comment',
     commentRowReply: `border-t ${COMMENT_CARD_DIVIDER} bg-muted/25 dark:bg-muted/10`,
-    commentHeader: `flex flex-col gap-1 border-b ${COMMENT_CARD_DIVIDER} ${headerPadding}`,
-    commentHeaderReply: `flex min-w-0 items-center gap-2 ${headerPadding}`,
-    commentBody: `${bodyPadding} ${CARD_COMMENT_BODY_SIZE} text-foreground`,
-    commentBodyReply: `${bodyPadding} ${CARD_COMMENT_BODY_SIZE} text-foreground`,
+    commentHeader: `flex flex-col gap-1 border-b ${COMMENT_CARD_DIVIDER} ${CARD_COMMENT_HEADER_PADDING}`,
+    commentHeaderReply: `flex min-w-0 items-center gap-2 ${CARD_COMMENT_HEADER_PADDING}`,
+    commentBody: `${CARD_COMMENT_BODY_PADDING} ${CARD_COMMENT_BODY_SIZE} text-foreground`,
+    commentBodyReply: `${CARD_COMMENT_BODY_PADDING} ${CARD_COMMENT_BODY_SIZE} text-foreground`,
     commentBodyMarkdown: MARKDOWN_BASE,
     author: `min-w-0 flex-1 truncate ${CARD_COMMENT_AUTHOR_SIZE} font-semibold text-foreground`,
     authorResolved: 'text-muted-foreground',
@@ -226,12 +225,12 @@ export function getPRCommentPresentationClasses(
       'shrink-0 rounded border border-ring/40 bg-accent px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-foreground',
     commentHeaderPrimary: 'flex min-w-0 items-center gap-2',
     commentHeaderMeta: cn(
-      metaIndent,
+      CARD_COMMENT_META_INDENT,
       'flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-muted-foreground'
     ),
     // Why: checkbox (16px) + gap-2 sits before the avatar row the meta row already indents past.
     commentHeaderMetaWithSelection: cn(
-      isFocus ? 'pl-[3.5rem]' : 'pl-[3.25rem]',
+      CARD_COMMENT_META_SELECTION_INDENT,
       'flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-muted-foreground'
     ),
     // Why: open state is conveyed by the status badge; a green card rail reads noisy in the sidebar.
