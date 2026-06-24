@@ -23,7 +23,8 @@ describe('orca CLI skill guidance', () => {
     expect(skill).toContain('`orca eval` expressions, or `orca exec` commands')
     expect(skill).toContain('unless the user explicitly asked for that workflow')
 
-    expect(skill).not.toContain('Credentials and Secrets')
+    expect(skill).toContain('use placeholders or environment variables')
+    expect(skill).toContain('Never print, log, summarize, or echo secret values')
     expect(skill).not.toContain('s3cret')
     expect(skill).not.toContain('hunter2')
     expect(skill).not.toContain('password123')
