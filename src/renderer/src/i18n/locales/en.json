@@ -5039,7 +5039,7 @@
           "1f744a72f4": "Config"
         },
         "WarpThemeImportModal": {
-          "title": "Import themes from Warp",
+          "title": "Import from Warp",
           "description": "Import Warp themes as Orca terminal themes.",
           "yaml_title": "Import theme YAML",
           "yaml_description": "Import theme YAML files (Warp format) as Orca terminal themes.",
@@ -6321,16 +6321,11 @@
           "d06664e889": "dark"
         },
         "TerminalThemeSections": {
-          "import_themes_title": "Import Themes",
-          "import_themes_description": "Imported themes are available in both the dark and light theme targets.",
           "db210115c5": "Light Mode Preview",
           "5e0c24b5c8": "Controls the split divider line between panes in light mode.",
           "ec2e33ad80": "Light Divider Color",
           "d56af60e6f": "Choose the theme used when Orca is in light mode.",
           "8273bc75d7": "Light Theme",
-          "74b15574c8": "Configure the optional light-mode terminal appearance.",
-          "b584287e84": "Light mode can use its own terminal theme.",
-          "d76f60c9cc": "Customize Light Mode",
           "bc8e8a251a": "Dark Mode Preview",
           "cbe56a0f79": "Controls the split divider line between panes in dark mode.",
           "b739d2abfe": "Dark Divider Color",
@@ -6344,10 +6339,8 @@
           "target_aria": "Terminal theme mode",
           "target_dark": "Dark",
           "target_light": "Light",
-          "light_inactive_note": "Light mode matches the dark mode terminal theme.",
-          "light_custom_note": "Light mode has its own terminal theme.",
-          "customize_light_mode": "Customize Light Mode",
-          "match_dark_mode_terminal_theme": "Match dark mode terminal theme",
+          "match_dark_mode": "Match dark mode",
+          "match_dark_mode_description": "Share the dark terminal theme and divider color in light mode.",
           "light_preview_description": "Shows the effective light terminal appearance.",
           "dark_preview_description": "Shows the effective dark terminal appearance."
         },
@@ -7846,11 +7839,12 @@
             "73e9422f19": "One-time import of supported Ghostty terminal settings.",
             "a979df0083": "Import from Ghostty",
             "warp_import": {
-              "title": "Import themes from Warp",
+              "title": "Import from Warp",
               "description": "Import Warp themes as Orca terminal themes.",
               "keyword_warp": "warp",
               "keyword_themes": "themes",
-              "keyword_yaml": "yaml"
+              "keyword_yaml": "yaml",
+              "keyword_legacy_title": "Import themes from Warp"
             },
             "yaml_import": {
               "title": "Import from YAML",
@@ -7898,7 +7892,7 @@
             "1d89457764": "Light Theme",
             "da864e6cec": "light mode",
             "f268092ee3": "Light mode can use its own terminal theme.",
-            "232e532169": "Customize Light Mode",
+            "match_dark_mode_title": "Match dark mode",
             "f785374072": "dark",
             "9c32726f47": "Controls the split divider line between panes in dark mode.",
             "8987db7ff2": "Dark Divider Color",

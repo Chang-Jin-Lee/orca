@@ -23,7 +23,7 @@ vi.mock('./TerminalSettingsPreview', () => ({
   }
 }))
 
-import { TerminalThemeCatalogSection, TerminalThemeImportSection } from './TerminalThemeSections'
+import { TerminalThemeCatalogSection } from './TerminalThemeSections'
 
 type ReactElementLike = {
   type: unknown
@@ -75,6 +75,8 @@ function renderCatalog(
     updateSettings,
     previewFontFamily: null,
     importedHighlightSignal: 7,
+    warpThemes: warpThemesMock,
+    showThemeImport: true,
     preferredTarget
   })
 }
@@ -127,49 +129,12 @@ function findButtonTexts(node: unknown): string[] {
   const element = node as ReactElementLike
   const typeName = getTypeName(element)
   if (typeName === 'WarpThemeImportButton') {
-    return ['Import themes from Warp']
+    return ['Import from Warp']
   }
   if (typeName === 'YamlThemeImportButton') {
     return ['Import from YAML']
   }
   return [...findButtonTexts(element.props?.children), ...findButtonTexts(element.props?.action)]
-}
-
-function hasText(node: unknown, text: string): boolean {
-  if (node == null) {
-    return false
-  }
-  if (typeof node === 'string' || typeof node === 'number') {
-    return String(node).includes(text)
-  }
-  if (Array.isArray(node)) {
-    return node.some((child) => hasText(child, text))
-  }
-  const element = node as ReactElementLike
-  return hasText(element.props?.children, text) || hasText(element.props?.action, text)
-}
-
-function findActionByText(node: unknown, text: string): (() => void) | null {
-  if (node == null || typeof node === 'string' || typeof node === 'number') {
-    return null
-  }
-  if (Array.isArray(node)) {
-    for (const child of node) {
-      const found = findActionByText(child, text)
-      if (found) {
-        return found
-      }
-    }
-    return null
-  }
-
-  const element = node as ReactElementLike
-  if (typeof element.props?.onClick === 'function' && hasText(element.props.children, text)) {
-    return element.props.onClick as () => void
-  }
-  return (
-    findActionByText(element.props?.children, text) ?? findActionByText(element.props?.action, text)
-  )
 }
 
 describe('TerminalThemeCatalogSection', () => {
@@ -239,43 +204,54 @@ describe('TerminalThemeCatalogSection', () => {
     expect(updateSettings).toHaveBeenCalledWith({ terminalThemeLight: 'Builtin Tango Light' })
   })
 
-  it('customizes light mode from the matching-dark state', () => {
+  it('turns match dark mode off to customize light mode', () => {
     const updateSettings = vi.fn()
     const element = renderCatalog(
       makeSettings({ terminalUseSeparateLightTheme: false }),
       updateSettings,
       'light'
     )
-    const customizeLightMode = findActionByText(element, 'Customize Light Mode')
+    const matchDarkModeSwitch = findElementByTypeName(element, 'SettingsSwitchRow')
+    const toggleMatchDarkMode = matchDarkModeSwitch?.props?.onChange as () => void
 
-    customizeLightMode?.()
+    expect(matchDarkModeSwitch?.props?.label).toBe('Match dark mode')
+    expect(matchDarkModeSwitch?.props?.description).toBe(
+      'Share the dark terminal theme and divider color in light mode.'
+    )
+    expect(matchDarkModeSwitch?.props?.checked).toBe(true)
+
+    toggleMatchDarkMode()
 
     expect(updateSettings).toHaveBeenCalledWith({ terminalUseSeparateLightTheme: true })
   })
 
-  it('matches the dark terminal theme from the customized light state', () => {
+  it('turns match dark mode on from the customized light state', () => {
     const updateSettings = vi.fn()
     const element = renderCatalog(
       makeSettings({ terminalUseSeparateLightTheme: true }),
       updateSettings,
       'light'
     )
-    const matchDarkMode = findActionByText(element, 'Match dark mode terminal theme')
+    const matchDarkModeSwitch = findElementByTypeName(element, 'SettingsSwitchRow')
+    const toggleMatchDarkMode = matchDarkModeSwitch?.props?.onChange as () => void
 
-    matchDarkMode?.()
+    expect(matchDarkModeSwitch?.props?.checked).toBe(false)
+
+    toggleMatchDarkMode()
 
     expect(updateSettings).toHaveBeenCalledWith({ terminalUseSeparateLightTheme: false })
   })
 
-  it('shows the required inactive note and light preview while separate light theme is disabled', () => {
+  it('shows the match dark mode switch and light preview while customization is hidden', () => {
     const element = renderCatalog(
       makeSettings({ terminalUseSeparateLightTheme: false }),
       vi.fn(),
       'light'
     )
     const preview = findElementByTypeName(element, 'TerminalSettingsPreview')
+    const matchDarkModeSwitch = findElementByTypeName(element, 'SettingsSwitchRow')
 
-    expect(hasText(element, 'Light mode matches the dark mode terminal theme')).toBe(true)
+    expect(matchDarkModeSwitch?.props?.label).toBe('Match dark mode')
     expect(countElementsByTypeName(element, 'ThemePicker')).toBe(0)
     expect(countElementsByTypeName(element, 'ColorField')).toBe(0)
     expect(preview?.props?.modeOverride).toBe('light')
@@ -313,15 +289,10 @@ describe('TerminalThemeCatalogSection', () => {
   })
 })
 
-describe('TerminalThemeImportSection', () => {
-  it('renders the Warp and YAML import buttons in the shared import section', () => {
-    const buttonTexts = findButtonTexts(TerminalThemeImportSection({ warpThemes: warpThemesMock }))
+describe('Terminal theme imports', () => {
+  it('renders the Warp and YAML import buttons inside the combined theme catalog', () => {
+    const buttonTexts = findButtonTexts(renderCatalog())
 
-    expect(buttonTexts).toContain('Import themes from Warp')
-    expect(buttonTexts).toContain('Import from YAML')
-  })
-
-  it('keeps the import buttons out of the combined theme catalog', () => {
-    expect(findButtonTexts(renderCatalog())).toEqual([])
+    expect(buttonTexts).toEqual(['Import from Warp', 'Import from YAML'])
   })
 })

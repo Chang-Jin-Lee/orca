@@ -6274,17 +6274,12 @@
           "ec2e33ad80": "라이트 디바이더 색상",
           "d56af60e6f": "Orca가 라이트 모드일 때 사용되는 테마를 선택합니다.",
           "8273bc75d7": "라이트 테마",
-          "74b15574c8": "선택적 라이트 모드 terminal 모양을 구성합니다.",
-          "b584287e84": "라이트 모드는 자체 터미널 테마를 사용할 수 있습니다.",
-          "d76f60c9cc": "라이트 모드 사용자화",
           "bc8e8a251a": "다크 모드 미리보기",
           "cbe56a0f79": "어두운 모드에서 창 사이의 분할 구분선을 제어합니다.",
           "b739d2abfe": "다크 디바이더 색상",
           "7add204bd5": "다크 모드에서 사용되는 terminal 테마를 선택하세요.",
           "9499ad1dc4": "어두운 테마",
           "f012172e21": "어두운 모드에서 terminal 패널에 사용되는 테마를 선택합니다.",
-          "import_themes_title": "테마 가져오기",
-          "import_themes_description": "가져온 테마는 다크 및 라이트 테마 대상 모두에서 사용할 수 있습니다.",
           "catalog_title": "터미널 테마",
           "catalog_description": "다크 및 라이트 모드의 터미널 테마와 구분선 색상을 선택합니다.",
           "target_title": "테마 모드",
@@ -6292,10 +6287,8 @@
           "target_aria": "터미널 테마 모드",
           "target_dark": "다크",
           "target_light": "라이트",
-          "light_inactive_note": "라이트 모드는 다크 모드 터미널 테마와 일치합니다.",
-          "light_custom_note": "라이트 모드에는 자체 터미널 테마가 있습니다.",
-          "customize_light_mode": "라이트 모드 사용자화",
-          "match_dark_mode_terminal_theme": "다크 모드 터미널 테마와 일치",
+          "match_dark_mode": "다크 모드와 일치",
+          "match_dark_mode_description": "라이트 모드에서 다크 터미널 테마와 구분선 색상을 공유합니다.",
           "light_preview_description": "적용 중인 라이트 터미널 모양을 표시합니다.",
           "dark_preview_description": "적용 중인 다크 터미널 모양을 표시합니다."
         },
@@ -7833,7 +7826,7 @@
             "1d89457764": "라이트 테마",
             "da864e6cec": "라이트 모드",
             "f268092ee3": "라이트 모드는 자체 터미널 테마를 사용할 수 있습니다.",
-            "232e532169": "라이트 모드 사용자화",
+            "match_dark_mode_title": "다크 모드와 일치",
             "f785374072": "다크",
             "9c32726f47": "어두운 모드에서 창 사이의 분할 구분선을 제어합니다.",
             "8987db7ff2": "다크 모드 구분선 색상",
@@ -7895,11 +7888,12 @@
             "0fe0073f0c": "새 창 및 라이브 업데이트의 기본 terminal 글꼴 크기입니다.",
             "5930244899": "글꼴 크기",
             "warp_import": {
-              "title": "Warp에서 테마 가져오기",
+              "title": "Warp에서 가져오기",
               "description": "Warp 테마를 Orca terminal 테마로 가져옵니다.",
               "keyword_warp": "warp",
               "keyword_themes": "themes",
-              "keyword_yaml": "yaml"
+              "keyword_yaml": "yaml",
+              "keyword_legacy_title": "Import themes from Warp"
             },
             "yaml_import": {
               "title": "YAML에서 가져오기",
@@ -8034,7 +8028,7 @@
           }
         },
         "WarpThemeImportModal": {
-          "title": "Warp에서 테마 가져오기",
+          "title": "Warp에서 가져오기",
           "description": "Warp 테마를 Orca terminal 테마로 가져옵니다.",
           "yaml_title": "테마 YAML 가져오기",
           "yaml_description": "YAML 파일(Warp 형식)을 Orca terminal 테마로 가져옵니다.",

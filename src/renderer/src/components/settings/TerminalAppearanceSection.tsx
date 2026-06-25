@@ -18,7 +18,7 @@ import {
   getTerminalWindowSearchEntries,
   getTerminalYamlImportSearchEntries
 } from './terminal-search'
-import { TerminalThemeCatalogSection, TerminalThemeImportSection } from './TerminalThemeSections'
+import { TerminalThemeCatalogSection } from './TerminalThemeSections'
 import { TerminalWindowSection } from './TerminalWindowSection'
 import { TerminalTypographyAppearanceSection } from './TerminalTypographyAppearanceSection'
 import { TerminalCursorAppearanceSection } from './TerminalCursorAppearanceSection'
@@ -82,7 +82,12 @@ export function TerminalAppearanceSection({
     searchQuery,
     getTerminalThemeTargetSearchEntries()
   )
-  const showTerminalThemeCatalog = darkThemeMatches || lightThemeMatches || themeTargetMatches
+  const themeImportMatches =
+    showWarpThemeImport &&
+    (matchesSettingsSearch(searchQuery, getTerminalWarpImportSearchEntries()) ||
+      matchesSettingsSearch(searchQuery, getTerminalYamlImportSearchEntries()))
+  const showTerminalThemeCatalog =
+    darkThemeMatches || lightThemeMatches || themeTargetMatches || themeImportMatches
   const preferredThemeTarget = getPreferredThemeTarget(darkThemeTargetScore, lightThemeTargetScore)
 
   const visibleSections = [
@@ -116,11 +121,6 @@ export function TerminalAppearanceSection({
     matchesSettingsSearch(searchQuery, getTerminalWindowSearchEntries()) ? (
       <TerminalWindowSection key="window" settings={settings} updateSettings={updateSettings} />
     ) : null,
-    showWarpThemeImport &&
-    (matchesSettingsSearch(searchQuery, getTerminalWarpImportSearchEntries()) ||
-      matchesSettingsSearch(searchQuery, getTerminalYamlImportSearchEntries())) ? (
-      <TerminalThemeImportSection key="theme-import" warpThemes={warpThemes} />
-    ) : null,
     showTerminalThemeCatalog ? (
       <TerminalThemeCatalogSection
         key={`theme-catalog-${preferredThemeTarget ?? 'manual'}`}
@@ -131,6 +131,8 @@ export function TerminalAppearanceSection({
         updateSettings={updateSettings}
         previewFontFamily={previewFontFamily}
         importedHighlightSignal={warpThemes.importSignal}
+        warpThemes={warpThemes}
+        showThemeImport={showWarpThemeImport}
         preferredTarget={preferredThemeTarget}
       />
     ) : null

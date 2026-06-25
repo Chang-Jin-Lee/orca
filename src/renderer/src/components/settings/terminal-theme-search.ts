@@ -53,7 +53,10 @@ export const getTerminalThemeTargetSearchEntries = createLocalizedCatalog(() => 
 
 export const getTerminalLightThemeSearchEntries = createLocalizedCatalog(() => [
   {
-    title: translate('auto.components.settings.terminal.search.232e532169', 'Customize Light Mode'),
+    title: translate(
+      'auto.components.settings.terminal.search.match_dark_mode_title',
+      'Match dark mode'
+    ),
     description: translate(
       'auto.components.settings.terminal.search.f268092ee3',
       'Light mode can use its own terminal theme.'
@@ -65,10 +68,11 @@ export const getTerminalLightThemeSearchEntries = createLocalizedCatalog(() => [
         'light mode'
       ),
       ...translateSearchKeyword(
-        'auto.components.settings.terminal.search.232e532169',
-        'Customize Light Mode',
+        'auto.components.settings.terminal.search.match_dark_mode_title',
+        'Match dark mode',
         {
           aliases: [
+            'Customize Light Mode',
             'Use separate light theme',
             'Use Separate Theme In Light Mode',
             'Match dark mode terminal theme'
@@ -133,7 +137,7 @@ export const getTerminalWarpImportSearchEntries = createLocalizedCatalog(() => [
   {
     title: translate(
       'auto.components.settings.terminal.search.warp_import.title',
-      'Import themes from Warp'
+      'Import from Warp'
     ),
     description: translate(
       'auto.components.settings.terminal.search.warp_import.description',
@@ -145,7 +149,11 @@ export const getTerminalWarpImportSearchEntries = createLocalizedCatalog(() => [
       translate('auto.components.settings.terminal.search.f66a7cf715', 'terminal'),
       translate('auto.components.settings.terminal.search.0ce176909a', 'theme'),
       translate('auto.components.settings.terminal.search.warp_import.keyword_themes', 'themes'),
-      translate('auto.components.settings.terminal.search.warp_import.keyword_yaml', 'yaml')
+      translate('auto.components.settings.terminal.search.warp_import.keyword_yaml', 'yaml'),
+      translate(
+        'auto.components.settings.terminal.search.warp_import.keyword_legacy_title',
+        'Import themes from Warp'
+      )
     ]
   }
 ])

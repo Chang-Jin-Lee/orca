@@ -6274,17 +6274,12 @@
           "ec2e33ad80": "分光器颜色",
           "d56af60e6f": "选择 Orca 处于浅色模式时使用的主题。",
           "8273bc75d7": "浅色主题",
-          "74b15574c8": "配置可选的轻型模式 terminal 外观。",
-          "b584287e84": "浅色模式可以使用自己的终端主题。",
-          "d76f60c9cc": "自定义浅色模式",
           "bc8e8a251a": "深色模式预览",
           "cbe56a0f79": "控制深色模式下窗格之间的分割分隔线。",
           "b739d2abfe": "深色分隔线颜色",
           "7add204bd5": "选择深色模式下使用的 terminal 主题。",
           "9499ad1dc4": "黑暗主题",
           "f012172e21": "选择深色模式下用于 terminal 窗格的主题。",
-          "import_themes_title": "导入主题",
-          "import_themes_description": "已导入的主题可用于深色和浅色主题目标。",
           "catalog_title": "终端主题",
           "catalog_description": "为深色和浅色模式选择终端主题和分隔线颜色。",
           "target_title": "主题模式",
@@ -6292,10 +6287,8 @@
           "target_aria": "终端主题模式",
           "target_dark": "深色",
           "target_light": "浅色",
-          "light_inactive_note": "浅色模式与深色模式终端主题匹配。",
-          "light_custom_note": "浅色模式有自己的终端主题。",
-          "customize_light_mode": "自定义浅色模式",
-          "match_dark_mode_terminal_theme": "匹配深色模式终端主题",
+          "match_dark_mode": "匹配深色模式",
+          "match_dark_mode_description": "在浅色模式中共享深色终端主题和分隔线颜色。",
           "light_preview_description": "显示实际生效的浅色终端外观。",
           "dark_preview_description": "显示实际生效的深色终端外观。"
         },
@@ -7833,7 +7826,7 @@
             "1d89457764": "浅色主题",
             "da864e6cec": "灯光模式",
             "f268092ee3": "浅色模式可以使用自己的终端主题。",
-            "232e532169": "自定义浅色模式",
+            "match_dark_mode_title": "匹配深色模式",
             "f785374072": "深色",
             "9c32726f47": "控制深色模式下窗格之间的分割分隔线。",
             "8987db7ff2": "深色分隔线颜色",
@@ -7895,11 +7888,12 @@
             "0fe0073f0c": "新窗格和实时更新的默认 terminal 字体大小。",
             "5930244899": "字体大小",
             "warp_import": {
-              "title": "从 Warp 导入主题",
+              "title": "从 Warp 导入",
               "description": "将 Warp 主题导入为 Orca terminal 主题。",
               "keyword_warp": "warp",
               "keyword_themes": "themes",
-              "keyword_yaml": "yaml"
+              "keyword_yaml": "yaml",
+              "keyword_legacy_title": "Import themes from Warp"
             },
             "yaml_import": {
               "title": "从 YAML 导入",
@@ -8034,7 +8028,7 @@
           }
         },
         "WarpThemeImportModal": {
-          "title": "从 Warp 导入主题",
+          "title": "从 Warp 导入",
           "description": "将 Warp 主题导入为 Orca terminal 主题。",
           "yaml_title": "导入主题 YAML",
           "yaml_description": "将主题 YAML 文件（Warp 格式）导入为 Orca terminal 主题。",

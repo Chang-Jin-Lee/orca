@@ -6289,17 +6289,12 @@
           "ec2e33ad80": "Color del divisor de luz",
           "d56af60e6f": "Elige el tema utilizado cuando Orca está en modo claro.",
           "8273bc75d7": "Tema ligero",
-          "74b15574c8": "Configure la apariencia del terminal en modo de luz opcional.",
-          "b584287e84": "El modo claro puede usar su propio tema de terminal.",
-          "d76f60c9cc": "Personalizar modo claro",
           "bc8e8a251a": "Vista previa del modo oscuro",
           "cbe56a0f79": "Controla la línea divisoria entre paneles en modo oscuro.",
           "b739d2abfe": "Color divisor oscuro",
           "7add204bd5": "Elija el tema del terminal utilizado en modo oscuro.",
           "9499ad1dc4": "Tema oscuro",
           "f012172e21": "Elija el tema utilizado para los paneles de terminal en modo oscuro.",
-          "import_themes_title": "Importar temas",
-          "import_themes_description": "Los temas importados están disponibles para los destinos de tema oscuro y claro.",
           "catalog_title": "Temas de terminal",
           "catalog_description": "Elige temas de terminal y colores de divisor para los modos oscuro y claro.",
           "target_title": "Modo del tema",
@@ -6307,10 +6302,8 @@
           "target_aria": "Modo del tema de terminal",
           "target_dark": "Oscuro",
           "target_light": "Claro",
-          "light_inactive_note": "El modo claro coincide con el tema de terminal del modo oscuro.",
-          "light_custom_note": "El modo claro tiene su propio tema de terminal.",
-          "customize_light_mode": "Personalizar modo claro",
-          "match_dark_mode_terminal_theme": "Coincidir con el tema de terminal del modo oscuro",
+          "match_dark_mode": "Coincidir con modo oscuro",
+          "match_dark_mode_description": "Comparte el tema de terminal oscuro y el color del divisor en modo claro.",
           "light_preview_description": "Muestra la apariencia efectiva del terminal claro.",
           "dark_preview_description": "Muestra la apariencia efectiva del terminal oscuro."
         },
@@ -7848,7 +7841,7 @@
             "1d89457764": "Tema ligero",
             "da864e6cec": "modo de luz",
             "f268092ee3": "El modo claro puede usar su propio tema de terminal.",
-            "232e532169": "Personalizar modo claro",
+            "match_dark_mode_title": "Coincidir con modo oscuro",
             "f785374072": "oscuro",
             "9c32726f47": "Controla la línea divisoria entre paneles en modo oscuro.",
             "8987db7ff2": "Color divisor oscuro",
@@ -7910,11 +7903,12 @@
             "0fe0073f0c": "Tamaño de fuente de terminal predeterminado para nuevos paneles y actualizaciones en vivo.",
             "5930244899": "Tamaño de fuente",
             "warp_import": {
-              "title": "Import themes from Warp",
+              "title": "Importar desde Warp",
               "description": "Import Warp themes as Orca terminal themes.",
               "keyword_warp": "warp",
               "keyword_themes": "themes",
-              "keyword_yaml": "yaml"
+              "keyword_yaml": "yaml",
+              "keyword_legacy_title": "Import themes from Warp"
             },
             "yaml_import": {
               "title": "Import from YAML",
@@ -8034,7 +8028,7 @@
           "b036c7a409": "Derive nombres breves de pestañas estables a partir del primer mensaje de agente conocido. Los cambios de nombre manuales siempre ganan."
         },
         "WarpThemeImportModal": {
-          "title": "Import themes from Warp",
+          "title": "Importar desde Warp",
           "description": "Import Warp themes as Orca terminal themes.",
           "yaml_title": "Import theme YAML",
           "yaml_description": "Import theme YAML files (Warp format) as Orca terminal themes.",

@@ -131,6 +131,7 @@ describe('getTerminalPaneSearchEntries', () => {
     'dark terminal theme',
     'target',
     'editing',
+    'Match dark mode',
     'Customize Light Mode',
     'Match dark mode terminal theme',
     'Use Separate Theme In Light Mode',
@@ -145,8 +146,8 @@ describe('getTerminalPaneSearchEntries', () => {
     const desktopEntries = getAppearancePaneSearchEntries({ showWarpImport: true })
     const webEntries = getAppearancePaneSearchEntries({ showWarpImport: false })
 
-    expect(desktopEntries.some((entry) => entry.title === 'Import themes from Warp')).toBe(true)
-    expect(webEntries.some((entry) => entry.title === 'Import themes from Warp')).toBe(false)
+    expect(desktopEntries.some((entry) => entry.title === 'Import from Warp')).toBe(true)
+    expect(webEntries.some((entry) => entry.title === 'Import from Warp')).toBe(false)
     expect(webEntries.some((entry) => entry.title === 'Import from Ghostty')).toBe(true)
   })
 

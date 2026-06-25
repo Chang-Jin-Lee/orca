@@ -3,6 +3,7 @@ import type { GlobalSettings } from '../../../../shared/types'
 import {
   ColorField,
   SettingsSegmentedControl,
+  SettingsSwitchRow,
   SettingsSubsectionHeader,
   ThemePicker
 } from './SettingsFormControls'
@@ -13,7 +14,6 @@ import { YamlThemeImportButton } from './YamlThemeImportButton'
 import type { UseWarpThemeImportReturn } from './useWarpThemeImport'
 import { getAvailableTerminalThemeOptions } from '@/lib/terminal-theme'
 import { translate } from '@/i18n/i18n'
-import { Button } from '../ui/button'
 
 type TerminalThemeTarget = 'dark' | 'light'
 
@@ -25,35 +25,9 @@ type TerminalThemeCatalogSectionProps = {
   updateSettings: (updates: Partial<GlobalSettings>) => void
   previewFontFamily: string | null
   importedHighlightSignal: number
-  preferredTarget?: TerminalThemeTarget
-}
-
-/** Shared import affordance for terminal themes. Why: imported themes land in
- *  one pool used by both the dark and light targets, so the buttons live above
- *  the catalog rather than implying a mode-specific import. */
-export function TerminalThemeImportSection({
-  warpThemes
-}: {
   warpThemes: UseWarpThemeImportReturn
-}): React.JSX.Element {
-  return (
-    <section className="space-y-3">
-      <SettingsSubsectionHeader
-        title={translate(
-          'auto.components.settings.TerminalThemeSections.import_themes_title',
-          'Import Themes'
-        )}
-        description={translate(
-          'auto.components.settings.TerminalThemeSections.import_themes_description',
-          'Imported themes are available in both the dark and light theme targets.'
-        )}
-      />
-      <div className="flex flex-wrap items-center gap-2">
-        <WarpThemeImportButton warpThemes={warpThemes} />
-        <YamlThemeImportButton warpThemes={warpThemes} />
-      </div>
-    </section>
-  )
+  showThemeImport: boolean
+  preferredTarget?: TerminalThemeTarget
 }
 
 export function TerminalThemeCatalogSection({
@@ -64,12 +38,15 @@ export function TerminalThemeCatalogSection({
   updateSettings,
   previewFontFamily,
   importedHighlightSignal,
+  warpThemes,
+  showThemeImport,
   preferredTarget
 }: TerminalThemeCatalogSectionProps): React.JSX.Element {
   const [target, setTarget] = useState<TerminalThemeTarget>(preferredTarget ?? 'dark')
   const themeOptions = getAvailableTerminalThemeOptions(settings)
   const isLightTarget = target === 'light'
-  const lightModeMatchesDark = isLightTarget && !settings.terminalUseSeparateLightTheme
+  const matchDarkMode = !settings.terminalUseSeparateLightTheme
+  const lightModeMatchesDark = isLightTarget && matchDarkMode
   const selectedTheme = isLightTarget ? settings.terminalThemeLight : settings.terminalThemeDark
   const pickerTitle = isLightTarget
     ? translate('auto.components.settings.TerminalThemeSections.8273bc75d7', 'Light Theme')
@@ -108,6 +85,13 @@ export function TerminalThemeCatalogSection({
           'Choose terminal themes and divider colors for dark and light mode.'
         )}
       />
+
+      {showThemeImport ? (
+        <div className="flex flex-wrap items-center gap-2">
+          <WarpThemeImportButton warpThemes={warpThemes} />
+          <YamlThemeImportButton warpThemes={warpThemes} />
+        </div>
+      ) : null}
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
         <div className="space-y-6">
@@ -158,45 +142,28 @@ export function TerminalThemeCatalogSection({
             {isLightTarget ? (
               <SearchableSetting
                 title={translate(
-                  'auto.components.settings.TerminalThemeSections.customize_light_mode',
-                  'Customize Light Mode'
+                  'auto.components.settings.TerminalThemeSections.match_dark_mode',
+                  'Match dark mode'
                 )}
                 keywords={['terminal', 'light mode', 'theme', 'match dark']}
                 forceVisible
               >
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <p className="text-xs text-muted-foreground">
-                    {settings.terminalUseSeparateLightTheme
-                      ? translate(
-                          'auto.components.settings.TerminalThemeSections.light_custom_note',
-                          'Light mode has its own terminal theme.'
-                        )
-                      : translate(
-                          'auto.components.settings.TerminalThemeSections.light_inactive_note',
-                          'Light mode matches the dark mode terminal theme.'
-                        )}
-                  </p>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant={settings.terminalUseSeparateLightTheme ? 'outline' : 'default'}
-                    onClick={() =>
-                      updateSettings({
-                        terminalUseSeparateLightTheme: !settings.terminalUseSeparateLightTheme
-                      })
-                    }
-                  >
-                    {settings.terminalUseSeparateLightTheme
-                      ? translate(
-                          'auto.components.settings.TerminalThemeSections.match_dark_mode_terminal_theme',
-                          'Match dark mode terminal theme'
-                        )
-                      : translate(
-                          'auto.components.settings.TerminalThemeSections.customize_light_mode',
-                          'Customize Light Mode'
-                        )}
-                  </Button>
-                </div>
+                <SettingsSwitchRow
+                  label={translate(
+                    'auto.components.settings.TerminalThemeSections.match_dark_mode',
+                    'Match dark mode'
+                  )}
+                  description={translate(
+                    'auto.components.settings.TerminalThemeSections.match_dark_mode_description',
+                    'Share the dark terminal theme and divider color in light mode.'
+                  )}
+                  checked={matchDarkMode}
+                  onChange={() =>
+                    updateSettings({
+                      terminalUseSeparateLightTheme: !settings.terminalUseSeparateLightTheme
+                    })
+                  }
+                />
               </SearchableSetting>
             ) : null}
           </div>

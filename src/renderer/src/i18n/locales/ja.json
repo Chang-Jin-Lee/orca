@@ -5024,7 +5024,7 @@
           "1f744a72f4": "構成"
         },
         "WarpThemeImportModal": {
-          "title": "Warp からテーマをインポート",
+          "title": "Warp からインポート",
           "description": "Warp テーマを Orca の terminal テーマとしてインポートします。",
           "yaml_title": "テーマ YAML をインポート",
           "yaml_description": "テーマ YAML ファイル（Warp 形式）を Orca の terminal テーマとしてインポートします。",
@@ -6306,16 +6306,11 @@
           "d06664e889": "ダーク"
         },
         "TerminalThemeSections": {
-          "import_themes_title": "テーマをインポート",
-          "import_themes_description": "インポートしたテーマは、ダークとライト両方のテーマ対象で利用できます。",
           "db210115c5": "ライトモードのプレビュー",
           "5e0c24b5c8": "ライト モードでペイン間の分割分割線を制御します。",
           "ec2e33ad80": "ライトディバイダーの色",
           "d56af60e6f": "Orca がライト モードのときに使用されるテーマを選択します。",
           "8273bc75d7": "ライトテーマ",
-          "74b15574c8": "オプションのライトモード terminal の外観を構成します。",
-          "b584287e84": "ライトモードでは独自のターミナルテーマを使用できます。",
-          "d76f60c9cc": "ライトモードをカスタマイズ",
           "bc8e8a251a": "ダークモードのプレビュー",
           "cbe56a0f79": "ダーク モードでのペイン間の分割分割線を制御します。",
           "b739d2abfe": "ダークディバイダーカラー",
@@ -6329,10 +6324,8 @@
           "target_aria": "ターミナルテーマモード",
           "target_dark": "ダーク",
           "target_light": "ライト",
-          "light_inactive_note": "ライトモードはダークモードのターミナルテーマと一致しています。",
-          "light_custom_note": "ライトモードには独自のターミナルテーマがあります。",
-          "customize_light_mode": "ライトモードをカスタマイズ",
-          "match_dark_mode_terminal_theme": "ダークモードのターミナルテーマに合わせる",
+          "match_dark_mode": "ダークモードに合わせる",
+          "match_dark_mode_description": "ライトモードでダークのターミナルテーマとディバイダー色を共有します。",
           "light_preview_description": "有効なライトターミナルの外観を表示します。",
           "dark_preview_description": "有効なダークターミナルの外観を表示します。"
         },
@@ -7831,11 +7824,12 @@
             "73e9422f19": "サポートされている Ghostty terminal 設定の 1 回限りのインポート。",
             "a979df0083": "Ghostty からインポート",
             "warp_import": {
-              "title": "Warp からテーマをインポート",
+              "title": "Warp からインポート",
               "description": "Warp テーマを Orca の terminal テーマとしてインポートします。",
               "keyword_warp": "warp",
               "keyword_themes": "テーマ",
-              "keyword_yaml": "yaml"
+              "keyword_yaml": "yaml",
+              "keyword_legacy_title": "Import themes from Warp"
             },
             "yaml_import": {
               "title": "YAML からインポート",
@@ -7883,7 +7877,7 @@
             "1d89457764": "ライトテーマ",
             "da864e6cec": "ライトモード",
             "f268092ee3": "ライトモードでは独自のターミナルテーマを使用できます。",
-            "232e532169": "ライトモードをカスタマイズ",
+            "match_dark_mode_title": "ダークモードに合わせる",
             "f785374072": "ダーク",
             "9c32726f47": "ダーク モードでのペイン間の分割分割線を制御します。",
             "8987db7ff2": "ダークディバイダーカラー",

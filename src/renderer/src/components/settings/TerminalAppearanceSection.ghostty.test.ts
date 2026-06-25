@@ -108,9 +108,6 @@ vi.mock('./SettingsFormControls', () => ({
 vi.mock('./TerminalThemeSections', () => ({
   TerminalThemeCatalogSection: function TerminalThemeCatalogSection() {
     return null
-  },
-  TerminalThemeImportSection: function TerminalThemeImportSection() {
-    return null
   }
 }))
 
@@ -301,30 +298,6 @@ function findGhosttyImportModal(node: unknown): ReactElementLike | null {
   return null
 }
 
-function findTerminalThemeImportSection(node: unknown): ReactElementLike | null {
-  if (node == null) {
-    return null
-  }
-  if (Array.isArray(node)) {
-    for (const child of node) {
-      const found = findTerminalThemeImportSection(child)
-      if (found) {
-        return found
-      }
-    }
-    return null
-  }
-  const el = node as ReactElementLike
-  const typeName = typeof el.type === 'function' ? el.type.name : String(el.type)
-  if (typeName === 'TerminalThemeImportSection') {
-    return el
-  }
-  if (el.props?.children) {
-    return findTerminalThemeImportSection(el.props.children)
-  }
-  return null
-}
-
 function findWarpThemeImportModal(node: unknown): ReactElementLike | null {
   if (node == null) {
     return null
@@ -377,7 +350,7 @@ describe('TerminalAppearanceSection ghostty import wiring', () => {
     expect(ghosttyMock.handleClick).toHaveBeenCalled()
   })
 
-  it('renders the shared theme import section above the theme pickers on desktop', () => {
+  it('passes shared theme import controls into the theme catalog on desktop', () => {
     const element = TerminalAppearanceSection({
       settings: {} as never,
       updateSettings: () => {},
@@ -387,14 +360,12 @@ describe('TerminalAppearanceSection ghostty import wiring', () => {
       warpThemes: warpThemesMock
     })
 
-    // Why: imports land in one pool shared by both targets, so the buttons
-    // live in their own section rather than inside the theme catalog.
     const buttons = findButtons(element)
-    expect(buttons.some((button) => button.text === 'Import themes from Warp')).toBe(false)
+    expect(buttons.some((button) => button.text === 'Import from Warp')).toBe(false)
 
-    const importSection = findTerminalThemeImportSection(element)
-    expect(importSection?.props.warpThemes).toBe(warpThemesMock)
-    expect(findTerminalThemeCatalogSection(element)).not.toBeNull()
+    const catalog = findTerminalThemeCatalogSection(element)
+    expect(catalog?.props.warpThemes).toBe(warpThemesMock)
+    expect(catalog?.props.showThemeImport).toBe(true)
   })
 
   it('routes dark and light theme searches to the matching catalog target', () => {
@@ -465,7 +436,7 @@ describe('TerminalAppearanceSection ghostty import wiring', () => {
       warpThemes: warpThemesMock
     })
 
-    expect(findTerminalThemeImportSection(element)).toBeNull()
+    expect(findTerminalThemeCatalogSection(element)?.props.showThemeImport).toBe(false)
     expect(findWarpThemeImportModal(element)).toBeNull()
   })
 
