@@ -216,7 +216,7 @@ describe('getWorkItemDetails', () => {
     expect(details?.participants?.[0]?.login).toBe('issue-author')
   })
 
-  it('caps issue timeline pagination to bounded drawer work', async () => {
+  it('caps issue timeline pagination by supported activity items', async () => {
     getWorkItemMock.mockResolvedValueOnce({
       id: 'issue:923',
       type: 'issue',
@@ -229,15 +229,17 @@ describe('getWorkItemDetails', () => {
       author: 'issue-author'
     })
     getIssueOwnerRepoMock.mockResolvedValue({ owner: 'acme', repo: 'widgets' })
-    const makeTimelinePage = (page: number): string =>
+    const makeTimelineEvent = (page: number, index: number, event: string): string =>
+      JSON.stringify({
+        id: `${page}:${index}`,
+        event,
+        actor: { login: 'issue-author', avatar_url: 'https://x/y' },
+        assignee: { login: `assignee-${page}-${index}` },
+        created_at: '2026-04-01T00:00:00Z'
+      })
+    const makeTimelinePage = (page: number, supportedCount: number): string =>
       Array.from({ length: 100 }, (_, index) =>
-        JSON.stringify({
-          id: `${page}:${index}`,
-          event: 'assigned',
-          actor: { login: 'issue-author', avatar_url: 'https://x/y' },
-          assignee: { login: `assignee-${page}-${index}` },
-          created_at: '2026-04-01T00:00:00Z'
-        })
+        makeTimelineEvent(page, index, index < supportedCount ? 'assigned' : 'subscribed')
       ).join('\n')
     ghExecFileAsyncMock
       .mockResolvedValueOnce({
@@ -254,13 +256,16 @@ describe('getWorkItemDetails', () => {
           }
         })
       })
-      .mockResolvedValueOnce({ stdout: makeTimelinePage(1) })
-      .mockResolvedValueOnce({ stdout: makeTimelinePage(2) })
-      .mockResolvedValueOnce({ stdout: makeTimelinePage(3) })
+      .mockResolvedValueOnce({ stdout: makeTimelinePage(1, 0) })
+      .mockResolvedValueOnce({ stdout: makeTimelinePage(2, 0) })
+      .mockResolvedValueOnce({ stdout: makeTimelinePage(3, 10) })
+      .mockResolvedValueOnce({ stdout: makeTimelinePage(4, 100) })
+      .mockResolvedValueOnce({ stdout: makeTimelinePage(5, 100) })
+      .mockResolvedValueOnce({ stdout: makeTimelinePage(6, 100) })
 
     const details = await getWorkItemDetails('/repo-root', 923, 'issue')
 
-    expect(ghExecFileAsyncMock).toHaveBeenCalledTimes(4)
+    expect(ghExecFileAsyncMock).toHaveBeenCalledTimes(7)
     expect(ghExecFileAsyncMock.mock.calls[1][0]).toContain(
       'repos/acme/widgets/issues/923/timeline?per_page=100&page=1'
     )
@@ -270,12 +275,17 @@ describe('getWorkItemDetails', () => {
     expect(ghExecFileAsyncMock.mock.calls[3][0]).toContain(
       'repos/acme/widgets/issues/923/timeline?per_page=100&page=3'
     )
+    expect(ghExecFileAsyncMock.mock.calls[6][0]).toContain(
+      'repos/acme/widgets/issues/923/timeline?per_page=100&page=6'
+    )
     expect(
       ghExecFileAsyncMock.mock.calls.some((call) =>
-        call[0].includes('repos/acme/widgets/issues/923/timeline?per_page=100&page=4')
+        call[0].includes('repos/acme/widgets/issues/923/timeline?per_page=100&page=7')
       )
     ).toBe(false)
     expect(details?.timelineItems).toHaveLength(300)
+    expect(details?.timelineItems.at(0)).toMatchObject({ assignee: 'assignee-3-0' })
+    expect(details?.timelineItems.at(-1)).toMatchObject({ assignee: 'assignee-6-89' })
   })
 
   it('falls back to REST + GraphQL when the collapsed issue query fails', async () => {

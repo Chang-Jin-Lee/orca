@@ -287,8 +287,8 @@ async function getIssueTimelineItems(
   ghOptions: ReturnType<typeof ghRepoExecOptions>
 ): Promise<GitHubIssueTimelineItem[]> {
   try {
-    const events: RestTimelineEvent[] = []
-    for (let page = 1; events.length < MAX_ISSUE_TIMELINE_ITEMS; page += 1) {
+    const items: GitHubIssueTimelineItem[] = []
+    for (let page = 1; items.length < MAX_ISSUE_TIMELINE_ITEMS; page += 1) {
       const { stdout } = await ghExecFileAsync(
         [
           'api',
@@ -300,18 +300,24 @@ async function getIssueTimelineItems(
         ],
         ghOptions
       )
-      // Why: --jq emits compact NDJSON and explicit pages let us cap worst-case
-      // drawer work while still loading ordinary multi-page issue histories.
+      // Why: --jq emits compact NDJSON while explicit pages let us stop once
+      // supported activity reaches the drawer cap.
       const pageEvents = parseRestTimelineEventLines(stdout)
-      events.push(...pageEvents)
+      for (const event of pageEvents) {
+        const item = mapRestTimelineEvent(event)
+        if (!item) {
+          continue
+        }
+        items.push(item)
+        if (items.length === MAX_ISSUE_TIMELINE_ITEMS) {
+          break
+        }
+      }
       if (pageEvents.length < GITHUB_REST_PAGE_SIZE) {
         break
       }
     }
-    return events
-      .slice(0, MAX_ISSUE_TIMELINE_ITEMS)
-      .map(mapRestTimelineEvent)
-      .filter((item): item is GitHubIssueTimelineItem => item !== null)
+    return items
   } catch {
     return []
   }
