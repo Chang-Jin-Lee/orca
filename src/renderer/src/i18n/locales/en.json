@@ -9148,7 +9148,9 @@
             "noAgentSessionsFound": "No agent sessions found",
             "noSessionsMatchFilters": "No sessions match the current filters",
             "sessionId": "Session ID",
-            "logPath": "Log path"
+            "logPath": "Log path",
+            "originalPaneUnavailable": "Original pane is no longer available.",
+            "worktreeUnavailable": "Worktree is no longer available."
           },
           "AiVaultPanelControls": {
             "scanningSessions": "Scanning sessions",
@@ -9201,6 +9203,8 @@
             "resumeCommand": "Resume command",
             "sessionActions": "{{value0}} session actions",
             "resumeInNewTab": "Resume in New Tab",
+            "resumeInWorktree": "Resume in Worktree",
+            "viewLog": "View Log",
             "copyResumeCommand": "Copy Resume Command",
             "openLog": "Open Log",
             "revealLog": "Reveal Log",
@@ -9224,7 +9228,10 @@
             "agentRole": "Agent",
             "toolRole": "Tool",
             "systemRole": "System",
-            "sessionRole": "Session"
+            "sessionRole": "Session",
+            "jumpToOriginalPane": "Jump to Original Pane",
+            "worktree": "Worktree",
+            "jumpToWorktree": "Jump to Worktree"
           },
           "AiVaultSessionRow": {
             "noPreviewAvailable": "No conversation preview available",
@@ -9248,7 +9255,9 @@
             "agentRole": "Agent",
             "toolRole": "Tool",
             "systemRole": "System",
-            "sessionRole": "Session"
+            "sessionRole": "Session",
+            "jumpToOriginalPane": "Jump to Original Pane",
+            "jumpToWorktree": "Jump to Worktree"
           },
           "FileExplorerNameFilter": {
             "26fb73c6e3": "Find files",
@@ -9292,6 +9301,17 @@
                 "copyCommand": "Copy command"
               }
             }
+          },
+          "AiVaultSessionWorktree": {
+            "currentWorktree": "Current worktree",
+            "activeWorktree": "Active worktree",
+            "archivedWorktree": "Archived worktree",
+            "unavailableWorktree": "Unavailable worktree",
+            "jumpToWorktree": "Jump to Worktree",
+            "noRecordedWorktree": "No worktree was recorded for this session.",
+            "archivedJumpUnavailable": "This session is in an archived worktree.",
+            "noActiveWorktreeMatch": "No active worktree matches this session.",
+            "noActiveWorktreeTarget": "No active worktree is available."
           }
         }
       },
