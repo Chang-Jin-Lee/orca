@@ -74,6 +74,9 @@ export type AiVaultScanIssue = {
 export type AiVaultListArgs = {
   limit?: number
   force?: boolean
+  // Active workspace/project paths. The global result is recency-capped, so these
+  // guarantee a scoped view still surfaces its own (possibly older) sessions.
+  scopePaths?: readonly string[]
 }
 
 export type AiVaultListResult = {
