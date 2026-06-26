@@ -3,8 +3,6 @@
    in one modal flow. */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  ArrowDown,
-  ArrowUp,
   AlertTriangle,
   Check,
   EyeOff,
@@ -27,17 +25,22 @@ import {
   DialogTitle
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+  DropdownMenuTrigger
+} from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import RepoMultiCombobox from '@/components/ui/repo-multi-combobox'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue
-} from '@/components/ui/select'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useMountedRef } from '@/hooks/useMountedRef'
 import { useAppStore } from '@/store'
@@ -87,8 +90,6 @@ const DEFAULT_FILTERS: WorkspaceCleanupFilters = {
   git: 'all',
   context: 'all'
 }
-
-const FILTER_SELECT_CLASSNAME = 'h-8 w-full bg-background px-2 text-xs'
 
 const EMPTY_REVIEW_INFO: WorkspaceCleanupReviewInfo = {
   hasReview: false,
@@ -1009,10 +1010,10 @@ function WorkspaceCleanupFilterToolbar({
           className="h-8 pl-8 text-xs"
         />
       </div>
-      <Popover>
+      <DropdownMenu modal={false}>
         <Tooltip>
           <TooltipTrigger asChild>
-            <PopoverTrigger asChild>
+            <DropdownMenuTrigger asChild>
               <Button
                 variant="outline"
                 size="icon-sm"
@@ -1031,7 +1032,7 @@ function WorkspaceCleanupFilterToolbar({
                   />
                 ) : null}
               </Button>
-            </PopoverTrigger>
+            </DropdownMenuTrigger>
           </TooltipTrigger>
           <TooltipContent side="top" sideOffset={4}>
             {translate(
@@ -1040,144 +1041,139 @@ function WorkspaceCleanupFilterToolbar({
             )}
           </TooltipContent>
         </Tooltip>
-        <PopoverContent align="end" sideOffset={6} className="w-[320px] p-3">
-          <div className="space-y-3">
-            <div className="flex items-center justify-between gap-3">
-              <div className="text-[11px] font-semibold uppercase tracking-[0.05em] text-muted-foreground">
+        <DropdownMenuContent align="end" sideOffset={6} className="w-64 pb-2">
+          <DropdownMenuLabel>
+            {translate(
+              'auto.components.workspace.cleanup.WorkspaceCleanupDialog.93b7381d50',
+              'Filters'
+            )}
+          </DropdownMenuLabel>
+          <WorkspaceCleanupMenuSub<WorkspaceCleanupTimeFilter>
+            label="Age"
+            value={filters.time}
+            options={[
+              ['all', 'Any age'],
+              ['30d', '30d+'],
+              ['90d', '90d+'],
+              ['archived', 'Archived']
+            ]}
+            onChange={(value) => updateFilter('time', value)}
+          />
+          <WorkspaceCleanupMenuSub<WorkspaceCleanupReviewFilter>
+            label="Review"
+            value={filters.review}
+            options={[
+              ['all', 'Any review'],
+              ['no-review', 'No PR/MR'],
+              ['has-review', 'Has PR/MR'],
+              ['open-review', 'Open'],
+              ['closed-review', 'Closed']
+            ]}
+            onChange={(value) => updateFilter('review', value)}
+          />
+          <WorkspaceCleanupMenuSub<WorkspaceCleanupGitFilter>
+            label="Git"
+            value={filters.git}
+            options={[
+              ['all', 'Any git'],
+              ['clean', 'Clean'],
+              ['dirty', 'Dirty'],
+              ['unpushed', 'Unpushed'],
+              ['unknown', 'Unknown']
+            ]}
+            onChange={(value) => updateFilter('git', value)}
+          />
+          <WorkspaceCleanupMenuSub<WorkspaceCleanupContextFilter>
+            label="Context"
+            value={filters.context}
+            options={[
+              ['all', 'Any context'],
+              ['has-context', 'Has context'],
+              ['no-context', 'No context']
+            ]}
+            onChange={(value) => updateFilter('context', value)}
+          />
+          <DropdownMenuSeparator />
+          <DropdownMenuLabel>
+            {translate(
+              'auto.components.workspace.cleanup.WorkspaceCleanupDialog.a615e24679',
+              'Sort'
+            )}
+          </DropdownMenuLabel>
+          <WorkspaceCleanupMenuSub<WorkspaceCleanupSortKey>
+            label="Sort by"
+            value={sortKey}
+            options={[
+              ['activity', 'Activity'],
+              ['name', 'Name'],
+              ['repo', 'Repo'],
+              ['review', 'Review'],
+              ['git', 'Git']
+            ]}
+            onChange={onSortKeyChange}
+          />
+          <WorkspaceCleanupMenuSub<WorkspaceCleanupSortDirection>
+            label="Direction"
+            value={sortDirection}
+            options={[
+              ['asc', 'Ascending'],
+              ['desc', 'Descending']
+            ]}
+            onChange={onSortDirectionChange}
+          />
+          {hasHiddenControls ? (
+            <>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onSelect={resetPanelControls}>
                 {translate(
-                  'auto.components.workspace.cleanup.WorkspaceCleanupDialog.93b7381d50',
-                  'Filters'
+                  'auto.components.workspace.cleanup.WorkspaceCleanupDialog.e94b1f8bb4',
+                  'Clear filters'
                 )}
-              </div>
-              {hasHiddenControls ? (
-                <Button
-                  variant="link"
-                  size="xs"
-                  className="h-auto px-0 text-xs"
-                  onClick={resetPanelControls}
-                >
-                  {translate(
-                    'auto.components.workspace.cleanup.WorkspaceCleanupDialog.e94b1f8bb4',
-                    'Clear filters'
-                  )}
-                </Button>
-              ) : null}
-            </div>
-            <div className="grid grid-cols-2 gap-2">
-              <FilterSelect<WorkspaceCleanupTimeFilter>
-                value={filters.time}
-                options={[
-                  ['all', 'Any age'],
-                  ['30d', '30d+'],
-                  ['90d', '90d+'],
-                  ['archived', 'Archived']
-                ]}
-                onChange={(value) => updateFilter('time', value)}
-              />
-              <FilterSelect<WorkspaceCleanupReviewFilter>
-                value={filters.review}
-                options={[
-                  ['all', 'Any review'],
-                  ['no-review', 'No PR/MR'],
-                  ['has-review', 'Has PR/MR'],
-                  ['open-review', 'Open'],
-                  ['closed-review', 'Closed']
-                ]}
-                onChange={(value) => updateFilter('review', value)}
-              />
-              <FilterSelect<WorkspaceCleanupGitFilter>
-                value={filters.git}
-                options={[
-                  ['all', 'Any git'],
-                  ['clean', 'Clean'],
-                  ['dirty', 'Dirty'],
-                  ['unpushed', 'Unpushed'],
-                  ['unknown', 'Unknown']
-                ]}
-                onChange={(value) => updateFilter('git', value)}
-              />
-              <FilterSelect<WorkspaceCleanupContextFilter>
-                value={filters.context}
-                options={[
-                  ['all', 'Any context'],
-                  ['has-context', 'Has context'],
-                  ['no-context', 'No context']
-                ]}
-                onChange={(value) => updateFilter('context', value)}
-              />
-            </div>
-            <div className="h-px bg-border" />
-            <div className="space-y-2">
-              <div className="text-[11px] font-semibold uppercase tracking-[0.05em] text-muted-foreground">
-                {translate(
-                  'auto.components.workspace.cleanup.WorkspaceCleanupDialog.a615e24679',
-                  'Sort'
-                )}
-              </div>
-              <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
-                <FilterSelect<WorkspaceCleanupSortKey>
-                  value={sortKey}
-                  options={[
-                    ['activity', 'Activity'],
-                    ['name', 'Name'],
-                    ['repo', 'Repo'],
-                    ['review', 'Review'],
-                    ['git', 'Git']
-                  ]}
-                  onChange={onSortKeyChange}
-                />
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="outline"
-                      size="icon-sm"
-                      aria-label={sortDirection === 'asc' ? 'Sort ascending' : 'Sort descending'}
-                      onClick={() =>
-                        onSortDirectionChange(sortDirection === 'asc' ? 'desc' : 'asc')
-                      }
-                    >
-                      {sortDirection === 'asc' ? (
-                        <ArrowUp className="size-3.5" />
-                      ) : (
-                        <ArrowDown className="size-3.5" />
-                      )}
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent side="top" sideOffset={4}>
-                    {sortDirection === 'asc' ? 'Ascending' : 'Descending'}
-                  </TooltipContent>
-                </Tooltip>
-              </div>
-            </div>
-          </div>
-        </PopoverContent>
-      </Popover>
+              </DropdownMenuItem>
+            </>
+          ) : null}
+        </DropdownMenuContent>
+      </DropdownMenu>
     </div>
   )
 }
 
-function FilterSelect<T extends string>({
+function WorkspaceCleanupMenuSub<T extends string>({
+  label,
   value,
   options,
   onChange
 }: {
+  label: string
   value: T
   options: readonly (readonly [T, string])[]
   onChange: (value: T) => void
 }): React.JSX.Element {
+  const valueLabel = options.find(([optionValue]) => optionValue === value)?.[1] ?? value
   return (
-    <Select value={value} onValueChange={(nextValue) => onChange(nextValue as T)}>
-      <SelectTrigger size="sm" className={FILTER_SELECT_CLASSNAME}>
-        <SelectValue />
-      </SelectTrigger>
-      <SelectContent>
-        {options.map(([optionValue, label]) => (
-          <SelectItem key={optionValue} value={optionValue} className="text-xs">
-            {label}
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
+    <DropdownMenuSub>
+      <DropdownMenuSubTrigger>
+        <span className="flex min-w-0 flex-1 items-center justify-between gap-3">
+          <span className="truncate">{label}</span>
+          <span className="truncate text-[11px] font-medium text-muted-foreground">
+            {valueLabel}
+          </span>
+        </span>
+      </DropdownMenuSubTrigger>
+      <DropdownMenuSubContent className="w-44">
+        <DropdownMenuRadioGroup value={value} onValueChange={(next) => onChange(next as T)}>
+          {options.map(([optionValue, optionLabel]) => (
+            <DropdownMenuRadioItem
+              key={optionValue}
+              value={optionValue}
+              onSelect={(event) => event.preventDefault()}
+            >
+              {optionLabel}
+            </DropdownMenuRadioItem>
+          ))}
+        </DropdownMenuRadioGroup>
+      </DropdownMenuSubContent>
+    </DropdownMenuSub>
   )
 }
 
