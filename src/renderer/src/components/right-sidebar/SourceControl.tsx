@@ -1380,7 +1380,9 @@ function SourceControlInner({
   const baseRefOwnedByWorktree = normalizedWorktreeBaseRef !== null
   const pinnedBaseRef = normalizedWorktreeBaseRef ?? normalizedRepoBaseRef
   const hasUncommittedEntries = entries.length > 0
-  const hostedReviewSurfaceEnabled = !embedded
+  // Why: embedded folder sections are scoped to one child worktree, so hosted
+  // review actions can target that repo/host with the same identity as diffs.
+  const hostedReviewSurfaceEnabled = Boolean(activeWorktreeId && activeRepo && !isFolder)
 
   const hostedReviewCreation =
     hostedReviewCreationState &&

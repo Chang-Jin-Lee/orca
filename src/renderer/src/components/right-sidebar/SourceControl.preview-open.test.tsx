@@ -291,7 +291,53 @@ function clickViewAllButton(): void {
   })
 }
 
+async function waitForCondition(assertion: () => void): Promise<void> {
+  let lastError: unknown
+  for (let attempt = 0; attempt < 20; attempt++) {
+    try {
+      assertion()
+      return
+    } catch (error) {
+      lastError = error
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 10))
+      })
+    }
+  }
+  throw lastError
+}
+
 describe('SourceControl preview row opens', () => {
+  it('shows Create PR chrome in embedded scoped worktree source control', async () => {
+    resetState({
+      rightSidebarOpen: true,
+      getHostedReviewCreationEligibility: vi.fn().mockResolvedValue({
+        provider: 'github',
+        review: null,
+        canCreate: true,
+        blockedReason: null,
+        nextAction: null
+      }),
+      remoteStatusesByWorktree: {
+        [mocks.activeWorktree.id]: {
+          hasUpstream: true,
+          upstreamName: 'origin/feature/source-control-preview',
+          ahead: 0,
+          behind: 0
+        }
+      },
+      gitBranchCompareSummaryByWorktree: {
+        [mocks.activeWorktree.id]: branchSummary()
+      }
+    })
+
+    renderSourceControl({ worktreeId: mocks.activeWorktree.id, embedded: true })
+
+    await waitForCondition(() => {
+      expect(container.textContent).toContain('Create PR')
+    })
+  })
+
   it('passes preview=true when plain uncommitted row clicks open diff tabs', () => {
     resetState({
       gitStatusByWorktree: {
