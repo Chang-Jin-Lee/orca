@@ -53,6 +53,50 @@ describe('normalizeGitErrorMessage', () => {
     )
     expect(usedLineSplit).toBe(false)
   })
+
+  it('includes the rejected target and branch-specific remote config for push rejections', () => {
+    const error = new Error(
+      'Command failed: git push\n' +
+        ' ! [rejected]        HEAD -> fix/cold-start-hides-local-repos (fetch first)\n'
+    )
+
+    expect(
+      normalizeGitErrorMessage(error, 'push', {
+        remote: 'https://github.com/omarshahine/orca.git',
+        branchName: 'fix/cold-start-hides-local-repos',
+        remoteUrl: 'https://github.com/omarshahine/orca.git',
+        currentBranch: 'fix/cold-start-hides-local-repos',
+        branchPushRemote: 'https://github.com/omarshahine/orca.git',
+        branchRemote: 'https://github.com/omarshahine/orca.git',
+        originUrl: 'https://github.com/stablyai/orca.git'
+      })
+    ).toBe(
+      'Push rejected: remote has newer commits (non-fast-forward). ' +
+        'Target: https://github.com/omarshahine/orca.git -> fix/cold-start-hides-local-repos. ' +
+        'Branch config: branch.fix/cold-start-hides-local-repos.pushRemote=https://github.com/omarshahine/orca.git; ' +
+        'branch.fix/cold-start-hides-local-repos.remote=https://github.com/omarshahine/orca.git. ' +
+        'This differs from origin (https://github.com/stablyai/orca.git). ' +
+        'Pull or sync only if this is the intended target; otherwise change the branch remote/pushRemote or publish to the intended remote, then try again.'
+    )
+  })
+
+  it('scrubs credentials from push target diagnostics', () => {
+    const error = new Error('Command failed: git push\n ! [rejected] HEAD -> feature (fetch first)')
+
+    const message = normalizeGitErrorMessage(error, 'push', {
+      remote: 'origin',
+      branchName: 'feature',
+      remoteUrl: 'https://token:secret@example.com/repo.git',
+      currentBranch: 'feature',
+      branchPushRemote: 'https://token:secret@example.com/repo.git',
+      originUrl: 'https://user:password@example.com/base.git'
+    })
+
+    expect(message).toContain('https://example.com/repo.git')
+    expect(message).toContain('https://example.com/base.git')
+    expect(message).not.toContain('secret')
+    expect(message).not.toContain('password')
+  })
 })
 
 describe('formatSubmodulePushFailureDetail', () => {

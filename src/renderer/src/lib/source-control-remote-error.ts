@@ -67,6 +67,17 @@ function resolveSubmodulePushFailureMessage(
   return detail ? `${operationLabel} failed. ${truncateDetail(detail)}` : null
 }
 
+function extractDetailedPushRejection(message: string): string | null {
+  const cleaned = stripCredentialsFromMessage(message)
+  const match = cleaned.match(
+    /Push rejected: remote has newer commits \(non-fast-forward\)\. Target:/i
+  )
+  if (!match?.index && match?.index !== 0) {
+    return null
+  }
+  return cleaned.slice(match.index).trim()
+}
+
 function isNonFastForwardRemoteError(error: unknown): boolean {
   if (!(error instanceof Error)) {
     return false
@@ -161,6 +172,11 @@ export function resolveRemoteOperationErrorMessage(
     /non-fast-forward|fetch first|updates were rejected|stale info/i.test(error.message)
   ) {
     return 'Force push rejected — remote changed since last fetch. Fetch first, then try again.'
+  }
+
+  const detailedPushRejection = extractDetailedPushRejection(error.message)
+  if (detailedPushRejection) {
+    return detailedPushRejection
   }
 
   // Why: non-fast-forward/rejected detection is shared across publish and push so

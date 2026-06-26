@@ -214,16 +214,30 @@ describe('git remote operations', () => {
     )
     expect(gitExecFileAsyncMock.mock.calls).toEqual([
       [['check-ref-format', '--branch', 'contributor/fix-sidebar'], { cwd: '/repo' }],
+      [['remote', 'get-url', 'origin'], { cwd: '/repo' }],
       [['push', '--set-upstream', 'origin', 'HEAD:contributor/fix-sidebar'], { cwd: '/repo' }]
     ])
   })
 
   it('passes --force-with-lease when requested', async () => {
-    gitExecFileAsyncMock
-      .mockResolvedValueOnce({ stdout: 'feature\n', stderr: '' })
-      .mockResolvedValueOnce({ stdout: 'origin\n', stderr: '' })
-      .mockResolvedValueOnce({ stdout: 'refs/heads/feature\n', stderr: '' })
-      .mockResolvedValueOnce({ stdout: '', stderr: '' })
+    gitExecFileAsyncMock.mockImplementation(async (args: string[]) => {
+      if (args[0] === 'symbolic-ref') {
+        return { stdout: 'feature\n', stderr: '' }
+      }
+      if (args[0] === 'config' && args.includes('branch.feature.remote')) {
+        return { stdout: 'origin\n', stderr: '' }
+      }
+      if (args[0] === 'config' && args.includes('branch.feature.pushRemote')) {
+        throw new Error('missing pushRemote')
+      }
+      if (args[0] === 'config' && args.includes('remote.pushDefault')) {
+        throw new Error('missing pushDefault')
+      }
+      if (args[0] === 'config' && args.includes('branch.feature.merge')) {
+        return { stdout: 'refs/heads/feature\n', stderr: '' }
+      }
+      return { stdout: '', stderr: '' }
+    })
 
     await gitPush('/repo', false, undefined, { forceWithLease: true })
 
@@ -240,6 +254,52 @@ describe('git remote operations', () => {
 
     await expect(gitPush('/repo', false)).rejects.toThrow(
       'Push rejected: remote has newer commits (non-fast-forward). Please pull or sync first.'
+    )
+  })
+
+  it('includes branch-specific URL pushRemote details in non-fast-forward failures', async () => {
+    const branch = 'fix/cold-start-hides-local-repos'
+    const forkUrl = 'https://github.com/omarshahine/orca.git'
+    const originUrl = 'https://github.com/stablyai/orca.git'
+    gitExecFileAsyncMock.mockImplementation(async (args: string[]) => {
+      if (args[0] === 'symbolic-ref') {
+        return { stdout: `${branch}\n`, stderr: '' }
+      }
+      if (args[0] === 'config' && args.includes(`branch.${branch}.pushRemote`)) {
+        return { stdout: `${forkUrl}\n`, stderr: '' }
+      }
+      if (args[0] === 'config' && args.includes(`branch.${branch}.remote`)) {
+        return { stdout: `${forkUrl}\n`, stderr: '' }
+      }
+      if (args[0] === 'config' && args.includes('remote.pushDefault')) {
+        throw new Error('missing pushDefault')
+      }
+      if (args[0] === 'config' && args.includes(`branch.${branch}.merge`)) {
+        return { stdout: `refs/heads/${branch}\n`, stderr: '' }
+      }
+      if (args[0] === 'config' && args.includes(`branch.${branch}.base`)) {
+        throw new Error('missing branch base')
+      }
+      if (args[0] === 'remote' && args[1] === 'get-url' && args[2] === 'origin') {
+        return { stdout: `${originUrl}\n`, stderr: '' }
+      }
+      if (args[0] === 'remote' && args.length === 1) {
+        return { stdout: 'origin\n', stderr: '' }
+      }
+      if (args[0] === 'push') {
+        throw new Error(
+          'Command failed: git push\n' + ` ! [rejected]        HEAD -> ${branch} (fetch first)\n`
+        )
+      }
+      return { stdout: '', stderr: '' }
+    })
+
+    await expect(gitPush('/repo', false)).rejects.toThrow(
+      'Push rejected: remote has newer commits (non-fast-forward). ' +
+        `Target: ${forkUrl} -> ${branch}. ` +
+        `Branch config: branch.${branch}.pushRemote=${forkUrl}; branch.${branch}.remote=${forkUrl}. ` +
+        `This differs from origin (${originUrl}). ` +
+        'Pull or sync only if this is the intended target; otherwise change the branch remote/pushRemote or publish to the intended remote, then try again.'
     )
   })
 

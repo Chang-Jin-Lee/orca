@@ -68,7 +68,7 @@ describe('resolveRelayPushTarget', () => {
       merge: 'refs/heads/contributor/fix'
     })
 
-    await expect(resolveRelayPushTarget(git, '/repo', undefined)).resolves.toEqual({
+    await expect(resolveRelayPushTarget(git, '/repo', undefined)).resolves.toMatchObject({
       remote: 'fork',
       refspec: 'HEAD:contributor/fix'
     })
@@ -96,7 +96,7 @@ describe('resolveRelayPushTarget', () => {
       base: 'refs/remotes/origin/main'
     })
 
-    await expect(resolveRelayPushTarget(git, '/repo', undefined)).resolves.toEqual({
+    await expect(resolveRelayPushTarget(git, '/repo', undefined)).resolves.toMatchObject({
       remote: 'fork',
       refspec: 'HEAD:main'
     })
@@ -109,7 +109,7 @@ describe('resolveRelayPushTarget', () => {
       branchRemote: 'origin'
     })
 
-    await expect(resolveRelayPushTarget(git, '/repo', undefined)).resolves.toEqual({
+    await expect(resolveRelayPushTarget(git, '/repo', undefined)).resolves.toMatchObject({
       remote: 'fork',
       refspec: 'HEAD:feature/fix'
     })
@@ -128,7 +128,7 @@ describe('resolveRelayPushTarget', () => {
       }
     })
 
-    await expect(resolveRelayPushTarget(git, '/repo', undefined)).resolves.toEqual({
+    await expect(resolveRelayPushTarget(git, '/repo', undefined)).resolves.toMatchObject({
       remote: 'pr-contributor-orca',
       refspec: 'HEAD:feature/fix'
     })
@@ -145,9 +145,20 @@ describe('resolveRelayPushTarget', () => {
       }
     })
 
-    await expect(resolveRelayPushTarget(git, '/repo', undefined)).resolves.toEqual({
+    const result = await resolveRelayPushTarget(git, '/repo', undefined)
+
+    expect(result).toMatchObject({
       remote: forkUrl,
       refspec: 'HEAD:feature/fix'
+    })
+    expect(result?.diagnostic).toMatchObject({
+      remote: forkUrl,
+      branchName: 'feature/fix',
+      remoteUrl: forkUrl,
+      currentBranch: 'feature/fix',
+      branchPushRemote: forkUrl,
+      branchRemote: forkUrl,
+      originUrl: 'git@github.com:stablyai/orca.git'
     })
   })
 
@@ -159,7 +170,7 @@ describe('resolveRelayPushTarget', () => {
         remoteName: 'fork',
         branchName: 'feature/head'
       })
-    ).resolves.toEqual({
+    ).resolves.toMatchObject({
       remote: 'fork',
       refspec: 'HEAD:feature/head'
     })

@@ -28,7 +28,11 @@ import {
 import { refreshLocalBaseRefForWorktreeCreateOp } from './git-handler-local-base-ref-refresh'
 import { checkIgnoredPathsOp, detectConflictOperation, getStatusOp } from './git-handler-status-ops'
 import { resolveRelayPushTarget } from './git-handler-push-target'
-import { isNoUpstreamError, normalizeGitErrorMessage } from '../shared/git-remote-error'
+import {
+  isNoUpstreamError,
+  normalizeGitErrorMessage,
+  type GitPushTargetDiagnostic
+} from '../shared/git-remote-error'
 import { upstreamOnlyCommitsArePatchEquivalent } from '../shared/git-upstream-status'
 import { assertGitPushTargetShape } from '../shared/git-push-target-validation'
 import { getPublishTargetStatus, type GitCommandRunner } from '../shared/git-publish-target-status'
@@ -647,12 +651,14 @@ export class GitHandler {
     // Why: mirror src/main/git/remote.ts. Push to a configured upstream when
     // present so SSH worktrees with non-origin targets do not get repointed.
     void params.publish
+    let targetDiagnostic: GitPushTargetDiagnostic | undefined
     try {
       const target = await resolveRelayPushTarget(
         this.git.bind(this),
         worktreePath,
         params.pushTarget
       )
+      targetDiagnostic = target?.diagnostic
       const args = [
         'push',
         ...(params.forceWithLease === true ? ['--force-with-lease'] : []),
@@ -663,7 +669,7 @@ export class GitHandler {
     } catch (error) {
       // Why: mirror the local gitPush normalization so SSH users see the same
       // "non-fast-forward / pull first" guidance instead of raw git stderr.
-      throw new Error(normalizeGitErrorMessage(error, 'push'))
+      throw new Error(normalizeGitErrorMessage(error, 'push', targetDiagnostic))
     }
   }
 

@@ -1,17 +1,33 @@
-import { normalizeGitErrorMessage } from '../../shared/git-remote-error'
+import {
+  normalizeGitErrorMessage,
+  type GitPushTargetDiagnostic
+} from '../../shared/git-remote-error'
 import { resolveEffectiveGitUpstream } from '../../shared/git-effective-upstream'
 import { gitRefTargetsBranchOnRemote } from '../../shared/git-remote-branch-name'
 import { resolveGitRemoteRebaseSource } from '../../shared/git-rebase-source'
 import type { GitPushTarget } from '../../shared/types'
+import {
+  getConfiguredPushRemote,
+  getGitConfigValue,
+  type ConfiguredPushRemote
+} from './configured-push-remote'
 import type { GitRuntimeOptions } from './git-runtime-options'
 import { gitOptionsForWorktree } from './git-runtime-options'
+import { createLocalPushTargetDiagnostic } from './push-target-diagnostic'
 import { validateGitPushTarget } from './push-target-validation'
 import { gitExecFileAsync } from './runner'
+
+type ResolvedPushTarget = {
+  remote: string
+  refspec: string
+  branchName: string | null
+  diagnostic: GitPushTargetDiagnostic
+}
 
 async function getConfiguredPushTarget(
   worktreePath: string,
   options: GitRuntimeOptions = {}
-): Promise<{ remote: string; refspec: string } | null> {
+): Promise<ResolvedPushTarget | null> {
   try {
     const { stdout: branchStdout } = await gitExecFileAsync(
       ['symbolic-ref', '--quiet', '--short', 'HEAD'],
@@ -41,100 +57,25 @@ async function getConfiguredPushTarget(
     if (!canPushConfiguredMergeBranch(pushRemote, branch, branchRef)) {
       return null
     }
-    return { remote, refspec: `HEAD:${branchRef}` }
-  } catch {
-    return null
-  }
-}
-
-async function getConfigValue(
-  worktreePath: string,
-  key: string,
-  options: GitRuntimeOptions = {}
-): Promise<string | null> {
-  try {
-    const { stdout } = await gitExecFileAsync(
-      ['config', '--get', key],
-      gitOptionsForWorktree(worktreePath, options)
-    )
-    const value = stdout.trim()
-    return value || null
-  } catch {
-    return null
-  }
-}
-
-function isUrlValuedRemote(remote: string): boolean {
-  return /^[A-Za-z][A-Za-z0-9+.-]*:\/\//.test(remote) || /^[^@/:]+@[^:]+:.+/.test(remote)
-}
-
-type ConfiguredPushRemote = {
-  remote: string
-  branchRemote: string | null
-}
-
-async function findRemoteNameForUrl(
-  worktreePath: string,
-  remoteUrl: string,
-  options: GitRuntimeOptions = {}
-): Promise<string | null> {
-  try {
-    const { stdout } = await gitExecFileAsync(
-      ['remote'],
-      gitOptionsForWorktree(worktreePath, options)
-    )
-    const remotes = stdout
-      .split(/\r?\n/)
-      .map((line) => line.trim())
-      .filter(Boolean)
-    for (const remoteName of remotes) {
-      try {
-        const { stdout: urlStdout } = await gitExecFileAsync(
-          ['remote', 'get-url', remoteName],
-          gitOptionsForWorktree(worktreePath, options)
-        )
-        if (urlStdout.trim() === remoteUrl) {
-          return remoteName
-        }
-      } catch {
-        // Ignore a remote that disappeared or has no fetch URL.
-      }
+    return {
+      remote,
+      refspec: `HEAD:${branchRef}`,
+      branchName: branchRef,
+      diagnostic: await createLocalPushTargetDiagnostic(
+        worktreePath,
+        {
+          remote,
+          branchName: branchRef,
+          currentBranch: branch,
+          branchPushRemote: pushRemote.branchPushRemote,
+          branchRemote: pushRemote.branchRemoteValue,
+          remotePushDefault: pushRemote.remotePushDefault
+        },
+        options
+      )
     }
   } catch {
     return null
-  }
-  return null
-}
-
-async function normalizePushRemote(
-  worktreePath: string,
-  remote: string,
-  options: GitRuntimeOptions = {}
-): Promise<string> {
-  if (!isUrlValuedRemote(remote)) {
-    return remote
-  }
-  return (await findRemoteNameForUrl(worktreePath, remote, options)) ?? remote
-}
-
-async function getConfiguredPushRemote(
-  worktreePath: string,
-  branch: string,
-  options: GitRuntimeOptions = {}
-): Promise<ConfiguredPushRemote | null> {
-  const branchRemote = await getConfigValue(worktreePath, `branch.${branch}.remote`, options)
-  const remote =
-    (await getConfigValue(worktreePath, `branch.${branch}.pushRemote`, options)) ??
-    (await getConfigValue(worktreePath, 'remote.pushDefault', options)) ??
-    branchRemote
-  if (!remote) {
-    return null
-  }
-  return {
-    remote: await normalizePushRemote(worktreePath, remote, options),
-    branchRemote: branchRemote
-      ? await normalizePushRemote(worktreePath, branchRemote, options)
-      : null
   }
 }
 
@@ -146,7 +87,7 @@ async function branchMergeTargetsConfiguredBase(
   options: GitRuntimeOptions = {}
 ): Promise<boolean> {
   return gitRefTargetsBranchOnRemote(
-    await getConfigValue(worktreePath, `branch.${branch}.base`, options),
+    await getGitConfigValue(worktreePath, `branch.${branch}.base`, options),
     remote,
     branchRef
   )
@@ -168,8 +109,25 @@ function canPushConfiguredMergeBranch(
   return pushRemote.remote !== 'origin' && pushRemote.branchRemote === pushRemote.remote
 }
 
-function explicitPushTarget(target: GitPushTarget): { remote: string; refspec: string } {
-  return { remote: target.remoteName, refspec: `HEAD:${target.branchName}` }
+async function explicitPushTarget(
+  worktreePath: string,
+  target: GitPushTarget,
+  options: GitRuntimeOptions = {}
+): Promise<ResolvedPushTarget> {
+  return {
+    remote: target.remoteName,
+    refspec: `HEAD:${target.branchName}`,
+    branchName: target.branchName,
+    diagnostic: await createLocalPushTargetDiagnostic(
+      worktreePath,
+      {
+        remote: target.remoteName,
+        branchName: target.branchName,
+        explicit: true
+      },
+      options
+    )
+  }
 }
 
 export async function gitPush(
@@ -178,6 +136,7 @@ export async function gitPush(
   pushTarget?: GitPushTarget,
   options: { forceWithLease?: boolean } & GitRuntimeOptions = {}
 ): Promise<void> {
+  let targetDiagnostic: GitPushTargetDiagnostic | undefined
   try {
     if (pushTarget) {
       await validateGitPushTarget(worktreePath, pushTarget, options)
@@ -193,8 +152,9 @@ export async function gitPush(
     // unaffected because it uses branchCompare against an explicit baseRef
     // from worktree config, not the upstream relationship.
     const target = pushTarget
-      ? explicitPushTarget(pushTarget)
+      ? await explicitPushTarget(worktreePath, pushTarget, options)
       : await getConfiguredPushTarget(worktreePath, options)
+    targetDiagnostic = target?.diagnostic
     const args = [
       'push',
       ...(options.forceWithLease ? ['--force-with-lease'] : []),
@@ -203,7 +163,7 @@ export async function gitPush(
     ]
     await gitExecFileAsync(args, gitOptionsForWorktree(worktreePath, options))
   } catch (error) {
-    throw new Error(normalizeGitErrorMessage(error, 'push'))
+    throw new Error(normalizeGitErrorMessage(error, 'push', targetDiagnostic))
   }
 }
 

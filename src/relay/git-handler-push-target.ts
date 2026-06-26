@@ -1,5 +1,6 @@
 import { assertGitPushTargetShape } from '../shared/git-push-target-validation'
 import { gitRefTargetsBranchOnRemote } from '../shared/git-remote-branch-name'
+import type { GitPushTargetDiagnostic } from '../shared/git-remote-error'
 import type { GitPushTarget } from '../shared/types'
 
 type RelayGit = (args: string[], cwd: string) => Promise<{ stdout: string; stderr: string }>
@@ -7,6 +8,8 @@ type RelayGit = (args: string[], cwd: string) => Promise<{ stdout: string; stder
 export type ResolvedPushTarget = {
   remote: string
   refspec: string
+  branchName: string | null
+  diagnostic: GitPushTargetDiagnostic
 }
 
 async function getConfiguredPushTarget(
@@ -38,7 +41,19 @@ async function getConfiguredPushTarget(
     if (!canPushConfiguredMergeBranch(pushRemote, branch, branchRef)) {
       return null
     }
-    return { remote, refspec: `HEAD:${branchRef}` }
+    return {
+      remote,
+      refspec: `HEAD:${branchRef}`,
+      branchName: branchRef,
+      diagnostic: await createPushTargetDiagnostic(git, worktreePath, {
+        remote,
+        branchName: branchRef,
+        currentBranch: branch,
+        branchPushRemote: pushRemote.branchPushRemote,
+        branchRemote: pushRemote.branchRemoteValue,
+        remotePushDefault: pushRemote.remotePushDefault
+      })
+    }
   } catch {
     return null
   }
@@ -65,6 +80,9 @@ function isUrlValuedRemote(remote: string): boolean {
 type ConfiguredPushRemote = {
   remote: string
   branchRemote: string | null
+  branchPushRemote: string | null
+  branchRemoteValue: string | null
+  remotePushDefault: string | null
 }
 
 async function findRemoteNameForUrl(
@@ -112,17 +130,21 @@ async function getConfiguredPushRemote(
 ): Promise<ConfiguredPushRemote | null> {
   // Why: mirror the local gitPush resolver so SSH worktrees do not drift to a
   // different target when branch.pushRemote or remote.pushDefault is present.
-  const branchRemote = await getConfigValue(git, worktreePath, `branch.${branch}.remote`)
-  const remote =
-    (await getConfigValue(git, worktreePath, `branch.${branch}.pushRemote`)) ??
-    (await getConfigValue(git, worktreePath, 'remote.pushDefault')) ??
-    branchRemote
+  const [branchRemote, branchPushRemote, remotePushDefault] = await Promise.all([
+    getConfigValue(git, worktreePath, `branch.${branch}.remote`),
+    getConfigValue(git, worktreePath, `branch.${branch}.pushRemote`),
+    getConfigValue(git, worktreePath, 'remote.pushDefault')
+  ])
+  const remote = branchPushRemote ?? remotePushDefault ?? branchRemote
   if (!remote) {
     return null
   }
   return {
     remote: await normalizePushRemote(git, worktreePath, remote),
-    branchRemote: branchRemote ? await normalizePushRemote(git, worktreePath, branchRemote) : null
+    branchRemote: branchRemote ? await normalizePushRemote(git, worktreePath, branchRemote) : null,
+    branchPushRemote,
+    branchRemoteValue: branchRemote,
+    remotePushDefault
   }
 }
 
@@ -169,6 +191,53 @@ export async function resolveRelayPushTarget(
   await git(['check-ref-format', '--branch', explicitTarget.branchName], worktreePath)
   return {
     remote: explicitTarget.remoteName,
-    refspec: `HEAD:${explicitTarget.branchName}`
+    refspec: `HEAD:${explicitTarget.branchName}`,
+    branchName: explicitTarget.branchName,
+    diagnostic: await createPushTargetDiagnostic(git, worktreePath, {
+      remote: explicitTarget.remoteName,
+      branchName: explicitTarget.branchName,
+      explicit: true
+    })
+  }
+}
+
+async function getRemoteUrl(
+  git: RelayGit,
+  worktreePath: string,
+  remote: string
+): Promise<string | null> {
+  if (isUrlValuedRemote(remote)) {
+    return remote
+  }
+  try {
+    const { stdout } = await git(['remote', 'get-url', remote], worktreePath)
+    const value = stdout.trim()
+    return value || null
+  } catch {
+    return null
+  }
+}
+
+async function createPushTargetDiagnostic(
+  git: RelayGit,
+  worktreePath: string,
+  target: Omit<GitPushTargetDiagnostic, 'remoteUrl' | 'originUrl'>
+): Promise<GitPushTargetDiagnostic> {
+  if (target.remote === 'origin') {
+    const originUrl = await getRemoteUrl(git, worktreePath, 'origin')
+    return {
+      ...target,
+      remoteUrl: originUrl,
+      originUrl
+    }
+  }
+  const [remoteUrl, originUrl] = await Promise.all([
+    getRemoteUrl(git, worktreePath, target.remote),
+    getRemoteUrl(git, worktreePath, 'origin')
+  ])
+  return {
+    ...target,
+    remoteUrl,
+    originUrl
   }
 }

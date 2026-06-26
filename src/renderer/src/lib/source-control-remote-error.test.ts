@@ -38,4 +38,16 @@ describe('source-control remote error formatting', () => {
     expect(usedLineSplit).toBe(false)
     expect(usedCrlfReplace).toBe(false)
   })
+
+  it('preserves detailed push target context for publish non-fast-forward errors', () => {
+    const detailed =
+      'Push rejected: remote has newer commits (non-fast-forward). ' +
+      'Target: fork (https://gitlab.example.com/team/project.git) -> feature/fix. ' +
+      'Branch config: branch.feature/fix.pushRemote=fork; branch.feature/fix.remote=fork. ' +
+      'This differs from origin (https://gitlab.example.com/upstream/project.git). ' +
+      'Pull or sync only if this is the intended target; otherwise change the branch remote/pushRemote or publish to the intended remote, then try again.'
+    const error = new Error(`Error invoking remote method 'git:push': Error: ${detailed}`)
+
+    expect(resolveRemoteOperationErrorMessage(error, { publish: true })).toBe(detailed)
+  })
 })

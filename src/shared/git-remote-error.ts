@@ -81,7 +81,89 @@ function* iterateLinesFromEnd(value: string): Generator<string> {
 
 export type GitRemoteOperation = 'push' | 'pull' | 'fetch' | 'upstream'
 
-export function normalizeGitErrorMessage(error: unknown, operation?: GitRemoteOperation): string {
+export type GitPushTargetDiagnostic = {
+  remote: string
+  branchName: string | null
+  remoteUrl?: string | null
+  currentBranch?: string | null
+  branchPushRemote?: string | null
+  branchRemote?: string | null
+  remotePushDefault?: string | null
+  originUrl?: string | null
+  explicit?: boolean
+}
+
+function cleanDiagnosticValue(value: string | null | undefined): string | null {
+  const cleaned = stripCredentialsFromMessage(value ?? '').trim()
+  return cleaned || null
+}
+
+function formatTargetRemote(diagnostic: GitPushTargetDiagnostic): string {
+  const remote = cleanDiagnosticValue(diagnostic.remote) ?? 'unknown remote'
+  const remoteUrl = cleanDiagnosticValue(diagnostic.remoteUrl)
+  if (!remoteUrl || remoteUrl === remote) {
+    return remote
+  }
+  return `${remote} (${remoteUrl})`
+}
+
+function formatBranchConfigDiagnostic(diagnostic: GitPushTargetDiagnostic): string | null {
+  const currentBranch = cleanDiagnosticValue(diagnostic.currentBranch)
+  if (!currentBranch) {
+    return null
+  }
+  const entries: string[] = []
+  const branchPushRemote = cleanDiagnosticValue(diagnostic.branchPushRemote)
+  const branchRemote = cleanDiagnosticValue(diagnostic.branchRemote)
+  const remotePushDefault = cleanDiagnosticValue(diagnostic.remotePushDefault)
+  if (branchPushRemote) {
+    entries.push(`branch.${currentBranch}.pushRemote=${branchPushRemote}`)
+  }
+  if (branchRemote) {
+    entries.push(`branch.${currentBranch}.remote=${branchRemote}`)
+  }
+  if (remotePushDefault && !branchPushRemote) {
+    entries.push(`remote.pushDefault=${remotePushDefault}`)
+  }
+  if (entries.length === 0) {
+    return null
+  }
+
+  const originUrl = cleanDiagnosticValue(diagnostic.originUrl)
+  const remoteUrl = cleanDiagnosticValue(diagnostic.remoteUrl)
+  const differsFromOrigin =
+    originUrl &&
+    ((remoteUrl && remoteUrl !== originUrl) ||
+      (!remoteUrl && cleanDiagnosticValue(diagnostic.remote) !== 'origin'))
+  const originDetail = differsFromOrigin ? ` This differs from origin (${originUrl}).` : ''
+  return `Branch config: ${entries.join('; ')}.${originDetail}`
+}
+
+export function formatPushRejectedRemoteTargetMessage(
+  diagnostic?: GitPushTargetDiagnostic
+): string {
+  const summary = 'Push rejected: remote has newer commits (non-fast-forward).'
+  if (!diagnostic) {
+    return `${summary} Please pull or sync first.`
+  }
+
+  const targetBranch = cleanDiagnosticValue(diagnostic.branchName) ?? 'HEAD'
+  const details = [summary, `Target: ${formatTargetRemote(diagnostic)} -> ${targetBranch}.`]
+  const branchConfig = formatBranchConfigDiagnostic(diagnostic)
+  if (branchConfig) {
+    details.push(branchConfig)
+  }
+  details.push(
+    'Pull or sync only if this is the intended target; otherwise change the branch remote/pushRemote or publish to the intended remote, then try again.'
+  )
+  return details.join(' ')
+}
+
+export function normalizeGitErrorMessage(
+  error: unknown,
+  operation?: GitRemoteOperation,
+  pushTargetDiagnostic?: GitPushTargetDiagnostic
+): string {
   if (!(error instanceof Error)) {
     return 'Git remote operation failed.'
   }
@@ -107,7 +189,7 @@ export function normalizeGitErrorMessage(error: unknown, operation?: GitRemoteOp
     (operation === 'push' || operation === undefined) &&
     (raw.includes('non-fast-forward') || raw.includes('fetch first'))
   ) {
-    return 'Push rejected: remote has newer commits (non-fast-forward). Please pull or sync first.'
+    return formatPushRejectedRemoteTargetMessage(pushTargetDiagnostic)
   }
 
   if (raw.includes('could not read Username') || raw.includes('Authentication failed')) {
