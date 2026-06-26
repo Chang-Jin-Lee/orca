@@ -131,6 +131,8 @@ describe('renderer crash diagnostics', () => {
         rootDisplay: 'block',
         rootVisibility: 'visible',
         rootBackgroundColor: 'rgba(0, 0, 0, 0)',
+        bodyDisplay: 'block',
+        bodyVisibility: 'visible',
         bodyBackgroundColor: 'rgb(10, 10, 10)'
       }
     })

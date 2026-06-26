@@ -154,6 +154,8 @@ function recordRendererSurface(reason: string): void {
       rootDisplay: rootStyle?.display,
       rootVisibility: rootStyle?.visibility,
       rootBackgroundColor: rootStyle?.backgroundColor,
+      bodyDisplay: bodyStyle?.display,
+      bodyVisibility: bodyStyle?.visibility,
       bodyBackgroundColor: bodyStyle?.backgroundColor
     })
   )
