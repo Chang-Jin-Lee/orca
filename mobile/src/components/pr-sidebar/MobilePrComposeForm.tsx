@@ -14,6 +14,7 @@ import type { RpcSuccess } from '../../transport/types'
 import { triggerError, triggerSuccess } from '../../platform/haptics'
 import {
   createMobilePr,
+  getMobilePrCreateSuccessWarning,
   shouldPushBeforeMobilePrCreate,
   type MobilePrPrefill
 } from '../../source-control/mobile-pr-create'
@@ -132,13 +133,7 @@ export function MobilePrComposeForm({
       })
       if (outcome.ok) {
         triggerSuccess()
-        const warning = outcome.existing
-          ? outcome.number
-            ? `${copy.titleLabel} #${outcome.number} is already open.`
-            : `${copy.titleLabel} is already open.`
-          : outcome.linkError
-            ? `${copy.titleLabel} created, but Orca could not refresh it yet.`
-            : undefined
+        const warning = getMobilePrCreateSuccessWarning(outcome, prefill.provider)
         if (warning) {
           setError(warning)
         }

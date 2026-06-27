@@ -26,6 +26,22 @@ export {
   shouldPushBeforeMobileHostedReviewCreate as shouldPushBeforeMobilePrCreate
 }
 
+export function getMobilePrCreateSuccessWarning(
+  outcome: Extract<MobilePrCreateOutcome, { ok: true }>,
+  provider: MobilePrPrefill['provider']
+): string | undefined {
+  const copy = hostedReviewCopy(provider)
+  if (outcome.existing) {
+    return outcome.number
+      ? `${copy.titleLabel} #${outcome.number} is already open.`
+      : `${copy.titleLabel} is already open.`
+  }
+  if (outcome.linkError) {
+    return `${copy.titleLabel} created, but Orca could not refresh it yet.`
+  }
+  return undefined
+}
+
 export function getMobilePrCreateBlockMessage(prefill: MobilePrPrefill): string | null {
   if (prefill.canCreate !== false || shouldPushBeforeMobileHostedReviewCreate(prefill)) {
     return null

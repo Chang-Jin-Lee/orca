@@ -2,11 +2,10 @@ import { useCallback, type MutableRefObject } from 'react'
 import { useRouter } from 'expo-router'
 import type { RpcClient } from '../transport/rpc-client'
 import { triggerError, triggerSuccess } from '../platform/haptics'
-import type { MobilePrPrefill } from './mobile-pr-create'
 import { useMobileCommitMessageGeneration } from './use-mobile-commit-message-generation'
 import { useMobileSourceControlCommitRunners } from './use-mobile-source-control-commit-runners'
 import { useMobileSourceControlActionSheetRunners } from './use-mobile-source-control-action-sheet-runners'
-import { useMobileOpenPrSheetRunner } from './use-mobile-open-pr-sheet-runner'
+import { useMobileCreatePrRunner } from './use-mobile-create-pr-runner'
 import type { RuntimeGitLocalBranches } from '../../../src/shared/runtime-types'
 import type { MobileGitStatusResult } from './mobile-git-status'
 import type { LoadStatusOptions } from './mobile-source-control-screen-state'
@@ -38,8 +37,8 @@ type Params = {
   setShowActionSheet: (next: boolean) => void
   setLocalBranches: (next: RuntimeGitLocalBranches | null) => void
   setShowBranchPicker: (next: boolean) => void
-  setPrPrefill: (next: MobilePrPrefill | null) => void
-  setShowPrSheet: (next: boolean) => void
+  setCreatedPrUrl: (next: string | null) => void
+  setCreatedPrWarning: (next: string | null) => void
 }
 
 // All git workflow + action-sheet runners for the source-control panel. Split
@@ -70,8 +69,8 @@ export function useMobileSourceControlRunners(params: Params) {
     setShowActionSheet,
     setLocalBranches,
     setShowBranchPicker,
-    setPrPrefill,
-    setShowPrSheet
+    setCreatedPrUrl,
+    setCreatedPrWarning
   } = params
 
   const runGitWorkflow = useCallback(
@@ -184,7 +183,7 @@ export function useMobileSourceControlRunners(params: Params) {
     setActionError
   })
 
-  const openPrSheet = useMobileOpenPrSheetRunner({
+  const createPr = useMobileCreatePrRunner({
     client,
     worktreeId,
     status,
@@ -195,8 +194,8 @@ export function useMobileSourceControlRunners(params: Params) {
     setActionError,
     setCommitMessage,
     setShowActionSheet,
-    setPrPrefill,
-    setShowPrSheet
+    setCreatedPrUrl,
+    setCreatedPrWarning
   })
 
   const openBranchPicker = useCallback(() => {
@@ -278,7 +277,7 @@ export function useMobileSourceControlRunners(params: Params) {
     commit,
     generateCommitMessage,
     cancelGenerateCommitMessage,
-    openPrSheet,
+    createPr,
     openBranchPicker,
     openHistory,
     checkoutBranch,

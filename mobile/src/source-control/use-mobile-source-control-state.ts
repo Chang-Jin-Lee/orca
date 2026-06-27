@@ -3,7 +3,6 @@ import { Keyboard, Platform } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useHostClient, useForceReconnect } from '../transport/client-context'
 import { getWorktreeLabel } from '../session/worktree-label'
-import type { MobilePrPrefill } from './mobile-pr-create'
 import { useMobileGitRequests } from './use-mobile-git-requests'
 import { useMobileSourceControlLoaders } from './use-mobile-source-control-loaders'
 import { useMobileSourceControlOpeners } from './use-mobile-source-control-openers'
@@ -50,12 +49,10 @@ export function useMobileSourceControlState(params: MobileSourceControlStatePara
   const [busyAction, setBusyAction] = useState<string | null>(null)
   const [commitMessage, setCommitMessage] = useState('')
   const [generatingMessage, setGeneratingMessage] = useState(false)
-  const [showPrSheet, setShowPrSheet] = useState(false)
   const [showBranchPicker, setShowBranchPicker] = useState(false)
   const [localBranches, setLocalBranches] = useState<MobileGitLocalBranches | null>(null)
   const [createdPrUrl, setCreatedPrUrl] = useState<string | null>(null)
   const [createdPrWarning, setCreatedPrWarning] = useState<string | null>(null)
-  const [prPrefill, setPrPrefill] = useState<MobilePrPrefill | null>(null)
   const [discardTarget, setDiscardTarget] = useState<MobileGitStatusEntry | null>(null)
   const [showActionSheet, setShowActionSheet] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
@@ -203,8 +200,8 @@ export function useMobileSourceControlState(params: MobileSourceControlStatePara
     setShowActionSheet,
     setLocalBranches,
     setShowBranchPicker,
-    setPrPrefill,
-    setShowPrSheet
+    setCreatedPrUrl,
+    setCreatedPrWarning
   })
   const primaryAction = useMemo(
     () =>
@@ -261,8 +258,6 @@ export function useMobileSourceControlState(params: MobileSourceControlStatePara
     commitMessage,
     setCommitMessage,
     generatingMessage,
-    showPrSheet,
-    setShowPrSheet,
     showBranchPicker,
     setShowBranchPicker,
     localBranches,
@@ -270,7 +265,6 @@ export function useMobileSourceControlState(params: MobileSourceControlStatePara
     setCreatedPrUrl,
     createdPrWarning,
     setCreatedPrWarning,
-    prPrefill,
     discardTarget,
     setDiscardTarget,
     showActionSheet,

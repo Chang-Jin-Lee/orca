@@ -2,12 +2,14 @@ import { useCallback, type MutableRefObject } from 'react'
 import type { RpcClient } from '../transport/rpc-client'
 import { triggerError } from '../platform/haptics'
 import type { MobileGitStatusResult } from './mobile-git-status'
-import { getMobilePrCreateBlockMessage, type MobilePrPrefill } from './mobile-pr-create'
 import {
   mobileHostedReviewCreateIntentProgressMessage,
-  prepareMobileHostedReviewCreateIntent,
-  type MobileHostedReviewCreateIntentOutcome
+  type MobileHostedReviewCreateIntentProgress
 } from './mobile-hosted-review-create-intent'
+import {
+  runMobileHostedReviewCreateIntent,
+  type MobileHostedReviewCreateIntentRunOutcome
+} from './mobile-hosted-review-create-intent-runner'
 
 type RunGitWorkflow = (actionId: string, runner: () => Promise<void>) => Promise<boolean>
 
@@ -22,11 +24,11 @@ type Params = {
   setActionError: (next: string | null) => void
   setCommitMessage: (next: string) => void
   setShowActionSheet: (next: boolean) => void
-  setPrPrefill: (next: MobilePrPrefill | null) => void
-  setShowPrSheet: (next: boolean) => void
+  setCreatedPrUrl: (next: string | null) => void
+  setCreatedPrWarning: (next: string | null) => void
 }
 
-export function useMobileOpenPrSheetRunner({
+export function useMobileCreatePrRunner({
   client,
   worktreeId,
   status,
@@ -37,8 +39,8 @@ export function useMobileOpenPrSheetRunner({
   setActionError,
   setCommitMessage,
   setShowActionSheet,
-  setPrPrefill,
-  setShowPrSheet
+  setCreatedPrUrl,
+  setCreatedPrWarning
 }: Params) {
   return useCallback(
     async (pushFirst: boolean) => {
@@ -49,37 +51,32 @@ export function useMobileOpenPrSheetRunner({
         setActionError('Check out a branch before creating a pull request.')
         return
       }
-      const prepared: { current: MobileHostedReviewCreateIntentOutcome | null } = { current: null }
+      const created: { current: MobileHostedReviewCreateIntentRunOutcome | null } = {
+        current: null
+      }
       const ran = await runGitWorkflow(pushFirst ? 'push-create-pr' : 'create-pr', async () => {
-        prepared.current = await prepareMobileHostedReviewCreateIntent(client, worktreeId, {
+        created.current = await runMobileHostedReviewCreateIntent(client, worktreeId, {
           branch,
           title: branchLabel,
           status,
           commitMessage,
-          onProgress: (progress) =>
+          onProgress: (progress: MobileHostedReviewCreateIntentProgress) =>
             setActionError(mobileHostedReviewCreateIntentProgressMessage(progress))
         })
-        if (!prepared.current.ok) {
-          throw new Error(prepared.current.error)
+        if (!created.current.ok) {
+          throw new Error(created.current.error)
         }
       })
-      const outcome = prepared.current
+      const outcome = created.current
+      if (outcome?.committed && mountedRef.current) {
+        setCommitMessage('')
+      }
       if (!ran || !mountedRef.current || !outcome || !outcome.ok) {
         return
       }
-      const prefill = outcome.prefill
-      if (outcome.committed) {
-        setCommitMessage('')
-      }
-      const blockedMessage = getMobilePrCreateBlockMessage(prefill)
-      if (blockedMessage) {
-        triggerError()
-        setActionError(blockedMessage)
-        return
-      }
       setActionError(null)
-      setPrPrefill(prefill)
-      setShowPrSheet(true)
+      setCreatedPrUrl(outcome.url)
+      setCreatedPrWarning(outcome.warning ?? null)
     },
     [
       branchLabel,
@@ -89,9 +86,9 @@ export function useMobileOpenPrSheetRunner({
       runGitWorkflow,
       setActionError,
       setCommitMessage,
-      setPrPrefill,
+      setCreatedPrUrl,
+      setCreatedPrWarning,
       setShowActionSheet,
-      setShowPrSheet,
       status,
       worktreeId
     ]
