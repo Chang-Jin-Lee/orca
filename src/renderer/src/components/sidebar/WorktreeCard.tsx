@@ -3,6 +3,7 @@ import React, { useEffect, useCallback, useState } from 'react'
 import { useAppStore } from '@/store'
 import { getHostedReviewCacheKey } from '@/store/slices/hosted-review'
 import { issueCacheKey as getIssueCacheKey } from '@/store/slices/github'
+import { getGitHubPRCacheKey } from '@/store/slices/github-cache-key'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
@@ -23,17 +24,20 @@ import WorktreeContextMenu from './WorktreeContextMenu'
 import { SshDisconnectedDialog } from './SshDisconnectedDialog'
 import { AutoRenameFailedDialog } from './AutoRenameFailedDialog'
 import WorktreeCardAgents from './WorktreeCardAgents'
+import { useWorktreeAgentRows } from './useWorktreeAgentRows'
 import { WorktreeCardStatusSlot } from './WorktreeCardStatusSlot'
 import { cn } from '@/lib/utils'
 import { activateWorktreeFromSidebar } from '@/lib/sidebar-worktree-activation'
-import { getRepoKindLabel, isFolderRepo } from '../../../../shared/repo-kind'
+import { isFolderRepo } from '../../../../shared/repo-kind'
 import type { HostedReviewInfo } from '../../../../shared/hosted-review'
+import { hostedReviewInfoFromGitHubPRInfo } from '../../../../shared/hosted-review-github'
 import type {
   GitHubWorkItem,
   Worktree,
   Repo,
   IssueInfo,
-  LinearIssue
+  LinearIssue,
+  PRInfo
 } from '../../../../shared/types'
 import { CONFLICT_OPERATION_LABELS } from './WorktreeCardHelpers'
 import {
@@ -45,7 +49,11 @@ import {
 import { WorktreeCardPortsDetails, WorktreeCardPortsTrigger } from './WorktreeCardPorts'
 import { writeWorkspaceDragData } from './workspace-status'
 import { getWorktreeCardPrDisplay } from './worktree-card-pr-display'
-import { getWorktreeCardTitleDisplay } from './worktree-card-title-display'
+import type { WorktreeCardPrDisplay } from './worktree-card-pr-display'
+import {
+  coerceWorktreeCardVisibleTitle,
+  getWorktreeCardTitleDisplay
+} from './worktree-card-title-display'
 import { useWorktreeCardDetailsHoverControl } from './worktree-card-details-hover-state'
 import { isEventTargetInsideCurrentTarget } from './worktree-card-dom-events'
 import { getWorkspacePortsByWorktreeId } from '@/lib/workspace-port-groups'
@@ -56,17 +64,22 @@ import { installWindowVisibilityInterval, isWindowVisible } from '@/lib/window-v
 import { isMacAppDataPath } from '@/lib/passive-macos-app-data-access'
 import { runWorktreeDelete } from './delete-worktree-flow'
 import { WorktreeTitleInlineRename } from './WorktreeTitleInlineRename'
+import { TruncatedSidebarLabel } from './truncated-sidebar-label'
 import {
   canShowWorkspaceDeleteQuickAction,
   useWorkspaceDeleteModifierPressed
 } from './workspace-delete-quick-action'
 import { DetachedHeadBadge } from '@/components/DetachedHeadBadge'
 import { getWorktreeGitIdentityDisplay } from '@/lib/worktree-git-identity-display'
-import { getFlushWorktreeCardPaddingLeft } from './worktree-list-indentation'
+import {
+  getFlushWorktreeCardPaddingLeft,
+  getNewCardStyleParentContentMarginLeft
+} from './worktree-list-indentation'
 import { translate } from '@/i18n/i18n'
 import { recordRendererCrashBreadcrumb } from '@/lib/crash-diagnostics'
 import { folderWorkspaceKey, parseWorkspaceKey } from '../../../../shared/workspace-scope'
 import { parseExecutionHostId } from '../../../../shared/execution-host'
+import { DEFAULT_AGENT_ACTIVITY_DISPLAY_MODE } from '../../../../shared/constants'
 
 type WorktreeRenameRequest = {
   worktreeId: string
@@ -114,6 +127,7 @@ type WorktreeCardProps = {
   onCardDragEnd?: (event: React.DragEvent<HTMLDivElement>) => void
   nativeDragEnabled?: boolean
   affiliateListMode?: boolean
+  statusPrDisplay?: WorktreeCardPrDisplay | null
 }
 
 const EMPTY_WORKSPACE_PORTS = []
@@ -137,6 +151,20 @@ function formatSparseDirectoryPreview(directories: string[]): string {
 
 function isWebClient(): boolean {
   return Boolean((window as unknown as { __ORCA_WEB_CLIENT__?: boolean }).__ORCA_WEB_CLIENT__)
+}
+
+function isCachedMergedBranchPRCurrentForWorktree(
+  cachedPR: PRInfo | null | undefined,
+  worktree: Worktree
+): boolean {
+  return (
+    cachedPR?.state === 'merged' &&
+    typeof cachedPR.headSha === 'string' &&
+    cachedPR.headSha.length > 0 &&
+    typeof worktree.head === 'string' &&
+    worktree.head.length > 0 &&
+    cachedPR.headSha === worktree.head
+  )
 }
 
 function getDirectoryName(folderPath: string): string {
@@ -205,7 +233,8 @@ const WorktreeCard = React.memo(function WorktreeCard({
   lineageChildrenStyle,
   onLineageToggle,
   isLineageDropTarget = false,
-  affiliateListMode = false
+  affiliateListMode = false,
+  statusPrDisplay = null
 }: WorktreeCardProps) {
   const openModal = useAppStore((s) => s.openModal)
   const openTaskPage = useAppStore((s) => s.openTaskPage)
@@ -221,6 +250,9 @@ const WorktreeCard = React.memo(function WorktreeCard({
   const fetchIssue = useAppStore((s) => s.fetchIssue)
   const fetchLinearIssue = useAppStore((s) => s.fetchLinearIssue)
   const cardProps = useAppStore((s) => s.worktreeCardProperties)
+  const agentActivityDisplayMode =
+    useAppStore((s) => s.agentActivityDisplayMode) ?? DEFAULT_AGENT_ACTIVITY_DISPLAY_MODE
+  const projectGroups = useAppStore((s) => s.projectGroups)
   const newCardStyle = settings?.experimentalNewWorktreeCardStyle === true
   const compactCards = !newCardStyle && settings?.compactWorktreeCards === true
   const activeSurfaceIsSecondary = isActiveSurface && activeSurfaceVariant === 'secondary'
@@ -360,6 +392,18 @@ const WorktreeCard = React.memo(function WorktreeCard({
   const folderWorkspaceId =
     workspaceScope?.type === 'folder' ? workspaceScope.folderWorkspaceId : null
   const isFolder = repo ? isFolderRepo(repo) : folderWorkspaceId !== null
+  // Why: project groups are the product gate for folder workspaces, so folder
+  // paths stay hidden from identity surfaces until that capability exists.
+  const hasProjectGroups = projectGroups.length > 0
+  const branchIdentityDisplay = !isFolder && branch.length > 0 ? branch : undefined
+  const folderPathIdentityDisplay =
+    isFolder && hasProjectGroups && worktree.path.trim().length > 0 ? worktree.path : undefined
+  const identityDisplay = branchIdentityDisplay ?? folderPathIdentityDisplay
+  const hasPathIdentityEnabled = cardProps.includes('branch')
+  const showIdentityInNewCard = newCardStyle && hasPathIdentityEnabled && Boolean(identityDisplay)
+  const folderMetaRowContent = newCardStyle
+    ? hasPathIdentityEnabled && Boolean(folderPathIdentityDisplay)
+    : isFolder
   const hostedReviewCacheKey =
     repo && branch
       ? getHostedReviewCacheKey(
@@ -368,7 +412,20 @@ const WorktreeCard = React.memo(function WorktreeCard({
           settings,
           repo.id,
           repo.connectionId,
-          repo.executionHostId
+          repo.executionHostId,
+          true
+        )
+      : ''
+  const prCacheKey =
+    repo && branch
+      ? getGitHubPRCacheKey(
+          repo.path,
+          repo.id,
+          branch,
+          settings,
+          repo.connectionId,
+          repo.executionHostId,
+          true
         )
       : ''
   const issueCacheKey =
@@ -379,7 +436,8 @@ const WorktreeCard = React.memo(function WorktreeCard({
           worktree.linkedIssue,
           settings,
           repo.connectionId,
-          repo.executionHostId
+          repo.executionHostId,
+          true
         )
       : ''
   // Why: use 'all' to fetch from all Linear workspaces. The issue might belong
@@ -390,6 +448,7 @@ const WorktreeCard = React.memo(function WorktreeCard({
   const hostedReviewEntry = useAppStore((s) =>
     hostedReviewCacheKey ? s.hostedReviewCache[hostedReviewCacheKey] : undefined
   )
+  const prCacheEntry = useAppStore((s) => (prCacheKey ? s.prCache?.[prCacheKey] : undefined))
   const issueEntry = useAppStore((s) => (issueCacheKey ? s.issueCache[issueCacheKey] : undefined))
   const linearIssueEntry = useAppStore((s) =>
     linearIssueCacheKey ? s.linearIssueCache[linearIssueCacheKey] : undefined
@@ -400,19 +459,54 @@ const WorktreeCard = React.memo(function WorktreeCard({
 
   const hostedReview: HostedReviewInfo | null | undefined =
     hostedReviewEntry !== undefined ? hostedReviewEntry.data : undefined
+  const linkedGitHubPR = worktree.linkedPR ?? null
   const linkedGitLabMR = worktree.linkedGitLabMR ?? null
   const linkedBitbucketPR = worktree.linkedBitbucketPR ?? null
   const linkedAzureDevOpsPR = worktree.linkedAzureDevOpsPR ?? null
   const linkedGiteaPR = worktree.linkedGiteaPR ?? null
+  const hasNonGitHubLinkedReview =
+    linkedGitLabMR !== null ||
+    linkedBitbucketPR !== null ||
+    linkedAzureDevOpsPR !== null ||
+    linkedGiteaPR !== null
+  const hasLinkedReview =
+    linkedGitHubPR !== null ||
+    linkedGitLabMR !== null ||
+    linkedBitbucketPR !== null ||
+    linkedAzureDevOpsPR !== null ||
+    linkedGiteaPR !== null
+  // Why: ChecksPanel can discover a branch PR before hosted-review metadata
+  // warms, and transient older hosted-review misses can race with that cache.
+  // A newer miss only yields to merged PR cache when the stored worktree head
+  // proves the cached PR still describes the checked-out commit.
+  const cachedBranchPR = prCacheEntry?.data
+  const cachedBranchPRFetchedAt = prCacheEntry?.fetchedAt
+  const cachedMergedBranchPRMatchesCurrentHead = isCachedMergedBranchPRCurrentForWorktree(
+    cachedBranchPR,
+    worktree
+  )
+  const useCachedBranchReview =
+    cachedBranchPR !== undefined &&
+    cachedBranchPR !== null &&
+    !hasNonGitHubLinkedReview &&
+    (hostedReview === undefined ||
+      (hostedReview === null &&
+        ((cachedBranchPRFetchedAt !== undefined &&
+          cachedBranchPRFetchedAt > (hostedReviewEntry?.fetchedAt ?? 0)) ||
+          cachedMergedBranchPRMatchesCurrentHead)))
+  const cachedBranchReview = useCachedBranchReview
+    ? hostedReviewInfoFromGitHubPRInfo(cachedBranchPR)
+    : hostedReview
   const prDisplay = getWorktreeCardPrDisplay(
-    hostedReview,
-    worktree.linkedPR,
+    cachedBranchReview,
+    linkedGitHubPR,
     linkedGitLabMR,
     linkedBitbucketPR,
     linkedAzureDevOpsPR,
     linkedGiteaPR,
     {
-      reviewHintKey: hostedReviewEntry?.linkedReviewHintKey
+      reviewHintKey:
+        useCachedBranchReview && !hasLinkedReview ? '' : hostedReviewEntry?.linkedReviewHintKey
     }
   )
   const issue: IssueInfo | null | undefined = worktree.linkedIssue
@@ -501,7 +595,8 @@ const WorktreeCard = React.memo(function WorktreeCard({
     issueTitle: issueDisplay?.title,
     reviewTitle: prDisplay?.title
   })
-  const visibleCardTitle = newCardStyle ? cardTitleDisplay : worktree.displayName
+  const legacyCardTitleDisplay = coerceWorktreeCardVisibleTitle(worktree.displayName)
+  const visibleCardTitle = newCardStyle ? cardTitleDisplay : legacyCardTitleDisplay
   const isDeleting = deleteState?.isDeleting ?? false
   const deleteModifierPressed = useWorkspaceDeleteModifierPressed()
 
@@ -928,12 +1023,23 @@ const WorktreeCard = React.memo(function WorktreeCard({
   const hoverIssue = issueDisplay
   const hoverLinearIssue = linearIssueDisplay
   const hoverReview = prDisplay
+  const statusLaneReview = statusPrDisplay ?? hoverReview
   const hoverComment = worktree.comment
   const metaIssue = showIssue ? hoverIssue : null
   const metaLinearIssue = showLinearIssue ? hoverLinearIssue : null
   const metaReview = showPR ? hoverReview : null
   const metaAutomationProvenance = showAutomation ? worktree.automationProvenance : null
   const metaComment = showComment ? hoverComment : null
+  const showInlineAgentList = cardProps.includes('inline-agents') && (newCardStyle || !compactCards)
+  const compactInlineAgentRows = useWorktreeAgentRows(
+    worktree.id,
+    showInlineAgentList && agentActivityDisplayMode === 'compact'
+  )
+  const compactInlineAgentRowsVisible =
+    showInlineAgentList &&
+    agentActivityDisplayMode === 'compact' &&
+    compactInlineAgentRows.length > 0
+  const showAggregateCacheTimer = !compactCards && !compactInlineAgentRowsVisible
   const handleOpenGitHubIssueInOrca = useCallback(
     (e: React.MouseEvent) => {
       e.stopPropagation()
@@ -1026,8 +1132,10 @@ const WorktreeCard = React.memo(function WorktreeCard({
     automationProvenance: metaAutomationProvenance
   })
   const hasPorts = showPorts && workspacePorts.length > 0
-  const cacheStartedAt = usePromptCacheCountdownStartedAt(worktree.id)
-  const cacheTtlMs = useAppStore((s) => s.settings?.promptCacheTtlMs ?? 0)
+  const cacheStartedAt = usePromptCacheCountdownStartedAt(worktree.id, showAggregateCacheTimer)
+  const cacheTtlMs = useAppStore((s) =>
+    showAggregateCacheTimer ? (s.settings?.promptCacheTtlMs ?? 0) : 0
+  )
   // Why: pinned trees mix repos in one section; a leading repo icon keeps the
   // list scannable, so it shows regardless of groupBy's hideRepoBadge.
   const showPinnedRepoIcon = inPinnedSection && !!repo
@@ -1043,7 +1151,8 @@ const WorktreeCard = React.memo(function WorktreeCard({
   const showBranch =
     !isFolder &&
     branch.length > 0 &&
-    (newCardStyle ? cardProps.includes('branch') : !compactCards || branch !== worktree.displayName)
+    !newCardStyle &&
+    (!compactCards || branch !== worktree.displayName)
   // Why: rebases already surface in source control; keep dense cards from
   // carrying a persistent rebase chip while preserving other interruption cues.
   const showConflictOperationBadge =
@@ -1062,30 +1171,28 @@ const WorktreeCard = React.memo(function WorktreeCard({
   const hasDetailedMetaRowContent = Boolean(
     (showRepoBadgeInMetaRow && repo) ||
     showHostContextBadge ||
-    isFolder ||
+    folderMetaRowContent ||
     showBranch ||
+    showIdentityInNewCard ||
     showDetachedHeadInMetaRow ||
     showConflictOperationBadge ||
     cacheStartedAt != null ||
     showMetaRowDetails
   )
   const hasMetaRow = compactCards
-    ? hasMetadataBadge || (newCardStyle && showBranch) || cacheStartedAt != null
+    ? hasMetadataBadge || cacheStartedAt != null
     : hasDetailedMetaRowContent
   const showHeaderActions = showTitleRowPrimary || showDeleteQuickAction
   // Why: the hover owns full identity when the row truncates; normalize once
   // so title/branch de-dupe and identity-only hover eligibility stay in sync.
   const trimmedVisibleCardTitle = visibleCardTitle.trim()
   const showBranchIdentityHover = newCardStyle
-    ? !isFolder &&
-      branch.length > 0 &&
+    ? Boolean(identityDisplay) &&
       !cardProps.includes('branch') &&
-      branch !== trimmedVisibleCardTitle
+      identityDisplay !== trimmedVisibleCardTitle
     : compactCards && showBranch
   const hoverBranchName = newCardStyle
-    ? !isFolder && branch.length > 0
-      ? branch
-      : undefined
+    ? identityDisplay
     : showBranchIdentityHover
       ? branch
       : undefined
@@ -1094,7 +1201,6 @@ const WorktreeCard = React.memo(function WorktreeCard({
       ? trimmedVisibleCardTitle
       : undefined
   const hasHoverIdentity = Boolean(hoverWorkspaceTitle || hoverBranchName)
-  const showInlineAgentList = cardProps.includes('inline-agents') && (newCardStyle || !compactCards)
   const hasHoverDetails =
     newCardStyle &&
     (hasWorktreeCardDetails({
@@ -1154,11 +1260,16 @@ const WorktreeCard = React.memo(function WorktreeCard({
       : undefined
   // Why: sidebar rows need a small surface inset, while their content remains
   // aligned with the pre-inset layout and the repo header hierarchy.
+  const applyNewCardStyleStatusLaneOffset = newCardStyle && showCombinedStatusSlot
   const cardPaddingLeft = flushSurface
-    ? getFlushWorktreeCardPaddingLeft(contentIndent)
+    ? getFlushWorktreeCardPaddingLeft(contentIndent, applyNewCardStyleStatusLaneOffset)
     : contentIndent > 0
       ? `calc(0.125rem + ${contentIndent}px)`
       : null
+  const parentContentMarginLeft =
+    flushSurface && applyNewCardStyleStatusLaneOffset
+      ? getNewCardStyleParentContentMarginLeft(contentIndent)
+      : 0
   const cardStyle = cardPaddingLeft ? { paddingLeft: cardPaddingLeft } : undefined
   const detailsAndPortsContent =
     hasDetails || hasPorts ? (
@@ -1222,6 +1333,9 @@ const WorktreeCard = React.memo(function WorktreeCard({
         'flex w-full min-w-0 gap-0.5 pl-0',
         titleOnlyCard ? 'items-center' : 'items-start'
       )}
+      style={
+        parentContentMarginLeft < 0 ? { marginLeft: `${parentContentMarginLeft}px` } : undefined
+      }
       data-worktree-card-parent-content=""
     >
       {showCombinedStatusSlot ? (
@@ -1241,9 +1355,9 @@ const WorktreeCard = React.memo(function WorktreeCard({
             unreadTooltip={unreadTooltip}
             onPointerDown={stopQuickActionPointerPropagation}
             onToggleUnread={handleToggleUnreadQuick}
-            prDisplay={hoverReview}
+            prDisplay={statusLaneReview}
             newCardStyle={newCardStyle}
-            hasBranchIdentity={!isFolder && branch.length > 0}
+            hasBranchIdentity={Boolean(branchIdentityDisplay)}
           />
         </div>
       ) : null}
@@ -1355,17 +1469,6 @@ const WorktreeCard = React.memo(function WorktreeCard({
                 affiliateListMode ? undefined : () => setRenamingWorktreeId(null)
               }
             />
-
-            {isFolder && (
-              <Badge
-                variant="secondary"
-                className="h-[16px] px-1.5 text-[10px] font-medium rounded shrink-0 text-muted-foreground bg-accent border border-border dark:bg-accent/80 dark:border-border/50 leading-none"
-              >
-                {repo
-                  ? getRepoKindLabel(repo)
-                  : translate('auto.components.sidebar.WorktreeCard.93aebe4529', 'Folder')}
-              </Badge>
-            )}
 
             {typeof worktree.firstAgentMessageRenameError === 'string' &&
             worktree.firstAgentMessageRenameError.length > 0 &&
@@ -1526,7 +1629,13 @@ const WorktreeCard = React.memo(function WorktreeCard({
                 </Badge>
               )}
 
-              {isFolder ? (
+              {showIdentityInNewCard ? (
+                <TruncatedSidebarLabel
+                  text={identityDisplay!}
+                  className="text-[11px] text-muted-foreground leading-none"
+                  tooltipEnabled={!hasHoverDetails}
+                />
+              ) : isFolder && !newCardStyle ? (
                 <span
                   className="min-w-0 truncate font-mono text-[11px] leading-none text-muted-foreground"
                   title={worktree.path}
@@ -1534,9 +1643,13 @@ const WorktreeCard = React.memo(function WorktreeCard({
                   {getDirectoryName(worktree.path)}
                 </span>
               ) : showBranch ? (
-                <span className="min-w-0 text-[11px] text-muted-foreground truncate leading-none">
-                  {branch}
-                </span>
+                <TruncatedSidebarLabel
+                  text={branch}
+                  className="text-[11px] text-muted-foreground leading-none"
+                  // Why: the whole-card details hover already exposes full
+                  // identity; a nested tooltip would compete for the same hover.
+                  tooltipEnabled={!hasHoverDetails}
+                />
               ) : showDetachedHeadInMetaRow && detachedHeadDisplay ? (
                 <DetachedHeadBadge
                   display={detachedHeadDisplay}
@@ -1595,6 +1708,7 @@ const WorktreeCard = React.memo(function WorktreeCard({
         {showInlineAgentList && (
           <WorktreeCardAgents
             worktreeId={worktree.id}
+            agents={agentActivityDisplayMode === 'compact' ? compactInlineAgentRows : undefined}
             className={hasMetaRow || remoteBranchConflict ? 'mt-0' : '-mt-1'}
           />
         )}

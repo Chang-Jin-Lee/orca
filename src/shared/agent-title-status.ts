@@ -22,6 +22,7 @@ import {
   isPiTerminalTitle
 } from './agent-title-core'
 import type { AgentStatus } from './agent-title-core'
+import { getPiCompatibleSyntheticAgentStatus } from './pi-compatible-synthetic-title'
 
 /**
  * Strip working-status indicators so stale exit titles stop reporting working.
@@ -147,6 +148,10 @@ export function detectAgentStatusFromTitle(title: string): AgentStatus | null {
   }
   if (isPiTerminalTitle(title)) {
     return 'idle'
+  }
+  const piCompatibleSyntheticAgentStatus = getPiCompatibleSyntheticAgentStatus(title)
+  if (piCompatibleSyntheticAgentStatus) {
+    return piCompatibleSyntheticAgentStatus
   }
   if (containsBrailleSpinner(title)) {
     return 'working'

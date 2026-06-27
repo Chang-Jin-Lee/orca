@@ -9,6 +9,7 @@ import {
   isPiAgentTitle,
   titleHasAgentName
 } from './agent-title-core'
+import { getPiCompatibleSyntheticAgentLabel } from './pi-compatible-synthetic-title'
 
 /**
  * Returns true when the terminal title matches Claude Code's title conventions.
@@ -57,6 +58,10 @@ export function getAgentLabel(title: string): string | null {
   }
   if (isPiAgentTitle(title)) {
     return 'Pi'
+  }
+  const piCompatibleSyntheticAgentLabel = getPiCompatibleSyntheticAgentLabel(title)
+  if (piCompatibleSyntheticAgentLabel) {
+    return piCompatibleSyntheticAgentLabel
   }
 
   if (titleHasAgentName(title, 'codex')) {

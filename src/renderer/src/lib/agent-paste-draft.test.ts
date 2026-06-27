@@ -6,9 +6,11 @@ import {
   chunkAgentDraftPasteContent,
   getSettingsForAgentTabRuntimeOwner,
   iterateAgentDraftPasteContentChunks,
+  pasteDraftToAgentPtyWhenReady,
   pasteDraftWhenAgentReady,
   sendAgentDraftPasteContent,
-  sendBracketedPasteToRunningAgent
+  sendBracketedPasteToRunningAgent,
+  submitPromptToAgentPty
 } from './agent-paste-draft'
 
 const testState = vi.hoisted(() => ({
@@ -35,7 +37,7 @@ vi.mock('@/store', () => ({
   }
 }))
 
-vi.mock('@/components/terminal-pane/pty-dispatcher', () => ({
+vi.mock('@/components/terminal-pane/pty-data-sidecar-subscriptions', () => ({
   subscribeToPtyData: testState.subscribeToPtyData
 }))
 
@@ -275,6 +277,30 @@ describe('pasteDraftWhenAgentReady', () => {
     )
   })
 
+  it('honors the fallback inspection deadline for pty-bound draft paste', async () => {
+    const onTimeout = vi.fn()
+    testState.inspectRuntimeTerminalProcess.mockReturnValue(new Promise(() => {}))
+
+    const promise = pasteDraftToAgentPtyWhenReady({
+      tabId: 'tab-1',
+      ptyId: 'pty-1',
+      content: ISSUE_URL,
+      agent: 'codex',
+      forcePaste: true,
+      timeoutMs: 1,
+      onTimeout
+    })
+    await flushMicrotasks()
+
+    await vi.advanceTimersByTimeAsync(1)
+    await flushMicrotasks(5)
+    await vi.advanceTimersByTimeAsync(1000)
+
+    await expect(promise).resolves.toBe(false)
+    expect(onTimeout).toHaveBeenCalledTimes(1)
+    expect(testState.sendRuntimePtyInputVerified).not.toHaveBeenCalled()
+  })
+
   it('routes tab-owned paste writes through the worktree runtime owner', async () => {
     testState.appState.settings = { activeRuntimeEnvironmentId: 'focused-runtime' }
     testState.appState.tabsByWorktree = { 'wt-1': [{ id: 'tab-1' }] }
@@ -361,6 +387,41 @@ describe('pasteDraftWhenAgentReady', () => {
 
     await expect(promise).resolves.toBe(true)
     expect(testState.sendRuntimePtyInputVerified).toHaveBeenNthCalledWith(2, {}, 'pty-1', '\r')
+  })
+
+  it('submits to an exact PTY even when it is not the first PTY in the tab', async () => {
+    testState.appState.ptyIdsByTabId = { 'tab-1': ['pty-left', 'pty-right'] }
+    testState.appState.tabsByWorktree = {
+      'wt-1': [{ id: 'tab-1' }]
+    }
+    testState.appState.repos = [
+      { id: 'repo-1', connectionId: null, executionHostId: 'runtime:owner-runtime' }
+    ]
+    testState.appState.worktreesByRepo = { 'repo-1': [{ id: 'wt-1', repoId: 'repo-1' }] }
+    testState.appState.settings = { activeRuntimeEnvironmentId: 'owner-runtime' }
+
+    const promise = submitPromptToAgentPty({
+      tabId: 'tab-1',
+      ptyId: 'pty-right',
+      content: ISSUE_URL
+    })
+
+    await flushMicrotasks()
+    await vi.advanceTimersByTimeAsync(50)
+
+    await expect(promise).resolves.toBe(true)
+    expect(testState.sendRuntimePtyInputVerified).toHaveBeenNthCalledWith(
+      1,
+      { activeRuntimeEnvironmentId: 'owner-runtime' },
+      'pty-right',
+      PASTED_ISSUE_URL
+    )
+    expect(testState.sendRuntimePtyInputVerified).toHaveBeenNthCalledWith(
+      2,
+      { activeRuntimeEnvironmentId: 'owner-runtime' },
+      'pty-right',
+      '\r'
+    )
   })
 
   it('streams large running-agent drafts as bounded bracketed chunks before submit', async () => {

@@ -19,9 +19,9 @@ export const AI_VAULT_AGENTS = [
 ] as const satisfies readonly TuiAgent[]
 
 export type AiVaultAgent = (typeof AI_VAULT_AGENTS)[number]
-export type AiVaultScope = 'workspace' | 'all'
+export type AiVaultScope = 'workspace' | 'project' | 'all'
 export type AiVaultSort = 'updated' | 'created'
-export type AiVaultGroup = 'folder' | 'agent'
+export type AiVaultGroup = 'project' | 'folder' | 'agent'
 
 export const AI_VAULT_AGENT_LABELS = {
   claude: 'Claude',
@@ -74,6 +74,9 @@ export type AiVaultScanIssue = {
 export type AiVaultListArgs = {
   limit?: number
   force?: boolean
+  // Active workspace/project paths. The global result is recency-capped, so these
+  // guarantee a scoped view still surfaces its own (possibly older) sessions.
+  scopePaths?: readonly string[]
 }
 
 export type AiVaultListResult = {
@@ -93,11 +96,21 @@ export function buildAiVaultResumeCommand(args: {
   const { agent, sessionId, cwd, platform, commandOverride, codexHome } = args
   const baseCommand = commandOverride?.trim() || defaultAiVaultResumeCommandBase(agent)
   const sessionArg = quoteShellArg(sessionId, platform)
-  const resumeCommand = buildAgentResumeInvocation(agent, baseCommand, sessionArg, {
-    codexHome: codexHome?.trim() || null,
-    platform
-  })
+  const resumeCommand = buildAgentResumeInvocation(agent, baseCommand, sessionArg)
 
+  return buildAiVaultResumeShellCommand({ resumeCommand, cwd, platform, codexHome })
+}
+
+export function buildAiVaultResumeShellCommand(args: {
+  resumeCommand: string
+  cwd: string | null
+  platform: NodeJS.Platform
+  codexHome?: string | null
+}): string {
+  const { cwd, platform, codexHome } = args
+  const resumeCommand = `${codexHomeEnvPrefix(codexHome?.trim() || null, platform)}${
+    args.resumeCommand
+  }`
   if (!cwd) {
     return resumeCommand
   }
@@ -130,12 +143,11 @@ function defaultAiVaultResumeCommandBase(agent: AiVaultAgent): string {
 function buildAgentResumeInvocation(
   agent: AiVaultAgent,
   baseCommand: string,
-  sessionArg: string,
-  options: { codexHome: string | null; platform: NodeJS.Platform }
+  sessionArg: string
 ): string {
   switch (agent) {
     case 'codex':
-      return `${codexHomeEnvPrefix(options.codexHome, options.platform)}${baseCommand} resume ${sessionArg}`
+      return `${baseCommand} resume ${sessionArg}`
     case 'rovo':
       return `${baseCommand} rovodev run --restore ${sessionArg}`
     case 'opencode':

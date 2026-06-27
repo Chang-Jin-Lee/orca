@@ -99,8 +99,11 @@ vi.mock('@/lib/agent-paste-draft', () => ({
 
 vi.mock('@/components/terminal-pane/pty-dispatcher', () => ({
   registerEagerPtyBuffer: mockRegisterEagerPtyBuffer,
-  subscribeToPtyData: mockSubscribeToPtyData,
   subscribeToPtyExit: mockSubscribeToPtyExit
+}))
+
+vi.mock('@/components/terminal-pane/pty-data-sidecar-subscriptions', () => ({
+  subscribeToPtyData: mockSubscribeToPtyData
 }))
 
 describe('launchAgentBackgroundSession', () => {
@@ -225,7 +228,7 @@ describe('launchAgentBackgroundSession', () => {
     expect(mockRegisterEagerPtyBuffer).toHaveBeenCalledWith('pty-1', expect.any(Function))
     expect(mockSubscribeToPtyData).toHaveBeenCalledWith('pty-1', expect.any(Function))
     expect(mockSubscribeToPtyExit).toHaveBeenCalledWith('pty-1', expect.any(Function))
-    expect(result).toMatchObject({ tabId: 'tab-1', ptyId: 'pty-1' })
+    expect(result).toMatchObject({ tabId: 'tab-1', paneKey, ptyId: 'pty-1' })
   })
 
   it('records effective launch config returned by local PTY spawn', async () => {
@@ -654,6 +657,10 @@ describe('launchAgentBackgroundSession', () => {
       }),
       expect.any(Object)
     )
-    expect(result).toMatchObject({ tabId: 'tab-1', ptyId: 'remote:env-1@@terminal-1' })
+    expect(result).toMatchObject({
+      tabId: 'tab-1',
+      paneKey: `tab-1:${leafId}`,
+      ptyId: 'remote:env-1@@terminal-1'
+    })
   })
 })

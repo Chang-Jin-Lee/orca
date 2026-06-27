@@ -115,6 +115,7 @@ import type {
   FloatingTerminalCwdRequest,
   GitHubIssueUpdate,
   GitHubPRRefreshCandidate,
+  GitHubPRRefreshEnqueueResult,
   GitHubPRRefreshEvent,
   GitHubPRRefreshReason,
   GetRateLimitResult,
@@ -1191,7 +1192,7 @@ export type PreloadApi = {
       candidate: GitHubPRRefreshCandidate
       reason: GitHubPRRefreshReason
       priority?: number
-    }) => Promise<boolean>
+    }) => Promise<GitHubPRRefreshEnqueueResult | false>
     reportVisiblePRRefreshCandidates: (args: {
       candidates: GitHubPRRefreshCandidate[]
       generation: number
@@ -2045,6 +2046,24 @@ export type PreloadApi = {
       filePath: string
       connectionId: string
     }) => Promise<{ canceled: true } | { canceled: false; destinationPath: string }>
+    saveDownloadedFile: (args: {
+      suggestedName: string
+      content: string
+      encoding: 'utf8' | 'base64'
+    }) => Promise<{ canceled: true } | { canceled: false; destinationPath: string }>
+    startDownloadedFile: (args: {
+      suggestedName: string
+    }) => Promise<
+      { canceled: true } | { canceled: false; transferId: string; destinationPath: string }
+    >
+    appendDownloadedFileChunk: (args: {
+      transferId: string
+      contentBase64: string
+    }) => Promise<{ ok: true }>
+    finishDownloadedFile: (args: {
+      transferId: string
+    }) => Promise<{ canceled: false; destinationPath: string }>
+    cancelDownloadedFile: (args: { transferId: string }) => Promise<{ ok: true }>
     listMarkdownDocuments: (args: {
       rootPath: string
       connectionId?: string
@@ -2146,6 +2165,7 @@ export type PreloadApi = {
       worktreePath: string
       connectionId?: string
       includeIgnored?: boolean
+      bypassEffectiveUpstreamNegativeCache?: boolean
     }) => Promise<GitStatusResult>
     checkIgnored: (args: {
       worktreePath: string
@@ -2513,11 +2533,20 @@ export type PreloadApi = {
     readSelectionClipboardText: (options?: ReadClipboardTextOptions) => Promise<string>
     saveClipboardImageAsTempFile: (args?: {
       connectionId?: string | null
+      runtimeEnvironmentId?: string | null
     }) => Promise<string | null>
     writeClipboardText: (text: string) => Promise<void>
     writeSelectionClipboardText: (text: string) => Promise<void>
     writeClipboardImage: (dataUrl: string) => Promise<void>
     performNativePaste: (options?: { mode?: 'paste' | 'paste-and-match-style' }) => void
+    writeClipboardFile: (
+      args:
+        | {
+            filePath: string
+            connectionId?: string | null
+          }
+        | string
+    ) => Promise<{ ok: boolean; reason?: string }>
     onFileDrop: (callback: (data: NativeFileDropPayload) => void) => () => void
     getZoomLevel: () => number
     setZoomLevel: (level: number) => void
@@ -2729,6 +2758,9 @@ export type PreloadApi = {
     /** Drop a paneKey from the main-process hook cache and the on-disk
      *  last-status file. Fire-and-forget. */
     drop: (paneKey: string) => void
+    /** Drop every cached hook status under one terminal tab prefix.
+     *  Fire-and-forget. */
+    dropByTabPrefix: (tabId: string) => void
   }
   mobile: {
     listNetworkInterfaces: () => Promise<{

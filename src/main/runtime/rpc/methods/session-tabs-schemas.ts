@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { isTuiAgent } from '../../../../shared/tui-agent-config'
 import type { TuiAgent } from '../../../../shared/types'
 import { sleepingAgentLaunchConfigSchema } from '../../../../shared/workspace-session-sleeping-agents'
+import { OptionalBoolean } from '../schemas'
 
 export const WorktreeTabSelector = z.object({
   worktree: z
@@ -19,7 +20,8 @@ export const ActivateTab = WorktreeTabSelector.extend({
     .unknown()
     .transform((v) => (typeof v === 'string' ? v : ''))
     .pipe(z.string().min(1, 'Missing tab id')),
-  leafId: z.string().max(128).optional()
+  leafId: z.string().max(128).optional(),
+  notifyClients: OptionalBoolean
 })
 
 export type TerminalPaneLayoutNodeInput =
@@ -125,7 +127,10 @@ export const CreateTerminalTab = WorktreeTabSelector.extend({
       message: 'Unknown launch agent'
     })
     .optional(),
-  activate: z.boolean().optional()
+  activate: z.boolean().optional(),
+  // Why: idempotency key so a retried create (double-tap, reconnect replay)
+  // returns the in-flight operation instead of spawning a duplicate terminal.
+  clientMutationId: z.string().min(1).max(128).optional()
 })
 
 const MoveTabBase = {

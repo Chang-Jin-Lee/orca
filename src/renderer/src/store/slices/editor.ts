@@ -39,6 +39,7 @@ import { FLOATING_TERMINAL_WORKTREE_ID } from '../../../../shared/constants'
 import { clampMarkdownTocPanelWidth } from '../../../../shared/markdown-toc-panel-width'
 import { folderWorkspaceKey } from '../../../../shared/workspace-scope'
 import type { RemoteOpKind } from '@/components/right-sidebar/source-control-primary-action'
+import { invalidateAutomaticPushTargetUpstreamStatusCache } from '@/components/right-sidebar/push-target-upstream-refresh-cache'
 import {
   isNonFastForwardRemoteError,
   resolveRemoteOperationErrorMessage
@@ -58,6 +59,7 @@ import {
   statRuntimePath
 } from '@/runtime/runtime-file-client'
 import { settingsForRuntimeOwner } from '@/runtime/runtime-rpc-client'
+import { notifyHostOfMirroredEditorClose } from '@/runtime/close-mirrored-editor-tab'
 import { findWorktreeById, getRepoIdFromWorktreeId } from './worktree-helpers'
 import { createUntitledMarkdownFileWithTemplateSelection } from '@/lib/create-untitled-markdown'
 import { extractIpcErrorMessage } from '@/lib/ipc-error'
@@ -93,6 +95,7 @@ export type DiffSource =
   | 'staged'
   | 'branch'
   | 'commit'
+  | 'combined-all'
   | 'combined-uncommitted'
   | 'combined-branch'
   | 'combined-commit'
@@ -154,7 +157,7 @@ type CommitCompareLike = Pick<
 }
 
 type CombinedDiffAlternate = {
-  source: 'combined-uncommitted' | 'combined-branch'
+  source: 'combined-all' | 'combined-branch'
   branchCompare?: BranchCompareSnapshot
 }
 
@@ -293,6 +296,7 @@ type EditorOpenTargetOptions = {
 
 type GitRuntimeOperationOptions = {
   runtimeTargetSettings?: Pick<GlobalSettings, 'activeRuntimeEnvironmentId'> | null
+  applyUpstreamStatus?: boolean
 }
 
 export type PendingEditorReveal = {
@@ -594,7 +598,7 @@ export type EditorSlice = {
     connectionId?: string,
     pushTarget?: GitPushTarget,
     options?: GitRuntimeOperationOptions
-  ) => Promise<void>
+  ) => Promise<GitUpstreamStatus | null>
   pushBranch: (
     worktreeId: string,
     worktreePath: string,
@@ -973,6 +977,12 @@ function matchesEditorMode(
   modes: readonly OpenFile['mode'][] | undefined
 ): boolean {
   return !modes || modes.includes(file.mode)
+}
+
+function getReusableOpenFileModes(mode: OpenFile['mode']): readonly OpenFile['mode'][] {
+  // Why: the same path can be open as both a diff and an editable file; matching
+  // by path alone collapses those distinct visible tabs onto one OpenFile.
+  return [mode]
 }
 
 function resolveEditorFileIdForOwner(
@@ -1504,11 +1514,20 @@ export const createEditorSlice: StateCreator<AppState, [], [], EditorSlice> = (s
             (options?.suppressActiveRuntimeFallback
               ? null
               : (s.settings?.activeRuntimeEnvironmentId?.trim() ?? undefined)))
+      const reusableOpenFileModes = getReusableOpenFileModes(file.mode)
       const existing = s.openFiles.find(
         (f) =>
-          f.filePath === file.filePath && isSameEditorOwner(f, worktreeId, runtimeEnvironmentId)
+          f.filePath === file.filePath &&
+          matchesEditorMode(f, reusableOpenFileModes) &&
+          isSameEditorOwner(f, worktreeId, runtimeEnvironmentId)
       )
-      const id = resolveEditorFileIdForOwner(s, file.filePath, worktreeId, runtimeEnvironmentId)
+      const id = resolveEditorFileIdForOwner(
+        s,
+        file.filePath,
+        worktreeId,
+        runtimeEnvironmentId,
+        reusableOpenFileModes
+      )
       editorItemFileId = id
       const isPreview = options?.preview ?? false
       const recordReplacedPreview = options?.recordReplacedPreview ?? false
@@ -1912,6 +1931,12 @@ export const createEditorSlice: StateCreator<AppState, [], [], EditorSlice> = (s
     const hasDraft = !!get().editorDrafts[fileId]
     const shouldDeleteFromDisk = shouldDeleteUntouchedUntitledFile(preClose, hasDraft)
 
+    // Why: closeFile is the single chokepoint every editor close funnels through
+    // (tab strips, bulk close, save/discard, floating panel). Mirrored tabs are
+    // host-owned, so the host must close its copy too or its next snapshot
+    // re-mirrors the file and the tab reopens. No-op for the host's own files.
+    notifyHostOfMirroredEditorClose(get(), preClose?.worktreeId, fileId)
+
     set((s) => {
       const closedFile = s.openFiles.find((f) => f.id === fileId)
       const idx = s.openFiles.findIndex((f) => f.id === fileId)
@@ -2136,6 +2161,14 @@ export const createEditorSlice: StateCreator<AppState, [], [], EditorSlice> = (s
         shouldDeleteUntouchedUntitledFile(f, !!state.editorDrafts[f.id]) &&
         (!activeWorktreeId || f.worktreeId === activeWorktreeId)
     )
+    const closingFiles = state.openFiles.filter(
+      (file) => !activeWorktreeId || file.worktreeId === activeWorktreeId
+    )
+    // Why: close-all bypasses closeFile's per-tab path, so mirrored host-owned
+    // editors must be notified here or the next host snapshot reopens them.
+    for (const file of closingFiles) {
+      notifyHostOfMirroredEditorClose(state, file.worktreeId, file.id)
+    }
 
     const closingItemIds = Object.values(state.unifiedTabsByWorktree ?? {})
       .flat()
@@ -2193,16 +2226,17 @@ export const createEditorSlice: StateCreator<AppState, [], [], EditorSlice> = (s
       const shouldDeactivateWorktree =
         browserTabsForWorktree.length === 0 && terminalTabsForWorktree.length === 0
 
-      // Why: remove all closed editor file IDs from tab bar order so stale
-      // entries don't cause position shifts on subsequent tab operations.
+      // Why: mirrored editor tabs use host tab ids in tab order, while local
+      // editor entries may still use file ids. Remove both close-all shapes.
       const closedFileIds = new Set(
         s.openFiles.filter((f) => f.worktreeId === activeWorktreeId).map((f) => f.id)
       )
+      const closedTabOrderIds = new Set([...closedFileIds, ...closingItemIds])
       const nextTabBarOrderByWorktree = s.tabBarOrderByWorktree
         ? {
             ...s.tabBarOrderByWorktree,
             [activeWorktreeId]: (s.tabBarOrderByWorktree[activeWorktreeId] ?? []).filter(
-              (entryId) => !closedFileIds.has(entryId)
+              (entryId) => !closedTabOrderIds.has(entryId)
             )
           }
         : s.tabBarOrderByWorktree
@@ -2641,13 +2675,22 @@ export const createEditorSlice: StateCreator<AppState, [], [], EditorSlice> = (s
         ] ?? 'All Changes')
       : 'All Changes'
     set((s) => {
+      const branchSummary = s.gitBranchCompareSummaryByWorktree[worktreeId]
+      const branchCompare =
+        !areaFilter &&
+        branchSummary?.status === 'ready' &&
+        branchSummary.baseOid &&
+        branchSummary.headOid &&
+        branchSummary.mergeBase
+          ? toBranchCompareSnapshot(branchSummary)
+          : undefined
+      const branchEntriesSnapshot = branchCompare
+        ? (s.gitBranchChangesByWorktree[worktreeId] ?? [])
+        : undefined
       const relevantEntries =
         entriesSnapshot ??
         (s.gitStatusByWorktree[worktreeId] ?? []).filter((entry) => {
-          if (areaFilter) {
-            return entry.area === areaFilter
-          }
-          return entry.area !== 'untracked'
+          return areaFilter === undefined || entry.area === areaFilter
         })
       const skippedConflicts = relevantEntries
         .filter((entry) => entry.conflictStatus === 'unresolved' && entry.conflictKind)
@@ -2671,6 +2714,9 @@ export const createEditorSlice: StateCreator<AppState, [], [], EditorSlice> = (s
             f.id === id
               ? {
                   ...f,
+                  diffSource: branchCompare ? 'combined-all' : 'combined-uncommitted',
+                  branchCompare,
+                  branchEntriesSnapshot,
                   uncommittedEntriesSnapshot,
                   combinedAlternate: alternate,
                   combinedAreaFilter: areaFilter,
@@ -2694,7 +2740,9 @@ export const createEditorSlice: StateCreator<AppState, [], [], EditorSlice> = (s
         language: 'plaintext',
         isDirty: false,
         mode: 'diff',
-        diffSource: 'combined-uncommitted',
+        diffSource: branchCompare ? 'combined-all' : 'combined-uncommitted',
+        branchCompare,
+        branchEntriesSnapshot,
         uncommittedEntriesSnapshot,
         combinedAlternate: alternate,
         combinedAreaFilter: areaFilter,
@@ -3498,8 +3546,8 @@ export const createEditorSlice: StateCreator<AppState, [], [], EditorSlice> = (s
       }
     }),
   fetchUpstreamStatus: async (worktreeId, worktreePath, connectionId, pushTarget, options) => {
+    const runtimeSettings = options?.runtimeTargetSettings ?? get().settings
     try {
-      const runtimeSettings = options?.runtimeTargetSettings ?? get().settings
       const status = await getRuntimeGitUpstreamStatus(
         {
           settings: runtimeSettings,
@@ -3509,7 +3557,10 @@ export const createEditorSlice: StateCreator<AppState, [], [], EditorSlice> = (s
         },
         pushTarget
       )
-      get().setUpstreamStatus(worktreeId, status)
+      if (options?.applyUpstreamStatus !== false) {
+        get().setUpstreamStatus(worktreeId, status)
+      }
+      return status
     } catch (error) {
       // Why: on error we leave the prior status in place rather than writing a
       // synthetic {hasUpstream:false} — that would flash 'Publish Branch' on a
@@ -3517,7 +3568,19 @@ export const createEditorSlice: StateCreator<AppState, [], [], EditorSlice> = (s
       // re-publish, clobbering the upstream relationship. If the branch is
       // genuinely newly unpublished, the polling effect will eventually correct
       // the status on success.
+      if (pushTarget) {
+        // Why: an old automatic poll cache entry must not suppress the next
+        // retry after a post-push/fetch refresh fails transiently.
+        invalidateAutomaticPushTargetUpstreamStatusCache({
+          settings: runtimeSettings,
+          worktreeId,
+          worktreePath,
+          connectionId,
+          pushTarget
+        })
+      }
       console.error('fetchUpstreamStatus failed', error)
+      return null
     }
   },
   pushBranch: async (

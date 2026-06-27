@@ -273,9 +273,39 @@ describe('PRCommentsList', () => {
     expect(markup.indexOf('aria-label="Add comment"')).toBeLessThan(
       markup.indexOf('Existing review context')
     )
+    expect(markup.indexOf('aria-label="Comment display options"')).toBeLessThan(
+      markup.indexOf('aria-label="Add comment"')
+    )
     expect(markup).toContain('lucide-plus')
     expect(markup).not.toContain('Add a comment...')
     expect(markup).not.toContain('Add a PR comment')
+  })
+
+  it('shows resolve on open review threads', () => {
+    const comments: PRComment[] = [
+      {
+        id: 2,
+        author: 'alice',
+        authorAvatarUrl: '',
+        body: 'Please address this before merge.',
+        createdAt: '2026-05-14T00:00:00Z',
+        url: 'https://github.com/acme/widgets/pull/42#discussion_r2',
+        threadId: 'thread-open',
+        path: 'src/a.ts',
+        isResolved: false
+      }
+    ]
+
+    const markup = renderWithTooltips(
+      React.createElement(PRCommentsList, {
+        comments,
+        commentsLoading: false,
+        onResolve: () => true
+      })
+    )
+
+    expect(markup).toContain('Resolve')
+    expect(markup).not.toContain('Unresolve')
   })
 
   it('renders a more-actions menu on conversation comments', () => {

@@ -1,10 +1,14 @@
-import { toast } from 'sonner'
 import { useAppStore } from '@/store'
 import { buildAgentStartupPlan, type AgentStartupPlan } from '@/lib/tui-agent-startup'
+import type {
+  LaunchAgentBackgroundSessionArgs,
+  LaunchAgentBackgroundSessionResult
+} from '@/lib/agent-background-session-contract'
 import { getAgentLaunchPlatformForRepo } from '@/lib/agent-launch-platform'
 import { CLIENT_PLATFORM } from '@/lib/new-workspace'
-import { track, tuiAgentToAgentKind } from '@/lib/telemetry'
+import { tuiAgentToAgentKind } from '@/lib/telemetry'
 import { pasteDraftWhenAgentReady } from '@/lib/agent-paste-draft'
+import { showAutomationPromptNotSentToast } from '@/lib/agent-background-session-timeout-toast'
 import { getLocalProjectExecutionRuntimeContext } from '@/lib/local-preflight-context'
 import {
   resolveTuiAgentLaunchArgs,
@@ -14,9 +18,9 @@ import { TUI_AGENT_CONFIG } from '../../../shared/tui-agent-config'
 import { makePaneKey } from '../../../shared/stable-pane-id'
 import {
   registerEagerPtyBuffer,
-  subscribeToPtyData,
   subscribeToPtyExit
 } from '@/components/terminal-pane/pty-dispatcher'
+import { subscribeToPtyData } from '@/components/terminal-pane/pty-data-sidecar-subscriptions'
 import { callRuntimeRpc, getActiveRuntimeTarget } from '@/runtime/runtime-rpc-client'
 import { getSettingsForWorktreeRuntimeOwner } from '@/lib/worktree-runtime-owner'
 import { toRuntimeWorktreeSelector } from '@/runtime/runtime-worktree-selector'
@@ -30,16 +34,8 @@ import {
 import { createAgentStatusOscProcessor } from '../../../shared/agent-status-osc'
 import type { RuntimeTerminalCreate } from '../../../shared/runtime-types'
 import { isMainTerminalSideEffectAuthorityForPty } from '@/components/terminal-pane/terminal-side-effect-facts-handler'
-import { translate } from '@/i18n/i18n'
 import { createSshBackgroundStartupDelivery } from '@/lib/ssh-background-startup-delivery'
 import { shouldUseShellReadyStartupDelivery } from '../../../shared/codex-startup-delivery'
-import type {
-  LaunchAgentBackgroundSessionArgs,
-  LaunchAgentBackgroundSessionResult
-} from '@/lib/launch-agent-background-session-types'
-
-export type { LaunchAgentBackgroundSessionArgs, LaunchAgentBackgroundSessionResult }
-
 export async function launchAgentBackgroundSession(
   args: LaunchAgentBackgroundSessionArgs
 ): Promise<LaunchAgentBackgroundSessionResult | null> {
@@ -232,8 +228,8 @@ export async function launchAgentBackgroundSession(
     )
   }
   let exitHandled = false
-  let unsubscribeExit = (): void => {}
-  let unsubscribeData = (): void => {}
+  let unsubscribeExit = (): void => {},
+    unsubscribeData = (): void => {}
   const handleExit = (ptyId: string, code: number): void => {
     if (exitHandled) {
       return
@@ -303,20 +299,9 @@ export async function launchAgentBackgroundSession(
       content: pasteDraftAfterLaunch,
       agent,
       submit: true,
-      onTimeout: () => {
-        toast.message(
-          translate(
-            'auto.lib.launch.agent.background.session.4ca0651d56',
-            "Your automation prompt wasn't sent — open the workspace and paste it."
-          )
-        )
-        track('agent_error', {
-          error_class: 'paste_readiness_timeout',
-          agent_kind: tuiAgentToAgentKind(agent)
-        })
-      }
+      onTimeout: () => showAutomationPromptNotSentToast(agent)
     })
   }
 
-  return { tabId: tab.id, ptyId, startupPlan }
+  return { tabId: tab.id, paneKey, ptyId, startupPlan }
 }

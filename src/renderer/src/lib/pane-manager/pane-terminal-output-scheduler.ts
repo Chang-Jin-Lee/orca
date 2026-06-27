@@ -7,6 +7,10 @@ import {
   writeForegroundTerminalChunk,
   type ForegroundTerminalOutputTarget
 } from './pane-terminal-foreground-render-settle'
+import {
+  captureTerminalWriteScrollIntent,
+  enforceTerminalWriteScrollIntent
+} from './terminal-scroll-intent'
 
 type TerminalOutputTarget = ForegroundTerminalOutputTarget
 
@@ -600,6 +604,38 @@ function hasDrainableBacklog(): boolean {
   return false
 }
 
+function writeBackgroundTerminalChunk(terminal: TerminalOutputTarget, data: string): void {
+  const scrollIntent = captureTerminalWriteScrollIntent(terminal)
+  if (!scrollIntent) {
+    terminal.write(data)
+    return
+  }
+  if (terminal.write.length < 2) {
+    terminal.write(data)
+    enforceTerminalWriteScrollIntent(terminal, scrollIntent)
+    return
+  }
+  terminal.write(data, () => {
+    enforceTerminalWriteScrollIntent(terminal, scrollIntent)
+  })
+}
+
+function writeForegroundTerminalChunkWithIntent(
+  terminal: TerminalOutputTarget,
+  data: string,
+  options: {
+    forceViewportRefresh: boolean
+    followupViewportRefresh: boolean
+  }
+): void {
+  const scrollIntent = captureTerminalWriteScrollIntent(terminal)
+  writeForegroundTerminalChunk(terminal, data, {
+    forceViewportRefresh: options.forceViewportRefresh,
+    followupViewportRefresh: options.followupViewportRefresh,
+    onParsed: () => enforceTerminalWriteScrollIntent(terminal, scrollIntent)
+  })
+}
+
 function takeNextDrainableEntry(): QueueEntry | null {
   let largeBacklogEntry: QueueEntry | null = null
   for (const entry of queuedByTerminal.values()) {
@@ -638,7 +674,7 @@ function writeQueuedChunk(entry: QueueEntry): 'foreground' | 'background' | null
   try {
     entry.beforeWrite?.(queuedWrite.data)
     if (queuedWrite.foreground) {
-      writeForegroundTerminalChunk(
+      writeForegroundTerminalChunkWithIntent(
         entry.terminal,
         queuedWrite.stripTransientCursorShows
           ? removeTransientCursorShowSequences(queuedWrite.data)
@@ -649,7 +685,7 @@ function writeQueuedChunk(entry: QueueEntry): 'foreground' | 'background' | null
         }
       )
     } else {
-      entry.terminal.write(queuedWrite.data)
+      writeBackgroundTerminalChunk(entry.terminal, queuedWrite.data)
     }
   } catch {
     // Why: pane.terminal.dispose() can race with a queued late-arriving PTY ping;
@@ -842,12 +878,12 @@ export function writeTerminalOutput(
       debugState.foregroundWriteCount++
     }
     options.beforeWrite?.(data)
-    writeForegroundTerminalChunk(
+    writeForegroundTerminalChunkWithIntent(
       terminal,
       options.stripTransientCursorShows ? removeTransientCursorShowSequences(data) : data,
       {
-        forceViewportRefresh: options.forceForegroundRefresh,
-        followupViewportRefresh: options.followupForegroundRefresh
+        forceViewportRefresh: options.forceForegroundRefresh === true,
+        followupViewportRefresh: options.followupForegroundRefresh === true
       }
     )
     return
@@ -915,7 +951,7 @@ export function flushTerminalOutput(
     try {
       entry.beforeWrite?.(queuedWrite.data)
       if (queuedWrite.foreground) {
-        writeForegroundTerminalChunk(
+        writeForegroundTerminalChunkWithIntent(
           terminal,
           queuedWrite.stripTransientCursorShows
             ? removeTransientCursorShowSequences(queuedWrite.data)
@@ -926,7 +962,7 @@ export function flushTerminalOutput(
           }
         )
       } else {
-        terminal.write(queuedWrite.data)
+        writeBackgroundTerminalChunk(terminal, queuedWrite.data)
       }
     } catch {
       // Why: pane.terminal.dispose() can race with a queued late-arriving PTY ping;

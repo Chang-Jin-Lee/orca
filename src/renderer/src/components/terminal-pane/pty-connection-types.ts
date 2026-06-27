@@ -71,4 +71,5 @@ export type PtyConnectionDeps = {
    *  The reply itself is sent by the fact handler — query authority stays
    *  with the view (model/view contract invariant 6). */
   recordPaneMode2031Subscription?: (paneId: number, repliedMode: 'dark' | 'light') => void
+  clearExitedPanePtyLayoutBinding: (paneId: number, exitedPtyId: string) => void
 }

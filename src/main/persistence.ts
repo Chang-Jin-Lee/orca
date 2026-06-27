@@ -72,6 +72,7 @@ import {
   normalizeProjectRuntimePreference
 } from '../shared/project-execution-runtime'
 import { projectHostSetupProjectionFromRepos } from '../shared/project-host-setup-projection'
+import type { GitRemoteIdentity } from '../shared/git-remote-identity'
 import {
   buildTaskSourceContextFromRepo,
   buildWorkspaceRunContext
@@ -665,6 +666,16 @@ function normalizeAutomationRunWorkspaceDisplayName(value: string | null): strin
   return trimmed ? trimmed : null
 }
 
+function normalizeAutomationRunTerminalPaneKey(value: string | null | undefined): string | null {
+  const trimmed = typeof value === 'string' ? value.trim() : ''
+  return trimmed && parsePaneKey(trimmed) ? trimmed : null
+}
+
+function normalizeAutomationRunTerminalPtyId(value: string | null | undefined): string | null {
+  const trimmed = typeof value === 'string' ? value.trim() : ''
+  return trimmed || null
+}
+
 function normalizeAutomationRunOutputSnapshot(
   value: AutomationRunOutputSnapshot | null | undefined
 ): AutomationRunOutputSnapshot | null {
@@ -820,6 +831,14 @@ function backfillLegacyAutomationContexts(
     }
     if (!Object.hasOwn(next, 'sourceContext')) {
       next.sourceContext = automationContexts?.sourceContext ?? null
+      changed = true
+    }
+    if (!Object.hasOwn(next, 'terminalPaneKey')) {
+      next.terminalPaneKey = null
+      changed = true
+    }
+    if (!Object.hasOwn(next, 'terminalPtyId')) {
+      next.terminalPtyId = null
       changed = true
     }
     return next
@@ -1048,6 +1067,10 @@ function resolveSetupGuideSidebarDismissedOnLoad(
   return onboarding.closedAt !== null || persistedDismissed === true
 }
 
+function shouldDefaultNewWorktreeCardStyleOn(onboarding: OnboardingState): boolean {
+  return onboarding.closedAt === null
+}
+
 // Why: read a settings field that was removed from GlobalSettings but can
 // still exist on disk. One-shot use for the inline-agents migration.
 function readDeprecatedExperimentFlag(parsed: PersistedState | undefined): boolean {
@@ -1077,6 +1100,24 @@ function sanitizeRepoUpstream(value: unknown): Repo['upstream'] | undefined {
   return owner && repo ? { owner, repo } : undefined
 }
 
+function sanitizeGitRemoteIdentity(value: unknown): GitRemoteIdentity | undefined {
+  if (!value || typeof value !== 'object') {
+    return undefined
+  }
+  const candidate = value as {
+    canonicalKey?: unknown
+    remoteName?: unknown
+    remoteUrl?: unknown
+  }
+  const canonicalKey =
+    typeof candidate.canonicalKey === 'string' ? candidate.canonicalKey.trim() : ''
+  const remoteName = typeof candidate.remoteName === 'string' ? candidate.remoteName.trim() : ''
+  const remoteUrl = typeof candidate.remoteUrl === 'string' ? candidate.remoteUrl.trim() : ''
+  return canonicalKey && remoteName && remoteUrl
+    ? { canonicalKey, remoteName, remoteUrl }
+    : undefined
+}
+
 function sanitizeRepoProjectHostSetupMethod(
   value: unknown
 ): RepoProjectHostSetupMethod | undefined {
@@ -1094,6 +1135,7 @@ function sanitizeRepoUpdatesForPersistence<
       | 'badgeColor'
       | 'repoIcon'
       | 'upstream'
+      | 'gitRemoteIdentity'
       | 'worktreeBasePath'
       | 'projectHostSetupMethod'
       | 'forkSyncMode'
@@ -1124,6 +1166,14 @@ function sanitizeRepoUpdatesForPersistence<
       delete sanitized.upstream
     } else {
       sanitized.upstream = upstream
+    }
+  }
+  if ('gitRemoteIdentity' in sanitized) {
+    const gitRemoteIdentity = sanitizeGitRemoteIdentity(sanitized.gitRemoteIdentity)
+    if (gitRemoteIdentity === undefined) {
+      delete sanitized.gitRemoteIdentity
+    } else {
+      sanitized.gitRemoteIdentity = gitRemoteIdentity
     }
   }
   if ('worktreeBasePath' in sanitized && sanitized.worktreeBasePath !== undefined) {
@@ -2653,6 +2703,16 @@ export class Store {
         if (!parsed.onboarding) {
           this.loadNeedsSave = true
         }
+        const defaultNewWorktreeCardStyle =
+          shouldDefaultNewWorktreeCardStyleOn(normalizedOnboarding)
+        const migratedExperimentalNewWorktreeCardStyle =
+          parsed.settings?.experimentalNewWorktreeCardStyle ?? defaultNewWorktreeCardStyle
+        if (
+          parsed.settings?.experimentalNewWorktreeCardStyle === undefined &&
+          defaultNewWorktreeCardStyle
+        ) {
+          this.loadNeedsSave = true
+        }
         const normalizedProjectGroups = normalizeProjectGroups(parsed.projectGroups)
         const loadedCompactWorktreeCards =
           parsed.settings?.compactWorktreeCards ??
@@ -2705,6 +2765,9 @@ export class Store {
             ...migratedTerminalCursorStyle,
             experimentalActivity: migratedExperimentalActivity,
             experimentalActivityDefaultedOffForAllUsers: true,
+            // Why: open first-run onboarding is the local fresh-install signal;
+            // closed/backfilled onboarding identifies existing profiles.
+            experimentalNewWorktreeCardStyle: migratedExperimentalNewWorktreeCardStyle,
             // Why: compact worktree cards graduated from Experimental; preserve
             // the old opt-in for profiles written during the rollout.
             compactWorktreeCards: loadedCompactWorktreeCards,
@@ -2977,7 +3040,18 @@ export class Store {
     }
 
     if (result === null) {
-      result = getDefaultPersistedState(homedir())
+      const defaults = getDefaultPersistedState(homedir())
+      const isFreshDefaultProfile =
+        !fileExistedOnLoad && shouldDefaultNewWorktreeCardStyleOn(defaults.onboarding)
+      result = {
+        ...defaults,
+        settings: {
+          ...defaults.settings,
+          // Why: a corrupt existing data file also falls back to defaults; only
+          // the absent-file path is a true fresh install.
+          experimentalNewWorktreeCardStyle: isFreshDefaultProfile
+        }
+      }
     }
 
     const workspaceSession = pruneWorkspaceSessionBrowserHistory(
@@ -3692,6 +3766,7 @@ export class Store {
         | 'badgeColor'
         | 'repoIcon'
         | 'upstream'
+        | 'gitRemoteIdentity'
         | 'hookSettings'
         | 'worktreeBaseRef'
         | 'worktreeBasePath'
@@ -3867,6 +3942,7 @@ export class Store {
     const {
       repoIcon: rawRepoIcon,
       upstream: rawUpstream,
+      gitRemoteIdentity: rawGitRemoteIdentity,
       sourceControlAi: rawSourceControlAi,
       projectHostSetupMethod: rawProjectHostSetupMethod,
       forkSyncMode: rawForkSyncMode,
@@ -3874,6 +3950,7 @@ export class Store {
     } = repo
     const repoIcon = sanitizeRepoIcon(rawRepoIcon)
     const upstream = sanitizeRepoUpstream(rawUpstream)
+    const gitRemoteIdentity = sanitizeGitRemoteIdentity(rawGitRemoteIdentity)
     const sourceControlAi = normalizeRepoSourceControlAiOverrides(rawSourceControlAi)
     const projectHostSetupMethod = sanitizeRepoProjectHostSetupMethod(rawProjectHostSetupMethod)
     const forkSyncMode = sanitizeForkSyncMode(rawForkSyncMode)
@@ -3890,6 +3967,7 @@ export class Store {
       ...repoWithoutIcon,
       ...(repoIcon !== undefined ? { repoIcon } : {}),
       ...(upstream !== undefined ? { upstream } : {}),
+      ...(gitRemoteIdentity !== undefined ? { gitRemoteIdentity } : {}),
       ...(sourceControlAi !== undefined ? { sourceControlAi } : {}),
       ...(projectHostSetupMethod !== undefined ? { projectHostSetupMethod } : {}),
       ...(forkSyncMode !== undefined ? { forkSyncMode } : {}),
@@ -4090,6 +4168,8 @@ export class Store {
       sessionKind: 'terminal',
       chatSessionId: null,
       terminalSessionId: null,
+      terminalPaneKey: null,
+      terminalPtyId: null,
       outputSnapshot: null,
       precheckResult: null,
       usage: null,
@@ -4125,7 +4205,15 @@ export class Store {
         workspaceDisplayName ??
         normalizeAutomationRunWorkspaceDisplayName(current.workspaceDisplayName ?? null) ??
         this.getAutomationRunWorkspaceDisplayName(workspaceId),
-      terminalSessionId: result.terminalSessionId ?? current.terminalSessionId,
+      terminalSessionId: Object.hasOwn(result, 'terminalSessionId')
+        ? (result.terminalSessionId ?? null)
+        : current.terminalSessionId,
+      terminalPaneKey: Object.hasOwn(result, 'terminalPaneKey')
+        ? normalizeAutomationRunTerminalPaneKey(result.terminalPaneKey)
+        : normalizeAutomationRunTerminalPaneKey(current.terminalPaneKey),
+      terminalPtyId: Object.hasOwn(result, 'terminalPtyId')
+        ? normalizeAutomationRunTerminalPtyId(result.terminalPtyId)
+        : normalizeAutomationRunTerminalPtyId(current.terminalPtyId),
       outputSnapshot: Object.hasOwn(result, 'outputSnapshot')
         ? normalizeAutomationRunOutputSnapshot(result.outputSnapshot)
         : normalizeAutomationRunOutputSnapshot(current.outputSnapshot),

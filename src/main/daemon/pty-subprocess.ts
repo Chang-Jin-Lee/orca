@@ -25,6 +25,10 @@ import { parseWslPath } from '../wsl'
 import { addWslEnvKeys } from '../wsl-env'
 import { getWslContextFromSessionId } from './wsl-session-context'
 import { addOrcaWslInteropEnv } from '../pty/wsl-orca-env'
+import {
+  POWERLEVEL10K_WIZARD_DISABLE_ENV,
+  seedPowerlevel10kWizardEnv
+} from '../pty/powerlevel10k-wizard-env'
 import { isWindowsGitBashShellPath, resolveWindowsGitBashShellPath } from '../git-bash'
 import { WINDOWS_GIT_BASH_SHELL } from '../../shared/windows-terminal-shell'
 import { resolveAgentForegroundProcess } from '../providers/agent-foreground-process'
@@ -51,6 +55,7 @@ const FOREGROUND_AGENT_CACHE_TTL_MS = 1000
 const SHELL_FOREGROUND_REFRESH_RETRY_MS = 5_000
 const STARTUP_AGENT_FOREGROUND_BOOTSTRAP_MS = 5_000
 const PTY_SPAWN_HEALTH_TIMEOUT_MS = 2_000
+const PENDING_PRE_LISTENER_DATA_MAX_CHARS = 512 * 1024
 
 export type PtySubprocessOptions = {
   sessionId: string
@@ -592,6 +597,7 @@ export function createPtySubprocess(opts: PtySubprocessOptions): SubprocessHandl
       shellLaunch =
         env.ORCA_ATTRIBUTION_SHIM_DIR ||
         env.ORCA_OPENCODE_CONFIG_DIR ||
+        env.ORCA_MIMOCODE_HOME ||
         env.ORCA_OMP_STATUS_EXTENSION ||
         env.ORCA_CODEX_HOME ||
         env.ORCA_AGENT_TEAMS_SHIM_DIR
@@ -602,6 +608,14 @@ export function createPtySubprocess(opts: PtySubprocessOptions): SubprocessHandl
       Object.assign(env, shellLaunch.env)
     }
     shellArgs = shellLaunch?.args ?? ['-l']
+  }
+  seedPowerlevel10kWizardEnv(env, { envToDelete: opts.envToDelete })
+  if (
+    env[POWERLEVEL10K_WIZARD_DISABLE_ENV] !== undefined &&
+    process.platform === 'win32' &&
+    pathWin32.basename(shellPath).toLowerCase() === 'wsl.exe'
+  ) {
+    addWslEnvKeys(env, [POWERLEVEL10K_WIZARD_DISABLE_ENV])
   }
   promoteAgentTeamsShimPath(env, opts.env?.PATH)
 
@@ -633,9 +647,52 @@ export function createPtySubprocess(opts: PtySubprocessOptions): SubprocessHandl
 
   let onDataCb: ((data: string) => void) | null = null
   let onExitCb: ((code: number) => void) | null = null
+  let pendingPreListenerData: string[] = []
+  let pendingPreListenerDataChars = 0
+  let pendingPreListenerExitCode: number | null = null
 
-  proc.onData((data) => onDataCb?.(data))
-  proc.onExit(({ exitCode }) => onExitCb?.(exitCode))
+  const bufferPreListenerData = (data: string): void => {
+    // Why: Windows shell-arg startup commands can print before Session wires
+    // this subprocess into the daemon. Preserve that spawn-time race window.
+    pendingPreListenerData.push(data)
+    pendingPreListenerDataChars += data.length
+    while (pendingPreListenerDataChars > PENDING_PRE_LISTENER_DATA_MAX_CHARS) {
+      const removed = pendingPreListenerData.shift()
+      if (removed === undefined) {
+        pendingPreListenerDataChars = 0
+        return
+      }
+      pendingPreListenerDataChars -= removed.length
+    }
+  }
+
+  const flushPreListenerData = (): void => {
+    if (!onDataCb || pendingPreListenerData.length === 0) {
+      return
+    }
+    const pending = pendingPreListenerData
+    pendingPreListenerData = []
+    pendingPreListenerDataChars = 0
+    for (const data of pending) {
+      onDataCb(data)
+    }
+  }
+
+  proc.onData((data) => {
+    if (onDataCb) {
+      onDataCb(data)
+    } else {
+      bufferPreListenerData(data)
+    }
+  })
+  proc.onExit(({ exitCode }) => {
+    if (onExitCb) {
+      flushPreListenerData()
+      onExitCb(exitCode)
+    } else {
+      pendingPreListenerExitCode = exitCode
+    }
+  })
 
   // Why: node-pty's native NAPI layer throws a C++ Napi::Error when
   // write/resize/kill is called on a PTY whose underlying fd is already
@@ -675,7 +732,11 @@ export function createPtySubprocess(opts: PtySubprocessOptions): SubprocessHandl
   }
   const shouldInspectFallbackForegroundProcess = (fallbackProcess: string | null): boolean =>
     fallbackProcess !== null &&
-    (isShellProcess(fallbackProcess) || isAgentForegroundWrapperProcess(fallbackProcess))
+    (isShellProcess(fallbackProcess) ||
+      isAgentForegroundWrapperProcess(fallbackProcess) ||
+      // Why: agent-spawned helper processes can become the PTY foreground
+      // child; the Unix process tree can still identify the parent agent.
+      process.platform !== 'win32')
   const scheduleAgentForegroundRefresh = (fallbackProcess: string | null): void => {
     if (dead || !proc.pid) {
       return
@@ -699,7 +760,7 @@ export function createPtySubprocess(opts: PtySubprocessOptions): SubprocessHandl
     foregroundRefreshInFlight = true
     lastForegroundRefreshStartedAt = now
     // Why: daemon foreground reads are sync and run on the IPC hot path.
-    // Refresh shell/wrapper-derived identities (powershell/node -> codex/etc.)
+    // Refresh derived identities (shell/wrapper/helper -> codex/claude/etc.)
     // in the background and serve them from a short cache on later reads.
     void resolveAgentForegroundProcess(proc.pid, fallbackProcess, {
       contextPaths: agentForegroundContextPaths
@@ -851,9 +912,16 @@ export function createPtySubprocess(opts: PtySubprocessOptions): SubprocessHandl
     },
     onData: (cb) => {
       onDataCb = cb
+      flushPreListenerData()
     },
     onExit: (cb) => {
       onExitCb = cb
+      if (pendingPreListenerExitCode !== null) {
+        const code = pendingPreListenerExitCode
+        pendingPreListenerExitCode = null
+        flushPreListenerData()
+        cb(code)
+      }
     },
     dispose: () => {
       if (disposed) {
@@ -863,6 +931,9 @@ export function createPtySubprocess(opts: PtySubprocessOptions): SubprocessHandl
       dead = true
       onDataCb = null
       onExitCb = null
+      pendingPreListenerData = []
+      pendingPreListenerDataChars = 0
+      pendingPreListenerExitCode = null
       // Why: UnixTerminal.destroy() registers `_socket.once('close', () => this.kill('SIGHUP'))`
       // (unixTerminal.js:219-229). The socket close fires asynchronously; by then
       // the child may have exited and its pid been recycled to an unrelated

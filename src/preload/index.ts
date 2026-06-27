@@ -2465,6 +2465,27 @@ const api = {
       connectionId: string
     }): Promise<{ canceled: true } | { canceled: false; destinationPath: string }> =>
       ipcRenderer.invoke('fs:downloadFile', args),
+    saveDownloadedFile: (args: {
+      suggestedName: string
+      content: string
+      encoding: 'utf8' | 'base64'
+    }): Promise<{ canceled: true } | { canceled: false; destinationPath: string }> =>
+      ipcRenderer.invoke('fs:saveDownloadedFile', args),
+    startDownloadedFile: (args: {
+      suggestedName: string
+    }): Promise<
+      { canceled: true } | { canceled: false; transferId: string; destinationPath: string }
+    > => ipcRenderer.invoke('fs:startDownloadedFile', args),
+    appendDownloadedFileChunk: (args: {
+      transferId: string
+      contentBase64: string
+    }): Promise<{ ok: true }> => ipcRenderer.invoke('fs:appendDownloadedFileChunk', args),
+    finishDownloadedFile: (args: {
+      transferId: string
+    }): Promise<{ canceled: false; destinationPath: string }> =>
+      ipcRenderer.invoke('fs:finishDownloadedFile', args),
+    cancelDownloadedFile: (args: { transferId: string }): Promise<{ ok: true }> =>
+      ipcRenderer.invoke('fs:cancelDownloadedFile', args),
     listMarkdownDocuments: (args: {
       rootPath: string
       connectionId?: string
@@ -2597,6 +2618,7 @@ const api = {
       worktreePath: string
       connectionId?: string
       includeIgnored?: boolean
+      bypassEffectiveUpstreamNegativeCache?: boolean
     }): Promise<unknown> => ipcRenderer.invoke('git:status', args),
     checkIgnored: (args: {
       worktreePath: string
@@ -3319,6 +3341,7 @@ const api = {
       ipcRenderer.invoke('clipboard:readSelectionText', options),
     saveClipboardImageAsTempFile: (args?: {
       connectionId?: string | null
+      runtimeEnvironmentId?: string | null
     }): Promise<string | null> => ipcRenderer.invoke('clipboard:saveImageAsTempFile', args),
     writeClipboardText: (text: string): Promise<void> =>
       ipcRenderer.invoke('clipboard:writeText', text),
@@ -3331,6 +3354,14 @@ const api = {
         mode: options?.mode === 'paste-and-match-style' ? 'paste-and-match-style' : 'paste'
       })
     },
+    writeClipboardFile: (
+      args:
+        | {
+            filePath: string
+            connectionId?: string | null
+          }
+        | string
+    ): Promise<{ ok: boolean; reason?: string }> => ipcRenderer.invoke('clipboard:writeFile', args),
     onFileDrop: (callback: (data: NativeFileDropPayload) => void): (() => void) =>
       subscribeNativeFileDrop(callback),
     getZoomLevel: (): number => webFrame.getZoomLevel(),
@@ -3899,6 +3930,11 @@ const api = {
      *  cannot resurrect it. Fire-and-forget; no response. */
     drop: (paneKey: string): void => {
       ipcRenderer.send('agentStatus:drop', paneKey)
+    },
+    /** Drop all cached hook statuses under one terminal tab prefix. Fired on
+     *  explicit tab close even when the renderer has no matching local row. */
+    dropByTabPrefix: (tabId: string): void => {
+      ipcRenderer.send('agentStatus:dropByTabPrefix', tabId)
     }
   },
 

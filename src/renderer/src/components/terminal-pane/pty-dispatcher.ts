@@ -9,8 +9,14 @@ import { acquirePtyDeliveryInterest } from './pty-delivery-interest'
 import { ackPtyData, exposeE2eTerminalPtyAckGate } from './terminal-pty-ack-gate'
 import { clampUtf8Tail, type EagerBufferChunk } from './pty-eager-buffer-clamp'
 import type { StartupCommandDelivery } from '../../../../shared/codex-startup-delivery'
+import { TERMINAL_SCROLLBACK_SESSION_BUFFER_BYTE_LIMIT } from '../../../../shared/terminal-scrollback-limits'
 import type { SleepingAgentLaunchConfig } from '../../../../shared/agent-session-resume'
 import type { TuiAgent } from '../../../../shared/types'
+import {
+  bufferPreHandlerPtyData,
+  bufferPreHandlerPtyExit,
+  clearPreHandlerPtyState
+} from './pty-pre-handler-buffer'
 export type { IpcPtyTransportOptions } from './pty-ipc-transport-options'
 
 // ── Singleton PTY event dispatcher ───────────────────────────────────
@@ -116,6 +122,7 @@ export function unregisterPtyDataHandlers(ptyIds: string[]): PtyDataHandlerShutd
     ptyReplayHandlers.delete(id)
     ptyTeardownHandlers.get(id)?.()
     ptyTeardownHandlers.delete(id)
+    clearPreHandlerPtyState(id)
   }
   return snapshots
 }
@@ -153,7 +160,12 @@ export function ensurePtyDispatcher(): void {
         meta ??= {}
         meta.rawLength = payload.rawLength
       }
-      ptyDataHandlers.get(payload.id)?.(payload.data, meta)
+      const handler = ptyDataHandlers.get(payload.id)
+      if (handler) {
+        handler(payload.data, meta)
+      } else {
+        bufferPreHandlerPtyData(payload.id, payload.data, meta)
+      }
       const sidecars = ptyDataSidecars.get(payload.id)
       if (sidecars && sidecars.size > 0) {
         // Why: snapshot the Set before iterating because watchers commonly
@@ -179,7 +191,13 @@ export function ensurePtyDispatcher(): void {
     ptyReplayHandlers.get(payload.id)?.(payload.data)
   })
   window.api.pty.onExit((payload) => {
-    ptyExitHandlers.get(payload.id)?.(payload.code)
+    const handler = ptyExitHandlers.get(payload.id)
+    if (handler) {
+      clearPreHandlerPtyState(payload.id)
+      handler(payload.code)
+    } else {
+      bufferPreHandlerPtyExit(payload.id, payload.code)
+    }
     const sidecars = ptyExitSidecars.get(payload.id)
     if (sidecars && sidecars.size > 0) {
       const snapshot = Array.from(sidecars)
@@ -226,7 +244,7 @@ export function getEagerPtyBufferHandle(ptyId: string): EagerPtyHandle | undefin
 // Why: 512 KB matches the scrollback buffer cap used by TerminalPane's
 // serialization. Prevents unbounded memory growth if a restored shell
 // runs a long-lived command (e.g. tail -f) in a worktree the user never opens.
-const EAGER_BUFFER_MAX_BYTES = 512 * 1024
+const EAGER_BUFFER_MAX_BYTES = TERMINAL_SCROLLBACK_SESSION_BUFFER_BYTE_LIMIT
 
 export function registerEagerPtyBuffer(
   ptyId: string,

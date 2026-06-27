@@ -2972,6 +2972,7 @@ describe('OrcaRuntimeRpcServer', () => {
             path: '/tmp/worktree-a',
             branch: 'feature/foo',
             linkedIssue: 123,
+            sortOrder: 0,
             unread: true,
             liveTerminalCount: 1,
             hasAttachedPty: true,

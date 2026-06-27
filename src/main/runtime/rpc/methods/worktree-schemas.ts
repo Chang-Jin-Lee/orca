@@ -55,6 +55,10 @@ export const WorktreeSelector = z.object({
     .pipe(z.string().min(1, 'Missing worktree selector'))
 })
 
+export const WorktreeActivate = WorktreeSelector.extend({
+  notifyClients: OptionalBoolean
+})
+
 export const WorktreeCreate = z
   .object({
     repo: z
@@ -203,6 +207,7 @@ export const WorktreeSet = WorktreeSelector.extend({
       branchName: z.string(),
       remoteUrl: OptionalString
     })
+    .nullable()
     .optional(),
   diffComments: z.array(z.unknown()).optional(),
   mobileDiffReview: z.unknown().optional(),

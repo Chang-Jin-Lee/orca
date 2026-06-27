@@ -922,7 +922,7 @@ function recordProcessGoneCrash(
     )
     return
   }
-  const key = getProcessGoneDedupeKey(processType, reason, exitCode)
+  const key = getProcessGoneDedupeKey(source, processType, reason, exitCode)
   if (!processGoneDedupe.shouldRecord(key)) {
     return
   }
@@ -1426,6 +1426,8 @@ app.whenReady().then(async () => {
           const terminalSnapshotLimit = 2_000
           let terminalHandle: string
           let terminalSessionId: string | null = null
+          let terminalPaneKey: string | null = null
+          let terminalPtyId: string | null = null
           let workspaceId: string
           let workspaceDisplayName: string | null = null
 
@@ -1439,6 +1441,8 @@ app.whenReady().then(async () => {
             })
             terminalHandle = created.startupTerminal?.handle ?? ''
             terminalSessionId = created.startupTerminal?.tabId ?? null
+            terminalPaneKey = created.startupTerminal?.paneKey ?? null
+            terminalPtyId = created.startupTerminal?.ptyId ?? null
             workspaceId = created.worktree.id
             workspaceDisplayName = created.worktree.displayName ?? null
             if (!terminalHandle) {
@@ -1461,6 +1465,8 @@ app.whenReady().then(async () => {
             )
             terminalHandle = terminal.handle
             terminalSessionId = terminal.tabId ?? null
+            terminalPaneKey = terminal.paneKey ?? null
+            terminalPtyId = terminal.ptyId ?? null
             workspaceId = terminal.worktreeId
             const worktree = await runtimeService.showManagedWorktree(`id:${workspaceId}`)
             workspaceDisplayName = worktree.displayName ?? null
@@ -1495,6 +1501,8 @@ app.whenReady().then(async () => {
             workspaceId,
             workspaceDisplayName,
             terminalSessionId,
+            terminalPaneKey,
+            terminalPtyId,
             completion
           }
         }
