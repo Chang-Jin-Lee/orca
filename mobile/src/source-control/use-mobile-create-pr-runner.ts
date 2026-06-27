@@ -2,6 +2,7 @@ import { useCallback, type MutableRefObject } from 'react'
 import type { RpcClient } from '../transport/rpc-client'
 import { triggerError } from '../platform/haptics'
 import type { MobileGitStatusResult } from './mobile-git-status'
+import type { LoadStatusOptions } from './mobile-source-control-screen-state'
 import {
   mobileHostedReviewCreateIntentProgressMessage,
   type MobileHostedReviewCreateIntentProgress
@@ -12,6 +13,7 @@ import {
 } from './mobile-hosted-review-create-intent-runner'
 
 type RunGitWorkflow = (actionId: string, runner: () => Promise<void>) => Promise<boolean>
+type LoadStatus = (options?: LoadStatusOptions) => Promise<boolean>
 
 type Params = {
   client: RpcClient | null
@@ -21,6 +23,7 @@ type Params = {
   commitMessage: string
   mountedRef: MutableRefObject<boolean>
   runGitWorkflow: RunGitWorkflow
+  loadStatus: LoadStatus
   setActionError: (next: string | null) => void
   setCommitMessage: (next: string) => void
   setShowActionSheet: (next: boolean) => void
@@ -36,6 +39,7 @@ export function useMobileCreatePrRunner({
   commitMessage,
   mountedRef,
   runGitWorkflow,
+  loadStatus,
   setActionError,
   setCommitMessage,
   setShowActionSheet,
@@ -71,6 +75,13 @@ export function useMobileCreatePrRunner({
       if (outcome?.committed && mountedRef.current) {
         setCommitMessage('')
       }
+      if (!ran && outcome?.status !== undefined && mountedRef.current) {
+        await loadStatus({
+          preserveReadyOnFailure: true,
+          clearActionErrorOnSuccess: false,
+          force: true
+        })
+      }
       if (!ran || !mountedRef.current || !outcome || !outcome.ok) {
         return
       }
@@ -82,6 +93,7 @@ export function useMobileCreatePrRunner({
       branchLabel,
       client,
       commitMessage,
+      loadStatus,
       mountedRef,
       runGitWorkflow,
       setActionError,

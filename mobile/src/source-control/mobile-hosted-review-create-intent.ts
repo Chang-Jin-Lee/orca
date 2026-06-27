@@ -72,6 +72,10 @@ function branchStillMatches(inputBranch: string, status: MobileGitStatusResult |
   )
 }
 
+function hasUnresolvedConflicts(status: MobileGitStatusResult | null): boolean {
+  return status?.entries.some((entry) => entry.conflictStatus === 'unresolved') === true
+}
+
 async function sendGitMutation(
   client: Pick<RpcClient, 'sendRequest'>,
   method: string,
@@ -138,6 +142,14 @@ async function ensureLocalChangesCommitted(
   if ((currentStatus?.entries.length ?? 0) === 0) {
     return { ok: true, status: currentStatus, committed: false }
   }
+  if (hasUnresolvedConflicts(currentStatus)) {
+    return {
+      ok: false,
+      error: 'Resolve conflicts before creating a pull request.',
+      committed: false,
+      status: currentStatus
+    }
+  }
 
   const stagePaths = getStageablePaths(currentStatus?.entries ?? [])
   if (stagePaths.length > 0) {
@@ -153,13 +165,23 @@ async function ensureLocalChangesCommitted(
     }
     currentStatus = await readStatus(client, worktreeId)
     if (!branchStillMatches(input.branch, currentStatus)) {
-      return { ok: false, error: 'Branch changed while preparing the pull request.' }
+      return {
+        ok: false,
+        error: 'Branch changed while preparing the pull request.',
+        committed: false,
+        status: currentStatus
+      }
     }
   }
 
   const hasStagedChanges = currentStatus?.entries.some((entry) => entry.area === 'staged') === true
   if (!hasStagedChanges) {
-    return { ok: false, error: 'Resolve or stage changes before creating a pull request.' }
+    return {
+      ok: false,
+      error: 'Resolve or stage changes before creating a pull request.',
+      committed: false,
+      status: currentStatus
+    }
   }
 
   let message = input.commitMessage?.trim() ?? ''
@@ -169,7 +191,9 @@ async function ensureLocalChangesCommitted(
     if (!generated.success) {
       return {
         ok: false,
-        error: 'Could not generate a commit message. Add one in Source Control, then retry.'
+        error: 'Could not generate a commit message. Add one in Source Control, then retry.',
+        committed: false,
+        status: currentStatus
       }
     }
     message = generated.message
@@ -178,7 +202,7 @@ async function ensureLocalChangesCommitted(
   input.onProgress?.('committing')
   const committed = await commitStagedChanges(client, worktreeId, message)
   if (!committed.ok) {
-    return committed
+    return { ...committed, committed: false, status: currentStatus }
   }
   currentStatus = await readStatus(client, worktreeId)
   if (!branchStillMatches(input.branch, currentStatus)) {

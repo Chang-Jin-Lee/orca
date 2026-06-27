@@ -191,6 +191,7 @@ export function useMobileSourceControlRunners(params: Params) {
     commitMessage,
     mountedRef,
     runGitWorkflow,
+    loadStatus,
     setActionError,
     setCommitMessage,
     setShowActionSheet,

@@ -25,6 +25,10 @@ function entry(area: 'unstaged' | 'untracked' | 'staged') {
   return { path: 'a.ts', status: 'modified', area }
 }
 
+function unresolvedEntry(area: 'unstaged' | 'staged') {
+  return { path: 'conflicted.ts', status: 'modified', area, conflictStatus: 'unresolved' }
+}
+
 function eligibility(overrides: Record<string, unknown>) {
   return {
     provider: 'github',
@@ -139,12 +143,38 @@ describe('prepareMobileHostedReviewCreateIntent', () => {
       })
     ).resolves.toEqual({
       ok: false,
-      error: 'Could not generate a commit message. Add one in Source Control, then retry.'
+      error: 'Could not generate a commit message. Add one in Source Control, then retry.',
+      committed: false,
+      status: expect.objectContaining({
+        entries: [expect.objectContaining({ area: 'staged' })]
+      })
     })
 
     expect(client.calls.map((call) => call.method)).toEqual([
       'git.status',
       'git.generateCommitMessage'
     ])
+  })
+
+  it('blocks unresolved conflicts before attempting a commit', async () => {
+    const client = clientWith([ok(status([entry('staged'), unresolvedEntry('unstaged')]))])
+
+    await expect(
+      prepareMobileHostedReviewCreateIntent(client, 'repo-1::/tmp/wt', {
+        branch: 'feature/x',
+        title: 'feature/x',
+        status: null,
+        commitMessage: 'Use my message'
+      })
+    ).resolves.toEqual({
+      ok: false,
+      error: 'Resolve conflicts before creating a pull request.',
+      committed: false,
+      status: expect.objectContaining({
+        entries: expect.arrayContaining([expect.objectContaining({ path: 'conflicted.ts' })])
+      })
+    })
+
+    expect(client.calls.map((call) => call.method)).toEqual(['git.status'])
   })
 })
