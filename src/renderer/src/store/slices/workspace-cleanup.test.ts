@@ -136,6 +136,35 @@ describe('workspace cleanup viewed rows', () => {
     expect(store.getState().workspaceCleanupLoading).toBe(false)
   })
 
+  it('does not leave cleanup loading stuck when a reopen joins a just-settled scan', async () => {
+    const pending = deferred<WorkspaceCleanupScanResult>()
+    const result = { scannedAt: NOW, candidates: [makeCandidate()], errors: [] }
+    const scan = vi.fn().mockReturnValue(pending.promise)
+    installWorkspaceCleanupApi(scan)
+    const store = createCleanupTestStore()
+    let joinedScan: Promise<WorkspaceCleanupScanResult> | null = null
+
+    const unsubscribe = store.subscribe((state, previousState) => {
+      if (
+        previousState.workspaceCleanupLoading &&
+        !state.workspaceCleanupLoading &&
+        joinedScan === null
+      ) {
+        joinedScan = state.scanWorkspaceCleanup()
+      }
+    })
+
+    const firstScan = store.getState().scanWorkspaceCleanup()
+    pending.resolve(result)
+
+    await expect(firstScan).resolves.toEqual(result)
+    await expect(joinedScan).resolves.toEqual(result)
+    unsubscribe()
+
+    expect(scan).toHaveBeenCalledTimes(1)
+    expect(store.getState().workspaceCleanupLoading).toBe(false)
+  })
+
   it('shows scanned cleanup candidates before the final broad scan resolves', async () => {
     const pending = deferred<WorkspaceCleanupScanResult>()
     let onProgress: ((progress: WorkspaceCleanupScanProgress) => void) | undefined

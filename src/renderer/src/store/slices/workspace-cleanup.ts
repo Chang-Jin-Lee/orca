@@ -145,7 +145,13 @@ export const createWorkspaceCleanupSlice: StateCreator<AppState, [], [], Workspa
 
     if (inFlightWorkspaceCleanupScan?.key === scanKey) {
       set({ workspaceCleanupLoading: true, workspaceCleanupError: null })
-      return inFlightWorkspaceCleanupScan.promise
+      try {
+        return await inFlightWorkspaceCleanupScan.promise
+      } finally {
+        if (!inFlightWorkspaceCleanupScan) {
+          set({ workspaceCleanupLoading: false })
+        }
+      }
     }
 
     set({
