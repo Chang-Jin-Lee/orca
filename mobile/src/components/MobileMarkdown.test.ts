@@ -80,6 +80,9 @@ describe('parseMobileMarkdown', () => {
     expect(normalizeMobileMarkdownPreviewHtml('<p>Use <code>Array&lt;string&gt;</code></p>')).toBe(
       'Use `Array<string>`'
     )
+    expect(
+      normalizeMobileMarkdownPreviewHtml('<p>Use <code>&lt;div&gt;x&lt;/div&gt;</code></p>')
+    ).toBe('Use `<div>x</div>`')
   })
 
   it('does not replace literal code placeholder text in markdown prose', () => {

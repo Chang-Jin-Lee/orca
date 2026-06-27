@@ -50,8 +50,9 @@ function decodeHtmlEntities(value: string, preserveEscapedEntities = false): str
 }
 
 function stripTags(value: string): string {
-  return decodeHtmlEntities(
-    value
+  const { protectedText, codeSpans, placeholderPrefix } = protectMarkdownCode(value)
+  const stripped = decodeHtmlEntities(
+    protectedText
       .replace(/<!--[\s\S]*?-->/g, '')
       .replace(/<\/?([A-Za-z][A-Za-z0-9:-]*)(?:\s[^<>]*)?\/?>/g, (tag, name: string) =>
         strippableHtmlTagNames.has(name.toLowerCase()) ? '' : tag
@@ -61,6 +62,8 @@ function stripTags(value: string): string {
     .replace(/[ \t]+\n/g, '\n')
     .replace(/\n{3,}/g, '\n\n')
     .trim()
+
+  return restoreMarkdownCode(stripped, codeSpans, placeholderPrefix)
 }
 
 function attrValue(tag: string, name: string): string {
