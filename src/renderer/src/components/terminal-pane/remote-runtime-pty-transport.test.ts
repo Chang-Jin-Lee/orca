@@ -342,6 +342,50 @@ describe('createRemoteRuntimePtyTransport', () => {
     expect(transport.isConnected()).toBe(false)
   })
 
+  it('drops pending input when attaching a different remote terminal handle', async () => {
+    vi.useFakeTimers()
+    runtimeSubscribe.mockImplementation(
+      async (_args: unknown, callbacks: typeof subscriptionCallbacks) => {
+        subscriptionCallbacks = callbacks
+        return { unsubscribe: vi.fn(), sendBinary: subscriptionSendBinary }
+      }
+    )
+    try {
+      const { createRemoteRuntimePtyTransport } = await import('./remote-runtime-pty-transport')
+      const transport = createRemoteRuntimePtyTransport('env-1', {
+        worktreeId: 'wt-1',
+        tabId: 'tab-1',
+        leafId: 'pane:1'
+      })
+
+      transport.attach({
+        existingPtyId: 'remote:env-1@@terminal-old',
+        cols: 80,
+        rows: 24,
+        callbacks: {}
+      })
+      expect(transport.sendInput('queued-for-old')).toBe(true)
+
+      transport.attach({
+        existingPtyId: 'remote:env-1@@terminal-new',
+        cols: 80,
+        rows: 24,
+        callbacks: {}
+      })
+      runtimeCall.mockClear()
+
+      await vi.advanceTimersByTimeAsync(10)
+
+      expect(runtimeCall).not.toHaveBeenCalledWith(
+        expect.objectContaining({
+          method: 'terminal.send'
+        })
+      )
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('ignores stale attach subscription rejection after reattaching a newer remote terminal', async () => {
     let rejectOldSubscription: ((error: Error) => void) | null = null
     const newStream = {
