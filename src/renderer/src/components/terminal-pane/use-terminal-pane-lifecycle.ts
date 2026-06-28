@@ -9,6 +9,7 @@ import {
   normalizeTerminalScrollSensitivity,
   resolveTerminalCursorInactiveStyle
 } from '@/lib/pane-manager/pane-terminal-options'
+import { normalizeDesktopTerminalScrollbackRows } from '../../../../shared/terminal-scrollback-policy'
 import { normalizeTerminalTuiMouseWheelMultiplier } from '@/lib/pane-manager/pane-terminal-mouse-wheel'
 import { buildWindowsPtyCompatibilityOptions } from '@/lib/pane-manager/windows-pty-compatibility'
 import { useAppStore } from '@/store'
@@ -107,6 +108,21 @@ export function recordRuntimeCreatedTerminalPaneSplit(
   }
 ): boolean {
   return recordCreatedTerminalPaneSplit(createdPane, args)
+}
+
+type TerminalScrollbackPaneManager = {
+  getPanes(): { terminal: Pick<Terminal, 'options'> }[]
+}
+
+export function applyTerminalScrollbackRowsToMountedPanes(
+  manager: TerminalScrollbackPaneManager,
+  rows: number
+): void {
+  for (const pane of manager.getPanes()) {
+    if (pane.terminal.options.scrollback !== rows) {
+      pane.terminal.options.scrollback = rows
+    }
+  }
 }
 
 function extractUncHost(value: string | undefined): string | null {
@@ -419,6 +435,9 @@ export function useTerminalPaneLifecycle({
   setPaneCount,
   setPaneLayoutRevision
 }: UseTerminalPaneLifecycleDeps): void {
+  const terminalScrollbackRows = normalizeDesktopTerminalScrollbackRows(
+    settings?.terminalScrollbackRows
+  )
   const systemPrefersDarkRef = useRef(systemPrefersDark)
   systemPrefersDarkRef.current = systemPrefersDark
   const linkProviderDisposablesRef = useRef(new Map<number, IDisposable>())
@@ -1150,12 +1169,8 @@ export function useTerminalPaneLifecycle({
           fontFamily: buildFontFamily(currentSettings?.terminalFontFamily ?? ''),
           fontWeight: terminalFontWeights.fontWeight,
           fontWeightBold: terminalFontWeights.fontWeightBold,
-          scrollback: Math.min(
-            50_000,
-            Math.max(
-              1000,
-              Math.round((currentSettings?.terminalScrollbackBytes ?? 10_000_000) / 200)
-            )
+          scrollback: normalizeDesktopTerminalScrollbackRows(
+            currentSettings?.terminalScrollbackRows
           ),
           cursorStyle,
           cursorInactiveStyle: resolveTerminalCursorInactiveStyle(cursorStyle),
@@ -1527,6 +1542,16 @@ export function useTerminalPaneLifecycle({
   useEffect(() => {
     managerRef.current?.setTerminalGpuAcceleration(settings?.terminalGpuAcceleration ?? 'auto')
   }, [settings?.terminalGpuAcceleration, managerRef])
+
+  useEffect(() => {
+    const manager = managerRef.current
+    if (!manager) {
+      return
+    }
+    // Why: live row retention changes are xterm option updates only; they must
+    // not recreate panes, replay snapshots, refit, resize, or signal the PTY.
+    applyTerminalScrollbackRowsToMountedPanes(manager, terminalScrollbackRows)
+  }, [managerRef, terminalScrollbackRows])
 
   useEffect(() => {
     const manager = managerRef.current

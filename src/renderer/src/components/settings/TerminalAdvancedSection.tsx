@@ -1,13 +1,17 @@
 import type { GlobalSettings } from '../../../../shared/types'
+import {
+  DESKTOP_TERMINAL_SCROLLBACK_ROWS_MAX,
+  DESKTOP_TERMINAL_SCROLLBACK_ROWS_MIN,
+  normalizeDesktopTerminalScrollbackRows
+} from '../../../../shared/terminal-scrollback-policy'
 import { Input } from '../ui/input'
 import { ToggleGroup, ToggleGroupItem } from '../ui/toggle-group'
-import { clampNumber } from '@/lib/terminal-theme'
 import {
   SettingsRow,
   SettingsSegmentedControl,
   SettingsSubsectionHeader
 } from './SettingsFormControls'
-import { SCROLLBACK_PRESETS_MB } from './SettingsConstants'
+import { SCROLLBACK_PRESETS_ROWS } from './SettingsConstants'
 import { SearchableSetting } from './SearchableSetting'
 import { matchesSettingsSearch } from './settings-search'
 import { getTerminalWindowsPowershellImplementationSearchEntry } from './terminal-windows-search'
@@ -25,6 +29,10 @@ type TerminalAdvancedSectionProps = {
   isMac: boolean
 }
 
+function formatScrollbackRowsLabel(rows: number): string {
+  return rows % 1_000 === 0 ? `${rows / 1_000}k` : String(rows)
+}
+
 export function TerminalAdvancedSection({
   settings,
   updateSettings,
@@ -35,12 +43,12 @@ export function TerminalAdvancedSection({
   pwshAvailable,
   isMac
 }: TerminalAdvancedSectionProps): React.JSX.Element {
-  const scrollbackMb = Math.max(1, Math.round(settings.terminalScrollbackBytes / 1_000_000))
-  const isPreset = SCROLLBACK_PRESETS_MB.includes(
-    scrollbackMb as (typeof SCROLLBACK_PRESETS_MB)[number]
+  const scrollbackRows = normalizeDesktopTerminalScrollbackRows(settings.terminalScrollbackRows)
+  const isPreset = SCROLLBACK_PRESETS_ROWS.includes(
+    scrollbackRows as (typeof SCROLLBACK_PRESETS_ROWS)[number]
   )
   const scrollbackToggleValue =
-    scrollbackMode === 'custom' ? 'custom' : isPreset ? `${scrollbackMb}` : 'custom'
+    scrollbackMode === 'custom' ? 'custom' : isPreset ? `${scrollbackRows}` : 'custom'
   const powerShellImplementation = settings.terminalWindowsPowerShellImplementation ?? 'auto'
 
   return (
@@ -55,19 +63,19 @@ export function TerminalAdvancedSection({
 
       <div className="divide-y divide-border/40">
         <SearchableSetting
-          title={translate('auto.components.settings.TerminalPane.9df53f7c14', 'Scrollback Size')}
+          title={translate('auto.components.settings.TerminalPane.9df53f7c14', 'Scrollback Rows')}
           description={translate(
             'auto.components.settings.TerminalPane.c3810b2b42',
-            'Maximum terminal scrollback buffer size.'
+            'Retained desktop terminal rows.'
           )}
-          keywords={['terminal', 'scrollback', 'buffer', 'memory']}
+          keywords={['terminal', 'scrollback', 'rows', 'buffer', 'memory']}
         >
           <SettingsRow
             alignTop={scrollbackMode === 'custom'}
-            label={translate('auto.components.settings.TerminalPane.9df53f7c14', 'Scrollback Size')}
+            label={translate('auto.components.settings.TerminalPane.9df53f7c14', 'Scrollback Rows')}
             description={translate(
               'auto.components.settings.TerminalPane.81d86b2dd2',
-              'Maximum terminal scrollback buffer size for new terminal panes.'
+              'Retained desktop terminal rows for new and open panes.'
             )}
             control={
               <div className="flex flex-col items-end gap-2">
@@ -85,25 +93,25 @@ export function TerminalAdvancedSection({
 
                     setScrollbackMode('preset')
                     updateSettings({
-                      terminalScrollbackBytes: Number(value) * 1_000_000
+                      terminalScrollbackRows: normalizeDesktopTerminalScrollbackRows(Number(value))
                     })
                   }}
                   variant="outline"
                   size="sm"
                   className="h-8 flex-wrap justify-end"
                 >
-                  {SCROLLBACK_PRESETS_MB.map((preset) => (
+                  {SCROLLBACK_PRESETS_ROWS.map((preset) => (
                     <ToggleGroupItem
                       key={preset}
                       value={`${preset}`}
                       className="h-8 px-3 text-xs"
                       aria-label={translate(
                         'auto.components.settings.TerminalPane.5336c096af',
-                        '{{value0}} megabytes',
+                        '{{value0}} rows',
                         { value0: preset }
                       )}
                     >
-                      {preset} {translate('auto.components.settings.TerminalPane.12e06178fa', 'MB')}
+                      {formatScrollbackRowsLabel(preset)}
                     </ToggleGroupItem>
                   ))}
                   <ToggleGroupItem
@@ -121,22 +129,22 @@ export function TerminalAdvancedSection({
                   <div className="flex items-center gap-2">
                     <Input
                       type="number"
-                      min={1}
-                      max={256}
-                      step={1}
-                      value={scrollbackMb}
+                      min={DESKTOP_TERMINAL_SCROLLBACK_ROWS_MIN}
+                      max={DESKTOP_TERMINAL_SCROLLBACK_ROWS_MAX}
+                      step={100}
+                      value={scrollbackRows}
                       onChange={(e) => {
                         const value = Number(e.target.value)
                         if (Number.isFinite(value)) {
                           updateSettings({
-                            terminalScrollbackBytes: clampNumber(value, 1, 256) * 1_000_000
+                            terminalScrollbackRows: normalizeDesktopTerminalScrollbackRows(value)
                           })
                         }
                       }}
                       className="number-input-clean w-24 tabular-nums"
                     />
                     <span className="text-xs text-muted-foreground">
-                      {translate('auto.components.settings.TerminalPane.12e06178fa', 'MB')}
+                      {translate('auto.components.settings.TerminalPane.12e06178fa', 'rows')}
                     </span>
                   </div>
                 ) : null}
