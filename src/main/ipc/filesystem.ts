@@ -7,6 +7,7 @@ import { dirname, extname, join, resolve } from 'path'
 import type { ChildProcess } from 'child_process'
 import { gitExecFileAsync, wslAwareSpawn } from '../git/runner'
 import { parseWslPath, toWindowsWslPath } from '../wsl'
+import { tryDeleteWslUncPath } from '../wsl-unc-delete'
 import type { Store } from '../persistence'
 import type {
   DirEntry,
@@ -805,6 +806,14 @@ export function registerFilesystemHandlers(
       const targetPath = await resolveAuthorizedPath(args.targetPath, store, {
         preserveSymlink: true
       })
+
+      // Why: WSL UNC targets (\\wsl.localhost\<distro>\...) have no Recycle Bin,
+      // so shell.trashItem throws. Hard-delete via `rm` inside the distro instead
+      // (true delete, honors Linux perms). Returns false for normal local paths,
+      // which still go to the Recycle Bin (issue #6415).
+      if (await tryDeleteWslUncPath(targetPath, { recursive: args.recursive })) {
+        return
+      }
 
       // Why: once auto-refresh exists, an external delete can race with a
       // UI-initiated delete. Swallowing ENOENT keeps the action idempotent

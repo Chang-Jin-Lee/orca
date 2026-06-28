@@ -41,7 +41,8 @@ const {
   cancelGenerateCommitMessageLocalMock,
   cancelGeneratePullRequestFieldsLocalMock,
   getSshFilesystemProviderMock,
-  getSshGitProviderMock
+  getSshGitProviderMock,
+  tryDeleteWslUncPathMock
 } = vi.hoisted(() => ({
   handleMock: vi.fn(),
   showSaveDialogMock: vi.fn(),
@@ -80,7 +81,8 @@ const {
   cancelGenerateCommitMessageLocalMock: vi.fn(),
   cancelGeneratePullRequestFieldsLocalMock: vi.fn(),
   getSshFilesystemProviderMock: vi.fn(),
-  getSshGitProviderMock: vi.fn()
+  getSshGitProviderMock: vi.fn(),
+  tryDeleteWslUncPathMock: vi.fn()
 }))
 
 vi.mock('electron', () => ({
@@ -108,6 +110,10 @@ vi.mock('fs/promises', () => ({
   rm: rmMock,
   realpath: realpathMock,
   lstat: lstatMock
+}))
+
+vi.mock('../wsl-unc-delete', () => ({
+  tryDeleteWslUncPath: tryDeleteWslUncPathMock
 }))
 
 vi.mock('../git/status', () => ({
@@ -264,7 +270,8 @@ describe('registerFilesystemHandlers', () => {
       cancelGenerateCommitMessageLocalMock,
       cancelGeneratePullRequestFieldsLocalMock,
       getSshFilesystemProviderMock,
-      getSshGitProviderMock
+      getSshGitProviderMock,
+      tryDeleteWslUncPathMock
     ]) {
       mock.mockReset()
     }
@@ -288,6 +295,8 @@ describe('registerFilesystemHandlers', () => {
       }
     ])
     trashItemMock.mockResolvedValue(undefined)
+    // Default: not a WSL UNC path, so deletePath falls through to shell.trashItem.
+    tryDeleteWslUncPathMock.mockResolvedValue(false)
     showSaveDialogMock.mockResolvedValue({ canceled: true })
     fromWebContentsMock.mockReturnValue(null)
     getSshGitProviderMock.mockReturnValue(null)
@@ -868,6 +877,42 @@ describe('registerFilesystemHandlers', () => {
     await handlers.get('fs:deletePath')!(null, { targetPath })
 
     expect(trashItemMock).toHaveBeenCalledWith(targetPath)
+    expect(tryDeleteWslUncPathMock).toHaveBeenCalledWith(targetPath, { recursive: undefined })
+  })
+
+  // Regression for #6415: WSL UNC paths have no Recycle Bin, so shell.trashItem
+  // throws. The handler must hard-delete via the distro instead of surfacing an
+  // error popup.
+  it('hard-deletes a WSL UNC path instead of trashing it', async () => {
+    const wslUncRoot = '\\\\wsl.localhost\\Ubuntu\\home\\me\\repo'
+    const targetPath = `${wslUncRoot}\\file.txt`
+    registerWorktreeRootsForRepo(store as never, 'repo-1', [REPO_PATH, wslUncRoot])
+    tryDeleteWslUncPathMock.mockResolvedValue(true)
+
+    registerFilesystemHandlers(store as never)
+
+    await handlers.get('fs:deletePath')!(null, { targetPath, recursive: true })
+
+    expect(tryDeleteWslUncPathMock).toHaveBeenCalledWith(targetPath, { recursive: true })
+    // Critical: we must NOT call trashItem for WSL UNC paths — that is exactly
+    // the call that throws and produced the user-facing error.
+    expect(trashItemMock).not.toHaveBeenCalled()
+  })
+
+  it('propagates a WSL hard-delete failure instead of swallowing it', async () => {
+    const wslUncRoot = '\\\\wsl.localhost\\Ubuntu\\home\\me\\repo'
+    const targetPath = `${wslUncRoot}\\file.txt`
+    registerWorktreeRootsForRepo(store as never, 'repo-1', [REPO_PATH, wslUncRoot])
+    tryDeleteWslUncPathMock.mockRejectedValue(
+      new Error('Failed to delete WSL path: Permission denied')
+    )
+
+    registerFilesystemHandlers(store as never)
+
+    await expect(
+      handlers.get('fs:deletePath')!(null, { targetPath })
+    ).rejects.toThrow('Failed to delete WSL path: Permission denied')
+    expect(trashItemMock).not.toHaveBeenCalled()
   })
 
   it('keeps non-image binaries hidden from the editor payload', async () => {
