@@ -24,6 +24,7 @@ import { useDiffViewerLargeDiffLifecycle } from './useDiffViewerLargeDiffLifecyc
 import { getDiffViewerLargeDiffSaveAction } from './diff-viewer-large-diff-save-action'
 import type { DiffViewerProps } from './diff-viewer-props'
 import { buildDiffEditorWordWrapOptions } from './diff-editor-word-wrap-options'
+import { useDiffNavigation } from './diff-navigation-context'
 
 export default function DiffViewer({
   modelKey,
@@ -244,7 +245,13 @@ export default function DiffViewer({
     // must not keep comment decorators or save handlers talking to disposed UI.
     lineNumberOptionsSubRef.current?.dispose()
     lineNumberOptionsSubRef.current = null
+    // Why: capture before nulling so we unregister the exact instance the
+    // navigator may still hold (identity guard no-ops a stale dispose).
+    const fallenBackEditor = diffEditorRef.current
     diffEditorRef.current = null
+    if (fallenBackEditor) {
+      unregisterDiffEditorRef.current(fallenBackEditor)
+    }
     setModifiedEditor(null)
     setPopover(null)
   }, [])
@@ -292,6 +299,15 @@ export default function DiffViewer({
   const onContentChangeRef = useRef(onContentChange)
   onContentChangeRef.current = onContentChange
 
+  // Why: bridge this editor to the toolbar's diff navigator. Hold the register/
+  // unregister callbacks in refs so handleMount stays out of their deps and the
+  // dispose closures always call the current versions.
+  const diffNav = useDiffNavigation()
+  const registerDiffEditorRef = useRef(diffNav.registerDiffEditor)
+  registerDiffEditorRef.current = diffNav.registerDiffEditor
+  const unregisterDiffEditorRef = useRef(diffNav.unregisterDiffEditor)
+  unregisterDiffEditorRef.current = diffNav.unregisterDiffEditor
+
   const { setupCopy, toastNode } = useContextualCopySetup()
 
   const propsRef = useRef({ relativePath, language, onSave })
@@ -307,6 +323,7 @@ export default function DiffViewer({
   const handleMount: DiffOnMount = useCallback(
     (diffEditor, monaco) => {
       diffEditorRef.current = diffEditor
+      registerDiffEditorRef.current(diffEditor)
       lineNumberOptionsSubRef.current?.dispose()
       lineNumberOptionsSubRef.current = applyDiffEditorLineNumberOptions(diffEditor, sideBySide)
 
@@ -359,6 +376,7 @@ export default function DiffViewer({
         lineNumberOptionsSubRef.current?.dispose()
         lineNumberOptionsSubRef.current = null
         diffEditorRef.current = null
+        unregisterDiffEditorRef.current(diffEditor)
         setModifiedEditor(null)
         setPopover(null)
       })
