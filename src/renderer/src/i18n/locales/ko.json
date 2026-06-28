@@ -4444,7 +4444,9 @@
           "75ca9b718e": "Codex는 활성 계정에 새로 로그인해야 한다고 보고했습니다. 새 Codex 세션을 시작하기 전에 다시 인증하세요.",
           "b11078a9c2": "wsl",
           "350b2a1aa7": "현재 사용 중인",
-          "e05d0ff737": "현재 {{value0}} Claude 로그인을 사용하세요."
+          "e05d0ff737": "현재 {{value0}} Claude 로그인을 사용하세요.",
+          "2eb471df34": "Use default Codex config directory",
+          "e321640e44": "Run Codex with your system ~/.codex config instead of Orca's managed home. Also stops Orca's background quota poller from refreshing the managed home, so it no longer revokes your ~/.codex session. Disables Orca's Codex account hot-swap and auth sync."
         },
         "AdvancedPane": {
           "40b29e0bf3": "다시 시작",
@@ -6521,7 +6523,9 @@
             "bdbd1e668e": "Windows",
             "593720c17f": "위치",
             "b84a5b0c8a": "이 장치 또는 WSL에서 공급자 계정을 검사하고 추가할지 선택합니다.",
-            "d09fb5ca92": "계정 위치"
+            "d09fb5ca92": "계정 위치",
+            "d6347a2658": "Default Codex config directory",
+            "edd9a67f8d": "Run Codex with your system ~/.codex config instead of Orca's managed home."
           }
         },
         "advanced": {
