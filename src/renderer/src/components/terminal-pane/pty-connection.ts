@@ -3174,6 +3174,7 @@ export function connectPanePty(
       cols: number
       rows: number
       seq?: number
+      alternateScreen?: boolean
     }): void {
       const scrollIntent = captureTerminalWriteScrollIntent(pane.terminal)
       const colsBeforeReplay = pane.terminal.cols
@@ -3198,7 +3199,13 @@ export function connectPanePty(
           suppressSnapshotReplayPtyResize = false
         }
       }
-      writeReplayData('\x1b[2J\x1b[3J\x1b[H')
+      if (!snapshot.alternateScreen) {
+        // Why: this clear (incl. \x1b[3J) wipes xterm's scrollback. Alt-screen
+        // TUIs (Claude Code, vim) keep their scroll history in xterm, so
+        // clearing on restore loses scroll-up after a hidden->visible return.
+        // Mirrors the attach-time guard in pty-transport.ts.
+        writeReplayData('\x1b[2J\x1b[3J\x1b[H')
+      }
       writeReplayData(snapshot.data)
       writeReplayData(POST_REPLAY_LIVE_SNAPSHOT_RESET)
       hiddenRendererStateDirty = false
