@@ -362,6 +362,7 @@ import type {
   OpenCodeUsageSummary
 } from '../shared/opencode-usage-types'
 import type { AiVaultListArgs, AiVaultListResult } from '../shared/ai-vault-types'
+import type { AgentType, NativeChatMessage } from '../shared/native-chat-types'
 import type { TelemetryConsentState } from '../shared/telemetry-consent-types'
 import type { AgentKind, LaunchSource, RequestKind } from '../shared/telemetry-events'
 import type { AppStarSource } from '../shared/gh-star-source'
@@ -548,6 +549,13 @@ export type PreflightApi = {
   detectAgents: (args?: PreflightRuntimeContext) => Promise<string[]>
   refreshAgents: (args?: PreflightRuntimeContext) => Promise<RefreshAgentsResult>
   detectRemoteAgents: (args: { connectionId: string }) => Promise<string[]>
+  detectRemoteWindowsTerminalCapabilities: (args: { connectionId: string }) => Promise<{
+    wslAvailable: boolean
+    wslDistros: string[]
+    pwshAvailable: boolean
+    gitBashAvailable: boolean
+    hostPlatform: NodeJS.Platform | null
+  }>
 }
 
 // Why: renderer-facing mirror of the daemon's `SessionInfo` + protocolVersion
@@ -711,6 +719,46 @@ export type OpenCodeUsageApi = {
 
 export type AiVaultApi = {
   listSessions: (args?: AiVaultListArgs) => Promise<AiVaultListResult>
+}
+
+export type NativeChatReadSessionResult = { messages: NativeChatMessage[] } | { error: string }
+
+/** Messages appended to a live-tailed transcript since the previous emit. */
+export type NativeChatAppendedMessages = NativeChatMessage[]
+
+/** Wire payload for the `nativeChat:appended` push channel. */
+export type NativeChatAppendedPayload = {
+  subscriptionId: string
+  messages: NativeChatAppendedMessages
+}
+
+export type NativeChatSubscribeArgs = {
+  /** Unique per-caller id, echoed on every append so multiple live panes in
+   *  one renderer don't cross-talk. */
+  subscriptionId: string
+  agent: AgentType
+  sessionId: string
+  /** Authoritative transcript path from the agent hook (providerSession). */
+  transcriptPath?: string
+}
+
+export type NativeChatApi = {
+  /** Read the on-disk transcript for an agent + session id, windowed to the most
+   *  recent `limit` turns (defaults to the desktop window). The renderer raises
+   *  `limit` to page in older history as it scrolls to the top. `transcriptPath`
+   *  is the hook-reported authoritative file path, preferred over the id glob. */
+  readSession: (
+    agent: AgentType,
+    sessionId: string,
+    limit?: number,
+    transcriptPath?: string
+  ) => Promise<NativeChatReadSessionResult>
+  /** Live-tail a transcript: `onAppended` fires with only newly-appended
+   *  messages. Returns an unsubscribe fn that closes the main-process watcher. */
+  subscribe: (
+    args: NativeChatSubscribeArgs,
+    onAppended: (messages: NativeChatAppendedMessages) => void
+  ) => () => void
 }
 
 export type AppApi = {
@@ -2007,6 +2055,7 @@ export type PreloadApi = {
   codexUsage: CodexUsageApi
   openCodeUsage: OpenCodeUsageApi
   aiVault: AiVaultApi
+  nativeChat: NativeChatApi
   fs: {
     readDir: (args: { dirPath: string; connectionId?: string }) => Promise<DirEntry[]>
     readFile: (args: {

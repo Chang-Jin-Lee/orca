@@ -10,6 +10,7 @@ import { scheduleRuntimeGraphSync } from '@/runtime/sync-runtime-graph'
 import { useAppStore } from '@/store'
 import { getWorktreeMapFromState } from '@/store/selectors'
 import { parseWorkspaceKey } from '../../../../shared/workspace-scope'
+import { createTerminalZeroDimensionsMessage } from '../../../../shared/terminal-zero-dimensions-diagnostic'
 import type { PtyBufferSnapshot, PtyConnectResult } from './pty-transport'
 import { createIpcPtyTransport } from './pty-transport'
 import { createRemoteRuntimePtyTransport } from './remote-runtime-pty-transport'
@@ -46,6 +47,7 @@ import {
 } from './layout-serialization'
 import { createShellReadyMarkerScanState, scanForShellReadyMarker } from './shell-ready-marker-scan'
 import { shouldUseShellReadyStartupDelivery } from '../../../../shared/codex-startup-delivery'
+import { resolveSetupAgentSequenceLaunchCommand } from '../../../../shared/setup-agent-sequencing'
 import { getSystemPrefersDark } from '@/lib/terminal-theme'
 import {
   mode2031SequenceFor,
@@ -86,6 +88,11 @@ import {
   type AgentInterruptInputIntent
 } from '../../../../shared/agent-interrupt-intent'
 import { createAgentCompletionCoordinator } from './agent-completion-coordinator'
+import {
+  createCodexAutoApprovalHookCompletionSuppressor,
+  shouldSuppressCodexAutoApprovalSyntheticTitle,
+  shouldSuppressCodexAutoApprovalStatus
+} from './codex-auto-approval-notification-suppression'
 import type { AgentCompletionStatusSnapshot } from './agent-completion-coordinator-types'
 import {
   markTerminalBracketedPasteInterrupted,
@@ -1300,7 +1307,11 @@ export function connectPanePty(
         return true
       }
       return (useAppStore.getState().ptyIdsByTabId[deps.tabId] ?? []).length > 0
-    }
+    },
+    shouldSuppressHookCompletion: createCodexAutoApprovalHookCompletionSuppressor(cacheKey, () => ({
+      tabId: deps.tabId,
+      ...(launchToken ? { launchToken } : {})
+    }))
   })
 
   // Why: the transport's own exit handler (pty-transport.ts) normally makes
@@ -1374,6 +1385,15 @@ export function connectPanePty(
   let allowInitialIdleCacheSeed = false
 
   const onTitleChange = (title: string, rawTitle: string): void => {
+    if (
+      shouldSuppressCodexAutoApprovalSyntheticTitle(title, {
+        paneKey: cacheKey,
+        tabId: deps.tabId,
+        ...(launchToken ? { launchToken } : {})
+      })
+    ) {
+      return
+    }
     manager.setPaneGpuRendering(pane.id, !isGeminiTerminalTitle(rawTitle))
     deps.setRuntimePaneTitle(deps.tabId, pane.id, title)
     if (syncAgentTaskCompleteTrackingEnabled()) {
@@ -1867,6 +1887,15 @@ export function connectPanePty(
     ...(shouldOwnAgentStatusInRenderer
       ? {
           onAgentStatus: (payload) => {
+            if (
+              shouldSuppressCodexAutoApprovalStatus(payload, {
+                paneKey: cacheKey,
+                tabId: deps.tabId,
+                ...(launchToken ? { launchToken } : {})
+              })
+            ) {
+              return
+            }
             // Why: capture the store snapshot once so the title lookup and the
             // setAgentStatus call observe the same state. Re-reading getState()
             // between the two lines opens a brief window where the title could
@@ -2109,6 +2138,58 @@ export function connectPanePty(
   if (geometryReportObserver && pane.container instanceof Element) {
     geometryReportObserver.observe(pane.container)
   }
+
+  // Why: the deferred-rAF fit can spawn the PTY at a stale width when the pane's
+  // real (e.g. split/narrower) layout has not settled by the first frame — the
+  // PTY is born at the wide window width while xterm later reflows to the pane
+  // width. The corrective onResize is then dropped (cols already matched at fit
+  // time, or isRendererPtyResizeAuthoritative() was false mid-mount), pinning
+  // process.stdout.columns forever and garbling TUIs. Re-fit once layout has
+  // settled and force the PTY to xterm's dimensions; the initial spawn-time sync
+  // is authoritative by definition, so it bypasses the visibility gate (but not
+  // the mobile-fit override, which legitimately parks the PTY at phone dims).
+  const reconcilePtySizeAfterSpawn = (
+    ptyId: string,
+    spawnCols: number,
+    spawnRows: number
+  ): void => {
+    // Why: a single post-spawn frame is not enough — the pane's real layout can
+    // keep changing for several frames (split equalize, sidebar/title reflow),
+    // so a one-shot re-fit can still measure a stale width and leave the PTY
+    // pinned. Poll across frames and forward the settled size to the PTY
+    // whenever it differs from what the PTY was last told, mirroring the
+    // ResizeObserver stability loop. Each resize is gated on an actual change,
+    // so a TUI sees at most a couple of SIGWINCH during startup, not a loop.
+    const MAX_RECONCILE_FRAMES = 12
+    let lastSentCols = spawnCols
+    let lastSentRows = spawnRows
+    let frame = 0
+    const tick = (): void => {
+      if (disposed || transport.getPtyId() !== ptyId) {
+        return
+      }
+      // Mobile legitimately parks the PTY at phone dims; never fight that.
+      if (getFitOverrideForPty(ptyId) || isPtyLocked(ptyId)) {
+        return
+      }
+      safeFit(pane)
+      const cols = pane.terminal.cols
+      const rows = pane.terminal.rows
+      if (cols > 0 && rows > 0 && (cols !== lastSentCols || rows !== lastSentRows)) {
+        // Initial spawn-time sync is authoritative, so it bypasses the
+        // visibility gate that onResize honors (but not the mobile guards above).
+        transport.resize(cols, rows)
+        lastSentCols = cols
+        lastSentRows = rows
+      }
+      frame += 1
+      if (frame < MAX_RECONCILE_FRAMES) {
+        requestAnimationFrame(tick)
+      }
+    }
+    requestAnimationFrame(tick)
+  }
+
   // Defer PTY spawn/attach to next frame so FitAddon has time to calculate
   // the correct terminal dimensions from the laid-out container.
   connectFrame = requestAnimationFrame(() => {
@@ -2123,11 +2204,12 @@ export function connectPanePty(
     // Why: if fitAddon resolved to 0×0, the container likely has no layout
     // dimensions (display:none, unmounted, or zero-size parent). Surface a
     // diagnostic so the user sees something instead of a blank pane.
-    if (cols === 0 || rows === 0) {
-      deps.onPtyErrorRef?.current?.(
-        pane.id,
-        `Terminal has zero dimensions (${cols}×${rows}). The pane container may not be visible.`
-      )
+    // Gate on visibility: background/hidden tabs (orchestration workers, CLI
+    // `terminal create` without --focus) legitimately connect at 0×0 because
+    // safeFit skips fitting unmeasurable panes; they refit via the pane resize
+    // observer once shown, so the diagnostic must not fire while hidden.
+    if ((cols === 0 || rows === 0) && deps.isVisibleRef.current) {
+      deps.onPtyErrorRef?.current?.(pane.id, createTerminalZeroDimensionsMessage(cols, rows))
     }
 
     const reportError = (message: string): void => {
@@ -2198,10 +2280,14 @@ export function connectPanePty(
           ? { command: paneStartup.command }
           : null
         : null
+    const startupShellReadyCommandHint = resolveSetupAgentSequenceLaunchCommand(
+      paneStartup?.env ?? {},
+      paneStartup?.command
+    )
     const shouldWaitForSshShellReady =
       Boolean(connectionId) &&
       shouldUseShellReadyStartupDelivery({
-        command: paneStartup?.command,
+        command: startupShellReadyCommandHint,
         startupCommandDelivery: paneStartup?.startupCommandDelivery
       }) &&
       !shouldDeliverStartupViaTerminalPaste
@@ -2483,6 +2569,9 @@ export function connectPanePty(
             // registry. If spawn produced no PTY, the launch is no longer a
             // viable delivery target and must not wait for a future pane.
             clearRegisteredStartupLaunchConfig()
+          }
+          if (resolvedPtyId) {
+            reconcilePtySizeAfterSpawn(resolvedPtyId, cols, rows)
           }
           const gen = await preSignalPromise
           if (typeof gen === 'number' && resolvedPtyId) {

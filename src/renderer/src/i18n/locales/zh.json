@@ -56,7 +56,8 @@
     "zoomOut": "缩小",
     "openWorktreePalette": "打开工作树面板",
     "window": "窗口",
-    "help": "帮助"
+    "help": "帮助",
+    "paste": "Paste"
   },
   "tray": {
     "openOrca": "打开 Orca",
@@ -356,6 +357,13 @@
             }
           }
         },
+        "worktree": {
+          "background": {
+            "terminals": {
+              "setupTitle": "Setup"
+            }
+          }
+        },
         "work": {
           "item": {
             "direct": {
@@ -534,7 +542,8 @@
         "ba6cb77082": "无法连接到项目。",
         "chooseOrAddProjectBeforeWorkspace": "创建工作区前，请选择或添加项目。",
         "folderWorkspaceCreateFailedTitle": "文件夹工作区创建失败",
-        "folderWorkspaceCreateFailedMessage": "无法创建文件夹工作区。请查看上方错误详情，然后重试。"
+        "folderWorkspaceCreateFailedMessage": "无法创建文件夹工作区。请查看上方错误详情，然后重试。",
+        "setupAgentStartupPolicySaveFailed": "Failed to save setup startup behavior."
       },
       "useGlobalFileDrop": {
         "38c9f034ff": "无法上传删除的文件。",
@@ -1123,7 +1132,9 @@
         "notePasteTooLarge": "笔记字段的粘贴内容过大。",
         "reuseExistingBranch": "复用分支",
         "reuseExistingBranchHint": "检出已有分支，而不是从它创建新分支。",
-        "createMultiple": "创建更多"
+        "createMultiple": "创建更多",
+        "waitForSetupBeforeAgent": "Wait for setup to complete before starting agent",
+        "waitForSetupBeforeAgentHelp": "Turn this on when setup installs dependencies, MCP servers, or config files the agent needs during startup."
       },
       "NewWorkspaceComposerModal": {
         "createWorktree": "创建工作树",
@@ -2246,13 +2257,15 @@
             "a615e24679": "排序",
             "4cc5b73efe": "正在查找非活跃工作区...",
             "5bf2e88480": "已扫描 {{value0}}/{{value1}} 个{{value2}}",
-            "searchWorkspaces": "搜索工作区",
-            "age": "时间",
+            "searchPlaceholder": "搜索工作区",
+            "ageFilter": "时间",
+            "reviewFilter": "评审",
+            "gitFilter": "Git",
+            "contextFilter": "上下文",
             "review": "评审",
             "git": "Git",
-            "context": "上下文",
             "sortBy": "排序依据",
-            "direction": "方向",
+            "sortDirection": "方向",
             "anyAge": "任何时间",
             "archived": "已归档",
             "anyReview": "任何评审",
@@ -2273,13 +2286,6 @@
             "repo": "仓库",
             "ascending": "升序",
             "descending": "降序"
-          },
-          "presentation": {
-            "fixtures": {
-              "reviewAlphaCleanup": "评审 alpha 清理"
-            },
-            "gitlabMrNumber": "MR #{{value0}}",
-            "githubPrNumber": "PR #{{value0}}"
           }
         }
       },
@@ -4987,6 +4993,17 @@
             "description": "预览更新后的 worktree 卡片布局、元数据位置、卡片显示菜单选项和状态呈现。",
             "title": "新卡片样式",
             "toggleLabel": "切换新卡片样式"
+          },
+          "nativeChat": {
+            "title": "Native chat",
+            "description": "Preview the desktop chat surface for Claude and Codex terminal sessions.",
+            "copy": "Adds a native chat view you can switch to from supported Claude and Codex terminal panes. Experimental while we tune transcript fidelity, streaming, and terminal parity.",
+            "toggleLabel": "Toggle native chat",
+            "defaultTitle": "Default view",
+            "defaultCopy": "Choose how new Claude and Codex terminal tabs open.",
+            "defaultViewLabel": "Default native chat view",
+            "defaultViewTerminal": "Terminal chat",
+            "defaultViewNative": "Native chat"
           }
         },
         "FloatingWorkspacePane": {
@@ -5677,7 +5694,9 @@
           "2b6356e744": "已保存",
           "81057d5f71": "保存中...",
           "da37d6f10e": "复制",
-          "3149964b66": "已复制"
+          "3149964b66": "已复制",
+          "waitForSetupBeforeAgent": "Wait for setup to complete before starting agent",
+          "waitForSetupBeforeAgentHelp": "Turn this on when setup installs dependencies, MCP servers, or config files the agent needs during startup."
         },
         "RepositoryIconPicker": {
           "2b7d27b93c": "使用 {{value0}} 仓库颜色",
@@ -6309,12 +6328,12 @@
           "3d88af864d": "选择 PowerShell shell 选项是为新终端窗格启动 Windows PowerShell 还是 PowerShell 7+。",
           "8a956cc91e": "双击选择时将字符视为单词边界。",
           "4bebcc2b2c": "单词分隔符",
-          "12e06178fa": "MB",
+          "12e06178fa": "行",
           "907b0b9d3e": "自定义",
-          "5336c096af": "{{value0}} 兆字节",
-          "81d86b2dd2": "新终端窗格的最大终端回滚缓冲区大小。",
-          "9df53f7c14": "回滚大小",
-          "c3810b2b42": "最大终端回滚缓冲区大小。",
+          "5336c096af": "{{value0}} 行",
+          "81d86b2dd2": "为新窗格和已打开窗格保留的桌面终端行数。",
+          "9df53f7c14": "回滚行数",
+          "c3810b2b42": "保留的桌面终端行数。",
           "267d020745": "回滚、字边界和特定于平台的终端行为。",
           "5e5f06c82c": "高级",
           "003df129fe": "水平分割",
@@ -7096,6 +7115,10 @@
               "title": "新卡片样式",
               "worktree": "工作树",
               "worktrees": "工作树"
+            },
+            "nativeChat": {
+              "title": "Native chat",
+              "description": "Preview the desktop chat surface for Claude and Codex terminal sessions."
             }
           }
         },
@@ -7941,8 +7964,9 @@
             "957a0203fc": "单词分隔符",
             "56fff3d113": "记忆",
             "fffdff40a7": "缓冲",
-            "f7d56b6281": "最大终端回滚缓冲区大小。",
-            "7674e758e1": "回滚大小",
+            "rows": "行",
+            "f7d56b6281": "保留的桌面终端行数。",
+            "7674e758e1": "回滚行数",
             "411229c636": "浅色",
             "781f49d942": "分隔线",
             "77d9f9cd55": "控制浅色模式下窗格之间的分割分隔线。",
@@ -11773,6 +11797,11 @@
           "chooseHost": "选择自动化主机",
           "adding": "正在添加项目…",
           "addProject": "添加项目"
+        },
+        "AutomationSetupDecisionField": {
+          "5a7863909c": "为每个新工作区运行设置",
+          "18f000ad4e": "Advanced",
+          "874b72195b": "When this automation creates a workspace, prepare it the same way creating a worktree by hand does — run the project's setup and open its terminal tabs."
         }
       },
       "agent": {
@@ -11995,6 +12024,11 @@
             "later": "稍后"
           }
         }
+      },
+      "nativeChat": {
+        "contextMenu": {
+          "copy": "Copy"
+        }
       }
     },
     "i18n": {
@@ -12008,6 +12042,94 @@
           "b3d7e0f1a8": "合并请求",
           "a2c6d9e0f7": "合并请求",
           "91b5c8d7e6": "GitLab"
+        }
+      }
+    }
+  },
+  "components": {
+    "native-chat": {
+      "composer": {
+        "imageUnsupported": "Image paste is not supported for this agent.",
+        "send": "Send",
+        "noPty": "No live terminal — toggle back to reconnect.",
+        "locked": "Input is held by another device.",
+        "placeholder": "Send a message…",
+        "mentionHint": "Referencing file:",
+        "attach": "Attach file",
+        "startDictation": "Start dictation",
+        "stopDictation": "Stop dictation",
+        "noSkills": "No matching skills",
+        "localAttachmentUnsupported": "Local attachments are not available for remote sessions.",
+        "removeAttachment": "Remove attachment"
+      },
+      "tool": {
+        "running": "Running…",
+        "result": "Result"
+      },
+      "status": {
+        "responding": "Agent is responding"
+      },
+      "jumpToLatest": "Jump to latest",
+      "toggle": {
+        "showTerminal": "Show terminal",
+        "showChat": "Show chat view"
+      },
+      "state": {
+        "loading": {
+          "title": "Loading conversation…",
+          "subtitle": "Reading the agent transcript."
+        },
+        "error": {
+          "title": "Could not load conversation",
+          "subtitle": "The transcript could not be read. Toggle back to the terminal to keep working."
+        },
+        "notAgent": {
+          "title": "No conversation here",
+          "subtitle": "This terminal is not running a recognized coding agent."
+        },
+        "empty": {
+          "title": "Start a chat with {{value0}}",
+          "subtitle": "Ask {{value0}} to inspect code, explain output, or make a change."
+        }
+      },
+      "stop": "Stop the agent",
+      "copyMessage": {
+        "copied": "Copied",
+        "copy": "Copy message"
+      },
+      "scrollMessageToTop": "Scroll this message to top",
+      "loadingEarlier": "Loading…",
+      "loadEarlier": "Load earlier messages",
+      "question": {
+        "step": "Step {{value0}}",
+        "other": "Other…",
+        "otherPlaceholder": "Type your answer",
+        "cancel": "Cancel",
+        "send": "Send answer",
+        "next": "Next"
+      },
+      "approval": {
+        "title": "Allow {{value0}}?",
+        "allow": "Allow",
+        "deny": "Deny"
+      }
+    },
+    "tab": {
+      "bar": {
+        "SortableTabContextMenu": {
+          "switchToTerminalView": "Switch to terminal view",
+          "switchToChatView": "Switch to chat view"
+        }
+      }
+    },
+    "workspace": {
+      "cleanup": {
+        "presentationFixtures": {
+          "reviewAlphaCleanup": "评审 alpha 清理"
+        },
+        "presentation": {
+          "gitlabMergeRequestNumber": "MR #{{value0}}",
+          "githubPullRequestNumber": "PR #{{value0}}"
         }
       }
     }

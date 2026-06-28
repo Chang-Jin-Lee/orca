@@ -389,6 +389,7 @@ export type ProjectGroupImportResult = {
 }
 
 export type SetupRunPolicy = 'ask' | 'run-by-default' | 'skip-by-default'
+export type SetupAgentStartupPolicy = 'start-immediately' | 'wait-for-setup'
 export type SetupDecision = 'inherit' | 'run' | 'skip'
 export type HookCommandSourcePolicy = 'shared-only' | 'local-only' | 'run-both'
 
@@ -784,6 +785,11 @@ export type Tab = {
   createdAt: number
   isPreview?: boolean // preview tabs get replaced by next single-click open
   isPinned?: boolean // pinned tabs survive "close others"
+  /** Why: per-tab rendering mode for coding-agent terminals. `'chat'` shows the
+   *  native chat view as an overlay while the live terminal stays mounted
+   *  underneath; `'terminal'` (the default for legacy/missing) shows the raw
+   *  xterm. Optional so sessions persisted before this field hydrate cleanly. */
+  viewMode?: 'terminal' | 'chat'
 }
 
 export type TabGroup = {
@@ -818,6 +824,9 @@ export type TerminalTab = {
   color: string | null
   /** Pinned tabs survive "close others"; host-persisted for remote servers. */
   isPinned?: boolean
+  /** Per-tab view preference (terminal xterm vs native chat); host-persisted so
+   *  paired clients converge. Optional: older persisted tabs default to 'terminal'. */
+  viewMode?: 'terminal' | 'chat'
   sortOrder: number
   createdAt: number
   /** Bumped on shutdown so TerminalPane remounts with a fresh PTY. */
@@ -1926,6 +1935,7 @@ export type RepoHookSettings = {
   // hook UI. Keep it in the shape so existing local state reads without a migration.
   mode: 'auto' | 'override'
   setupRunPolicy?: SetupRunPolicy
+  setupAgentStartupPolicy?: SetupAgentStartupPolicy
   commandSourcePolicy?: HookCommandSourcePolicy
   scripts: {
     setup: string
@@ -1936,6 +1946,8 @@ export type RepoHookSettings = {
 export type WorktreeSetupLaunch = {
   runnerScriptPath: string
   envVars: Record<string, string>
+  command?: string
+  waitForAgentStartup?: boolean
 }
 
 export type WorktreeStartupLaunch = {
@@ -2533,7 +2545,7 @@ export type GlobalSettings = {
    *  background "Setup" tab so the user's main terminal stays immediately
    *  usable without the setup output crowding the initial pane. */
   setupScriptLaunchMode: SetupScriptLaunchMode
-  terminalScrollbackBytes: number
+  terminalScrollbackRows: number
   /** Optional app-level proxy for Electron networking and locally spawned PTYs.
    *  Empty preserves system proxy settings plus inherited proxy env behavior. */
   httpProxyUrl?: string
@@ -2549,6 +2561,13 @@ export type GlobalSettings = {
   /** Why: terminal link routing asks once at first use instead of silently
    *  changing where links open for new users. */
   openLinksInAppPreferencePrompted: boolean
+  /** Opt-in: open newly launched coding-agent tabs directly in the native chat
+   *  view instead of the raw terminal. Off by default so existing workflows are
+   *  unchanged. Optional for legacy-settings compatibility; defaults applied. */
+  openAgentTabsInChatByDefault?: boolean
+  /** Experimental: native chat surface for Claude/Codex terminal sessions.
+   *  Off by default while the desktop UX is still being exercised. */
+  experimentalNativeChat?: boolean
   /** Extra launcher rows for the worktree "Open in" submenu. VS Code is always shown first. */
   openInApplications?: OpenInApplication[]
   /** Deprecated: migration/backward-compat only. Use PersistedUIState.rightSidebarOpen. */

@@ -9,6 +9,7 @@ import {
   normalizeTerminalScrollSensitivity,
   resolveTerminalCursorInactiveStyle
 } from '@/lib/pane-manager/pane-terminal-options'
+import { normalizeDesktopTerminalScrollbackRows } from '../../../../shared/terminal-scrollback-policy'
 import { normalizeTerminalTuiMouseWheelMultiplier } from '@/lib/pane-manager/pane-terminal-mouse-wheel'
 import { buildWindowsPtyCompatibilityOptions } from '@/lib/pane-manager/windows-pty-compatibility'
 import { useAppStore } from '@/store'
@@ -55,7 +56,6 @@ import { showOsc52ClipboardBlockedToast } from './osc52-clipboard-blocked-toast'
 import { parseOsc7 } from './parse-osc7'
 import { resolveTerminalJisYenInput } from './terminal-jis-yen-input'
 import { installTerminalImeCompositionTracker } from './terminal-ime-composition-tracker'
-import { getMacCjkInputSourceTracker } from './terminal-ime-input-source'
 import { installTerminalImePunctuationForwarder } from './terminal-ime-punctuation-forwarder'
 import {
   shouldBypassXtermKeyboardEvent,
@@ -108,6 +108,21 @@ export function recordRuntimeCreatedTerminalPaneSplit(
   }
 ): boolean {
   return recordCreatedTerminalPaneSplit(createdPane, args)
+}
+
+type TerminalScrollbackPaneManager = {
+  getPanes(): { terminal: Pick<Terminal, 'options'> }[]
+}
+
+export function applyTerminalScrollbackRowsToMountedPanes(
+  manager: TerminalScrollbackPaneManager,
+  rows: number
+): void {
+  for (const pane of manager.getPanes()) {
+    if (pane.terminal.options.scrollback !== rows) {
+      pane.terminal.options.scrollback = rows
+    }
+  }
 }
 
 function extractUncHost(value: string | undefined): string | null {
@@ -440,6 +455,9 @@ export function useTerminalPaneLifecycle({
   setPaneCount,
   setPaneLayoutRevision
 }: UseTerminalPaneLifecycleDeps): void {
+  const terminalScrollbackRows = normalizeDesktopTerminalScrollbackRows(
+    settings?.terminalScrollbackRows
+  )
   const systemPrefersDarkRef = useRef(systemPrefersDark)
   systemPrefersDarkRef.current = systemPrefersDark
   const linkProviderDisposablesRef = useRef(new Map<number, IDisposable>())
@@ -714,19 +732,22 @@ export function useTerminalPaneLifecycle({
         // See xterm-bypass-policy.ts for the rule derivation.
         let pendingTerminalInterruptKeyup = false
         const isMac = navigator.userAgent.includes('Mac')
-        const macCjkInputSourceTracker = isMac ? getMacCjkInputSourceTracker() : null
         const imeCompositionTracker = installTerminalImeCompositionTracker(pane.terminal.element)
         imeCompositionDisposablesRef.current.set(pane.id, imeCompositionTracker)
-        // Why: this workaround is for macOS IMEs; elsewhere it can bypass
-        // xterm's kitty CSI-u encoding for ordinary punctuation. Gate it to CJK
-        // input sources so direct Japanese/Chinese punctuation works without
-        // changing plain US/European terminal key handling.
+        // Why: macOS-only. With xterm's kitty CSI-u encoding active, the
+        // keydown preventDefault cancels Chromium's native insertText, dropping
+        // any synthesized printable text — CJK IME punctuation commits AND
+        // OS-level injection (dictation, text expanders, accessibility). The
+        // forwarder recovers that text from the helper-textarea input event.
+        // Not gated to CJK input sources: the drop affects every locale (see
+        // #6513). Safe for ordinary typing because claimKeyEvent only bypasses
+        // unmodified ASCII punctuation keydowns, and the injected-text path
+        // skips the immediate insertText already attributable to keyboard text.
         const imePunctuationForwarder = isMac
           ? installTerminalImePunctuationForwarder({
               terminalElement: pane.terminal.element,
               isComposing: () => imeCompositionTracker.isActive(),
-              sendInput: (data) => pane.terminal.input(data),
-              isEnabled: () => macCjkInputSourceTracker?.isActive() === true
+              sendInput: (data) => pane.terminal.input(data)
             })
           : {
               claimKeyEvent: () => false,
@@ -1114,6 +1135,9 @@ export function useTerminalPaneLifecycle({
           }
         }
         scheduleRuntimeGraphSync()
+        // Why: active pane lives in PaneManager; React consumers such as the
+        // header chat toggle need a render tick when focus moves between splits.
+        syncPaneLayoutRevision()
         if (shouldPersistLayout) {
           persistLayoutSnapshot()
         }
@@ -1171,12 +1195,8 @@ export function useTerminalPaneLifecycle({
           fontFamily: buildFontFamily(currentSettings?.terminalFontFamily ?? ''),
           fontWeight: terminalFontWeights.fontWeight,
           fontWeightBold: terminalFontWeights.fontWeightBold,
-          scrollback: Math.min(
-            50_000,
-            Math.max(
-              1000,
-              Math.round((currentSettings?.terminalScrollbackBytes ?? 10_000_000) / 200)
-            )
+          scrollback: normalizeDesktopTerminalScrollbackRows(
+            currentSettings?.terminalScrollbackRows
           ),
           cursorStyle,
           cursorInactiveStyle: resolveTerminalCursorInactiveStyle(cursorStyle),
@@ -1564,6 +1584,16 @@ export function useTerminalPaneLifecycle({
   useEffect(() => {
     managerRef.current?.setTerminalGpuAcceleration(settings?.terminalGpuAcceleration ?? 'auto')
   }, [settings?.terminalGpuAcceleration, managerRef])
+
+  useEffect(() => {
+    const manager = managerRef.current
+    if (!manager) {
+      return
+    }
+    // Why: live row retention changes are xterm option updates only; they must
+    // not recreate panes, replay snapshots, refit, resize, or signal the PTY.
+    applyTerminalScrollbackRowsToMountedPanes(manager, terminalScrollbackRows)
+  }, [managerRef, terminalScrollbackRows])
 
   useEffect(() => {
     const manager = managerRef.current

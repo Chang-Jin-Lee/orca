@@ -56,7 +56,8 @@
     "zoomOut": "축소",
     "openWorktreePalette": "워크트리 팔레트 열기",
     "window": "창",
-    "help": "도움말"
+    "help": "도움말",
+    "paste": "Paste"
   },
   "tray": {
     "openOrca": "Orca 열기",
@@ -356,6 +357,13 @@
             }
           }
         },
+        "worktree": {
+          "background": {
+            "terminals": {
+              "setupTitle": "Setup"
+            }
+          }
+        },
         "work": {
           "item": {
             "direct": {
@@ -534,7 +542,8 @@
         "ba6cb77082": "프로젝트에 연결하지 못했습니다.",
         "chooseOrAddProjectBeforeWorkspace": "워크스페이스를 만들기 전에 프로젝트를 선택하거나 추가하세요.",
         "folderWorkspaceCreateFailedTitle": "폴더 워크스페이스를 만들지 못했습니다",
-        "folderWorkspaceCreateFailedMessage": "폴더 워크스페이스를 만들 수 없습니다. 위의 오류 세부 정보를 확인한 뒤 다시 시도하세요."
+        "folderWorkspaceCreateFailedMessage": "폴더 워크스페이스를 만들 수 없습니다. 위의 오류 세부 정보를 확인한 뒤 다시 시도하세요.",
+        "setupAgentStartupPolicySaveFailed": "Failed to save setup startup behavior."
       },
       "useGlobalFileDrop": {
         "38c9f034ff": "드롭한 파일을 업로드하지 못했습니다.",
@@ -1123,7 +1132,9 @@
         "notePasteTooLarge": "메모 필드에 붙여넣을 내용이 너무 큽니다.",
         "reuseExistingBranch": "브랜치 재사용",
         "reuseExistingBranchHint": "기존 브랜치에서 새 브랜치를 만들지 않고 해당 브랜치를 체크아웃합니다.",
-        "createMultiple": "더 만들기"
+        "createMultiple": "더 만들기",
+        "waitForSetupBeforeAgent": "Wait for setup to complete before starting agent",
+        "waitForSetupBeforeAgentHelp": "Turn this on when setup installs dependencies, MCP servers, or config files the agent needs during startup."
       },
       "NewWorkspaceComposerModal": {
         "createWorktree": "작업 트리 만들기",
@@ -2246,13 +2257,15 @@
             "a615e24679": "정렬",
             "4cc5b73efe": "비활성 워크스페이스 찾는 중...",
             "5bf2e88480": "{{value0}}/{{value1}} {{value2}} 스캔됨",
-            "searchWorkspaces": "워크스페이스 검색",
-            "age": "나이",
+            "searchPlaceholder": "워크스페이스 검색",
+            "ageFilter": "나이",
+            "reviewFilter": "리뷰",
+            "gitFilter": "Git",
+            "contextFilter": "컨텍스트",
             "review": "리뷰",
             "git": "Git",
-            "context": "컨텍스트",
             "sortBy": "정렬 기준",
-            "direction": "방향",
+            "sortDirection": "방향",
             "anyAge": "모든 기간",
             "archived": "보관됨",
             "anyReview": "모든 리뷰",
@@ -2273,13 +2286,6 @@
             "repo": "저장소",
             "ascending": "오름차순",
             "descending": "내림차순"
-          },
-          "presentation": {
-            "fixtures": {
-              "reviewAlphaCleanup": "alpha 정리 검토"
-            },
-            "gitlabMrNumber": "MR #{{value0}}",
-            "githubPrNumber": "PR #{{value0}}"
           }
         }
       },
@@ -4987,6 +4993,17 @@
             "description": "업데이트된 워크트리 카드 레이아웃, 메타데이터 배치, 카드 표시 메뉴 옵션 및 상태 표시를 미리 봅니다.",
             "title": "새 카드 스타일",
             "toggleLabel": "새 카드 스타일 전환"
+          },
+          "nativeChat": {
+            "title": "Native chat",
+            "description": "Preview the desktop chat surface for Claude and Codex terminal sessions.",
+            "copy": "Adds a native chat view you can switch to from supported Claude and Codex terminal panes. Experimental while we tune transcript fidelity, streaming, and terminal parity.",
+            "toggleLabel": "Toggle native chat",
+            "defaultTitle": "Default view",
+            "defaultCopy": "Choose how new Claude and Codex terminal tabs open.",
+            "defaultViewLabel": "Default native chat view",
+            "defaultViewTerminal": "Terminal chat",
+            "defaultViewNative": "Native chat"
           }
         },
         "FloatingWorkspacePane": {
@@ -5677,7 +5694,9 @@
           "2b6356e744": "저장됨",
           "81057d5f71": "저장 중...",
           "da37d6f10e": "복사",
-          "3149964b66": "복사됨"
+          "3149964b66": "복사됨",
+          "waitForSetupBeforeAgent": "Wait for setup to complete before starting agent",
+          "waitForSetupBeforeAgentHelp": "Turn this on when setup installs dependencies, MCP servers, or config files the agent needs during startup."
         },
         "RepositoryIconPicker": {
           "2b7d27b93c": "{{value0}} repo 색상 사용",
@@ -6309,12 +6328,12 @@
           "3d88af864d": "PowerShell 셸 옵션이 새 terminal 패널에 대해 Windows PowerShell을 시작할지 아니면 PowerShell 7+를 시작할지 선택합니다.",
           "8a956cc91e": "두 번 클릭 선택 시 단어 경계로 처리되는 문자입니다.",
           "4bebcc2b2c": "단어 구분 기호",
-          "12e06178fa": "MB",
+          "12e06178fa": "행",
           "907b0b9d3e": "사용자 지정",
-          "5336c096af": "{{value0}} 메가바이트",
-          "81d86b2dd2": "새 terminal 패널의 최대 terminal 스크롤백 버퍼 크기입니다.",
-          "9df53f7c14": "스크롤백 크기",
-          "c3810b2b42": "최대 terminal 스크롤백 버퍼 크기.",
+          "5336c096af": "{{value0}} 행",
+          "81d86b2dd2": "새 패널과 열린 패널에 보관할 데스크톱 terminal 행입니다.",
+          "9df53f7c14": "스크롤백 행",
+          "c3810b2b42": "보관할 데스크톱 terminal 행입니다.",
           "267d020745": "스크롤백, 단어 경계 및 플랫폼별 terminal 동작.",
           "5e5f06c82c": "고급",
           "003df129fe": "수평으로 분할",
@@ -7096,6 +7115,10 @@
               "title": "새 카드 스타일",
               "worktree": "worktree",
               "worktrees": "worktrees"
+            },
+            "nativeChat": {
+              "title": "Native chat",
+              "description": "Preview the desktop chat surface for Claude and Codex terminal sessions."
             }
           }
         },
@@ -7941,8 +7964,9 @@
             "957a0203fc": "단어 구분 기호",
             "56fff3d113": "메모리",
             "fffdff40a7": "버퍼",
-            "f7d56b6281": "최대 terminal 스크롤백 버퍼 크기입니다.",
-            "7674e758e1": "스크롤백 크기",
+            "rows": "행",
+            "f7d56b6281": "보관할 데스크톱 terminal 행입니다.",
+            "7674e758e1": "스크롤백 행",
             "411229c636": "라이트",
             "781f49d942": "분할기",
             "77d9f9cd55": "라이트 모드에서 창 사이의 분할 구분선을 제어합니다.",
@@ -11773,6 +11797,11 @@
           "chooseHost": "자동화 호스트 선택",
           "adding": "프로젝트 추가 중...",
           "addProject": "프로젝트 추가"
+        },
+        "AutomationSetupDecisionField": {
+          "5a7863909c": "새 워크스페이스마다 설정 실행",
+          "18f000ad4e": "Advanced",
+          "874b72195b": "When this automation creates a workspace, prepare it the same way creating a worktree by hand does — run the project's setup and open its terminal tabs."
         }
       },
       "agent": {
@@ -11995,6 +12024,11 @@
             "later": "Later"
           }
         }
+      },
+      "nativeChat": {
+        "contextMenu": {
+          "copy": "Copy"
+        }
       }
     },
     "i18n": {
@@ -12008,6 +12042,94 @@
           "b3d7e0f1a8": "MR",
           "a2c6d9e0f7": "머지 리퀘스트",
           "91b5c8d7e6": "GitLab"
+        }
+      }
+    }
+  },
+  "components": {
+    "native-chat": {
+      "composer": {
+        "imageUnsupported": "Image paste is not supported for this agent.",
+        "send": "Send",
+        "noPty": "No live terminal — toggle back to reconnect.",
+        "locked": "Input is held by another device.",
+        "placeholder": "Send a message…",
+        "mentionHint": "Referencing file:",
+        "attach": "Attach file",
+        "startDictation": "Start dictation",
+        "stopDictation": "Stop dictation",
+        "noSkills": "No matching skills",
+        "localAttachmentUnsupported": "Local attachments are not available for remote sessions.",
+        "removeAttachment": "Remove attachment"
+      },
+      "tool": {
+        "running": "Running…",
+        "result": "Result"
+      },
+      "status": {
+        "responding": "Agent is responding"
+      },
+      "jumpToLatest": "Jump to latest",
+      "toggle": {
+        "showTerminal": "Show terminal",
+        "showChat": "Show chat view"
+      },
+      "state": {
+        "loading": {
+          "title": "Loading conversation…",
+          "subtitle": "Reading the agent transcript."
+        },
+        "error": {
+          "title": "Could not load conversation",
+          "subtitle": "The transcript could not be read. Toggle back to the terminal to keep working."
+        },
+        "notAgent": {
+          "title": "No conversation here",
+          "subtitle": "This terminal is not running a recognized coding agent."
+        },
+        "empty": {
+          "title": "Start a chat with {{value0}}",
+          "subtitle": "Ask {{value0}} to inspect code, explain output, or make a change."
+        }
+      },
+      "stop": "Stop the agent",
+      "copyMessage": {
+        "copied": "Copied",
+        "copy": "Copy message"
+      },
+      "scrollMessageToTop": "Scroll this message to top",
+      "loadingEarlier": "Loading…",
+      "loadEarlier": "Load earlier messages",
+      "question": {
+        "step": "Step {{value0}}",
+        "other": "Other…",
+        "otherPlaceholder": "Type your answer",
+        "cancel": "Cancel",
+        "send": "Send answer",
+        "next": "Next"
+      },
+      "approval": {
+        "title": "Allow {{value0}}?",
+        "allow": "Allow",
+        "deny": "Deny"
+      }
+    },
+    "tab": {
+      "bar": {
+        "SortableTabContextMenu": {
+          "switchToTerminalView": "Switch to terminal view",
+          "switchToChatView": "Switch to chat view"
+        }
+      }
+    },
+    "workspace": {
+      "cleanup": {
+        "presentationFixtures": {
+          "reviewAlphaCleanup": "alpha 정리 검토"
+        },
+        "presentation": {
+          "gitlabMergeRequestNumber": "MR #{{value0}}",
+          "githubPullRequestNumber": "PR #{{value0}}"
         }
       }
     }

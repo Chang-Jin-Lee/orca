@@ -899,7 +899,7 @@ function WorkspaceCleanupFilterToolbar({
           value={filters.query}
           onChange={(event) => updateFilter('query', event.target.value)}
           placeholder={translate(
-            'auto.components.workspace.cleanup.WorkspaceCleanupDialog.searchWorkspaces',
+            'auto.components.workspace.cleanup.WorkspaceCleanupDialog.searchPlaceholder',
             'Search workspaces'
           )}
           className="h-8 pl-8 text-xs"
@@ -944,7 +944,10 @@ function WorkspaceCleanupFilterToolbar({
             )}
           </DropdownMenuLabel>
           <WorkspaceCleanupMenuSub<WorkspaceCleanupTimeFilter>
-            label={translate('auto.components.workspace.cleanup.WorkspaceCleanupDialog.age', 'Age')}
+            label={translate(
+              'auto.components.workspace.cleanup.WorkspaceCleanupDialog.ageFilter',
+              'Age'
+            )}
             value={filters.time}
             options={[
               [
@@ -968,7 +971,7 @@ function WorkspaceCleanupFilterToolbar({
           />
           <WorkspaceCleanupMenuSub<WorkspaceCleanupReviewFilter>
             label={translate(
-              'auto.components.workspace.cleanup.WorkspaceCleanupDialog.review',
+              'auto.components.workspace.cleanup.WorkspaceCleanupDialog.reviewFilter',
               'Review'
             )}
             value={filters.review}
@@ -1009,7 +1012,10 @@ function WorkspaceCleanupFilterToolbar({
             onChange={(value) => updateFilter('review', value)}
           />
           <WorkspaceCleanupMenuSub<WorkspaceCleanupGitFilter>
-            label={translate('auto.components.workspace.cleanup.WorkspaceCleanupDialog.git', 'Git')}
+            label={translate(
+              'auto.components.workspace.cleanup.WorkspaceCleanupDialog.gitFilter',
+              'Git'
+            )}
             value={filters.git}
             options={[
               [
@@ -1046,7 +1052,7 @@ function WorkspaceCleanupFilterToolbar({
           />
           <WorkspaceCleanupMenuSub<WorkspaceCleanupContextFilter>
             label={translate(
-              'auto.components.workspace.cleanup.WorkspaceCleanupDialog.context',
+              'auto.components.workspace.cleanup.WorkspaceCleanupDialog.contextFilter',
               'Context'
             )}
             value={filters.context}
@@ -1120,7 +1126,7 @@ function WorkspaceCleanupFilterToolbar({
           />
           <WorkspaceCleanupMenuSub<WorkspaceCleanupSortDirection>
             label={translate(
-              'auto.components.workspace.cleanup.WorkspaceCleanupDialog.direction',
+              'auto.components.workspace.cleanup.WorkspaceCleanupDialog.sortDirection',
               'Direction'
             )}
             value={sortDirection}

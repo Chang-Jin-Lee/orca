@@ -124,6 +124,48 @@ describe('ensureWorktreeHasInitialTerminal', () => {
     expect(store.setActiveTab).toHaveBeenLastCalledWith('tab-1')
   })
 
+  it('can queue setup and default tabs without activating created tabs', () => {
+    let createdIndex = 0
+    const createTab = vi.fn(() => ({ id: `tab-${++createdIndex}` }))
+    const store = createMockStore({ createTab })
+
+    const result = ensureWorktreeHasInitialTerminal(
+      store,
+      'wt-1',
+      undefined,
+      {
+        runnerScriptPath: '/tmp/repo/.git/orca/setup-runner.sh',
+        envVars: { ORCA_WORKTREE_PATH: '/tmp/worktrees/wt-1' }
+      },
+      undefined,
+      {
+        runCommands: true,
+        tabs: [{ title: 'Dev', command: 'pnpm dev' }]
+      },
+      { activateCreatedTabs: false }
+    )
+
+    expect(result).toBe('tab-1')
+    expect(createTab).toHaveBeenNthCalledWith(1, 'wt-1', undefined, undefined, {
+      pendingActivationSpawn: true,
+      recordInteraction: false,
+      activate: false
+    })
+    expect(createTab).toHaveBeenNthCalledWith(2, 'wt-1', undefined, undefined, {
+      recordInteraction: false,
+      activate: false
+    })
+    expect(store.setActiveTab).not.toHaveBeenCalled()
+    expect(store.setTabCustomTitle).toHaveBeenCalledWith('tab-2', 'Setup', {
+      recordInteraction: false
+    })
+    expect(store.queueTabStartupCommand).toHaveBeenCalledWith('tab-1', { command: 'pnpm dev' })
+    expect(store.queueTabStartupCommand).toHaveBeenCalledWith('tab-2', {
+      command: 'bash /tmp/repo/.git/orca/setup-runner.sh',
+      env: { ORCA_WORKTREE_PATH: '/tmp/worktrees/wt-1' }
+    })
+  })
+
   it('does not run default tab commands when command execution is not approved', () => {
     const store = createMockStore()
 
@@ -176,6 +218,53 @@ describe('ensureWorktreeHasInitialTerminal', () => {
     expect(store.setActiveTab).not.toHaveBeenCalled()
   })
 
+  it('queues returned setup fallback on an existing web runtime tab', () => {
+    ;(globalThis as { __ORCA_WEB_CLIENT__?: boolean }).__ORCA_WEB_CLIENT__ = true
+    useAppStore.setState((state) => ({
+      settings: state.settings
+        ? { ...state.settings, activeRuntimeEnvironmentId: 'web-runtime-1' }
+        : ({ activeRuntimeEnvironmentId: 'web-runtime-1' } as unknown as typeof state.settings)
+    }))
+    let createdIndex = 1
+    const createTab = vi.fn(() => ({ id: `tab-${++createdIndex}` }))
+    const store = createMockStore({
+      tabsByWorktree: { 'wt-1': [{ id: 'tab-1' }] },
+      createTab,
+      settings: { activeRuntimeEnvironmentId: 'web-runtime-1' },
+      reconcileWorktreeTabModel: vi.fn(() => ({ renderableTabCount: 1 }))
+    })
+
+    const result = ensureWorktreeHasInitialTerminal(
+      store,
+      'wt-1',
+      { command: 'claude' },
+      {
+        runnerScriptPath: '/tmp/repo/.git/orca/setup-runner.sh',
+        envVars: { ORCA_ROOT_PATH: '/tmp/repo' },
+        waitForAgentStartup: true
+      }
+    )
+
+    expect(result).toBe('tab-1')
+    expect(createTab).toHaveBeenCalledTimes(1)
+    expect(store.setActiveTab).toHaveBeenCalledWith('tab-1')
+    expect(store.setTabCustomTitle).toHaveBeenCalledWith('tab-2', 'Setup', {
+      recordInteraction: false
+    })
+    expect(store.queueTabStartupCommand).toHaveBeenCalledWith(
+      'tab-2',
+      expect.objectContaining({
+        command: expect.stringContaining('bash /tmp/repo/.git/orca/setup-runner.sh')
+      })
+    )
+    expect(store.queueTabStartupCommand).toHaveBeenCalledWith(
+      'tab-2',
+      expect.objectContaining({
+        command: expect.stringContaining('printf')
+      })
+    )
+  })
+
   it('creates a local initial terminal for explicitly local worktrees while a runtime is focused', () => {
     useAppStore.setState((state) => ({
       settings: state.settings
@@ -214,6 +303,71 @@ describe('ensureWorktreeHasInitialTerminal', () => {
     expect(store.queueTabIssueCommandSplit).not.toHaveBeenCalled()
   })
 
+  it('queues returned setup on an existing terminal tab when startup was already adopted', () => {
+    let createdIndex = 1
+    const createTab = vi.fn(() => ({ id: `tab-${++createdIndex}` }))
+    const store = createMockStore({
+      tabsByWorktree: { 'wt-1': [{ id: 'tab-1' }] },
+      createTab,
+      reconcileWorktreeTabModel: vi.fn(() => ({ renderableTabCount: 1 }))
+    })
+
+    const result = ensureWorktreeHasInitialTerminal(store, 'wt-1', undefined, {
+      runnerScriptPath: '/tmp/repo/.git/orca/setup-runner.sh',
+      command: 'bash -lc wrapped-setup',
+      envVars: { ORCA_ROOT_PATH: '/tmp/repo' }
+    })
+
+    expect(result).toBe('tab-1')
+    expect(createTab).toHaveBeenCalledTimes(1)
+    expect(store.setActiveTab).toHaveBeenCalledWith('tab-1')
+    expect(store.setTabCustomTitle).toHaveBeenCalledWith('tab-2', 'Setup', {
+      recordInteraction: false
+    })
+    expect(store.queueTabStartupCommand).toHaveBeenCalledWith('tab-2', {
+      command: 'bash -lc wrapped-setup',
+      env: { ORCA_ROOT_PATH: '/tmp/repo' }
+    })
+    expect(store.queueTabSetupSplit).not.toHaveBeenCalled()
+  })
+
+  it('queues wrapped setup on an existing terminal tab when setup gates startup', () => {
+    let createdIndex = 1
+    const createTab = vi.fn(() => ({ id: `tab-${++createdIndex}` }))
+    const store = createMockStore({
+      tabsByWorktree: { 'wt-1': [{ id: 'tab-1' }] },
+      createTab,
+      reconcileWorktreeTabModel: vi.fn(() => ({ renderableTabCount: 1 }))
+    })
+
+    const result = ensureWorktreeHasInitialTerminal(
+      store,
+      'wt-1',
+      { command: 'claude' },
+      {
+        runnerScriptPath: '/tmp/repo/.git/orca/setup-runner.sh',
+        envVars: { ORCA_ROOT_PATH: '/tmp/repo' },
+        waitForAgentStartup: true
+      }
+    )
+
+    expect(result).toBe('tab-1')
+    expect(createTab).toHaveBeenCalledTimes(1)
+    expect(store.queueTabStartupCommand).toHaveBeenCalledWith(
+      'tab-2',
+      expect.objectContaining({
+        command: expect.stringContaining('bash /tmp/repo/.git/orca/setup-runner.sh')
+      })
+    )
+    expect(store.queueTabStartupCommand).toHaveBeenCalledWith(
+      'tab-2',
+      expect.objectContaining({
+        command: expect.stringContaining('printf')
+      })
+    )
+    expect(store.queueTabSetupSplit).not.toHaveBeenCalled()
+  })
+
   it('queues a startup command when agent launch is provided', () => {
     const store = createMockStore()
 
@@ -234,6 +388,138 @@ describe('ensureWorktreeHasInitialTerminal', () => {
     })
     expect(store.queueTabSetupSplit).not.toHaveBeenCalled()
     expect(store.queueTabIssueCommandSplit).not.toHaveBeenCalled()
+  })
+
+  it('opens new agent workspace terminals in native chat when configured', () => {
+    const store = createMockStore({
+      settings: {
+        experimentalNativeChat: true,
+        openAgentTabsInChatByDefault: true
+      }
+    })
+
+    ensureWorktreeHasInitialTerminal(
+      store,
+      'wt-1',
+      {
+        command: 'claude',
+        launchAgent: 'claude'
+      },
+      undefined,
+      undefined
+    )
+
+    expect(store.createTab).toHaveBeenCalledWith('wt-1', undefined, undefined, {
+      pendingActivationSpawn: true,
+      launchAgent: 'claude',
+      viewMode: 'chat'
+    })
+    expect(store.queueTabStartupCommand).toHaveBeenCalledWith('tab-1', {
+      command: 'claude',
+      launchAgent: 'claude'
+    })
+  })
+
+  it('gates startup behind setup completion when both are provided in new-tab mode', () => {
+    setSetupScriptLaunchMode('new-tab')
+    let createdIndex = 0
+    const createTab = vi.fn(() => ({ id: `tab-${++createdIndex}` }))
+    const store = createMockStore({ createTab })
+
+    ensureWorktreeHasInitialTerminal(
+      store,
+      'wt-1',
+      { command: 'claude' },
+      {
+        runnerScriptPath: '/tmp/repo/.git/orca/setup-runner.sh',
+        envVars: { ORCA_ROOT_PATH: '/tmp/repo' },
+        waitForAgentStartup: true
+      }
+    )
+
+    expect(store.queueTabStartupCommand).toHaveBeenCalledWith(
+      'tab-1',
+      expect.objectContaining({
+        command: expect.stringContaining('Timed out waiting for setup before starting agent.')
+      })
+    )
+    expect(store.queueTabStartupCommand).toHaveBeenCalledWith(
+      'tab-1',
+      expect.objectContaining({
+        command: expect.stringContaining('exec claude')
+      })
+    )
+    expect(store.queueTabStartupCommand).toHaveBeenCalledWith(
+      'tab-2',
+      expect.objectContaining({
+        command: expect.stringContaining('printf')
+      })
+    )
+    expect(store.queueTabStartupCommand).toHaveBeenCalledWith(
+      'tab-2',
+      expect.objectContaining({
+        command: expect.stringContaining('bash /tmp/repo/.git/orca/setup-runner.sh')
+      })
+    )
+    expect(store.queueTabSetupSplit).not.toHaveBeenCalled()
+  })
+
+  it('starts setup and agent side by side by default', () => {
+    setSetupScriptLaunchMode('new-tab')
+    let createdIndex = 0
+    const createTab = vi.fn(() => ({ id: `tab-${++createdIndex}` }))
+    const store = createMockStore({ createTab })
+
+    ensureWorktreeHasInitialTerminal(
+      store,
+      'wt-1',
+      { command: 'claude' },
+      {
+        runnerScriptPath: '/tmp/repo/.git/orca/setup-runner.sh',
+        envVars: { ORCA_ROOT_PATH: '/tmp/repo' }
+      }
+    )
+
+    expect(store.queueTabStartupCommand).toHaveBeenCalledWith('tab-1', {
+      command: 'claude'
+    })
+    expect(store.queueTabStartupCommand).toHaveBeenCalledWith('tab-2', {
+      command: 'bash /tmp/repo/.git/orca/setup-runner.sh',
+      env: { ORCA_ROOT_PATH: '/tmp/repo' }
+    })
+  })
+
+  it('gates startup behind setup completion when setup is a split', () => {
+    setSetupScriptLaunchMode('split-vertical')
+    const store = createMockStore()
+
+    ensureWorktreeHasInitialTerminal(
+      store,
+      'wt-1',
+      { command: 'claude' },
+      {
+        runnerScriptPath: '/tmp/repo/.git/orca/setup-runner.sh',
+        envVars: { ORCA_ROOT_PATH: '/tmp/repo' },
+        waitForAgentStartup: true
+      }
+    )
+
+    expect(store.queueTabStartupCommand).toHaveBeenCalledWith(
+      'tab-1',
+      expect.objectContaining({
+        command: expect.stringContaining('exec claude')
+      })
+    )
+    expect(store.queueTabSetupSplit).toHaveBeenCalledWith('tab-1', {
+      command: expect.stringContaining('bash /tmp/repo/.git/orca/setup-runner.sh'),
+      env: { ORCA_ROOT_PATH: '/tmp/repo' },
+      direction: 'vertical'
+    })
+    expect(store.queueTabSetupSplit).toHaveBeenCalledWith('tab-1', {
+      command: expect.stringContaining('printf'),
+      env: { ORCA_ROOT_PATH: '/tmp/repo' },
+      direction: 'vertical'
+    })
   })
 
   it('forwards telemetry on the queued startup so main can fire agent_started', () => {
@@ -265,6 +551,30 @@ describe('ensureWorktreeHasInitialTerminal', () => {
         launch_source: 'new_workspace_composer',
         request_kind: 'new'
       }
+    })
+  })
+
+  it('stamps the tab agent from startup launchAgent without telemetry', () => {
+    const store = createMockStore()
+
+    ensureWorktreeHasInitialTerminal(
+      store,
+      'wt-1',
+      {
+        command: 'codex',
+        launchAgent: 'codex'
+      },
+      undefined,
+      undefined
+    )
+
+    expect(store.createTab).toHaveBeenCalledWith('wt-1', undefined, undefined, {
+      pendingActivationSpawn: true,
+      launchAgent: 'codex'
+    })
+    expect(store.queueTabStartupCommand).toHaveBeenCalledWith('tab-1', {
+      command: 'codex',
+      launchAgent: 'codex'
     })
   })
 

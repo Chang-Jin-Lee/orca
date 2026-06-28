@@ -2554,8 +2554,14 @@ async function lookupPRByBranchName(args: {
   headRepo: OwnerRepo | null
   branchName: string
   ghOptions: GhExecOptions
-}): Promise<{ data: PullRequestLookupData | null; dataRepo: OwnerRepo | null }> {
+}): Promise<{
+  data: PullRequestLookupData | null
+  dataRepo: OwnerRepo | null
+  pendingError?: unknown
+}> {
   if (args.candidates.length > 0) {
+    let pendingError: unknown
+    let hasPendingError = false
     for (const candidate of args.candidates) {
       try {
         const branchData = args.headRepo
@@ -2576,19 +2582,34 @@ async function lookupPRByBranchName(args: {
         if (args.headRepo) {
           throw err
         }
-        const branchData = await getRestPRForBranch(
-          candidate,
-          candidate.owner,
-          args.branchName,
-          args.ghOptions
-        )
-        const data = await hydrateBranchLookupWithExactPR(candidate, branchData, args.ghOptions)
-        if (data) {
-          return { data, dataRepo: candidate }
+        if (!hasPendingError) {
+          pendingError = err
+          hasPendingError = true
+        }
+        try {
+          const branchData = await getRestPRForBranch(
+            candidate,
+            candidate.owner,
+            args.branchName,
+            args.ghOptions
+          )
+          const data = await hydrateBranchLookupWithExactPR(candidate, branchData, args.ghOptions)
+          if (data) {
+            return { data, dataRepo: candidate }
+          }
+        } catch (retryErr) {
+          if (!hasPendingError) {
+            pendingError = retryErr
+            hasPendingError = true
+          }
         }
       }
     }
-    return { data: null, dataRepo: null }
+    // Why: branch-list failures are ambiguous for fork discovery, but exact
+    // fallback-number recovery should still get a chance before surfacing error.
+    return hasPendingError
+      ? { data: null, dataRepo: null, pendingError }
+      : { data: null, dataRepo: null }
   }
 
   try {
@@ -2778,6 +2799,8 @@ export async function getPRForBranchOutcome(
     let data: PullRequestLookupData | null = null
     let dataRepo: OwnerRepo | null = null
     let dataHeadRepo: OwnerRepo | null = headRepo
+    let pendingBranchLookupError: unknown
+    let hasPendingBranchLookupError = false
     let currentHeadOidForMergedImplicit: string | null | undefined
 
     const explicitCurrentHeadOid =
@@ -2817,6 +2840,10 @@ export async function getPRForBranchOutcome(
       })
       data = branchLookup.data
       dataRepo = branchLookup.dataRepo
+      if ('pendingError' in branchLookup) {
+        pendingBranchLookupError = branchLookup.pendingError
+        hasPendingBranchLookupError = true
+      }
       if (!data) {
         // Why: the tracked upstream can identify the real PR head by branch
         // name or by fork owner even when branch names match locally.
@@ -2846,6 +2873,10 @@ export async function getPRForBranchOutcome(
             })
             data = upstreamLookup.data
             dataRepo = upstreamLookup.dataRepo
+            if (!hasPendingBranchLookupError && 'pendingError' in upstreamLookup) {
+              pendingBranchLookupError = upstreamLookup.pendingError
+              hasPendingBranchLookupError = true
+            }
             if (data) {
               dataHeadRepo = upstreamHeadRepo
             }
@@ -2870,6 +2901,9 @@ export async function getPRForBranchOutcome(
       dataRepo = fallbackLookup.dataRepo
     }
     if (!data) {
+      if (hasPendingBranchLookupError) {
+        return prRefreshUpstreamError(pendingBranchLookupError)
+      }
       return { kind: 'no-pr', fetchedAt: Date.now() }
     }
     const fallbackConfirmedMergedBranch =
@@ -3110,7 +3144,15 @@ function mapWorkflowJobs(raw: unknown, checkName?: string): PRCheckRunDetails['j
 }
 
 function isCheckJobFailureState(state: string | null | undefined): boolean {
-  return state === 'failure' || state === 'failed' || state === 'cancelled' || state === 'timed_out'
+  return (
+    state === 'failure' ||
+    state === 'failed' ||
+    state === 'action_required' ||
+    state === 'cancelled' ||
+    state === 'stale' ||
+    state === 'startup_failure' ||
+    state === 'timed_out'
+  )
 }
 
 function sliceCheckLogTail(logText: string): string {

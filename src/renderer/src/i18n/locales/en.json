@@ -56,7 +56,8 @@
     "zoomOut": "Zoom Out",
     "openWorktreePalette": "Open Worktree Palette",
     "window": "Window",
-    "help": "Help"
+    "help": "Help",
+    "paste": "Paste"
   },
   "tray": {
     "openOrca": "Open Orca",
@@ -356,6 +357,13 @@
             }
           }
         },
+        "worktree": {
+          "background": {
+            "terminals": {
+              "setupTitle": "Setup"
+            }
+          }
+        },
         "work": {
           "item": {
             "direct": {
@@ -534,7 +542,8 @@
         "ba6cb77082": "Failed to connect to project.",
         "chooseOrAddProjectBeforeWorkspace": "Choose or add a project before creating a workspace.",
         "folderWorkspaceCreateFailedTitle": "Folder workspace creation failed",
-        "folderWorkspaceCreateFailedMessage": "The folder workspace could not be created. Check the error details above, then try again."
+        "folderWorkspaceCreateFailedMessage": "The folder workspace could not be created. Check the error details above, then try again.",
+        "setupAgentStartupPolicySaveFailed": "Failed to save setup startup behavior."
       },
       "useGlobalFileDrop": {
         "38c9f034ff": "Failed to upload dropped files.",
@@ -1123,7 +1132,9 @@
         "reconnectingSsh": "Reconnecting SSH...",
         "sshReconnectionFailed": "SSH reconnection failed",
         "notConnected": "Not connected",
-        "notePasteTooLarge": "Paste is too large for the note field."
+        "notePasteTooLarge": "Paste is too large for the note field.",
+        "waitForSetupBeforeAgent": "Wait for setup to complete before starting agent",
+        "waitForSetupBeforeAgentHelp": "Turn this on when setup installs dependencies, MCP servers, or config files the agent needs during startup."
       },
       "NewWorkspaceComposerModal": {
         "createWorktree": "Create worktree",
@@ -2246,13 +2257,15 @@
             "a615e24679": "Sort",
             "4cc5b73efe": "Finding inactive workspaces...",
             "5bf2e88480": "{{value0}}/{{value1}} {{value2}} scanned",
-            "searchWorkspaces": "Search workspaces",
-            "age": "Age",
+            "searchPlaceholder": "Search workspaces",
+            "ageFilter": "Age",
+            "reviewFilter": "Review",
+            "gitFilter": "Git",
+            "contextFilter": "Context",
             "review": "Review",
             "git": "Git",
-            "context": "Context",
             "sortBy": "Sort by",
-            "direction": "Direction",
+            "sortDirection": "Direction",
             "anyAge": "Any age",
             "archived": "Archived",
             "anyReview": "Any review",
@@ -2273,13 +2286,6 @@
             "repo": "Repo",
             "ascending": "Ascending",
             "descending": "Descending"
-          },
-          "presentation": {
-            "fixtures": {
-              "reviewAlphaCleanup": "Review alpha cleanup"
-            },
-            "gitlabMrNumber": "MR #{{value0}}",
-            "githubPrNumber": "PR #{{value0}}"
           }
         }
       },
@@ -5002,7 +5008,18 @@
           },
           "ca2219fe5e": "Shows a small animated pet pinned to the bottom-right corner. Pick a character (Claudino, OpenCode, Gremlin) or upload your own PNG, APNG, GIF, WebP, JPG, or SVG from the status-bar pet menu. Hide it any time from the same menu without disabling this setting.",
           "dd6f0a1d45": "Pet",
-          "0e89a574ae": "Floating animated pet in the bottom-right corner."
+          "0e89a574ae": "Floating animated pet in the bottom-right corner.",
+          "nativeChat": {
+            "title": "Native chat",
+            "description": "Preview the desktop chat surface for Claude and Codex terminal sessions.",
+            "copy": "Adds a native chat view you can switch to from supported Claude and Codex terminal panes. Experimental while we tune transcript fidelity, streaming, and terminal parity.",
+            "toggleLabel": "Toggle native chat",
+            "defaultTitle": "Default view",
+            "defaultCopy": "Choose how new Claude and Codex terminal tabs open.",
+            "defaultViewLabel": "Default native chat view",
+            "defaultViewTerminal": "Terminal chat",
+            "defaultViewNative": "Native chat"
+          }
         },
         "FloatingWorkspacePane": {
           "aeaf76fda9": "Status Bar",
@@ -5729,7 +5746,9 @@
           "2b6356e744": "Saved",
           "81057d5f71": "Saving...",
           "da37d6f10e": "Copy",
-          "3149964b66": "Copied"
+          "3149964b66": "Copied",
+          "waitForSetupBeforeAgent": "Wait for setup to complete before starting agent",
+          "waitForSetupBeforeAgentHelp": "Turn this on when setup installs dependencies, MCP servers, or config files the agent needs during startup."
         },
         "RepositoryIconPicker": {
           "2b7d27b93c": "Use {{value0}} repo color",
@@ -6361,12 +6380,12 @@
           "3d88af864d": "Choose whether the PowerShell shell option launches Windows PowerShell or PowerShell 7+ for new terminal panes.",
           "8a956cc91e": "Characters treated as word boundaries for double-click selection.",
           "4bebcc2b2c": "Word Separators",
-          "12e06178fa": "MB",
+          "12e06178fa": "rows",
           "907b0b9d3e": "Custom",
-          "5336c096af": "{{value0}} megabytes",
-          "81d86b2dd2": "Maximum terminal scrollback buffer size for new terminal panes.",
-          "9df53f7c14": "Scrollback Size",
-          "c3810b2b42": "Maximum terminal scrollback buffer size.",
+          "5336c096af": "{{value0}} rows",
+          "81d86b2dd2": "Retained desktop terminal rows for new and open panes.",
+          "9df53f7c14": "Scrollback Rows",
+          "c3810b2b42": "Retained desktop terminal rows.",
           "267d020745": "Scrollback, word boundaries, and platform-specific terminal behaviors.",
           "5e5f06c82c": "Advanced",
           "003df129fe": "Split Horizontally",
@@ -7148,7 +7167,11 @@
             "b54cea709b": "sidekick",
             "051203d37c": "pet",
             "6b5a56ac35": "Floating animated pet in the bottom-right corner.",
-            "87d99e634b": "Pet"
+            "87d99e634b": "Pet",
+            "nativeChat": {
+              "title": "Native chat",
+              "description": "Preview the desktop chat surface for Claude and Codex terminal sessions."
+            }
           }
         },
         "floating": {
@@ -8007,8 +8030,9 @@
             "957a0203fc": "Word Separators",
             "56fff3d113": "memory",
             "fffdff40a7": "buffer",
-            "f7d56b6281": "Maximum terminal scrollback buffer size.",
-            "7674e758e1": "Scrollback Size",
+            "rows": "rows",
+            "f7d56b6281": "Retained desktop terminal rows.",
+            "7674e758e1": "Scrollback Rows",
             "411229c636": "light",
             "781f49d942": "divider",
             "77d9f9cd55": "Controls the split divider line between panes in light mode.",
@@ -11773,6 +11797,11 @@
           "chooseHost": "Choose automation host",
           "adding": "Adding project…",
           "addProject": "Add project"
+        },
+        "AutomationSetupDecisionField": {
+          "5a7863909c": "Run setup for each new workspace",
+          "18f000ad4e": "Advanced",
+          "874b72195b": "When this automation creates a workspace, prepare it the same way creating a worktree by hand does — run the project's setup and open its terminal tabs."
         }
       },
       "agent": {
@@ -11995,6 +12024,11 @@
             "later": "Later"
           }
         }
+      },
+      "nativeChat": {
+        "contextMenu": {
+          "copy": "Copy"
+        }
       }
     },
     "i18n": {
@@ -12008,6 +12042,94 @@
           "b3d7e0f1a8": "merge request",
           "a2c6d9e0f7": "Merge Request",
           "91b5c8d7e6": "GitLab"
+        }
+      }
+    }
+  },
+  "components": {
+    "native-chat": {
+      "composer": {
+        "imageUnsupported": "Image paste is not supported for this agent.",
+        "send": "Send",
+        "noPty": "No live terminal — toggle back to reconnect.",
+        "locked": "Input is held by another device.",
+        "placeholder": "Send a message…",
+        "mentionHint": "Referencing file:",
+        "attach": "Attach file",
+        "startDictation": "Start dictation",
+        "stopDictation": "Stop dictation",
+        "noSkills": "No matching skills",
+        "localAttachmentUnsupported": "Local attachments are not available for remote sessions.",
+        "removeAttachment": "Remove attachment"
+      },
+      "tool": {
+        "running": "Running…",
+        "result": "Result"
+      },
+      "status": {
+        "responding": "Agent is responding"
+      },
+      "jumpToLatest": "Jump to latest",
+      "toggle": {
+        "showTerminal": "Show terminal",
+        "showChat": "Show chat view"
+      },
+      "state": {
+        "loading": {
+          "title": "Loading conversation…",
+          "subtitle": "Reading the agent transcript."
+        },
+        "error": {
+          "title": "Could not load conversation",
+          "subtitle": "The transcript could not be read. Toggle back to the terminal to keep working."
+        },
+        "notAgent": {
+          "title": "No conversation here",
+          "subtitle": "This terminal is not running a recognized coding agent."
+        },
+        "empty": {
+          "title": "Start a chat with {{value0}}",
+          "subtitle": "Ask {{value0}} to inspect code, explain output, or make a change."
+        }
+      },
+      "stop": "Stop the agent",
+      "copyMessage": {
+        "copied": "Copied",
+        "copy": "Copy message"
+      },
+      "scrollMessageToTop": "Scroll this message to top",
+      "loadingEarlier": "Loading…",
+      "loadEarlier": "Load earlier messages",
+      "question": {
+        "step": "Step {{value0}}",
+        "other": "Other…",
+        "otherPlaceholder": "Type your answer",
+        "cancel": "Cancel",
+        "send": "Send answer",
+        "next": "Next"
+      },
+      "approval": {
+        "title": "Allow {{value0}}?",
+        "allow": "Allow",
+        "deny": "Deny"
+      }
+    },
+    "tab": {
+      "bar": {
+        "SortableTabContextMenu": {
+          "switchToTerminalView": "Switch to terminal view",
+          "switchToChatView": "Switch to chat view"
+        }
+      }
+    },
+    "workspace": {
+      "cleanup": {
+        "presentationFixtures": {
+          "reviewAlphaCleanup": "Review alpha cleanup"
+        },
+        "presentation": {
+          "gitlabMergeRequestNumber": "MR #{{value0}}",
+          "githubPullRequestNumber": "PR #{{value0}}"
         }
       }
     }
