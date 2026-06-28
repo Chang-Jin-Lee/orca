@@ -193,38 +193,6 @@ export function ExternalAutomationManagers({
                                 'Paused'
                               )}
                         </Badge>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <span className="inline-flex shrink-0 items-center gap-1.5">
-                              {/* Match either key: job.enabled flips mid-flight, so a single-action
-                                  match would drop the spinner a render early. */}
-                              {runningActionKey === actionKey(manager, job, 'pause') ||
-                              runningActionKey === actionKey(manager, job, 'resume') ? (
-                                <RefreshCw className="size-3.5 animate-spin" />
-                              ) : null}
-                              <SettingsSwitch
-                                checked={job.enabled}
-                                onChange={() =>
-                                  onAction(manager, job, job.enabled ? 'pause' : 'resume')
-                                }
-                                disabled={disabledMessage !== null}
-                                ariaLabelledBy={`automation-name-${manager.id}-${job.id}`}
-                              />
-                            </span>
-                          </TooltipTrigger>
-                          <TooltipContent side="bottom" sideOffset={6}>
-                            {disabledMessage ??
-                              (job.enabled
-                                ? translate(
-                                    'auto.components.automations.ExternalAutomationManagers.0def1693bb',
-                                    'Pause external automation'
-                                  )
-                                : translate(
-                                    'auto.components.automations.ExternalAutomationManagers.1c3bfd38fe',
-                                    'Resume external automation'
-                                  ))}
-                          </TooltipContent>
-                        </Tooltip>
                       </div>
                       <div className="mt-1 truncate text-xs font-medium text-foreground/80">
                         {scheduleDisplay.label}
@@ -270,6 +238,38 @@ export function ExternalAutomationManagers({
                       {job.lastStatus ? ` · ${job.lastStatus}` : null}
                     </div>
                     <div className="flex items-center justify-end gap-1">
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <span className="mr-1 inline-flex shrink-0 items-center gap-1.5">
+                            {/* Match either key: job.enabled flips mid-flight, so a single-action
+                                match would drop the spinner a render early. */}
+                            {runningActionKey === actionKey(manager, job, 'pause') ||
+                            runningActionKey === actionKey(manager, job, 'resume') ? (
+                              <RefreshCw className="size-3.5 animate-spin" />
+                            ) : null}
+                            <SettingsSwitch
+                              checked={job.enabled}
+                              onChange={() =>
+                                onAction(manager, job, job.enabled ? 'pause' : 'resume')
+                              }
+                              disabled={disabledMessage !== null}
+                              ariaLabelledBy={`automation-name-${manager.id}-${job.id}`}
+                            />
+                          </span>
+                        </TooltipTrigger>
+                        <TooltipContent side="bottom" sideOffset={6}>
+                          {disabledMessage ??
+                            (job.enabled
+                              ? translate(
+                                  'auto.components.automations.ExternalAutomationManagers.0def1693bb',
+                                  'Pause external automation'
+                                )
+                              : translate(
+                                  'auto.components.automations.ExternalAutomationManagers.1c3bfd38fe',
+                                  'Resume external automation'
+                                ))}
+                        </TooltipContent>
+                      </Tooltip>
                       <ExternalActionButton
                         label={
                           disabledMessage ??
