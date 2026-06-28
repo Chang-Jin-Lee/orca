@@ -641,11 +641,16 @@ export const ORCHESTRATION_HANDLERS: Record<string, CommandHandler> = {
     printResult(result, json, (r) => `Run ${r.runId} started (${r.status})`)
   },
 
-  'orchestration run-stop': async ({ client, json }) => {
+  'orchestration run-stop': async ({ flags, client, json }) => {
     const result = await client.call<{
       runId: string
       stopped: boolean
-    }>('orchestration.runStop', {})
+    }>('orchestration.runStop', {
+      // Why (#4389): target the coordinator for a specific worktree so stopping
+      // one workspace's run does not tear down another's. Omitting it targets
+      // the legacy global (unscoped) run.
+      worktree: getOptionalStringFlag(flags, 'worktree')
+    })
     printResult(result, json, (r) => `Run ${r.runId} stopped`)
   },
 

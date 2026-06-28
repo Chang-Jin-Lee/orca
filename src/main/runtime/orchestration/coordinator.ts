@@ -67,6 +67,11 @@ export type CoordinatorOptions = {
   pollIntervalMs?: number
   maxConcurrent?: number
   worktree?: string
+  // Why (#4389): the workspace scope this coordinator owns, resolved from
+  // `worktree` by the caller. All run/task/dispatch reads are filtered by it so
+  // concurrent orchestrators in different worktrees can't see or mutate each
+  // other's state. Undefined falls back to legacy unscoped (global) behavior.
+  workspaceKey?: string | null
   onLog?: (msg: string) => void
 }
 
@@ -93,9 +98,10 @@ export class Coordinator {
   private runtime: CoordinatorRuntime
   private state: CoordinatorState
   private stopped = false
-  private opts: Required<Omit<CoordinatorOptions, 'onLog' | 'worktree'>> & {
+  private opts: Required<Omit<CoordinatorOptions, 'onLog' | 'worktree' | 'workspaceKey'>> & {
     onLog: (msg: string) => void
     worktree?: string
+    workspaceKey?: string | null
   }
 
   constructor(db: OrchestrationDb, runtime: CoordinatorRuntime, options: CoordinatorOptions) {
@@ -107,6 +113,7 @@ export class Coordinator {
       pollIntervalMs: options.pollIntervalMs ?? DEFAULT_POLL_MS,
       maxConcurrent: options.maxConcurrent ?? MAX_CONCURRENT_DEFAULT,
       worktree: options.worktree,
+      workspaceKey: options.workspaceKey ?? null,
       onLog: options.onLog ?? (() => {})
     }
     this.state = {
@@ -128,7 +135,8 @@ export class Coordinator {
     const run = this.db.createCoordinatorRun({
       spec: this.opts.spec,
       coordinatorHandle: this.opts.coordinatorHandle,
-      pollIntervalMs: this.opts.pollIntervalMs
+      pollIntervalMs: this.opts.pollIntervalMs,
+      workspaceKey: this.opts.workspaceKey
     })
     return this.executeLoop(run.id)
   }
@@ -169,7 +177,7 @@ export class Coordinator {
 
       // Why: if stopped early, treat it as failed since tasks are incomplete.
       // Also failed if any task explicitly failed.
-      const tasks = this.db.listTasks()
+      const tasks = this.db.listTasks({ workspaceKey: this.opts.workspaceKey })
       const allDone = tasks.every((t) => t.status === 'completed' || t.status === 'failed')
       const failedTasks = [
         ...new Set([
@@ -206,7 +214,7 @@ export class Coordinator {
   // itself is an LLM agent.
   private async decompose(): Promise<void> {
     this.state.phase = 'decomposing'
-    const existing = this.db.listTasks()
+    const existing = this.db.listTasks({ workspaceKey: this.opts.workspaceKey })
     if (existing.length === 0) {
       throw new Error(
         'No tasks found. Create tasks with orchestration.taskCreate before running the coordinator.'
@@ -232,7 +240,7 @@ export class Coordinator {
   // is a separate decision documented in R6 of DESIGN_DOC_PREAMBLE_FIX.md.
   private warnStaleDispatches(): void {
     const thresholdIso = new Date(Date.now() - HUNG_THRESHOLD_MS).toISOString()
-    const stale = this.db.getStaleDispatches(thresholdIso)
+    const stale = this.db.getStaleDispatches(thresholdIso, this.opts.workspaceKey)
     for (const ctx of stale) {
       const minutes = Math.round(HUNG_THRESHOLD_MS / 60000)
       this.opts.onLog(
@@ -242,7 +250,11 @@ export class Coordinator {
   }
 
   private processMessages(): void {
-    const messages = this.db.getUnreadMessages(this.opts.coordinatorHandle)
+    const messages = this.db.getUnreadMessages(
+      this.opts.coordinatorHandle,
+      undefined,
+      this.opts.workspaceKey
+    )
     if (messages.length === 0) {
       return
     }
@@ -364,7 +376,13 @@ export class Coordinator {
     const pendingGates = this.db.listGates({ status: 'pending' })
     for (const gate of pendingGates) {
       const task = this.db.getTask(gate.task_id)
-      if (task && task.status !== 'blocked') {
+      // Why (#4389): decision_gates have no workspace_key, so derive scope from
+      // the gate's task and skip tasks owned by another workspace's coordinator
+      // — re-blocking them here would let one orchestrator stomp another's task.
+      if (!task || !this.ownsTask(task)) {
+        continue
+      }
+      if (task.status !== 'blocked') {
         // Why: gate exists but task isn't blocked — inconsistent state.
         // Re-block the task to maintain the invariant.
         this.db.updateTaskStatus(gate.task_id, 'blocked')
@@ -374,13 +392,16 @@ export class Coordinator {
 
   private async dispatchReadyTasks(): Promise<void> {
     this.state.phase = 'dispatching'
-    const readyTasks = this.db.listTasks({ ready: true })
+    const readyTasks = this.db.listTasks({ ready: true, workspaceKey: this.opts.workspaceKey })
     if (readyTasks.length === 0) {
       return
     }
 
     // Why: count currently dispatched tasks to enforce concurrency limit.
-    const dispatched = this.db.listTasks({ status: 'dispatched' })
+    const dispatched = this.db.listTasks({
+      status: 'dispatched',
+      workspaceKey: this.opts.workspaceKey
+    })
     let slotsAvailable = this.opts.maxConcurrent - dispatched.length
     if (slotsAvailable <= 0) {
       return
@@ -514,7 +535,10 @@ export class Coordinator {
   private async getAvailableTerminals(): Promise<string[]> {
     try {
       const result = await this.runtime.listTerminals(this.opts.worktree)
-      const dispatched = this.db.listTasks({ status: 'dispatched' })
+      const dispatched = this.db.listTasks({
+        status: 'dispatched',
+        workspaceKey: this.opts.workspaceKey
+      })
       const busyHandles = new Set<string>()
 
       for (const task of dispatched) {
@@ -544,7 +568,7 @@ export class Coordinator {
   }
 
   private checkConvergence(): boolean {
-    const tasks = this.db.listTasks()
+    const tasks = this.db.listTasks({ workspaceKey: this.opts.workspaceKey })
     if (tasks.length === 0) {
       return true
     }
@@ -568,6 +592,17 @@ export class Coordinator {
     }
 
     return false
+  }
+
+  // Why (#4389): true when this coordinator's workspace scope covers the task —
+  // either the coordinator is unscoped (legacy/global, owns everything) or the
+  // task is legacy NULL or carries this coordinator's exact workspace_key. Used
+  // where a row is read outside a workspace-scoped query (e.g. decision gates).
+  private ownsTask(task: TaskRow): boolean {
+    if (this.opts.workspaceKey == null) {
+      return true
+    }
+    return task.workspace_key == null || task.workspace_key === this.opts.workspaceKey
   }
 
   private sleep(ms: number): Promise<void> {

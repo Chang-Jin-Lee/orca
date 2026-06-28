@@ -533,6 +533,105 @@ describe('OrchestrationDb', () => {
     })
   })
 
+  // Why (#4389): two orchestrators in different worktrees of one Orca instance
+  // must not see or mutate each other's runs, tasks, or dispatches. These cover
+  // the data-layer proof; the start/stop guard is exercised in runtime-rpc.test.
+  describe('workspace scoping (#4389)', () => {
+    const KEY_A = 'worktree:wt_a'
+    const KEY_B = 'worktree:wt_b'
+
+    it('getActiveCoordinatorRun returns each workspace its own active run', () => {
+      const d = createDb()
+      const runA = d.createCoordinatorRun({
+        spec: 'a',
+        coordinatorHandle: 'coord_a',
+        workspaceKey: KEY_A
+      })
+      const runB = d.createCoordinatorRun({
+        spec: 'b',
+        coordinatorHandle: 'coord_b',
+        workspaceKey: KEY_B
+      })
+
+      expect(d.getActiveCoordinatorRun(KEY_A)?.id).toBe(runA.id)
+      expect(d.getActiveCoordinatorRun(KEY_B)?.id).toBe(runB.id)
+      // Strict per-workspace lookup never crosses workspaces.
+      expect(d.getActiveCoordinatorRunForWorkspace(KEY_A)?.id).toBe(runA.id)
+      expect(d.getActiveCoordinatorRunForWorkspace(KEY_B)?.id).toBe(runB.id)
+    })
+
+    it('a legacy (NULL) run is visible to every scoped lookup but a scoped run is not', () => {
+      const d = createDb()
+      const legacy = d.createCoordinatorRun({ spec: 'legacy', coordinatorHandle: 'coord' })
+      // OR-NULL semantics: a scoped lookup still sees the global legacy run.
+      expect(d.getActiveCoordinatorRun(KEY_A)?.id).toBe(legacy.id)
+      // Strict per-workspace lookup does NOT see the NULL legacy run.
+      expect(d.getActiveCoordinatorRunForWorkspace(KEY_A)).toBeUndefined()
+
+      const runA = d.createCoordinatorRun({
+        spec: 'a',
+        coordinatorHandle: 'coord_a',
+        workspaceKey: KEY_A
+      })
+      // B's scoped guard must not see A's run (no cross-workspace block).
+      expect(d.getActiveCoordinatorRun(KEY_B)?.id).toBe(legacy.id)
+      expect(d.getActiveCoordinatorRunForWorkspace(KEY_B)).toBeUndefined()
+      expect(d.getActiveCoordinatorRunForWorkspace(KEY_A)?.id).toBe(runA.id)
+    })
+
+    it('listTasks scoped to A never returns B rows (legacy NULL stays shared)', () => {
+      const d = createDb()
+      const taskA = d.createTask({ spec: 'a-work', workspaceKey: KEY_A })
+      const taskB = d.createTask({ spec: 'b-work', workspaceKey: KEY_B })
+      const legacy = d.createTask({ spec: 'legacy-work' })
+
+      const aReady = d.listTasks({ ready: true, workspaceKey: KEY_A }).map((t) => t.id)
+      expect(aReady).toContain(taskA.id)
+      expect(aReady).toContain(legacy.id)
+      expect(aReady).not.toContain(taskB.id)
+
+      const aAll = d.listTasks({ workspaceKey: KEY_A }).map((t) => t.id)
+      expect(aAll.sort()).toEqual([taskA.id, legacy.id].sort())
+
+      // Unscoped read still sees everything (legacy/global behavior preserved).
+      expect(d.listTasks()).toHaveLength(3)
+    })
+
+    it('getStaleDispatches scoped to A never surfaces B dispatches', () => {
+      const d = createDb()
+      const taskA = d.createTask({ spec: 'a-work', workspaceKey: KEY_A })
+      const taskB = d.createTask({ spec: 'b-work', workspaceKey: KEY_B })
+      const ctxA = d.createDispatchContext(taskA.id, 'term_a')
+      const ctxB = d.createDispatchContext(taskB.id, 'term_b')
+
+      // A future threshold puts both default dispatched_at values in the past,
+      // so both are "stale" by the time filter — the only thing under test here
+      // is that the workspace scope keeps B's dispatch out of A's result.
+      const future = new Date(Date.now() + 60_000).toISOString()
+      const staleA = d.getStaleDispatches(future, KEY_A).map((c) => c.id)
+      expect(staleA).toContain(ctxA.id)
+      expect(staleA).not.toContain(ctxB.id)
+    })
+
+    it('getIdleTerminals scoped to A treats B-workspace busy terminals as available', () => {
+      const d = createDb()
+      // getIdleTerminals derives its candidate list from message history, so
+      // seed messages that make both worker handles known terminals.
+      d.insertMessage({ from: 'coord_a', to: 'term_a', subject: 'hi' })
+      d.insertMessage({ from: 'coord_b', to: 'term_b', subject: 'hi' })
+      const taskA = d.createTask({ spec: 'a-work', workspaceKey: KEY_A })
+      const taskB = d.createTask({ spec: 'b-work', workspaceKey: KEY_B })
+      d.createDispatchContext(taskA.id, 'term_a')
+      d.createDispatchContext(taskB.id, 'term_b')
+
+      // A's busy set must include only A's dispatch; B's busy terminal stays
+      // available to A so one orchestrator can't starve another of slots.
+      const idleForA = d.getIdleTerminals([], KEY_A)
+      expect(idleForA).toContain('term_b')
+      expect(idleForA).not.toContain('term_a')
+    })
+  })
+
   describe('lifecycle', () => {
     it('resetAll clears all tables', () => {
       const d = createDb()

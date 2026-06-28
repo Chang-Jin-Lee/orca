@@ -8436,7 +8436,10 @@ export class OrcaRuntimeService {
     // Why: create an escalation message so the coordinator is notified about
     // the unexpected exit on its next check cycle, even if the circuit breaker
     // hasn't tripped yet.
-    const run = this._orchestrationDb.getActiveCoordinatorRun()
+    // Why (#4389): resolve the run from THIS dispatch's workspace so the
+    // escalation goes to the coordinator that actually owns the worker, not the
+    // most-recent global run; legacy NULL dispatches fall back to global.
+    const run = this.resolveCoordinatorRunForDispatch(dispatch.workspace_key)
     if (run) {
       this._orchestrationDb.insertMessage({
         from: handle,
@@ -8444,6 +8447,7 @@ export class OrcaRuntimeService {
         subject: `Agent exited unexpectedly (code ${exitCode})`,
         type: 'escalation',
         priority: 'high',
+        workspaceKey: dispatch.workspace_key,
         payload: JSON.stringify({
           taskId: dispatch.task_id,
           exitCode,
@@ -8451,6 +8455,23 @@ export class OrcaRuntimeService {
         })
       })
     }
+  }
+
+  // Why (#4389): a worker terminal is attributed to ITS coordinator by routing
+  // through the dispatch's workspace_key. A scoped dispatch resolves the run for
+  // that exact workspace (strict, no global fallback) so concurrent orchestrators
+  // never cross-attribute; a legacy NULL dispatch keeps the original global
+  // most-recent-run behavior.
+  private resolveCoordinatorRunForDispatch(
+    workspaceKey: string | null
+  ): ReturnType<OrchestrationDb['getActiveCoordinatorRun']> {
+    if (!this._orchestrationDb) {
+      return undefined
+    }
+    if (workspaceKey == null) {
+      return this._orchestrationDb.getActiveCoordinatorRun()
+    }
+    return this._orchestrationDb.getActiveCoordinatorRunForWorkspace(workspaceKey)
   }
 
   async listTerminals(
@@ -17997,7 +18018,11 @@ export class OrcaRuntimeService {
         const activeDispatch = this._orchestrationDb?.getActiveDispatchForTerminal(
           input.callerTerminalHandle
         )
-        const activeRun = this._orchestrationDb?.getActiveCoordinatorRun()
+        // Why (#4389): attribute the worker to the coordinator that owns its
+        // dispatch's workspace, not the most-recent global run.
+        const activeRun = activeDispatch
+          ? this.resolveCoordinatorRunForDispatch(activeDispatch.workspace_key)
+          : undefined
         if (activeDispatch) {
           candidates.push({
             source: 'orchestration-context',
@@ -18144,6 +18169,40 @@ export class OrcaRuntimeService {
       return this._orchestrationDb ?? this.getOrchestrationDb()
     } catch {
       return this._orchestrationDb
+    }
+  }
+
+  // Why (#4389): resolves an orchestration worktree selector to the workspace
+  // key used to scope coordinator runs/tasks/dispatches. Goes through the same
+  // selector resolution as lineage so it is provider-agnostic and works for
+  // SSH/remote runtimes (no local-path assumptions). Returns null when there is
+  // no selector or it cannot be resolved, which falls back to legacy/global
+  // (unscoped) behavior for single-orchestrator installs.
+  async resolveWorkspaceKeyForSelector(selector?: string | null): Promise<string | null> {
+    if (!selector) {
+      return null
+    }
+    try {
+      const worktree = await this.resolveWorktreeSelector(selector)
+      return worktreeWorkspaceKey(worktree.id)
+    } catch {
+      return null
+    }
+  }
+
+  // Why (#4389): tasks created by a worker/coordinator terminal belong to that
+  // terminal's worktree; scoping them by it keeps each orchestrator's task DAG
+  // private. Returns null when the handle is absent/stale so task creation stays
+  // recoverable and legacy (global) when no workspace can be proven.
+  async resolveWorkspaceKeyForTerminalHandle(handle?: string | null): Promise<string | null> {
+    if (!handle) {
+      return null
+    }
+    try {
+      const terminal = await this.showTerminal(handle)
+      return this.resolveWorkspaceKeyForSelector(`id:${terminal.worktreeId}`)
+    } catch {
+      return null
     }
   }
 
@@ -19646,7 +19705,16 @@ export class OrcaRuntimeService {
             displayName: task.display_name
           })
         : { taskTitle: '', displayName: '' }
-    const activeRun = dispatch.status === 'completed' ? undefined : db?.getActiveCoordinatorRun?.()
+    // Why (#4389): resolve the run from the dispatch's own workspace so a worker
+    // of coordinator B is never attributed to coordinator A's run/handle. A
+    // scoped dispatch uses the strict per-workspace lookup; a legacy NULL
+    // dispatch keeps the original global most-recent-run behavior.
+    const activeRun =
+      dispatch.status === 'completed'
+        ? undefined
+        : dispatch.workspace_key == null
+          ? db?.getActiveCoordinatorRun?.()
+          : db?.getActiveCoordinatorRunForWorkspace?.(dispatch.workspace_key)
     const parentTerminalHandle =
       task?.created_by_terminal_handle ??
       (activeRun?.coordinator_handle && activeRun.coordinator_handle !== handle

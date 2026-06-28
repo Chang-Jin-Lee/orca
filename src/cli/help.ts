@@ -87,7 +87,7 @@ Orchestration:
   orchestration dispatch    Dispatch a task to a terminal
   orchestration dispatch-show Show dispatch context for a task
   orchestration run         Start the coordinator loop
-  orchestration run-stop    Stop the active coordinator run
+  orchestration run-stop    Stop the active coordinator run [--worktree <selector>]
   orchestration gate-create Create a decision gate blocking a task
   orchestration gate-resolve Resolve a pending decision gate
   orchestration gate-list   List decision gates

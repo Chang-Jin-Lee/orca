@@ -360,7 +360,7 @@ export const ORCHESTRATION_METHODS: RpcMethod[] = [
   defineMethod({
     name: 'orchestration.taskCreate',
     params: TaskCreateParams,
-    handler: (params, { runtime }) => {
+    handler: async (params, { runtime }) => {
       const db = runtime.getOrchestrationDb()
       let deps: string[] | undefined
       if (params.deps) {
@@ -374,13 +374,20 @@ export const ORCHESTRATION_METHODS: RpcMethod[] = [
           throw new Error('Invalid --deps: must be a JSON array of task IDs')
         }
       }
+      // Why (#4389): scope the task to the creating terminal's worktree so the
+      // orchestrator for that workspace is the only one whose loop picks it up.
+      // Null (no/stale handle) stays legacy/global, matching prior behavior.
+      const workspaceKey = await runtime.resolveWorkspaceKeyForTerminalHandle(
+        params.callerTerminalHandle
+      )
       const task = db.createTask({
         spec: params.spec,
         taskTitle: params.taskTitle,
         displayName: params.displayName,
         deps,
         parentId: params.parent,
-        createdByTerminalHandle: params.callerTerminalHandle
+        createdByTerminalHandle: params.callerTerminalHandle,
+        workspaceKey
       })
       return { task }
     }

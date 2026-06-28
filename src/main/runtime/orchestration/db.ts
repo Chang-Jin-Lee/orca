@@ -34,6 +34,21 @@ function generateId(prefix: string): string {
   return `${prefix}_${randomBytes(6).toString('hex')}`
 }
 
+// Why (#4389): scope a query to one workspace without hiding pre-v6 rows. A
+// provided key matches its own rows plus legacy NULL rows (single-orchestrator
+// installs predate scoping); an omitted key adds no constraint, preserving the
+// original global behavior for callers that have no worktree. The fragment
+// carries a leading ` AND ` so callers can append it to an existing WHERE.
+function workspaceScopeClause(workspaceKey?: string | null): {
+  clause: string
+  params: string[]
+} {
+  if (workspaceKey == null) {
+    return { clause: '', params: [] }
+  }
+  return { clause: ' AND (workspace_key = ? OR workspace_key IS NULL)', params: [workspaceKey] }
+}
+
 // Why: v1 → v2 added `'heartbeat'` to messages.type CHECK + `last_heartbeat_at`
 // column (preamble-hardening PR). v2 → v3 adds `delivered_at` column so
 // push-on-idle can distinguish queued-but-undelivered from user-acknowledged
@@ -41,7 +56,11 @@ function generateId(prefix: string): string {
 // the terminal that created a task so task-record worktree creation can infer
 // the parent workspace even when no dispatch context exists. v4 → v5 adds
 // explicit task_title/display_name fields for orchestration worker UI labels.
-const SCHEMA_VERSION = 5
+// v5 → v6 adds a nullable `workspace_key` column to coordinator_runs, tasks,
+// dispatch_contexts, and messages so concurrent orchestrators in different
+// worktrees of one Orca instance no longer share unscoped run/task/dispatch
+// state (#4389). Existing rows keep NULL = legacy/global scope.
+const SCHEMA_VERSION = 6
 
 export class OrchestrationDb {
   private db: Database.Database
@@ -75,7 +94,8 @@ export class OrchestrationDb {
         read          INTEGER NOT NULL DEFAULT 0,
         sequence      INTEGER PRIMARY KEY AUTOINCREMENT,
         created_at    TEXT NOT NULL DEFAULT (datetime('now')),
-        delivered_at  TEXT
+        delivered_at  TEXT,
+        workspace_key TEXT
       );
 
       CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_id ON messages(id);
@@ -97,7 +117,8 @@ export class OrchestrationDb {
         deps          TEXT NOT NULL DEFAULT '[]',
         result        TEXT,
         created_at    TEXT NOT NULL DEFAULT (datetime('now')),
-        completed_at  TEXT
+        completed_at  TEXT,
+        workspace_key TEXT
       );
 
       CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
@@ -114,7 +135,8 @@ export class OrchestrationDb {
         dispatched_at       TEXT,
         completed_at        TEXT,
         created_at          TEXT NOT NULL DEFAULT (datetime('now')),
-        last_heartbeat_at   TEXT
+        last_heartbeat_at   TEXT,
+        workspace_key       TEXT
       );
 
       CREATE INDEX IF NOT EXISTS idx_dispatch_task ON dispatch_contexts(task_id);
@@ -143,10 +165,12 @@ export class OrchestrationDb {
         coordinator_handle  TEXT NOT NULL,
         poll_interval_ms    INTEGER NOT NULL DEFAULT 2000,
         created_at          TEXT NOT NULL DEFAULT (datetime('now')),
-        completed_at        TEXT
+        completed_at        TEXT,
+        workspace_key       TEXT
       );
     `)
     this.createUndeliveredInboxIndexIfPossible()
+    this.createWorkspaceScopeIndexesIfPossible()
   }
 
   // Why: `CREATE TABLE IF NOT EXISTS` is a no-op against an existing on-disk
@@ -246,7 +270,27 @@ export class OrchestrationDb {
           this.db.exec(`ALTER TABLE tasks ADD COLUMN display_name TEXT`)
         }
       }
+      // v5 → v6: add nullable workspace_key to the four orchestration tables so
+      // concurrent orchestrators in different worktrees scope their own runs,
+      // tasks, dispatches, and messages (#4389). Existing rows stay NULL, which
+      // every scoped read still matches (legacy/global), preserving behavior for
+      // single-orchestrator installs.
+      if (current < 6) {
+        if (!this.hasColumn('coordinator_runs', 'workspace_key')) {
+          this.db.exec(`ALTER TABLE coordinator_runs ADD COLUMN workspace_key TEXT`)
+        }
+        if (!this.hasColumn('tasks', 'workspace_key')) {
+          this.db.exec(`ALTER TABLE tasks ADD COLUMN workspace_key TEXT`)
+        }
+        if (!this.hasColumn('dispatch_contexts', 'workspace_key')) {
+          this.db.exec(`ALTER TABLE dispatch_contexts ADD COLUMN workspace_key TEXT`)
+        }
+        if (!this.hasColumn('messages', 'workspace_key')) {
+          this.db.exec(`ALTER TABLE messages ADD COLUMN workspace_key TEXT`)
+        }
+      }
       this.createUndeliveredInboxIndexIfPossible()
+      this.createWorkspaceScopeIndexesIfPossible()
 
       this.db.pragma(`user_version = ${SCHEMA_VERSION}`)
       this.db.exec('COMMIT')
@@ -271,6 +315,32 @@ export class OrchestrationDb {
     `)
   }
 
+  // Why: the (workspace_key, status) indexes can only be created after the
+  // v5 → v6 ALTER adds the column to upgraded on-disk tables. createTables()
+  // runs before migrate(), so attaching these indexes there would fail against
+  // a pre-v6 schema; gating on the column keeps both the fresh-install and
+  // upgrade paths idempotent.
+  private createWorkspaceScopeIndexesIfPossible(): void {
+    if (this.hasColumn('coordinator_runs', 'workspace_key')) {
+      this.db.exec(`
+        CREATE INDEX IF NOT EXISTS idx_coordinator_runs_workspace_status
+          ON coordinator_runs(workspace_key, status)
+      `)
+    }
+    if (this.hasColumn('tasks', 'workspace_key')) {
+      this.db.exec(`
+        CREATE INDEX IF NOT EXISTS idx_tasks_workspace_status
+          ON tasks(workspace_key, status)
+      `)
+    }
+    if (this.hasColumn('dispatch_contexts', 'workspace_key')) {
+      this.db.exec(`
+        CREATE INDEX IF NOT EXISTS idx_dispatch_workspace_status
+          ON dispatch_contexts(workspace_key, status)
+      `)
+    }
+  }
+
   // Why: sqlite_master stores the original CREATE TABLE SQL including the
   // CHECK clause. Inspecting that text is the cheapest reliable way to tell
   // whether the pre-rebuild schema already knows about 'heartbeat' without
@@ -293,11 +363,12 @@ export class OrchestrationDb {
     priority?: MessagePriority
     threadId?: string
     payload?: string
+    workspaceKey?: string | null
   }): MessageRow {
     const id = generateId('msg')
     const stmt = this.db.prepare(`
-      INSERT INTO messages (id, from_handle, to_handle, subject, body, type, priority, thread_id, payload)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO messages (id, from_handle, to_handle, subject, body, type, priority, thread_id, payload, workspace_key)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `)
     stmt.run(
       id,
@@ -308,23 +379,31 @@ export class OrchestrationDb {
       msg.type ?? 'status',
       msg.priority ?? 'normal',
       msg.threadId ?? null,
-      msg.payload ?? null
+      msg.payload ?? null,
+      msg.workspaceKey ?? null
     )
     return this.db.prepare('SELECT * FROM messages WHERE id = ?').get(id) as MessageRow
   }
 
-  getUnreadMessages(toHandle: string, types?: MessageType[]): MessageRow[] {
+  getUnreadMessages(
+    toHandle: string,
+    types?: MessageType[],
+    workspaceKey?: string | null
+  ): MessageRow[] {
+    const scope = workspaceScopeClause(workspaceKey)
     if (types && types.length > 0) {
       const placeholders = types.map(() => '?').join(',')
       return this.db
         .prepare(
-          `SELECT * FROM messages WHERE to_handle = ? AND read = 0 AND type IN (${placeholders}) ORDER BY sequence`
+          `SELECT * FROM messages WHERE to_handle = ? AND read = 0 AND type IN (${placeholders})${scope.clause} ORDER BY sequence`
         )
-        .all(toHandle, ...types) as MessageRow[]
+        .all(toHandle, ...types, ...scope.params) as MessageRow[]
     }
     return this.db
-      .prepare('SELECT * FROM messages WHERE to_handle = ? AND read = 0 ORDER BY sequence')
-      .all(toHandle) as MessageRow[]
+      .prepare(
+        `SELECT * FROM messages WHERE to_handle = ? AND read = 0${scope.clause} ORDER BY sequence`
+      )
+      .all(toHandle, ...scope.params) as MessageRow[]
   }
 
   // Why: push-on-idle delivery must not replay messages that were already
@@ -434,6 +513,7 @@ export class OrchestrationDb {
     deps?: string[]
     parentId?: string
     createdByTerminalHandle?: string
+    workspaceKey?: string | null
   }): TaskRow {
     const id = generateId('task')
     const depsJson = JSON.stringify(task.deps ?? [])
@@ -446,7 +526,7 @@ export class OrchestrationDb {
     })
     this.db
       .prepare(
-        'INSERT INTO tasks (id, parent_id, created_by_terminal_handle, task_title, display_name, spec, status, deps) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+        'INSERT INTO tasks (id, parent_id, created_by_terminal_handle, task_title, display_name, spec, status, deps, workspace_key) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
       )
       .run(
         id,
@@ -456,7 +536,8 @@ export class OrchestrationDb {
         display.displayName || null,
         task.spec,
         status,
-        depsJson
+        depsJson,
+        task.workspaceKey ?? null
       )
     return this.db.prepare('SELECT * FROM tasks WHERE id = ?').get(id) as TaskRow
   }
@@ -465,16 +546,30 @@ export class OrchestrationDb {
     return this.db.prepare('SELECT * FROM tasks WHERE id = ?').get(id) as TaskRow | undefined
   }
 
-  listTasks(filter?: { status?: TaskStatus; ready?: boolean }): TaskRow[] {
+  listTasks(filter?: {
+    status?: TaskStatus
+    ready?: boolean
+    workspaceKey?: string | null
+  }): TaskRow[] {
+    const scope = workspaceScopeClause(filter?.workspaceKey)
     if (filter?.ready) {
       return this.db
-        .prepare("SELECT * FROM tasks WHERE status = 'ready' ORDER BY created_at")
-        .all() as TaskRow[]
+        .prepare(`SELECT * FROM tasks WHERE status = 'ready'${scope.clause} ORDER BY created_at`)
+        .all(...scope.params) as TaskRow[]
     }
     if (filter?.status) {
       return this.db
-        .prepare('SELECT * FROM tasks WHERE status = ? ORDER BY created_at')
-        .all(filter.status) as TaskRow[]
+        .prepare(`SELECT * FROM tasks WHERE status = ?${scope.clause} ORDER BY created_at`)
+        .all(filter.status, ...scope.params) as TaskRow[]
+    }
+    if (scope.clause) {
+      // Why: the no-filter branch has no existing WHERE, so the scope fragment's
+      // leading ` AND ` would be a syntax error; emit a WHERE form instead.
+      return this.db
+        .prepare(
+          'SELECT * FROM tasks WHERE (workspace_key = ? OR workspace_key IS NULL) ORDER BY created_at'
+        )
+        .all(...scope.params) as TaskRow[]
     }
     return this.db.prepare('SELECT * FROM tasks ORDER BY created_at').all() as TaskRow[]
   }
@@ -597,12 +692,15 @@ export class OrchestrationDb {
     const priorFailures = prior?.max_failures ?? 0
 
     const id = generateId('ctx')
+    // Why (#4389): a dispatch inherits its task's workspace_key so the
+    // coordinator that owns the task is the only one whose stale-dispatch and
+    // idle-terminal scans see it; legacy tasks carry NULL and stay global.
     this.db
       .prepare(
-        `INSERT INTO dispatch_contexts (id, task_id, assignee_handle, status, failure_count, dispatched_at)
-         VALUES (?, ?, ?, 'dispatched', ?, datetime('now'))`
+        `INSERT INTO dispatch_contexts (id, task_id, assignee_handle, status, failure_count, dispatched_at, workspace_key)
+         VALUES (?, ?, ?, 'dispatched', ?, datetime('now'), ?)`
       )
-      .run(id, taskId, assigneeHandle, priorFailures)
+      .run(id, taskId, assigneeHandle, priorFailures, task.workspace_key ?? null)
 
     this.db.prepare("UPDATE tasks SET status = 'dispatched' WHERE id = ?").run(taskId)
 
@@ -689,16 +787,17 @@ export class OrchestrationDb {
   // heartbeat interval (false positive). Callers supply the threshold as an
   // ISO timestamp so the SQLite string-compare ordering works correctly
   // (ISO-8601 compares lexicographically in time order).
-  getStaleDispatches(thresholdIso: string): DispatchContextRow[] {
+  getStaleDispatches(thresholdIso: string, workspaceKey?: string | null): DispatchContextRow[] {
+    const scope = workspaceScopeClause(workspaceKey)
     return this.db
       .prepare(
         `SELECT * FROM dispatch_contexts
          WHERE status = 'dispatched'
            AND dispatched_at IS NOT NULL
            AND dispatched_at < ?
-           AND (last_heartbeat_at IS NULL OR last_heartbeat_at < ?)`
+           AND (last_heartbeat_at IS NULL OR last_heartbeat_at < ?)${scope.clause}`
       )
-      .all(thresholdIso, thresholdIso) as DispatchContextRow[]
+      .all(thresholdIso, thresholdIso, ...scope.params) as DispatchContextRow[]
   }
 
   failDispatch(ctxId: string, error: string): DispatchContextRow | undefined {
@@ -815,13 +914,20 @@ export class OrchestrationDb {
     spec: string
     coordinatorHandle: string
     pollIntervalMs?: number
+    workspaceKey?: string | null
   }): CoordinatorRun {
     const id = generateId('run')
     this.db
       .prepare(
-        "INSERT INTO coordinator_runs (id, spec, status, coordinator_handle, poll_interval_ms) VALUES (?, ?, 'running', ?, ?)"
+        "INSERT INTO coordinator_runs (id, spec, status, coordinator_handle, poll_interval_ms, workspace_key) VALUES (?, ?, 'running', ?, ?, ?)"
       )
-      .run(id, run.spec, run.coordinatorHandle, run.pollIntervalMs ?? 2000)
+      .run(
+        id,
+        run.spec,
+        run.coordinatorHandle,
+        run.pollIntervalMs ?? 2000,
+        run.workspaceKey ?? null
+      )
     return this.db.prepare('SELECT * FROM coordinator_runs WHERE id = ?').get(id) as CoordinatorRun
   }
 
@@ -842,24 +948,46 @@ export class OrchestrationDb {
     return this.getCoordinatorRun(id)
   }
 
-  getActiveCoordinatorRun(): CoordinatorRun | undefined {
+  // Why (#4389): an optional workspaceKey scopes the active-run lookup so the
+  // start/stop guard and worker attribution see only THIS workspace's run (plus
+  // legacy NULL runs). Called with no key it keeps the original global behavior
+  // for callers that have no worktree context.
+  getActiveCoordinatorRun(workspaceKey?: string | null): CoordinatorRun | undefined {
+    const scope = workspaceScopeClause(workspaceKey)
     return this.db
       .prepare(
-        "SELECT * FROM coordinator_runs WHERE status = 'running' ORDER BY created_at DESC LIMIT 1"
+        `SELECT * FROM coordinator_runs WHERE status = 'running'${scope.clause} ORDER BY created_at DESC LIMIT 1`
       )
-      .get() as CoordinatorRun | undefined
+      .get(...scope.params) as CoordinatorRun | undefined
+  }
+
+  // Why (#4389): strict per-workspace lookup (no legacy NULL fallback) so a
+  // worker terminal whose dispatch carries a workspace_key is attributed only
+  // to the coordinator that actually owns that workspace, never the most-recent
+  // global run. Callers with a known dispatch workspace use this; callers
+  // without one fall back to getActiveCoordinatorRun().
+  getActiveCoordinatorRunForWorkspace(workspaceKey: string): CoordinatorRun | undefined {
+    return this.db
+      .prepare(
+        "SELECT * FROM coordinator_runs WHERE status = 'running' AND workspace_key = ? ORDER BY created_at DESC LIMIT 1"
+      )
+      .get(workspaceKey) as CoordinatorRun | undefined
   }
 
   // ── Queries for Coordinator ──
 
-  getIdleTerminals(excludeHandles: string[] = []): string[] {
+  getIdleTerminals(excludeHandles: string[] = [], workspaceKey?: string | null): string[] {
     // Why: returns terminal handles that have no active dispatch, so the
     // coordinator knows which terminals are available for new task assignments.
+    // Why (#4389): the busy set is scoped to this workspace's dispatches so one
+    // orchestrator does not count another workspace's busy terminals as taken;
+    // legacy NULL dispatches stay visible to every scope.
+    const scope = workspaceScopeClause(workspaceKey)
     const active = this.db
       .prepare(
-        "SELECT DISTINCT assignee_handle FROM dispatch_contexts WHERE status IN ('pending', 'dispatched')"
+        `SELECT DISTINCT assignee_handle FROM dispatch_contexts WHERE status IN ('pending', 'dispatched')${scope.clause}`
       )
-      .all() as { assignee_handle: string }[]
+      .all(...scope.params) as { assignee_handle: string }[]
     const busyHandles = new Set(active.map((r) => r.assignee_handle))
     for (const h of excludeHandles) {
       busyHandles.add(h)
