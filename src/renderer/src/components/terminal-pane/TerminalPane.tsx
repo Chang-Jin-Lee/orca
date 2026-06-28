@@ -1342,7 +1342,6 @@ export default function TerminalPane({
       setCacheTimerStartedAt,
       setRuntimePaneTitle,
       suppressPtyExit,
-      clearExitedPanePtyLayoutBinding,
       syncPanePtyLayoutBinding,
       tabId,
       updateTabPtyId,
