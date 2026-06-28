@@ -169,6 +169,7 @@ function buildTerminalPastePlan({
     shouldChunk,
     maxBytes
   })
+  const bracketed = mode === 'bracketed-terminal' || (mode === 'chunked' && shouldBracketChunk)
   const plan: TerminalPastePlan = {
     target,
     payload,
@@ -176,7 +177,11 @@ function buildTerminalPastePlan({
     newlinePolicy: 'preserve',
     runtimeKey: target.runtime.runtimeKey,
     ...(shouldChunk ? { maxChunkBytes } : {}),
-    bracketed: mode === 'bracketed-terminal' || (mode === 'chunked' && shouldBracketChunk),
+    bracketed,
+    // Why: a `direct` paste still reaches the TUI bracketed when the terminal
+    // has bracketed-paste mode on, and that wrap drives the corrupting redraw
+    // (issue #5960) the same as an Orca-bracketed paste.
+    bracketedToTerminal: bracketed || (mode === 'direct' && terminalBracketedPasteMode),
     redactedDiagnostic: '',
     ...(mode === 'reject' ? { rejectReason: 'payload-too-large' } : {})
   }

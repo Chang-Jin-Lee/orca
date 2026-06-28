@@ -83,8 +83,10 @@ export async function pasteTerminalClipboard({
     const result = await pasteText(filePath, {
       // Why: a generated clipboard-image path is terminal image injection, not
       // ordinary one-line text. Keep it off the Ctrl+C stale-text paste path.
-      forceBracketedPaste: true,
-      recoverImagePasteWebglAtlas: true
+      // WebGL atlas recovery now keys off the resulting bracketed paste, so it
+      // covers this force-bracketed image path and corrupting text/URL pastes
+      // (issue #5960) alike.
+      forceBracketedPaste: true
     })
     if (result === false) {
       return { status: 'skipped', reason: 'image-paste-rejected' }

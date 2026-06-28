@@ -39,6 +39,11 @@ export type TerminalPastePlan = {
   runtimeKey: string
   maxChunkBytes?: number
   bracketed: boolean
+  // Whether the bytes reach the TUI wrapped in bracketed-paste escapes — true
+  // either because Orca brackets them (`bracketed`) or because the terminal has
+  // bracketed-paste mode on and wraps a direct paste itself. The corrupting TUI
+  // redraw (issue #5960) keys off this, not `bracketed` alone.
+  bracketedToTerminal: boolean
   redactedDiagnostic: string
   rejectReason?: TerminalPasteExecutionReason
 }
@@ -46,7 +51,6 @@ export type TerminalPastePlan = {
 export type TerminalPasteTextOptions = {
   forceBracketedPaste?: boolean
   forceBracketedPasteForMultiline?: boolean
-  recoverImagePasteWebglAtlas?: boolean
 }
 
 export type TerminalPasteExecutionReason =

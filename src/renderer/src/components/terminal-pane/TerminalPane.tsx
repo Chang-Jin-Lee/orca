@@ -115,7 +115,7 @@ import {
 } from '@/components/terminal-quick-commands/TerminalQuickCommandDialog'
 import { keybindingMatchesAction } from '../../../../shared/keybindings'
 import { pasteTerminalClipboard } from './terminal-clipboard-paste'
-import { scheduleImagePasteWebglAtlasRecovery } from './terminal-webgl-paste-recovery'
+import { maybeScheduleWebglAtlasRecoveryForPaste } from './terminal-webgl-paste-recovery'
 import { restoreTerminalFitToDesktop, restoreTerminalFitsToDesktop } from './terminal-fit-restore'
 import { useVisibleTerminalTabClaim } from './use-visible-terminal-tab-claim'
 
@@ -1635,9 +1635,7 @@ export default function TerminalPane({
       if (text) {
         recordTerminalUserInputForLeaf(tabId, pane.leafId)
       }
-      if (options?.recoverImagePasteWebglAtlas) {
-        scheduleImagePasteWebglAtlasRecovery()
-      }
+      maybeScheduleWebglAtlasRecoveryForPaste(plan)
     }
 
     const pasteFromClipboard = (
@@ -2408,6 +2406,9 @@ export default function TerminalPane({
           return
         }
         recordTerminalUserInputForLeaf(tabId, clickedPane.leafId)
+        // Why: a middle-click URL paste into a bracketed-paste-mode TUI can
+        // corrupt the shared WebGL glyph atlas just like menu/keyboard pastes.
+        maybeScheduleWebglAtlasRecoveryForPaste(plan)
       })
     },
     [getPrimarySelectionMiddleClickPane, tabId, worktreeId]

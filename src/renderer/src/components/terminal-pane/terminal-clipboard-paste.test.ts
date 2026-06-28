@@ -22,7 +22,7 @@ describe('terminal clipboard paste', () => {
 
     expect(pasteText).toHaveBeenCalledWith(
       '/var/folders/3l/b7w02vh17tg5r5s3nhhdf3kh0000gn/T/orca-paste-1760000000000-id.png',
-      { forceBracketedPaste: true, recoverImagePasteWebglAtlas: true }
+      { forceBracketedPaste: true }
     )
   })
 
@@ -103,8 +103,7 @@ describe('terminal clipboard paste', () => {
       runtimeEnvironmentId: undefined
     })
     expect(pasteText).toHaveBeenCalledWith('/var/tmp/orca-paste-1760000000000-id.png', {
-      forceBracketedPaste: true,
-      recoverImagePasteWebglAtlas: true
+      forceBracketedPaste: true
     })
   })
 
@@ -126,8 +125,7 @@ describe('terminal clipboard paste', () => {
       runtimeEnvironmentId: 'remote-host-1'
     })
     expect(pasteText).toHaveBeenCalledWith('/tmp/orca-paste-1760000000000-runtime.png', {
-      forceBracketedPaste: true,
-      recoverImagePasteWebglAtlas: true
+      forceBracketedPaste: true
     })
   })
 
@@ -143,8 +141,7 @@ describe('terminal clipboard paste', () => {
     })
 
     expect(pasteText).toHaveBeenCalledWith('/tmp/orca-paste-1760000000000-id.png', {
-      forceBracketedPaste: true,
-      recoverImagePasteWebglAtlas: true
+      forceBracketedPaste: true
     })
   })
 
@@ -165,8 +162,7 @@ describe('terminal clipboard paste', () => {
       runtimeEnvironmentId: undefined
     })
     expect(pasteText).toHaveBeenCalledWith('/tmp/orca-paste-1760000000000-id.png', {
-      forceBracketedPaste: true,
-      recoverImagePasteWebglAtlas: true
+      forceBracketedPaste: true
     })
   })
 

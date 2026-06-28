@@ -136,6 +136,49 @@ describe('terminal paste coordinator', () => {
     expect(writePty).not.toHaveBeenCalled()
   })
 
+  it('marks a single-line URL bracketed-to-terminal when bracketed-paste mode is on (issue #5960)', () => {
+    // Why: a TUI like Claude Code wraps even a direct paste in bracketed-paste
+    // escapes when bracketed-paste mode is on, so the corrupting redraw — and
+    // thus WebGL atlas recovery — must trigger though `bracketed` stays false.
+    const plan = planTerminalPaste({
+      text: 'https://github.com/stablyai/orca/pull/6025',
+      source: 'context-menu',
+      target: terminalTarget(),
+      terminalBracketedPasteMode: true
+    })
+
+    expect(plan.mode).toBe('direct')
+    expect(plan.bracketed).toBe(false)
+    expect(plan.bracketedToTerminal).toBe(true)
+  })
+
+  it('does not mark a single-line paste bracketed-to-terminal without bracketed-paste mode', () => {
+    const plan = planTerminalPaste({
+      text: 'https://github.com/stablyai/orca/pull/6025',
+      source: 'context-menu',
+      target: terminalTarget(),
+      terminalBracketedPasteMode: false
+    })
+
+    expect(plan.mode).toBe('direct')
+    expect(plan.bracketed).toBe(false)
+    expect(plan.bracketedToTerminal).toBe(false)
+  })
+
+  it('marks a force-bracketed image paste bracketed-to-terminal even with mode off', () => {
+    const plan = planTerminalPaste({
+      text: '/tmp/orca-paste-1760000000000-id.png',
+      source: 'context-menu',
+      target: terminalTarget(),
+      forceBracketedPaste: true,
+      terminalBracketedPasteMode: false
+    })
+
+    expect(plan.mode).toBe('bracketed-terminal')
+    expect(plan.bracketed).toBe(true)
+    expect(plan.bracketedToTerminal).toBe(true)
+  })
+
   it('forces small Windows multiline paste through bracketed terminal input', async () => {
     const pasteText = vi.fn()
     const plan = planTerminalPaste({
