@@ -11738,6 +11738,16 @@
             "d785c42b8b": "Jira Cloud 사이트 URL, Atlassian 이메일, API 토큰을 사용해 이슈를 탐색합니다.",
             "8388bdea2b": "Jira 사이트 연결"
           }
+        },
+        "create": {
+          "user": {
+            "picker": {
+              "select": "Select {{value0}}",
+              "search": "Search users...",
+              "loading": "Searching…",
+              "empty": "No users found."
+            }
+          }
         }
       },
       "rightSidebar": {

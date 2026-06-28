@@ -88,6 +88,12 @@ const AssignableUsers = z.object({
   siteId: OptionalString
 })
 
+const AssignableUsersForCreate = z.object({
+  projectKeyOrId: requiredString('Project is required'),
+  query: OptionalPlainString,
+  siteId: OptionalString
+})
+
 export const JIRA_METHODS: RpcMethod[] = [
   defineMethod({
     name: 'jira.connect',
@@ -198,6 +204,16 @@ export const JIRA_METHODS: RpcMethod[] = [
     params: AssignableUsers,
     handler: async (params, { runtime }) =>
       runtime.jiraListAssignableUsers(params.key.trim(), params.query, params.siteId)
+  }),
+  defineMethod({
+    name: 'jira.listAssignableUsersForCreate',
+    params: AssignableUsersForCreate,
+    handler: async (params, { runtime }) =>
+      runtime.jiraListAssignableUsersForCreate(
+        params.projectKeyOrId.trim(),
+        params.query,
+        params.siteId
+      )
   }),
   defineMethod({
     name: 'jira.listTransitions',

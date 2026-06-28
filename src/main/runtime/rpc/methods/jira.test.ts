@@ -125,6 +125,7 @@ describe('jira RPC methods', () => {
       jiraListCreateFields: vi.fn().mockResolvedValue([{ key: 'customfield_10010' }]),
       jiraListPriorities: vi.fn().mockResolvedValue([{ id: 'priority-1' }]),
       jiraListAssignableUsers: vi.fn().mockResolvedValue([{ accountId: 'user-1' }]),
+      jiraListAssignableUsersForCreate: vi.fn().mockResolvedValue([{ accountId: 'user-2' }]),
       jiraListTransitions: vi.fn().mockResolvedValue([{ id: 'transition-1' }])
     } as unknown as OrcaRuntimeService
     const dispatcher = new RpcDispatcher({ runtime, methods: JIRA_METHODS })
@@ -149,6 +150,13 @@ describe('jira RPC methods', () => {
       })
     )
     await dispatcher.dispatch(
+      makeRequest('jira.listAssignableUsersForCreate', {
+        projectKeyOrId: 'ORCA',
+        query: 'Ada',
+        siteId: 'site-1'
+      })
+    )
+    await dispatcher.dispatch(
       makeRequest('jira.listTransitions', { key: 'ABC-3', siteId: 'site-1' })
     )
 
@@ -157,6 +165,7 @@ describe('jira RPC methods', () => {
     expect(runtime.jiraListCreateFields).toHaveBeenCalledWith('project-1', 'type-1', 'site-1')
     expect(runtime.jiraListPriorities).toHaveBeenCalledWith('site-1')
     expect(runtime.jiraListAssignableUsers).toHaveBeenCalledWith('ABC-3', 'Ada', 'site-1')
+    expect(runtime.jiraListAssignableUsersForCreate).toHaveBeenCalledWith('ORCA', 'Ada', 'site-1')
     expect(runtime.jiraListTransitions).toHaveBeenCalledWith('ABC-3', 'site-1')
   })
 })

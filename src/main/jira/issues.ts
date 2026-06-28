@@ -780,6 +780,59 @@ export async function listAssignableUsers(
   }
 }
 
+export async function listAssignableUsersForCreate(
+  projectKeyOrId: string,
+  query?: string,
+  siteId?: string | null
+): Promise<JiraUser[]> {
+  const entry = getClients(siteId)[0]
+  if (!entry) {
+    return []
+  }
+  const trimmedQuery = query?.trim() ?? ''
+  await acquire()
+  try {
+    // Why: the assignable/search endpoint needs an existing issueKey, which does
+    // not exist during create; multiProjectSearch is the project-scoped variant.
+    const multiProjectParams = new URLSearchParams({
+      projectKeys: projectKeyOrId,
+      maxResults: '50'
+    })
+    if (trimmedQuery) {
+      multiProjectParams.set('query', trimmedQuery)
+    }
+    try {
+      const response = await jiraRequest<JiraRecord[]>(
+        entry,
+        `/rest/api/3/user/assignable/multiProjectSearch?${multiProjectParams.toString()}`
+      )
+      return response.map(mapUser).filter((user): user is JiraUser => !!user)
+    } catch (error) {
+      // Why: some deployments (older/self-managed) lack multiProjectSearch; fall
+      // back to the general user search so the picker still resolves accountIds.
+      if (getErrorStatus(error) !== 404) {
+        throw error
+      }
+      const fallbackParams = new URLSearchParams({ maxResults: '50' })
+      fallbackParams.set('query', trimmedQuery)
+      const response = await jiraRequest<JiraRecord[]>(
+        entry,
+        `/rest/api/3/user/search?${fallbackParams.toString()}`
+      )
+      return response.map(mapUser).filter((user): user is JiraUser => !!user)
+    }
+  } catch (error) {
+    if (isAuthError(error)) {
+      clearToken(entry.site.id)
+      throw error
+    }
+    console.warn('[jira] listAssignableUsersForCreate failed:', error)
+    return []
+  } finally {
+    release()
+  }
+}
+
 export async function listTransitions(
   key: string,
   siteId?: string | null

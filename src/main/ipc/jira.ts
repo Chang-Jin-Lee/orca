@@ -7,6 +7,7 @@ import {
   getIssue,
   getIssueComments,
   listAssignableUsers,
+  listAssignableUsersForCreate,
   listCreateFields,
   listIssueTypes,
   listIssues,
@@ -247,6 +248,20 @@ export function registerJiraHandlers(): void {
       }
       return listAssignableUsers(
         args.key.trim(),
+        typeof args.query === 'string' ? args.query : undefined,
+        normalizeSiteId(args.siteId)
+      )
+    }
+  )
+
+  ipcMain.handle(
+    'jira:listAssignableUsersForCreate',
+    async (_event, args: { projectKeyOrId: string; query?: string; siteId?: string }) => {
+      if (typeof args?.projectKeyOrId !== 'string' || !args.projectKeyOrId.trim()) {
+        return []
+      }
+      return listAssignableUsersForCreate(
+        args.projectKeyOrId.trim(),
         typeof args.query === 'string' ? args.query : undefined,
         normalizeSiteId(args.siteId)
       )

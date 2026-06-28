@@ -365,6 +365,51 @@ describe('Jira issue operations', () => {
     )
   })
 
+  it('lists project-scoped assignable users for create via multiProjectSearch', async () => {
+    jiraRequestMock.mockResolvedValueOnce([
+      { accountId: '5b10ac', displayName: 'Alex' },
+      { displayName: 'No account id' }
+    ])
+
+    const { listAssignableUsersForCreate } = await import('./issues')
+
+    await expect(listAssignableUsersForCreate('ORCA', 'al', 'site-1')).resolves.toEqual([
+      { accountId: '5b10ac', displayName: 'Alex', email: undefined, avatarUrl: undefined }
+    ])
+
+    const path = String(jiraRequestMock.mock.calls[0][1])
+    expect(path).toContain('/rest/api/3/user/assignable/multiProjectSearch?')
+    expect(path).toContain('projectKeys=ORCA')
+    expect(path).toContain('query=al')
+  })
+
+  it('falls back to /user/search when multiProjectSearch is unavailable (404)', async () => {
+    jiraRequestMock
+      .mockRejectedValueOnce(Object.assign(new Error('Not Found'), { status: 404 }))
+      .mockResolvedValueOnce([{ accountId: '5b10ac', displayName: 'Alex' }])
+
+    const { listAssignableUsersForCreate } = await import('./issues')
+
+    await expect(listAssignableUsersForCreate('ORCA', 'al', 'site-1')).resolves.toEqual([
+      { accountId: '5b10ac', displayName: 'Alex', email: undefined, avatarUrl: undefined }
+    ])
+
+    expect(String(jiraRequestMock.mock.calls[1][1])).toContain('/rest/api/3/user/search?')
+  })
+
+  it('clears the token and rethrows when create assignable search hits an auth error', async () => {
+    const authError = Object.assign(new Error('Unauthorized'), { status: 401 })
+    isAuthErrorMock.mockImplementation((error) => error === authError)
+    jiraRequestMock.mockRejectedValueOnce(authError)
+
+    const { listAssignableUsersForCreate } = await import('./issues')
+
+    await expect(listAssignableUsersForCreate('ORCA', undefined, 'site-1')).rejects.toThrow(
+      'Unauthorized'
+    )
+    expect(clearTokenMock).toHaveBeenCalledWith('site-1')
+  })
+
   it('maps comments from the Jira comments page key', async () => {
     jiraRequestMock.mockResolvedValueOnce({
       comments: [
