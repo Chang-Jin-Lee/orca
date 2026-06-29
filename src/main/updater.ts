@@ -1138,7 +1138,9 @@ export function maybeAutoDownload(): void {
     return
   }
   // Why: this reuses the manual download path without enabling
-  // electron-updater's eager autoDownload behavior.
+  // electron-updater's eager autoDownload behavior. hasNewerDownloadedVersion()
+  // reads availableVersion (set synchronously before the 'available' broadcast
+  // that calls this), so it's true here — it's a defensive guard, not a no-op.
   if (
     getAutomaticUpdatesEnabled?.() === true &&
     currentStatus.state === 'available' &&

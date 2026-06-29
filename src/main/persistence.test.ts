@@ -533,6 +533,8 @@ describe('Store', () => {
     expect((readDataFile() as PersistedState).settings.automaticUpdates).toBe(true)
     store.updateSettings({ automaticUpdates: false })
     expect(store.getSettings().automaticUpdates).toBe(false)
+    store.flush()
+    expect((readDataFile() as PersistedState).settings.automaticUpdates).toBe(false)
   })
 
   it('coerces loaded minimizeToTrayOnClose to false unless stored as true', async () => {
