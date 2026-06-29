@@ -1,12 +1,8 @@
 import { toast } from 'sonner'
 import { useAppStore } from '@/store'
-import {
-  buildAgentDraftLaunchPlan,
-  buildAgentStartupPlan,
-  type AgentStartupPlan
-} from '@/lib/tui-agent-startup'
-import { CLIENT_PLATFORM } from '@/lib/new-workspace'
-import { getAgentLaunchPlatformForRepo } from '@/lib/agent-launch-platform'
+import type { AgentStartupPlan } from '@/lib/tui-agent-startup'
+import { buildLaunchAgentInNewTabStartup } from '@/lib/launch-agent-in-new-tab-startup'
+import { resolveAgentStartupTarget } from '@/lib/agent-startup-target'
 import { reconcileTabOrder } from '@/components/tab-bar/reconcile-order'
 import { track, tuiAgentToAgentKind } from '@/lib/telemetry'
 import { pasteDraftWhenAgentReady } from '@/lib/agent-paste-draft'
@@ -17,11 +13,6 @@ import {
   isWebRuntimeSessionActive,
   isWebTerminalSurfaceTabId
 } from '@/runtime/web-runtime-session'
-import {
-  resolveTuiAgentLaunchArgs,
-  resolveTuiAgentLaunchEnv
-} from '../../../shared/tui-agent-launch-defaults'
-import { TUI_AGENT_CONFIG } from '../../../shared/tui-agent-config'
 import { makePaneKey } from '../../../shared/stable-pane-id'
 import type { TuiAgent } from '../../../shared/types'
 import type { LaunchSource } from '../../../shared/telemetry-events'
@@ -85,28 +76,8 @@ function seedCommandCodeSubmittedPromptStatus(tabId: string, prompt: string): vo
   }
 }
 
-/**
- * Create a new terminal tab and queue the agent's launch command, optionally
- * with an initial prompt.
- *
- * Why: this is the single entry point for "launch agent X in a new tab" from
- * the tab-bar quick-launch menu and the Source Control "send notes to agent"
- * action. It mirrors the `+` button's path (`createNewTerminalTab`) — createTab,
- * flip `activeTabType` to terminal, and persist the appended tab-bar order —
- * then queues the agent startup through the same `pendingStartupByTabId`
- * channel the new-workspace ("cmd+N") flow uses. TerminalPane consumes the
- * queued command on first mount and the local PTY provider writes it once the
- * shell is ready (see `pty-connection.ts`: startup-command path).
- *
- * Default submission mode follows `promptInjectionMode`: argv/flag agents
- * include the prompt directly in the launch command, while followup-path
- * agents launch empty and receive a post-ready draft paste. Generated contexts
- * can override this with draft or submit-after-ready delivery.
- *
- * Returns `null` when no startup plan can be built — for example, a whitespace-
- * only prompt on the trim-empty branch of `buildAgentStartupPlan`. Callers
- * surface that as a launch failure (see `QuickLaunchButton.runLaunch`).
- */
+// Why: single entry point for "launch agent X in a new tab"; it mirrors the
+// `+` button path and queues startup before TerminalPane's first mount.
 export function launchAgentInNewTab(args: LaunchAgentInNewTabArgs): LaunchAgentInNewTabResult {
   const {
     agent,
@@ -123,108 +94,35 @@ export function launchAgentInNewTab(args: LaunchAgentInNewTabArgs): LaunchAgentI
   const store = useAppStore.getState()
   const worktree = store.allWorktrees?.().find((entry: { id: string }) => entry.id === worktreeId)
   const repo = worktree ? store.repos?.find((entry) => entry.id === worktree.repoId) : null
-  const resolvedLaunchPlatform =
-    launchPlatform ??
-    (repo
-      ? getAgentLaunchPlatformForRepo(
-          repo,
-          repo.connectionId ? undefined : getLocalProjectExecutionRuntimeContext(store, worktreeId)
-        )
-      : CLIENT_PLATFORM)
-  const cmdOverrides = store.settings?.agentCmdOverrides ?? {}
-  const effectiveAgentArgs =
-    agentArgs !== undefined
-      ? agentArgs
-      : resolveTuiAgentLaunchArgs(agent, store.settings?.agentDefaultArgs)
-  const agentEnv = resolveTuiAgentLaunchEnv(agent, store.settings?.agentDefaultEnv)
-  const trimmedPrompt = prompt?.trim() ?? ''
-  const hasPrompt = trimmedPrompt.length > 0
-  const isFollowupPath = TUI_AGENT_CONFIG[agent].promptInjectionMode === 'stdin-after-start'
-  // Why: argv/flag agents fold the prompt into the launch command and
-  // auto-submit — keeping behavior consistent with the composer/tab-bar `+`
-  // mental model, where the prompt is "the first turn the user sent".
-  // Followup-path and generated-context launches can deliver a prompt via
-  // post-launch bracketed paste; callers decide whether that paste remains a
-  // draft or submits after readiness.
-  let startupPlan: AgentStartupPlan | null = null
-  let pasteDraftAfterLaunch: string | null = null
-  let submitPastedPrompt = false
-  let forcePasteAfterLaunch = false
-
-  if (hasPrompt && promptDelivery === 'submit-after-ready') {
-    // Why: generated multi-line prompts are too large to echo through a shell
-    // argv/prefill command. Launch cleanly, then paste+submit inside the TUI.
-    startupPlan = buildAgentStartupPlan({
-      agent,
-      prompt: '',
-      cmdOverrides,
-      platform: resolvedLaunchPlatform,
-      agentArgs: effectiveAgentArgs,
-      agentEnv,
-      allowEmptyPromptLaunch: true
-    })
-    pasteDraftAfterLaunch = trimmedPrompt
-    submitPastedPrompt = true
-    forcePasteAfterLaunch = true
-  } else if (hasPrompt && promptDelivery === 'draft') {
-    const draftLaunchPlan = buildAgentDraftLaunchPlan({
-      agent,
-      draft: trimmedPrompt,
-      cmdOverrides,
-      platform: resolvedLaunchPlatform,
-      agentArgs: effectiveAgentArgs,
-      agentEnv
-    })
-    if (draftLaunchPlan) {
-      startupPlan = {
-        agent: draftLaunchPlan.agent,
-        launchCommand: draftLaunchPlan.launchCommand,
-        expectedProcess: draftLaunchPlan.expectedProcess,
-        followupPrompt: null,
-        launchConfig: draftLaunchPlan.launchConfig,
-        ...(draftLaunchPlan.startupCommandDelivery
-          ? { startupCommandDelivery: draftLaunchPlan.startupCommandDelivery }
-          : {}),
-        ...(draftLaunchPlan.env ? { env: draftLaunchPlan.env } : {})
-      }
-    } else {
-      startupPlan = buildAgentStartupPlan({
-        agent,
-        prompt: '',
-        cmdOverrides,
-        platform: resolvedLaunchPlatform,
-        agentArgs: effectiveAgentArgs,
-        agentEnv,
-        allowEmptyPromptLaunch: true
-      })
-      pasteDraftAfterLaunch = trimmedPrompt
-    }
-  } else if (hasPrompt && isFollowupPath) {
-    startupPlan = buildAgentStartupPlan({
-      agent,
-      prompt: '',
-      cmdOverrides,
-      platform: resolvedLaunchPlatform,
-      agentArgs: effectiveAgentArgs,
-      agentEnv,
-      allowEmptyPromptLaunch: true
-    })
-    pasteDraftAfterLaunch = trimmedPrompt
-  } else {
-    startupPlan = buildAgentStartupPlan({
-      agent,
-      prompt: hasPrompt ? trimmedPrompt : '',
-      cmdOverrides,
-      platform: resolvedLaunchPlatform,
-      agentArgs: effectiveAgentArgs,
-      agentEnv,
-      allowEmptyPromptLaunch: !hasPrompt
-    })
-  }
-
-  if (!startupPlan) {
+  const projectRuntime =
+    repo && !repo.connectionId
+      ? getLocalProjectExecutionRuntimeContext(store, worktreeId)
+      : undefined
+  const startupTarget = resolveAgentStartupTarget({
+    platform: launchPlatform,
+    host: repo,
+    projectRuntime,
+    terminalWindowsShell: store.settings?.terminalWindowsShell
+  })
+  const startup = buildLaunchAgentInNewTabStartup({
+    agent,
+    prompt,
+    agentArgs,
+    promptDelivery,
+    startupTarget,
+    settings: store.settings
+  })
+  if (!startup) {
     return null
   }
+  const {
+    startupPlan,
+    trimmedPrompt,
+    hasPrompt,
+    pasteDraftAfterLaunch,
+    submitPastedPrompt,
+    forcePasteAfterLaunch
+  } = startup
 
   const runtimeEnvironmentId = getRuntimeEnvironmentIdForWorktree(store, worktreeId)
   if (isWebRuntimeSessionActive(runtimeEnvironmentId) && pasteDraftAfterLaunch === null) {

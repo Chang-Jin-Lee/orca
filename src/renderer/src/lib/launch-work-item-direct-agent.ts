@@ -6,6 +6,7 @@ import {
   buildAgentStartupPlan,
   type AgentStartupPlan
 } from '@/lib/tui-agent-startup'
+import type { AgentStartupTarget } from '@/lib/agent-startup-target'
 import type { AgentStartedTelemetry } from '@/lib/worktree-activation'
 import type { SleepingAgentLaunchConfig } from '../../../shared/agent-session-resume'
 import type { LaunchSource } from '../../../shared/telemetry-events'
@@ -27,10 +28,11 @@ export function buildDirectWorkItemAgentStartupPlan(args: {
         agentCmdOverrides?: Partial<Record<TuiAgent, string>>
         agentDefaultArgs?: Partial<Record<TuiAgent, string>>
         agentDefaultEnv?: Partial<Record<TuiAgent, Record<string, string>>>
+        terminalWindowsShell?: string
       }
     | null
     | undefined
-  launchPlatform: NodeJS.Platform
+  startupTarget: AgentStartupTarget
 }): {
   startupPlan: AgentStartupPlan | null
   draftLaunchedNatively: boolean
@@ -45,6 +47,7 @@ export function buildDirectWorkItemAgentStartupPlan(args: {
       ? resolveTuiAgentLaunchArgs(args.agent, args.settings?.agentDefaultArgs)
       : args.agentArgs
   const effectiveAgentEnv = resolveTuiAgentLaunchEnv(args.agent, args.settings?.agentDefaultEnv)
+  const { platform, shell } = args.startupTarget
   const draftLaunchPlan =
     args.promptDelivery === 'submit-after-ready'
       ? null
@@ -52,7 +55,8 @@ export function buildDirectWorkItemAgentStartupPlan(args: {
           agent: args.agent,
           draft: args.draftContent,
           cmdOverrides: args.settings?.agentCmdOverrides ?? {},
-          platform: args.launchPlatform,
+          platform,
+          shell,
           agentArgs: effectiveAgentArgs,
           agentEnv: effectiveAgentEnv
         })
@@ -62,6 +66,9 @@ export function buildDirectWorkItemAgentStartupPlan(args: {
       startupPlan: {
         agent: draftLaunchPlan.agent,
         launchCommand: draftLaunchPlan.launchCommand,
+        ...(draftLaunchPlan.unwrappedLaunchCommand
+          ? { unwrappedLaunchCommand: draftLaunchPlan.unwrappedLaunchCommand }
+          : {}),
         expectedProcess: draftLaunchPlan.expectedProcess,
         followupPrompt: null,
         launchConfig: draftLaunchPlan.launchConfig,
@@ -79,7 +86,8 @@ export function buildDirectWorkItemAgentStartupPlan(args: {
     agent: args.agent,
     prompt: '',
     cmdOverrides: args.settings?.agentCmdOverrides ?? {},
-    platform: args.launchPlatform,
+    platform,
+    shell,
     agentArgs: effectiveAgentArgs,
     agentEnv: effectiveAgentEnv,
     allowEmptyPromptLaunch: true

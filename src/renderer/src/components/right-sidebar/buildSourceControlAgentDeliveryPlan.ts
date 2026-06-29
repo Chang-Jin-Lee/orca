@@ -1,6 +1,8 @@
 import { planSourceControlAgentActionLaunch } from '@/lib/source-control-agent-action-plan'
+import { resolveAgentStartupTarget } from '@/lib/agent-startup-target'
 import { useAppStore } from '@/store'
-import type { TuiAgent } from '../../../../shared/types'
+import type { ProjectExecutionRuntimeResolution } from '../../../../shared/project-execution-runtime'
+import type { Repo, TuiAgent } from '../../../../shared/types'
 import type { SourceControlAgentActionDeliveryPlanState } from './SourceControlAgentActionDialogForm'
 import { buildSourceControlAgentConnectionErrorPlan } from './source-control-agent-action-dialog-support'
 
@@ -12,6 +14,8 @@ type BuildSourceControlAgentDeliveryPlanArgs = {
   detectedAgents: TuiAgent[]
   connectionUnavailable: boolean
   launchPlatform?: NodeJS.Platform
+  launchHost?: Pick<Repo, 'connectionId' | 'executionHostId'> | null
+  projectRuntime?: ProjectExecutionRuntimeResolution
 }
 
 export function buildSourceControlAgentDeliveryPlan({
@@ -21,20 +25,29 @@ export function buildSourceControlAgentDeliveryPlan({
   promptDelivery,
   detectedAgents,
   connectionUnavailable,
-  launchPlatform
+  launchPlatform,
+  launchHost,
+  projectRuntime
 }: BuildSourceControlAgentDeliveryPlanArgs): SourceControlAgentActionDeliveryPlanState {
   if (connectionUnavailable) {
     return buildSourceControlAgentConnectionErrorPlan()
   }
+  const settings = useAppStore.getState().settings
+  const startupTarget = resolveAgentStartupTarget({
+    platform: launchPlatform,
+    host: launchHost,
+    terminalWindowsShell: settings?.terminalWindowsShell,
+    projectRuntime
+  })
   const result = planSourceControlAgentActionLaunch({
     agent: selectedAgent,
     commandInput,
     agentArgs,
     promptDelivery,
     detectedAgents,
-    disabledAgents: useAppStore.getState().settings?.disabledTuiAgents,
-    cmdOverrides: useAppStore.getState().settings?.agentCmdOverrides,
-    platform: launchPlatform
+    disabledAgents: settings?.disabledTuiAgents,
+    cmdOverrides: settings?.agentCmdOverrides,
+    startupTarget
   })
   if (!result.ok) {
     return { status: 'error', error: result.error }

@@ -8,7 +8,7 @@ import { toast } from 'sonner'
 import { useShallow } from 'zustand/react/shallow'
 import { useAppStore } from '@/store'
 import { getDefaultRepoHookSettings } from '../../../shared/constants'
-import { getAgentLaunchPlatformForRepo } from '@/lib/agent-launch-platform'
+import { resolveAgentStartupTarget } from '@/lib/agent-startup-target'
 import { getAgentCatalog } from '@/lib/agent-catalog'
 import { createBrowserUuid } from '@/lib/browser-uuid'
 import {
@@ -629,11 +629,11 @@ export function useComposerState(options: UseComposerStateOptions): UseComposerS
     [eligibleRepos, projectHostSetups, projects, repoId, workspaceHostScope]
   )
   const selectedRepo = eligibleRepos.find((repo) => repo.id === repoId)
-  const selectedRepoAgentLaunchPlatform = useMemo(() => {
+  const selectedRepoProjectRuntime = useMemo(() => {
     if (!selectedRepo) {
-      return CLIENT_PLATFORM
+      return undefined
     }
-    const projectRuntime = selectedRepo.connectionId
+    return selectedRepo.connectionId
       ? undefined
       : getLocalRepoProjectExecutionRuntimeContext(
           {
@@ -647,8 +647,19 @@ export function useComposerState(options: UseComposerStateOptions): UseComposerS
           selectedRepo.id,
           CLIENT_PLATFORM
         )
-    return getAgentLaunchPlatformForRepo(selectedRepo, projectRuntime)
   }, [activeRepoId, projects, repos, selectedRepo, settings, worktreesByRepo])
+  const selectedRepoAgentStartupTarget = useMemo(
+    () =>
+      resolveAgentStartupTarget({
+        host: selectedRepo,
+        projectRuntime: selectedRepoProjectRuntime,
+        terminalWindowsShell: settings?.terminalWindowsShell,
+        fallbackPlatform: CLIENT_PLATFORM
+      }),
+    [selectedRepo, selectedRepoProjectRuntime, settings?.terminalWindowsShell]
+  )
+  const selectedRepoAgentLaunchPlatform = selectedRepoAgentStartupTarget.platform
+  const selectedRepoAgentStartupShell = selectedRepoAgentStartupTarget.shell
   const selectedRepoProjectId =
     selectedWorkspaceTarget.status === 'ready' ? selectedWorkspaceTarget.target.projectId : null
   const selectedProjectId = selectedProjectGroup
@@ -2957,6 +2968,7 @@ export function useComposerState(options: UseComposerStateOptions): UseComposerS
             ? resolveTuiAgentLaunchArgs(agent, settings?.agentDefaultArgs)
             : undefined,
           agentEnv: agent ? resolveTuiAgentLaunchEnv(agent, settings?.agentDefaultEnv) : undefined,
+          terminalWindowsShell: settings?.terminalWindowsShell,
           isRemote: folderTargetIsRemote,
           launchSource: telemetrySource === 'onboarding' ? 'onboarding' : 'new_workspace_composer',
           runtimeEnvironmentId: folderTargetRuntimeEnvironmentId,
@@ -3012,6 +3024,7 @@ export function useComposerState(options: UseComposerStateOptions): UseComposerS
       settings?.agentDefaultArgs,
       settings?.agentDefaultEnv,
       settings?.autoRenameBranchFromWork,
+      settings?.terminalWindowsShell,
       telemetrySource
     ]
   )
@@ -3196,7 +3209,8 @@ export function useComposerState(options: UseComposerStateOptions): UseComposerS
         cmdOverrides: settings?.agentCmdOverrides ?? {},
         agentArgs: resolveTuiAgentLaunchArgs(tuiAgent, settings?.agentDefaultArgs),
         agentEnv: resolveTuiAgentLaunchEnv(tuiAgent, settings?.agentDefaultEnv),
-        platform: selectedRepoAgentLaunchPlatform
+        platform: selectedRepoAgentLaunchPlatform,
+        shell: selectedRepoAgentStartupShell
       })
       const shouldSeedInitialAgentStatus =
         tuiAgent === 'command-code' && submitStartupPrompt.trim().length > 0
@@ -3365,6 +3379,7 @@ export function useComposerState(options: UseComposerStateOptions): UseComposerS
     resolvedInitialWorkspaceStatus,
     selectedRepo,
     selectedRepoAgentLaunchPlatform,
+    selectedRepoAgentStartupShell,
     selectedRepoIsGit,
     selectedRepoRequiresConnection,
     showProjectRequiredError,
@@ -3599,7 +3614,8 @@ export function useComposerState(options: UseComposerStateOptions): UseComposerS
                 cmdOverrides: settings?.agentCmdOverrides ?? {},
                 agentArgs: resolveTuiAgentLaunchArgs(agent, settings?.agentDefaultArgs),
                 agentEnv: resolveTuiAgentLaunchEnv(agent, settings?.agentDefaultEnv),
-                platform: selectedRepoAgentLaunchPlatform
+                platform: selectedRepoAgentLaunchPlatform,
+                shell: selectedRepoAgentStartupShell
               })
 
         let startupPlan: ReturnType<typeof buildAgentStartupPlan> = null
@@ -3607,6 +3623,9 @@ export function useComposerState(options: UseComposerStateOptions): UseComposerS
           startupPlan = {
             agent: draftLaunchPlan.agent,
             launchCommand: draftLaunchPlan.launchCommand,
+            ...(draftLaunchPlan.unwrappedLaunchCommand
+              ? { unwrappedLaunchCommand: draftLaunchPlan.unwrappedLaunchCommand }
+              : {}),
             expectedProcess: draftLaunchPlan.expectedProcess,
             followupPrompt: null,
             launchConfig: draftLaunchPlan.launchConfig,
@@ -3623,6 +3642,7 @@ export function useComposerState(options: UseComposerStateOptions): UseComposerS
             agentArgs: resolveTuiAgentLaunchArgs(agent, settings?.agentDefaultArgs),
             agentEnv: resolveTuiAgentLaunchEnv(agent, settings?.agentDefaultEnv),
             platform: selectedRepoAgentLaunchPlatform,
+            shell: selectedRepoAgentStartupShell,
             allowEmptyPromptLaunch: true
           })
           if (startupPlan && quickDraftPrompt) {
@@ -3774,6 +3794,7 @@ export function useComposerState(options: UseComposerStateOptions): UseComposerS
       resolvedInitialWorkspaceStatus,
       selectedRepo,
       selectedRepoAgentLaunchPlatform,
+      selectedRepoAgentStartupShell,
       selectedRepoIsGit,
       selectedRepoSettings,
       selectedRepoRequiresConnection,

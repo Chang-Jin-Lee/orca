@@ -2,6 +2,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createCompatibleRuntimeStatusResponseIfNeeded } from '@/runtime/runtime-compatibility-test-fixture'
 import { clearRuntimeCompatibilityCacheForTests } from '@/runtime/runtime-rpc-client'
+import { getCodexStartupRetryInnerCommand } from '../../../shared/codex-startup-retry'
 
 const mockSpawn = vi.fn()
 const mockWrite = vi.fn()
@@ -459,12 +460,11 @@ describe('launchAgentBackgroundSession', () => {
         title: 'Nightly audit'
       })
 
-      expect(mockSpawn.mock.calls[0]?.[0]).toEqual(
-        expect.objectContaining({
-          command: "codex '--dangerously-bypass-approvals-and-sandbox' 'run the automation'",
-          startupCommandDelivery: 'shell-ready'
-        })
+      const startup = mockSpawn.mock.calls[0]?.[0]
+      expect(getCodexStartupRetryInnerCommand(startup?.command)).toBe(
+        "codex '--dangerously-bypass-approvals-and-sandbox' 'run the automation'"
       )
+      expect(startup?.startupCommandDelivery).toBe('shell-ready')
       const dataSidecar = mockSubscribeToPtyData.mock.calls[0]?.[1] as (data: string) => void
       dataSidecar('user@remote repo % ')
       vi.advanceTimersByTime(50)
@@ -473,10 +473,10 @@ describe('launchAgentBackgroundSession', () => {
       dataSidecar('\x1b]777;orca-shell-ready\x07user@remote repo % ')
       vi.advanceTimersByTime(50)
 
-      expect(mockWrite).toHaveBeenCalledWith(
-        'pty-1',
-        "codex '--dangerously-bypass-approvals-and-sandbox' 'run the automation'\r"
-      )
+      expect(mockWrite.mock.calls[0]?.[0]).toBe('pty-1')
+      expect(
+        getCodexStartupRetryInnerCommand(mockWrite.mock.calls[0]?.[1].replace(/\r$/, ''))
+      ).toBe("codex '--dangerously-bypass-approvals-and-sandbox' 'run the automation'")
     } finally {
       vi.useRealTimers()
     }
@@ -498,13 +498,11 @@ describe('launchAgentBackgroundSession', () => {
         title: 'Nightly audit'
       })
 
-      expect(mockSpawn.mock.calls[0]?.[0]).toEqual(
-        expect.objectContaining({
-          command:
-            "codex --prefill 'draft from override' '--dangerously-bypass-approvals-and-sandbox'"
-        })
+      const startup = mockSpawn.mock.calls[0]?.[0]
+      expect(getCodexStartupRetryInnerCommand(startup?.command)).toBe(
+        "codex --prefill 'draft from override' '--dangerously-bypass-approvals-and-sandbox'"
       )
-      expect(mockSpawn.mock.calls[0]?.[0]).not.toHaveProperty('startupCommandDelivery')
+      expect(startup).not.toHaveProperty('startupCommandDelivery')
       const dataSidecar = mockSubscribeToPtyData.mock.calls[0]?.[1] as (data: string) => void
       dataSidecar('user@remote repo % ')
       vi.advanceTimersByTime(50)
@@ -513,10 +511,10 @@ describe('launchAgentBackgroundSession', () => {
       dataSidecar('\x1b]777;orca-shell-ready\x07user@remote repo % ')
       vi.advanceTimersByTime(50)
 
-      expect(mockWrite).toHaveBeenCalledWith(
-        'pty-1',
-        "codex --prefill 'draft from override' '--dangerously-bypass-approvals-and-sandbox'\r"
-      )
+      expect(mockWrite.mock.calls[0]?.[0]).toBe('pty-1')
+      expect(
+        getCodexStartupRetryInnerCommand(mockWrite.mock.calls[0]?.[1].replace(/\r$/, ''))
+      ).toBe("codex --prefill 'draft from override' '--dangerously-bypass-approvals-and-sandbox'")
     } finally {
       vi.useRealTimers()
     }

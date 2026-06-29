@@ -4101,6 +4101,7 @@ function ChecksTab({
     () =>
       resolveSourceControlLaunchPlatform({
         connectionId: repo?.connectionId ?? null,
+        executionHostId: repo?.executionHostId,
         worktreePath: repo?.path ?? null,
         projectRuntime: repo?.connectionId
           ? undefined
@@ -4110,7 +4111,7 @@ function ChecksTab({
               CLIENT_PLATFORM
             )
       }),
-    [repo?.connectionId, repo?.id, repo?.path]
+    [repo?.connectionId, repo?.executionHostId, repo?.id, repo?.path]
   )
   const saveFixChecksActionDefault = useCallback(
     async (

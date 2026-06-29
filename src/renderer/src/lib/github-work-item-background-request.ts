@@ -4,6 +4,7 @@ import {
   buildAgentStartupPlan,
   type AgentStartupPlan
 } from '@/lib/tui-agent-startup'
+import { resolveAgentStartupTarget } from '@/lib/agent-startup-target'
 import { resolveQuickCreateLinkedWorkItemPrompt } from '@/lib/linked-work-item-context'
 import { pickQuickWorkspaceAgent } from '@/lib/quick-workspace-agent-selection'
 import type {
@@ -41,6 +42,7 @@ export type GitHubWorkItemBackgroundStoreSnapshot = {
           | 'agentCmdOverrides'
           | 'agentDefaultArgs'
           | 'agentDefaultEnv'
+          | 'terminalWindowsShell'
         >
       >
     | null
@@ -157,6 +159,7 @@ function resolveGitHubWorkItemLaunchPlatform(
       )
   return resolveSourceControlLaunchPlatform({
     connectionId: repo.connectionId,
+    executionHostId: repo.executionHostId,
     worktreePath: repo.path,
     projectRuntime
   })
@@ -180,6 +183,21 @@ export function buildGitHubWorkItemStartupPlan(args: {
   // Why: runtime-owned repos launch on their owner host, not on the client
   // desktop, so startup shell quoting must use the runtime platform.
   const platform = resolveGitHubWorkItemLaunchPlatform(store, repo)
+  const host = parseExecutionHostId(getRepoExecutionHostId(repo))
+  const projectRuntime =
+    host?.kind === 'local'
+      ? getLocalRepoProjectExecutionRuntimeContext(
+          store as ReturnType<typeof useAppStore.getState>,
+          repo.id,
+          CLIENT_PLATFORM
+        )
+      : undefined
+  const startupTarget = resolveAgentStartupTarget({
+    platform,
+    host: repo,
+    terminalWindowsShell: store.settings?.terminalWindowsShell,
+    projectRuntime
+  })
   const draftLaunchPlan = draftPrompt
     ? buildAgentDraftLaunchPlan({
         agent,
@@ -187,13 +205,17 @@ export function buildGitHubWorkItemStartupPlan(args: {
         cmdOverrides: store.settings?.agentCmdOverrides ?? {},
         agentArgs: resolveTuiAgentLaunchArgs(agent, store.settings?.agentDefaultArgs),
         agentEnv: resolveTuiAgentLaunchEnv(agent, store.settings?.agentDefaultEnv),
-        platform
+        platform: startupTarget.platform,
+        shell: startupTarget.shell
       })
     : null
   const startupPlan = draftLaunchPlan
     ? {
         agent: draftLaunchPlan.agent,
         launchCommand: draftLaunchPlan.launchCommand,
+        ...(draftLaunchPlan.unwrappedLaunchCommand
+          ? { unwrappedLaunchCommand: draftLaunchPlan.unwrappedLaunchCommand }
+          : {}),
         expectedProcess: draftLaunchPlan.expectedProcess,
         followupPrompt: null,
         launchConfig: draftLaunchPlan.launchConfig,
@@ -208,7 +230,8 @@ export function buildGitHubWorkItemStartupPlan(args: {
         cmdOverrides: store.settings?.agentCmdOverrides ?? {},
         agentArgs: resolveTuiAgentLaunchArgs(agent, store.settings?.agentDefaultArgs),
         agentEnv: resolveTuiAgentLaunchEnv(agent, store.settings?.agentDefaultEnv),
-        platform,
+        platform: startupTarget.platform,
+        shell: startupTarget.shell,
         allowEmptyPromptLaunch: true
       })
   if (startupPlan && draftPrompt && !draftLaunchPlan) {

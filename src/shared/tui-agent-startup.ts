@@ -23,6 +23,7 @@ const WIN32_INLINE_DRAFT_LIMIT_CHARS = 24_000
 export type AgentStartupPlan = {
   agent: TuiAgent
   launchCommand: string
+  unwrappedLaunchCommand?: string
   expectedProcess: string
   followupPrompt: string | null
   launchConfig: SleepingAgentLaunchConfig
@@ -97,9 +98,13 @@ export function buildAgentStartupPlan(args: {
     if (!allowEmptyPromptLaunch) {
       return null
     }
+    const launchCommand = maybeWrapCodexStartupRetry(agent, baseCommand.command, shell)
     return {
       agent,
-      launchCommand: maybeWrapCodexStartupRetry(agent, baseCommand.command, shell),
+      launchCommand,
+      ...(launchCommand !== baseCommand.command
+        ? { unwrappedLaunchCommand: baseCommand.command }
+        : {}),
       expectedProcess: config.expectedProcess,
       followupPrompt: null,
       launchConfig,
@@ -110,10 +115,12 @@ export function buildAgentStartupPlan(args: {
   const quotedPrompt = quoteStartupArg(trimmedPrompt, shell)
 
   if (config.promptInjectionMode === 'argv') {
-    const launchCommand = `${baseCommand.command} ${quotedPrompt}`
+    const unwrappedLaunchCommand = `${baseCommand.command} ${quotedPrompt}`
+    const launchCommand = maybeWrapCodexStartupRetry(agent, unwrappedLaunchCommand, shell)
     return {
       agent,
-      launchCommand: maybeWrapCodexStartupRetry(agent, launchCommand, shell),
+      launchCommand,
+      ...(launchCommand !== unwrappedLaunchCommand ? { unwrappedLaunchCommand } : {}),
       expectedProcess: config.expectedProcess,
       followupPrompt: null,
       launchConfig,
@@ -203,9 +210,11 @@ export function buildAgentResumeStartupPlan(args: {
     .map((arg) => quoteStartupArg(arg, shell))
     .join(' ')
   const launchCommand = resumeArgs ? `${baseCommand.command} ${resumeArgs}` : baseCommand.command
+  const wrappedLaunchCommand = maybeWrapCodexStartupRetry(args.agent, launchCommand, shell)
   return {
     agent: args.agent,
-    launchCommand: maybeWrapCodexStartupRetry(args.agent, launchCommand, shell),
+    launchCommand: wrappedLaunchCommand,
+    ...(wrappedLaunchCommand !== launchCommand ? { unwrappedLaunchCommand: launchCommand } : {}),
     expectedProcess: config.expectedProcess,
     followupPrompt: null,
     launchConfig,
@@ -216,6 +225,7 @@ export function buildAgentResumeStartupPlan(args: {
 export type AgentDraftLaunchPlan = {
   agent: TuiAgent
   launchCommand: string
+  unwrappedLaunchCommand?: string
   expectedProcess: string
   launchConfig: SleepingAgentLaunchConfig
   env?: Record<string, string>
@@ -297,6 +307,9 @@ export function buildAgentDraftLaunchPlan(args: {
     ...plan,
     launchCommand: maybeWrapCodexStartupRetry(agent, plan.launchCommand, shell)
   }
+  if (wrappedPlan.launchCommand !== plan.launchCommand) {
+    wrappedPlan.unwrappedLaunchCommand = plan.launchCommand
+  }
   return inlineDraftPlanFitsPlatform(wrappedPlan, platform) ? wrappedPlan : null
 }
 
@@ -305,6 +318,7 @@ export {
   buildShellCommandFromArgv,
   planAgentCliArgsSuffix,
   quoteStartupArg,
-  resolveStartupShell
+  resolveStartupShell,
+  resolveStartupShellForTerminal
 } from './tui-agent-startup-shell'
 export type { AgentCliArgsPlan, AgentStartupShell } from './tui-agent-startup-shell'

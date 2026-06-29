@@ -3,13 +3,16 @@ import {
   buildAgentDraftLaunchPlan,
   buildAgentResumeStartupPlan,
   buildAgentStartupPlan,
-  buildShellCommandFromArgv
+  buildShellCommandFromArgv,
+  resolveStartupShellForTerminal
 } from './tui-agent-startup'
+import { getCodexStartupRetryInnerCommand } from './codex-startup-retry'
 import { normalizeTuiAgentArgsRecord, resolveTuiAgentLaunchArgs } from './tui-agent-launch-defaults'
 
 function expectCodexRetryWrapper(command: string, expectedInnerCommand: string): void {
+  expect(command).toMatch(/^sh -c /)
   expect(command).toContain('Codex exited during startup; retrying')
-  expect(command).toContain(expectedInnerCommand)
+  expect(getCodexStartupRetryInnerCommand(command)).toBe(expectedInnerCommand)
 }
 
 describe('tui agent startup plans', () => {
@@ -51,6 +54,15 @@ describe('tui agent startup plans', () => {
     })
 
     expect(plan?.launchCommand).toBe('claude "fix ^"quoted^" ^& ^%PATH^%"')
+  })
+
+  it('resolves startup syntax from the configured Windows terminal shell', () => {
+    expect(resolveStartupShellForTerminal('win32', undefined)).toBe('powershell')
+    expect(resolveStartupShellForTerminal('win32', 'cmd.exe')).toBe('cmd')
+    expect(resolveStartupShellForTerminal('win32', 'wsl.exe')).toBe('posix')
+    expect(resolveStartupShellForTerminal('win32', 'git-bash')).toBe('posix')
+    expect(resolveStartupShellForTerminal('win32', 'C:\\PortableGit\\bin\\bash.exe')).toBe('posix')
+    expect(resolveStartupShellForTerminal('linux', 'cmd.exe')).toBe('posix')
   })
 
   it('does not launch Codex with the Orca profile when agent status hooks are enabled', () => {
@@ -189,6 +201,7 @@ describe('tui agent startup plans', () => {
 
     expect(command).toContain('-lt 4')
     expect(command).toContain('-gt 12')
+    expect(command).toContain('__orca_codex_status" -ge 128')
     expect(command).toContain('__orca_codex_attempt" -ge 2')
     expect(command).toContain('__orca_codex_result=$?')
     expect(command).toContain('(exit "$__orca_codex_result")')
@@ -205,6 +218,12 @@ describe('tui agent startup plans', () => {
 
     expect(plan?.launchCommand).toContain("function __orca_codex_start { codex 'resume' 's1' }")
     expect(plan?.launchCommand).toContain('Codex exited during startup; retrying')
+    expect(plan?.launchCommand).toContain('$global:LASTEXITCODE = $null')
+    expect(plan?.launchCommand).toContain('$__orcaCodexSucceeded = $?')
+    expect(plan?.launchCommand).toContain('elseif ($__orcaCodexSucceeded) { 0 } else { 1 }')
+    expect(plan?.launchCommand).toContain('$__orcaCodexStatus -lt 0')
+    expect(plan?.launchCommand).toContain('$__orcaCodexStatus -ge 128')
+    expect(getCodexStartupRetryInnerCommand(plan?.launchCommand ?? '')).toBe("codex 'resume' 's1'")
   })
 
   it('leaves cmd.exe Codex resume plans unwrapped', () => {
@@ -217,6 +236,18 @@ describe('tui agent startup plans', () => {
     })
 
     expect(plan?.launchCommand).toBe('codex "resume" "s1"')
+  })
+
+  it('uses a POSIX-compatible Codex retry wrapper for Windows Git Bash terminals', () => {
+    const plan = buildAgentStartupPlan({
+      agent: 'codex',
+      prompt: 'fix it',
+      cmdOverrides: {},
+      platform: 'win32',
+      shell: resolveStartupShellForTerminal('win32', 'git-bash')
+    })
+
+    expectCodexRetryWrapper(plan?.launchCommand ?? '', "codex 'fix it'")
   })
 
   it('honors command overrides when building POSIX resume plans', () => {
