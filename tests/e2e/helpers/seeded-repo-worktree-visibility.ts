@@ -1,23 +1,20 @@
 import { expect as playwrightExpect, type Page } from '@stablyai/playwright-test'
 
-export async function optIntoVisibleSeededRepoWorktrees(
-  page: Page,
-  repoPath: string
-): Promise<string> {
+export async function optIntoVisibleSeededRepoWorktrees(page: Page, repoId: string): Promise<void> {
   let latestResult = 'not-started'
   // Why: macOS CI can paint the added repo before the first renderer fetch has
   // updated the test-side store read. Poll the public fetch path.
   await playwrightExpect
     .poll(
       async () => {
-        latestResult = await page.evaluate(async (repoPath) => {
+        latestResult = await page.evaluate(async (repoId) => {
           const store = window.__store
           if (!store) {
             return 'store-missing'
           }
 
           await store.getState().fetchRepos()
-          const repo = store.getState().repos.find((candidate) => candidate.path === repoPath)
+          const repo = store.getState().repos.find((candidate) => candidate.id === repoId)
           if (!repo) {
             return 'repo-missing'
           }
@@ -35,8 +32,8 @@ export async function optIntoVisibleSeededRepoWorktrees(
               repoVisibility: currentRepo?.externalWorktreeVisibility ?? null
             })
           }
-          return `repo:${repo.id}`
-        }, repoPath)
+          return 'ready'
+        }, repoId)
         return latestResult
       },
       {
@@ -44,8 +41,7 @@ export async function optIntoVisibleSeededRepoWorktrees(
         message: 'seeded e2e repo did not load'
       }
     )
-    .toMatch(/^repo:/)
-  return latestResult.slice('repo:'.length)
+    .toBe('ready')
 }
 
 export async function waitForVisibleSeededRepoWorktrees(page: Page, repoId: string): Promise<void> {

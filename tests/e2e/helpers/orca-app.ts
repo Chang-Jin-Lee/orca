@@ -302,11 +302,15 @@ export const test = base.extend<OrcaTestFixtures, OrcaWorkerFixtures>({
     // Why: calling window.api.repos.add() goes through the same code path as
     // the "Add Project" UI flow, ensuring worktrees are fetched and the session
     // initializes properly.
-    await page.evaluate(async (repoPath) => {
-      await window.api.repos.add({ path: repoPath })
+    const seededRepoId = await page.evaluate(async (repoPath) => {
+      const result = await window.api.repos.add({ path: repoPath })
+      if ('error' in result) {
+        throw new Error(result.error)
+      }
+      return result.repo.id
     }, repoPath)
 
-    const seededRepoId = await optIntoVisibleSeededRepoWorktrees(page, repoPath)
+    await optIntoVisibleSeededRepoWorktrees(page, seededRepoId)
 
     // Wait for the repo to appear and fetch its worktrees
     await page.evaluate(async () => {
