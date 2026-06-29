@@ -84,6 +84,14 @@ describe('/shared ai-vault-session-filters (lifted core)', () => {
     })
   })
 
+  it('parses quoted repo:/path: operator values containing spaces', () => {
+    expect(parseVaultQuery('repo:"my repo" path:"/Users/ada/My Project"')).toEqual({
+      terms: [],
+      repoTerms: ['my repo'],
+      pathTerms: ['/users/ada/my project']
+    })
+  })
+
   it('exposes a stable agent label and folder label', () => {
     expect(agentLabel('claude')).toBe('Claude')
     expect(folderLabel('/Users/ada/repo/app')).toBe('repo/app')

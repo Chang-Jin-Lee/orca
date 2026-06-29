@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { RpcDispatcher } from '../dispatcher'
 import type { RpcRequest } from '../core'
-import type { OrcaRuntimeService } from '../../orca-runtime'
+import { OrcaRuntimeService } from '../../orca-runtime'
 import type { AiVaultListResult } from '../../../../shared/ai-vault-types'
 import type { AiVaultScanOptions } from '../../../ai-vault/session-scanner-types'
 
@@ -106,5 +106,17 @@ describe('aiVault.listSessions handler + shared cache', () => {
     // registerCoreHandlers path, so it survives in serve mode.
     expect(options.additionalCodexSessionsDirs).toContain('/runtime/codex/home/sessions')
     expect(options.wslHomeDirs).toEqual([])
+  })
+
+  it('forwards codex-home through the real OrcaRuntimeService construction path', async () => {
+    // Why: the dispatcher test above seeds the cache module directly, so it would
+    // still pass if OrcaRuntimeService stopped forwarding the codex-home source.
+    // Construct the real runtime to lock that cross-layer wiring in place.
+    const runtime = new OrcaRuntimeService(null, undefined, {
+      getAdditionalAiVaultCodexHomePaths: () => ['/ctor/codex/home']
+    })
+    await runtime.listAiVaultSessions({})
+    const options = scanAiVaultSessions.mock.calls[0]?.[0] as AiVaultScanOptions
+    expect(options.additionalCodexSessionsDirs).toContain('/ctor/codex/home/sessions')
   })
 })

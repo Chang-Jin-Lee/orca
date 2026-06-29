@@ -30,10 +30,13 @@ export type MobileAgentHistoryStateParams = {
   hostId: string
   worktreeId: string
   worktrees: readonly Worktree[]
+  // Why: distinguishes "worktree list not fetched yet" from "fetched, but this
+  // worktree isn't in it" so a scoped tab holds loading only for the former.
+  worktreesLoaded: boolean
 }
 
 export function useMobileAgentHistoryState(params: MobileAgentHistoryStateParams) {
-  const { hostId, worktreeId, worktrees } = params
+  const { hostId, worktreeId, worktrees, worktreesLoaded } = params
   const { client, state: connState } = useHostClient(hostId)
   const forceReconnect = useForceReconnect()
   const [scope, setScope] = useState<AiVaultScope>('workspace')
@@ -92,6 +95,17 @@ export function useMobileAgentHistoryState(params: MobileAgentHistoryStateParams
           return
         }
 
+        // Why: a scoped tab needs the active worktree's path to narrow. Until the
+        // worktree list has loaded, hold loading rather than firing an unscoped
+        // fetch that would briefly show unrelated host history. Once loaded we
+        // proceed even if the worktree isn't found, to avoid a stuck spinner.
+        if (options.scope !== 'all' && !activeWorktree && !worktreesLoaded) {
+          if (isCurrent()) {
+            setScreenState((prev) => (prev.kind === 'ready' ? prev : { kind: 'loading' }))
+          }
+          return
+        }
+
         const scopePaths = deriveMobileAiVaultScopePaths(options.scope, activeWorktree, worktrees)
         const response = await client.sendRequest('aiVault.listSessions', {
           limit: MOBILE_AI_VAULT_SESSION_LIMIT,
@@ -114,7 +128,7 @@ export function useMobileAgentHistoryState(params: MobileAgentHistoryStateParams
         setScreenState({ kind: 'error', message })
       }
     },
-    [activeWorktree, client, connState, worktrees]
+    [activeWorktree, client, connState, worktrees, worktreesLoaded]
   )
 
   // Initial + reconnect load. Why: scope switches reuse the host's 15s cache

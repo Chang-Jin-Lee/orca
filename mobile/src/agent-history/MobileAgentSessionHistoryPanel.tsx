@@ -34,6 +34,7 @@ export function MobileAgentSessionHistoryPanel({
   const router = useRouter()
   const { client, state: connState } = useHostClient(hostId)
   const [worktrees, setWorktrees] = useState<Worktree[]>([])
+  const [worktreesLoaded, setWorktreesLoaded] = useState(false)
   const [query, setQuery] = useState('')
   const worktreeLabel = getWorktreeLabel(name, worktreeId)
 
@@ -47,14 +48,22 @@ export function MobileAgentSessionHistoryPanel({
     void (async () => {
       try {
         const response = await client.sendRequest('worktree.ps', { limit: 10000 })
-        if (cancelled || !response.ok) {
+        if (cancelled) {
           return
         }
-        const result = (response as RpcSuccess).result as { worktrees: Worktree[] }
-        setWorktrees(result.worktrees)
+        if (response.ok) {
+          const result = (response as RpcSuccess).result as { worktrees: Worktree[] }
+          setWorktrees(result.worktrees)
+        }
       } catch {
         // Why: worktree list is best-effort context; the session scan still runs
         // (without it, scoped tabs can't narrow and fall back to the full list).
+      } finally {
+        // Why: mark loaded even on failure so a scoped tab proceeds with an
+        // unscoped fetch instead of holding a spinner forever.
+        if (!cancelled) {
+          setWorktreesLoaded(true)
+        }
       }
     })()
     return () => {
@@ -71,7 +80,7 @@ export function MobileAgentSessionHistoryPanel({
     onSelectScope,
     onRefresh,
     retry
-  } = useMobileAgentHistoryState({ hostId, worktreeId, worktrees })
+  } = useMobileAgentHistoryState({ hostId, worktreeId, worktrees, worktreesLoaded })
 
   const sessions = screenState.kind === 'ready' ? screenState.sessions : EMPTY_SESSIONS
   const issues = screenState.kind === 'ready' ? screenState.issues : EMPTY_ISSUES

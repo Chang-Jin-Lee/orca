@@ -264,10 +264,19 @@ function isAiVaultSessionInWorkspacePath(workspacePath: string, sessionCwd: stri
 
 function tokenizeQuery(query: string): string[] {
   const tokens: string[] = []
-  const pattern = /"([^"]+)"|'([^']+)'|(\S+)/g
+  // Why: keep quoted operator values (repo:/path:) intact so labels and paths
+  // containing spaces still match — e.g. path:"/Users/ada/My Project".
+  const pattern = /(repo|path):"([^"]+)"|(repo|path):'([^']+)'|"([^"]+)"|'([^']+)'|(\S+)/gi
   let match: RegExpExecArray | null
   while ((match = pattern.exec(query)) !== null) {
-    const token = match[1] ?? match[2] ?? match[3]
+    const operator = match[1] ?? match[3]
+    const operatorValue = match[2] ?? match[4]
+    if (operator && operatorValue?.trim()) {
+      tokens.push(`${operator.toLowerCase()}:${operatorValue.trim()}`)
+      continue
+    }
+
+    const token = match[5] ?? match[6] ?? match[7]
     if (token?.trim()) {
       tokens.push(token.trim())
     }

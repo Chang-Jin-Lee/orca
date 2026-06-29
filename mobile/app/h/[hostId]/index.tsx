@@ -520,6 +520,10 @@ export function HostScreen({
   // format is in place to flip a switch in a future release.
   useEffect(() => {
     if (connState !== 'connected' || !client) {
+      // Why: drop the prior host's capabilities while disconnected/switching so
+      // a capability-gated action (e.g. Agent Session History) can't linger for
+      // a host that doesn't support it.
+      setHostCapabilities([])
       return
     }
     let cancelled = false
@@ -531,6 +535,7 @@ export function HostScreen({
           return
         }
         if (!response.ok) {
+          setHostCapabilities([])
           return
         }
         const status = (response as RpcSuccess).result as DesktopStatus & {
