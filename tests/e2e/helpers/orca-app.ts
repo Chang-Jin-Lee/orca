@@ -306,7 +306,7 @@ export const test = base.extend<OrcaTestFixtures, OrcaWorkerFixtures>({
       await window.api.repos.add({ path: repoPath })
     }, repoPath)
 
-    await optIntoVisibleSeededRepoWorktrees(page, repoPath)
+    const seededRepoId = await optIntoVisibleSeededRepoWorktrees(page, repoPath)
 
     // Wait for the repo to appear and fetch its worktrees
     await page.evaluate(async () => {
@@ -321,7 +321,7 @@ export const test = base.extend<OrcaTestFixtures, OrcaWorkerFixtures>({
       }
     })
 
-    await waitForVisibleSeededRepoWorktrees(page, repoPath)
+    await waitForVisibleSeededRepoWorktrees(page, seededRepoId)
 
     // Wait for workspaceSessionReady to become true
     await page.waitForFunction(

@@ -3,20 +3,20 @@ import { expect as playwrightExpect, type Page } from '@stablyai/playwright-test
 export async function optIntoVisibleSeededRepoWorktrees(
   page: Page,
   repoPath: string
-): Promise<void> {
+): Promise<string> {
   // Why: macOS CI can paint the added repo before the first renderer fetch has
   // updated the test-side store read. Poll the public fetch path.
-  await page.waitForFunction(
+  const repoIdHandle = await page.waitForFunction(
     async (repoPath) => {
       const store = window.__store
       if (!store) {
-        return false
+        return null
       }
 
       await store.getState().fetchRepos()
       const repo = store.getState().repos.find((candidate) => candidate.path === repoPath)
       if (!repo) {
-        return false
+        return null
       }
 
       // Why: the fixture deliberately creates external Git worktrees. New
@@ -26,22 +26,22 @@ export async function optIntoVisibleSeededRepoWorktrees(
         .getState()
         .updateRepo(repo.id, { externalWorktreeVisibility: 'show' })
       if (!updated) {
-        return false
+        return null
       }
-      return (
-        store.getState().repos.find((candidate) => candidate.id === repo.id)
-          ?.externalWorktreeVisibility === 'show'
-      )
+      const currentRepo = store.getState().repos.find((candidate) => candidate.id === repo.id)
+      return currentRepo?.externalWorktreeVisibility === 'show' ? repo.id : null
     },
     repoPath,
     { timeout: 30_000 }
   )
+  const repoId = await repoIdHandle.jsonValue()
+  if (typeof repoId !== 'string') {
+    throw new Error('seeded e2e repo did not load')
+  }
+  return repoId
 }
 
-export async function waitForVisibleSeededRepoWorktrees(
-  page: Page,
-  repoPath: string
-): Promise<void> {
+export async function waitForVisibleSeededRepoWorktrees(page: Page, repoId: string): Promise<void> {
   // Why: parallel specs mutate real git worktrees in the shared fixture repo.
   // A first scan can briefly return no rows while git holds a worktree lock.
   // Poll the main-process detected list after the visibility opt-in so the
@@ -49,12 +49,13 @@ export async function waitForVisibleSeededRepoWorktrees(
   await playwrightExpect
     .poll(
       () =>
-        page.evaluate(async (repoPath) => {
+        page.evaluate(async (repoId) => {
           const store = window.__store
           if (!store) {
             return 'store-missing'
           }
-          const repo = store.getState().repos.find((candidate) => candidate.path === repoPath)
+          await store.getState().fetchRepos()
+          const repo = store.getState().repos.find((candidate) => candidate.id === repoId)
           if (!repo) {
             return 'repo-missing'
           }
@@ -102,7 +103,7 @@ export async function waitForVisibleSeededRepoWorktrees(
             })
           }
           return 'ready'
-        }, repoPath),
+        }, repoId),
       {
         timeout: 60_000,
         message: 'seeded e2e worktrees did not load'
