@@ -638,6 +638,9 @@ export function createExternalWatchEventHandler(
         continue
       }
       if (matching.some((f) => f.isDirty)) {
+        if (hasCombinedDiffConsumer) {
+          scheduleDebouncedExternalReload(notification)
+        }
         continue
       }
       const absolutePath = joinPath(notification.worktreePath, notification.relativePath)

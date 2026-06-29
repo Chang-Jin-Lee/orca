@@ -487,6 +487,40 @@ describe('createExternalWatchEventHandler tombstone coalescing', () => {
     dispose()
   })
 
+  it('reloads a combined Changes tab when the matching single-file tab is dirty', () => {
+    const dirtyFile = {
+      ...fileNotes,
+      isDirty: true
+    }
+    const combinedDiffTab = {
+      id: 'wt-1::all-diffs::uncommitted',
+      worktreeId: 'wt-1',
+      worktreePath: '/repo',
+      filePath: '/repo',
+      relativePath: 'Changes',
+      mode: 'diff' as const,
+      diffSource: 'combined-uncommitted' as const,
+      isDirty: false
+    }
+    vi.mocked(useAppStore.getState).mockReturnValue({
+      openFiles: [dirtyFile, combinedDiffTab],
+      setExternalMutation
+    } as never)
+    vi.mocked(getOpenFilesForExternalFileChange).mockReturnValue([dirtyFile] as never)
+    const { handleFsChanged, dispose } = createExternalWatchEventHandler(findTarget)
+
+    handleFsChanged(payload([{ kind: 'update', absolutePath: '/repo/notes.md' }]))
+    vi.advanceTimersByTime(100)
+
+    expect(notifyEditorExternalFileChange).toHaveBeenCalledWith({
+      worktreeId: 'wt-1',
+      worktreePath: '/repo',
+      relativePath: 'notes.md',
+      runtimeEnvironmentId: null
+    })
+    dispose()
+  })
+
   it('does not reload a branch-compare combined diff for working-tree changes', () => {
     const branchDiffTab = {
       id: 'wt-1::all-diffs::branch',
