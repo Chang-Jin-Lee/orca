@@ -87,6 +87,10 @@ import { getMobileWorkspaceLineageGroupKey } from '../../../src/worktree/mobile-
 import { areWorktreeListsEqual } from '../../../src/worktree/worktree-list-snapshot'
 import { repoColor } from '../../../src/worktree/repo-color'
 import {
+  MobileCreateWorkspaceFab,
+  MOBILE_CREATE_WORKSPACE_FAB_LIST_CLEARANCE
+} from '../../../src/worktree/MobileCreateWorkspaceFab'
+import {
   WORKSPACE_GROUP_OPTIONS as GROUP_OPTIONS,
   WORKSPACE_SORT_OPTIONS as SORT_OPTIONS
 } from '../../../src/worktree/workspace-list-picker-options'
@@ -1099,17 +1103,6 @@ export function HostScreen({
               />
             </Pressable>
 
-            <Pressable
-              style={styles.newButton}
-              onPress={openNewWorktreeModal}
-              disabled={connState !== 'connected'}
-            >
-              <Plus
-                size={16}
-                color={connState === 'connected' ? colors.textPrimary : colors.textMuted}
-              />
-            </Pressable>
-
             <Pressable style={styles.searchToggle} onPress={() => setShowSearch((s) => !s)}>
               {showSearch ? (
                 <X size={16} color={colors.textSecondary} />
@@ -1121,7 +1114,6 @@ export function HostScreen({
         )}
       </View>
 
-      {/* Auth failed banner */}
       {connState === 'auth-failed' && (
         <AuthFailedBanner
           canRetry={!!hostId}
@@ -1131,7 +1123,6 @@ export function HostScreen({
         />
       )}
 
-      {/* Search bar */}
       {showSearch && (
         <View style={styles.searchBar}>
           <Search size={14} color={colors.textMuted} />
@@ -1187,7 +1178,12 @@ export function HostScreen({
           // above the Samsung 3-button nav / iOS home indicator.
           contentContainerStyle={[
             styles.list,
-            { paddingBottom: spacing.lg + insets.bottom },
+            {
+              paddingBottom:
+                spacing.lg +
+                insets.bottom +
+                (!embedded ? MOBILE_CREATE_WORKSPACE_FAB_LIST_CLEARANCE : 0)
+            },
             isWideLayout &&
               !embedded && { maxWidth: contentMaxWidth, width: '100%', alignSelf: 'center' }
           ]}
@@ -1244,6 +1240,14 @@ export function HostScreen({
           )}
         />
       )}
+
+      {!embedded ? (
+        <MobileCreateWorkspaceFab
+          bottomOffset={insets.bottom + spacing.lg}
+          connected={connState === 'connected'}
+          onPress={openNewWorktreeModal}
+        />
+      ) : null}
 
       <PickerModal
         visible={showSortPicker}
@@ -1609,9 +1613,6 @@ const styles = StyleSheet.create({
   },
   toolbarIconDisabled: {
     opacity: 0.6
-  },
-  newButton: {
-    padding: spacing.xs
   },
   searchToggle: {
     padding: spacing.xs
