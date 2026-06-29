@@ -820,7 +820,7 @@ function SourceControlInner(): React.JSX.Element {
     activeWorktreeId ? s.gitStatusHugeByWorktree?.[activeWorktreeId] : undefined
   )
   const managedBy = useAppStore((s) =>
-    activeWorktreeId ? s.gitStatusManagedByByWorktree[activeWorktreeId] : undefined
+    activeWorktreeId ? s.gitStatusManagedByByWorktree?.[activeWorktreeId] : undefined
   )
   const branchEntries = useAppStore((s) =>
     activeWorktreeId

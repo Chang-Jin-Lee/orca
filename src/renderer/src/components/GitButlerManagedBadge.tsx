@@ -30,9 +30,11 @@ export function GitButlerManagedBadge({
           GitButler
         </Badge>
       </TooltipTrigger>
+      {/* Why: detection covers both gitbutler/workspace and the legacy
+          gitbutler/integration branch, so the copy names neither explicitly. */}
       <TooltipContent side={side} sideOffset={8}>
-        This repo is managed by GitButler. Orca&apos;s Source Control acts on the
-        gitbutler/workspace branch, not your virtual branches.
+        This repo is managed by GitButler. Orca&apos;s Source Control acts on the checked-out
+        GitButler workspace branch, not your virtual branches.
       </TooltipContent>
     </Tooltip>
   )
