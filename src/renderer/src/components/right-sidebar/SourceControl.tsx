@@ -44,6 +44,7 @@ import { isFolderRepo } from '../../../../shared/repo-kind'
 import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from '@/components/ui/tooltip'
 import { Button } from '@/components/ui/button'
 import { DetachedHeadBadge } from '@/components/DetachedHeadBadge'
+import { GitButlerManagedBadge } from '@/components/GitButlerManagedBadge'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -817,6 +818,9 @@ function SourceControlInner(): React.JSX.Element {
   )
   const repositoryHuge = useAppStore((s) =>
     activeWorktreeId ? s.gitStatusHugeByWorktree?.[activeWorktreeId] : undefined
+  )
+  const managedBy = useAppStore((s) =>
+    activeWorktreeId ? s.gitStatusManagedByByWorktree[activeWorktreeId] : undefined
   )
   const branchEntries = useAppStore((s) =>
     activeWorktreeId
@@ -5417,9 +5421,12 @@ function SourceControlInner(): React.JSX.Element {
           upstreamStatus={remoteStatus}
         />
 
-        {detachedHeadDisplay && (
-          <div className="border-b border-border px-3 py-2">
-            <DetachedHeadBadge display={detachedHeadDisplay} side="bottom" />
+        {(detachedHeadDisplay || managedBy) && (
+          <div className="flex flex-wrap items-center gap-1.5 border-b border-border px-3 py-2">
+            {detachedHeadDisplay && (
+              <DetachedHeadBadge display={detachedHeadDisplay} side="bottom" />
+            )}
+            {managedBy && <GitButlerManagedBadge side="bottom" />}
           </div>
         )}
 
