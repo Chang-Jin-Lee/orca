@@ -362,7 +362,8 @@ describe('launchWorkItemDirect', () => {
       agentArgs: '--dangerously-skip-permissions',
       agentEnv: {},
       platform: 'win32',
-      shell: 'powershell'
+      shell: 'powershell',
+      isRemote: false
     })
     expect(buildAgentStartupPlan).not.toHaveBeenCalledWith(
       expect.objectContaining({
@@ -477,7 +478,8 @@ describe('launchWorkItemDirect', () => {
       agentArgs: '--yolo',
       agentEnv: {},
       platform: 'linux',
-      shell: 'posix'
+      shell: 'posix',
+      isRemote: true
     })
     expect(buildAgentStartupPlan).toHaveBeenCalledWith({
       agent: 'cursor',
@@ -487,6 +489,7 @@ describe('launchWorkItemDirect', () => {
       agentEnv: {},
       platform: 'linux',
       shell: 'posix',
+      isRemote: true,
       allowEmptyPromptLaunch: true
     })
     expect(pasteDraftWhenAgentReady).toHaveBeenCalledWith({

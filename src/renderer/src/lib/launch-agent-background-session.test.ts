@@ -1,5 +1,6 @@
 /* eslint-disable max-lines -- Why: local/runtime launch tests share a mock harness. */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { BACKGROUND_MOUNT_TERMINAL_WORKTREE_EVENT } from '@/constants/terminal'
 import { createCompatibleRuntimeStatusResponseIfNeeded } from '@/runtime/runtime-compatibility-test-fixture'
 import { clearRuntimeCompatibilityCacheForTests } from '@/runtime/runtime-rpc-client'
 import { getCodexStartupRetryInnerCommand } from '../../../shared/codex-startup-retry'
@@ -20,6 +21,7 @@ const mockSubscribeToPtyData = vi.fn()
 const mockSubscribeToPtyExit = vi.fn()
 const mockPasteDraftWhenAgentReady = vi.fn()
 const mockMarkTrusted = vi.fn()
+const mockDispatchEvent = vi.fn()
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
 
 function expectStablePaneSpawn(): string {
@@ -139,6 +141,7 @@ describe('launchAgentBackgroundSession', () => {
     mockSubscribeToPtyData.mockReturnValue(vi.fn())
     mockSubscribeToPtyExit.mockReturnValue(vi.fn())
     vi.stubGlobal('window', {
+      dispatchEvent: mockDispatchEvent,
       api: {
         pty: {
           spawn: mockSpawn,
@@ -172,6 +175,12 @@ describe('launchAgentBackgroundSession', () => {
       activate: false,
       recordInteraction: false
     })
+    expect(mockDispatchEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: BACKGROUND_MOUNT_TERMINAL_WORKTREE_EVENT,
+        detail: { worktreeId: 'wt-1' }
+      })
+    )
     expect(mockSpawn).toHaveBeenCalledWith(
       expect.objectContaining({
         cwd: '/repo/worktree',
@@ -597,7 +606,7 @@ describe('launchAgentBackgroundSession', () => {
         }),
         tabId: 'tab-1',
         leafId,
-        focus: false
+        presentation: 'background'
       }),
       timeoutMs: 15_000
     })

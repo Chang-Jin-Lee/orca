@@ -6,6 +6,7 @@ import {
   Eraser,
   GitFork,
   Maximize2,
+  MessageSquare,
   Minimize2,
   PanelBottomClose,
   PanelsTopLeft,
@@ -13,6 +14,7 @@ import {
   Pencil,
   Play,
   Plus,
+  SquareTerminal,
   X
 } from 'lucide-react'
 import {
@@ -34,6 +36,7 @@ import { formatShortcutLabel } from '@/hooks/useShortcutLabel'
 import { AgentIcon } from '@/lib/agent-catalog'
 import type { KeybindingOverrides } from '../../../../shared/keybindings'
 import { translate } from '@/i18n/i18n'
+import { isMacPlatform, nativeChatToggleShortcutLabel } from '../native-chat/native-chat-shortcut'
 
 type TerminalContextMenuProps = {
   open: boolean
@@ -53,6 +56,9 @@ type TerminalContextMenuProps = {
   onClosePane: () => void
   onClearScreen: () => void
   onForkAgentSession: () => void
+  canToggleNativeChat: boolean
+  isNativeChatView: boolean
+  onToggleNativeChat: () => void
   onCopyAgentSessionContext: () => void
   repoQuickCommands: TerminalQuickCommand[]
   globalQuickCommands: TerminalQuickCommand[]
@@ -61,6 +67,8 @@ type TerminalContextMenuProps = {
   onAddQuickCommand: () => void
   onToggleExpand: () => void
   onSetTitle: () => void
+  onClearPaneTitle: () => void
+  canClearPaneTitle: boolean
   onCopyTerminalId: () => void
   onCopyPaneId: () => void
 }
@@ -83,6 +91,9 @@ export default function TerminalContextMenu({
   onClosePane,
   onClearScreen,
   onForkAgentSession,
+  canToggleNativeChat,
+  isNativeChatView,
+  onToggleNativeChat,
   onCopyAgentSessionContext,
   repoQuickCommands,
   globalQuickCommands,
@@ -91,6 +102,8 @@ export default function TerminalContextMenu({
   onAddQuickCommand,
   onToggleExpand,
   onSetTitle,
+  onClearPaneTitle,
+  canClearPaneTitle,
   onCopyTerminalId,
   onCopyPaneId
 }: TerminalContextMenuProps): React.JSX.Element {
@@ -102,12 +115,17 @@ export default function TerminalContextMenu({
       splitDown: formatShortcutLabel('terminal.splitDown', keybindings),
       equalize: formatShortcutLabel('terminal.equalizePaneSizes', keybindings),
       expand: formatShortcutLabel('terminal.expandPane', keybindings),
-      close: formatShortcutLabel('terminal.closePane', keybindings)
+      setTitle: formatShortcutLabel('terminal.setTitle', keybindings),
+      clearPaneTitle: formatShortcutLabel('terminal.clearPaneTitle', keybindings),
+      close: formatShortcutLabel('terminal.closePane', keybindings),
+      nativeChat: nativeChatToggleShortcutLabel(isMacPlatform())
     }),
     [keybindings]
   )
   const hasQuickCommands = repoQuickCommands.length > 0 || globalQuickCommands.length > 0
   const showEqualizeShortcut = shortcuts.equalize !== 'Unassigned'
+  const showSetTitleShortcut = shortcuts.setTitle !== 'Unassigned'
+  const showClearPaneTitleShortcut = shortcuts.clearPaneTitle !== 'Unassigned'
   const renderQuickCommandItem = (command: TerminalQuickCommand): React.JSX.Element => (
     <DropdownMenuItem key={command.id} onSelect={() => onQuickCommand(command)}>
       {isTerminalAgentQuickCommand(command) ? (
@@ -257,6 +275,21 @@ export default function TerminalContextMenu({
             'Copy Context'
           )}
         </DropdownMenuItem>
+        {canToggleNativeChat ? (
+          <DropdownMenuItem onSelect={onToggleNativeChat}>
+            {isNativeChatView ? <SquareTerminal /> : <MessageSquare />}
+            {isNativeChatView
+              ? translate(
+                  'components.tab.bar.SortableTabContextMenu.switchToTerminalView',
+                  'Switch to terminal view'
+                )
+              : translate(
+                  'components.tab.bar.SortableTabContextMenu.switchToChatView',
+                  'Switch to chat view'
+                )}
+            <DropdownMenuShortcut>{shortcuts.nativeChat}</DropdownMenuShortcut>
+          </DropdownMenuItem>
+        ) : null}
         <DropdownMenuSeparator />
         <DropdownMenuItem onSelect={onSplitRight}>
           <PanelRightClose />
@@ -312,7 +345,22 @@ export default function TerminalContextMenu({
         >
           <Pencil />
           {translate('auto.components.terminal.pane.TerminalContextMenu.39809d152f', 'Set Title…')}
+          {showSetTitleShortcut ? (
+            <DropdownMenuShortcut>{shortcuts.setTitle}</DropdownMenuShortcut>
+          ) : null}
         </DropdownMenuItem>
+        {canClearPaneTitle ? (
+          <DropdownMenuItem onSelect={onClearPaneTitle}>
+            <X />
+            {translate(
+              'auto.components.terminal.pane.TerminalContextMenu.clearPaneTitle',
+              'Clear Pane Title'
+            )}
+            {showClearPaneTitleShortcut ? (
+              <DropdownMenuShortcut>{shortcuts.clearPaneTitle}</DropdownMenuShortcut>
+            ) : null}
+          </DropdownMenuItem>
+        ) : null}
         <DropdownMenuItem onSelect={onCopyTerminalId}>
           <Copy />
           {translate(

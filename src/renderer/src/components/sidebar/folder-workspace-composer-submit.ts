@@ -72,6 +72,7 @@ function buildFolderWorkspaceLinkedStartupPlan(args: {
   agentArgs?: string | null
   agentEnv?: Record<string, string>
   startupTarget: AgentStartupTarget
+  isRemote: boolean
 }): AgentStartupPlan | null {
   const { prompt, draftPrompt } = resolveQuickCreateLinkedWorkItemPrompt(
     args.linkedWorkItem,
@@ -86,7 +87,8 @@ function buildFolderWorkspaceLinkedStartupPlan(args: {
         agentArgs: args.agentArgs,
         agentEnv: args.agentEnv,
         platform: args.startupTarget.platform,
-        shell: args.startupTarget.shell
+        shell: args.startupTarget.shell,
+        isRemote: args.isRemote
       })
     : null
   if (draftLaunchPlan) {
@@ -116,6 +118,7 @@ function buildFolderWorkspaceLinkedStartupPlan(args: {
     agentEnv: args.agentEnv,
     platform: args.startupTarget.platform,
     shell: args.startupTarget.shell,
+    isRemote: args.isRemote,
     allowEmptyPromptLaunch: true
   })
   if (startupPlan && linkedDraftPrompt) {
@@ -159,6 +162,7 @@ export async function submitFolderWorkspaceCreate({
   agentArgs,
   agentEnv,
   terminalWindowsShell,
+  isRemote,
   launchSource = 'sidebar',
   runtimeEnvironmentId = null,
   createFolderWorkspace,
@@ -179,6 +183,9 @@ export async function submitFolderWorkspaceCreate({
     terminalWindowsShell,
     fallbackPlatform: CLIENT_PLATFORM
   })
+  // Why: an SSH folder group runs the plain `orca` relay shim, so the Linux-only
+  // `orca-ide` rename must not be applied for remote launches.
+  const launchIsRemote = isRemote ?? Boolean(projectGroup.connectionId)
   const startupPlan =
     quickAgent && linkedWorkItem
       ? buildFolderWorkspaceLinkedStartupPlan({
@@ -188,7 +195,8 @@ export async function submitFolderWorkspaceCreate({
           agentCmdOverrides,
           agentArgs,
           agentEnv,
-          startupTarget
+          startupTarget,
+          isRemote: launchIsRemote
         })
       : quickAgent
         ? buildAgentStartupPlan({
@@ -199,6 +207,7 @@ export async function submitFolderWorkspaceCreate({
             agentEnv,
             platform: startupTarget.platform,
             shell: startupTarget.shell,
+            isRemote: launchIsRemote,
             allowEmptyPromptLaunch: true
           })
         : null

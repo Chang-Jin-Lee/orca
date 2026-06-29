@@ -14,6 +14,7 @@ import type {
 import { CLIENT_PLATFORM, getWorkspaceIntentName, getWorkspaceSeedName } from '@/lib/new-workspace'
 import { getLocalRepoProjectExecutionRuntimeContext } from '@/lib/local-preflight-context'
 import { resolveSourceControlLaunchPlatform } from '@/lib/source-control-launch-platform'
+import { repoIsRemote } from '../../../shared/agent-launch-remote'
 import {
   resolveTuiAgentLaunchArgs,
   resolveTuiAgentLaunchEnv
@@ -198,6 +199,9 @@ export function buildGitHubWorkItemStartupPlan(args: {
     terminalWindowsShell: store.settings?.terminalWindowsShell,
     projectRuntime
   })
+  // Why: SSH remotes deploy the CLI shim as plain `orca`, so the Linux-only
+  // `orca-ide` rename must not be applied for remote launches.
+  const isRemote = repoIsRemote(repo)
   const draftLaunchPlan = draftPrompt
     ? buildAgentDraftLaunchPlan({
         agent,
@@ -206,7 +210,8 @@ export function buildGitHubWorkItemStartupPlan(args: {
         agentArgs: resolveTuiAgentLaunchArgs(agent, store.settings?.agentDefaultArgs),
         agentEnv: resolveTuiAgentLaunchEnv(agent, store.settings?.agentDefaultEnv),
         platform: startupTarget.platform,
-        shell: startupTarget.shell
+        shell: startupTarget.shell,
+        isRemote
       })
     : null
   const startupPlan = draftLaunchPlan
@@ -232,6 +237,7 @@ export function buildGitHubWorkItemStartupPlan(args: {
         agentEnv: resolveTuiAgentLaunchEnv(agent, store.settings?.agentDefaultEnv),
         platform: startupTarget.platform,
         shell: startupTarget.shell,
+        isRemote,
         allowEmptyPromptLaunch: true
       })
   if (startupPlan && draftPrompt && !draftLaunchPlan) {

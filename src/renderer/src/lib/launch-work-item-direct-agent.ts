@@ -33,6 +33,9 @@ export function buildDirectWorkItemAgentStartupPlan(args: {
     | null
     | undefined
   startupTarget: AgentStartupTarget
+  /** Why: SSH remotes deploy the CLI shim as plain `orca`, so the Linux-only
+   * `orca-ide` rename must not be applied for remote launches. */
+  isRemote?: boolean
 }): {
   startupPlan: AgentStartupPlan | null
   draftLaunchedNatively: boolean
@@ -57,6 +60,7 @@ export function buildDirectWorkItemAgentStartupPlan(args: {
           cmdOverrides: args.settings?.agentCmdOverrides ?? {},
           platform,
           shell,
+          isRemote: args.isRemote,
           agentArgs: effectiveAgentArgs,
           agentEnv: effectiveAgentEnv
         })
@@ -88,6 +92,7 @@ export function buildDirectWorkItemAgentStartupPlan(args: {
     cmdOverrides: args.settings?.agentCmdOverrides ?? {},
     platform,
     shell,
+    isRemote: args.isRemote,
     agentArgs: effectiveAgentArgs,
     agentEnv: effectiveAgentEnv,
     allowEmptyPromptLaunch: true

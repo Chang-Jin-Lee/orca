@@ -9,6 +9,7 @@ import type {
   GitForkSyncExpectedUpstream,
   GitForkSyncResult,
   GitPushTarget,
+  GitStagingArea,
   GitUpstreamStatus,
   GitWorktreeInfo,
   RemoveWorktreeResult,
@@ -174,6 +175,11 @@ export type GitProviderStatusOptions = {
 
 export type IGitProvider = {
   getStatus(worktreePath: string, options?: GitProviderStatusOptions): Promise<GitStatusResult>
+  getSubmoduleStatus(
+    worktreePath: string,
+    submodulePath: string,
+    area?: GitStagingArea
+  ): Promise<GitStatusResult>
   checkIgnoredPaths(worktreePath: string, relativePaths: string[]): Promise<string[]>
   getHistory(worktreePath: string, options?: GitHistoryOptions): Promise<GitHistoryResult>
   commit(worktreePath: string, message: string): Promise<{ success: boolean; error?: string }>
@@ -234,6 +240,11 @@ export type IGitProvider = {
     options?: { deleteBranch?: boolean; forceBranchDelete?: boolean }
   ): Promise<RemoveWorktreeResult>
   renameCurrentBranch?(worktreePath: string, newBranch: string): Promise<void>
+  forceDeletePreservedBranch?(
+    repoPath: string,
+    branchName: string,
+    expectedHead: string
+  ): Promise<void>
   isGitRepo(path: string): boolean
   isGitRepoAsync(dirPath: string): Promise<{ isRepo: boolean; rootPath: string | null }>
   exec(

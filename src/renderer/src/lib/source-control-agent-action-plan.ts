@@ -41,6 +41,9 @@ export function planSourceControlAgentActionLaunch(args: {
   terminalWindowsShell?: string | null
   launchHost?: { connectionId?: string | null; executionHostId?: string | null } | null
   projectRuntime?: ProjectExecutionRuntimeResolution
+  /** Why: SSH remotes deploy the CLI shim as plain `orca`, so the Linux-only
+   * `orca-ide` rename must not be applied for remote launches. */
+  isRemote?: boolean
 }): SourceControlLaunchPlanResult {
   const agent = args.agent
   if (!agent) {
@@ -92,6 +95,7 @@ export function planSourceControlAgentActionLaunch(args: {
       projectRuntime: args.projectRuntime
     })
   const { platform, shell } = startupTarget
+  const isRemote = args.isRemote ?? Boolean(args.launchHost?.connectionId)
   const plannedArgs = planAgentCliArgsSuffix(args.agentArgs, shell)
   if (!plannedArgs.ok) {
     return { ok: false, error: plannedArgs.error }
@@ -106,6 +110,7 @@ export function planSourceControlAgentActionLaunch(args: {
       cmdOverrides,
       platform,
       shell,
+      isRemote,
       agentArgs: args.agentArgs,
       allowEmptyPromptLaunch: true
     })
@@ -117,6 +122,7 @@ export function planSourceControlAgentActionLaunch(args: {
       cmdOverrides,
       platform,
       shell,
+      isRemote,
       agentArgs: args.agentArgs
     })
     if (draftLaunchPlan) {
@@ -142,6 +148,7 @@ export function planSourceControlAgentActionLaunch(args: {
         cmdOverrides,
         platform,
         shell,
+        isRemote,
         agentArgs: args.agentArgs,
         allowEmptyPromptLaunch: true
       })
@@ -154,6 +161,7 @@ export function planSourceControlAgentActionLaunch(args: {
       cmdOverrides,
       platform,
       shell,
+      isRemote,
       agentArgs: args.agentArgs,
       allowEmptyPromptLaunch: true
     })
@@ -165,6 +173,7 @@ export function planSourceControlAgentActionLaunch(args: {
       cmdOverrides,
       platform,
       shell,
+      isRemote,
       agentArgs: args.agentArgs,
       allowEmptyPromptLaunch: false
     })

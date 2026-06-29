@@ -33,6 +33,7 @@ export function buildLaunchAgentInNewTabStartup(args: {
   agentArgs?: string | null
   promptDelivery: 'auto-submit' | 'draft' | 'submit-after-ready'
   startupTarget: AgentStartupTarget
+  isRemote?: boolean
   settings?: LaunchAgentInNewTabStartupSettings | null
 }): LaunchAgentInNewTabStartupResult | null {
   const cmdOverrides = args.settings?.agentCmdOverrides ?? {}
@@ -58,6 +59,7 @@ export function buildLaunchAgentInNewTabStartup(args: {
       cmdOverrides,
       platform,
       shell,
+      isRemote: args.isRemote,
       agentArgs: effectiveAgentArgs,
       agentEnv,
       allowEmptyPromptLaunch: true
@@ -72,6 +74,7 @@ export function buildLaunchAgentInNewTabStartup(args: {
       cmdOverrides,
       platform,
       shell,
+      isRemote: args.isRemote,
       agentArgs: effectiveAgentArgs,
       agentEnv
     })
@@ -97,6 +100,7 @@ export function buildLaunchAgentInNewTabStartup(args: {
         cmdOverrides,
         platform,
         shell,
+        isRemote: args.isRemote,
         agentArgs: effectiveAgentArgs,
         agentEnv,
         allowEmptyPromptLaunch: true
@@ -110,6 +114,7 @@ export function buildLaunchAgentInNewTabStartup(args: {
       cmdOverrides,
       platform,
       shell,
+      isRemote: args.isRemote,
       agentArgs: effectiveAgentArgs,
       agentEnv,
       allowEmptyPromptLaunch: true
@@ -122,6 +127,7 @@ export function buildLaunchAgentInNewTabStartup(args: {
       cmdOverrides,
       platform,
       shell,
+      isRemote: args.isRemote,
       agentArgs: effectiveAgentArgs,
       agentEnv,
       allowEmptyPromptLaunch: !hasPrompt

@@ -16,6 +16,9 @@ type BuildSourceControlAgentDeliveryPlanArgs = {
   launchPlatform?: NodeJS.Platform
   launchHost?: Pick<Repo, 'connectionId' | 'executionHostId'> | null
   projectRuntime?: ProjectExecutionRuntimeResolution
+  /** Why: keep the previewed command label in sync with the real remote launch,
+   * which omits the Linux-only `orca-ide` rename for SSH hosts. */
+  isRemote?: boolean
 }
 
 export function buildSourceControlAgentDeliveryPlan({
@@ -27,7 +30,8 @@ export function buildSourceControlAgentDeliveryPlan({
   connectionUnavailable,
   launchPlatform,
   launchHost,
-  projectRuntime
+  projectRuntime,
+  isRemote
 }: BuildSourceControlAgentDeliveryPlanArgs): SourceControlAgentActionDeliveryPlanState {
   if (connectionUnavailable) {
     return buildSourceControlAgentConnectionErrorPlan()
@@ -39,6 +43,7 @@ export function buildSourceControlAgentDeliveryPlan({
     terminalWindowsShell: settings?.terminalWindowsShell,
     projectRuntime
   })
+  const launchIsRemote = isRemote ?? Boolean(launchHost?.connectionId)
   const result = planSourceControlAgentActionLaunch({
     agent: selectedAgent,
     commandInput,
@@ -47,7 +52,8 @@ export function buildSourceControlAgentDeliveryPlan({
     detectedAgents,
     disabledAgents: settings?.disabledTuiAgents,
     cmdOverrides: settings?.agentCmdOverrides,
-    startupTarget
+    startupTarget,
+    isRemote: launchIsRemote
   })
   if (!result.ok) {
     return { status: 'error', error: result.error }
