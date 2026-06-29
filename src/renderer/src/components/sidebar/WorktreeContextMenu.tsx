@@ -834,20 +834,25 @@ const WorktreeContextMenu = React.memo(function WorktreeContextMenu({
              disabled Delete Worktree for parity with non-primary cards and pair
              it with the enabled Remove Project action below. */}
           {!isMultiContext && removesProject ? (
-            <DropdownMenuItem
-              variant="destructive"
-              disabled
-              title={translate(
-                'auto.components.sidebar.WorktreeContextMenu.primaryDeleteDisabled',
-                "Primary worktree — can't be deleted. Remove the project instead."
-              )}
-            >
-              <Trash2 className="size-3.5" />
-              {translate(
-                'auto.components.sidebar.WorktreeContextMenu.deleteWorktree',
-                'Delete Worktree'
-              )}
-            </DropdownMenuItem>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <div>
+                  <DropdownMenuItem variant="destructive" disabled>
+                    <Trash2 className="size-3.5" />
+                    {translate(
+                      'auto.components.sidebar.WorktreeContextMenu.deleteWorktree',
+                      'Delete Worktree'
+                    )}
+                  </DropdownMenuItem>
+                </div>
+              </TooltipTrigger>
+              <TooltipContent side="right" sideOffset={8} className="max-w-[200px] text-pretty">
+                {translate(
+                  'auto.components.sidebar.WorktreeContextMenu.primaryDeleteDisabled',
+                  "Primary worktree — can't be deleted. Remove the project instead."
+                )}
+              </TooltipContent>
+            </Tooltip>
           ) : null}
           {/* Why: primary checkout rows remove the project from Orca instead of
              invoking git worktree deletion. Radix forwards unknown props to the
