@@ -63,6 +63,21 @@ function simulatorTab(id: string, groupId: string, sortOrder: number): Tab {
   }
 }
 
+function gitGraphTab(id: string, groupId: string, sortOrder: number): Tab {
+  return {
+    id,
+    entityId: `${groupId}::git-graph`,
+    groupId,
+    worktreeId: 'wt',
+    contentType: 'git-graph',
+    label: 'Git Graph',
+    customLabel: null,
+    color: null,
+    sortOrder,
+    createdAt: sortOrder
+  }
+}
+
 describe('getGroupVisibleTabOrder', () => {
   it('returns active-group refs with backing ids plus unified tab ids', () => {
     const group: TabGroup = {
@@ -186,6 +201,25 @@ describe('getGroupVisibleTabOrder', () => {
       { type: 'terminal', id: 'term-1', tabId: 'tab-t1' },
       { type: 'simulator', id: 'tab-s1', tabId: 'tab-s1' },
       { type: 'editor', id: '/repo/file.md', tabId: 'tab-e1' }
+    ])
+  })
+
+  it('includes git-graph tabs as editor-typed refs keyed by unified tab id', () => {
+    // git-graph has no backing OpenFile entity, so it would be skipped by the
+    // editor branch's entity-presence guard. It must still appear so keyboard
+    // cycling can land on it; it routes through activeTabType 'editor'.
+    const group: TabGroup = {
+      id: 'g1',
+      worktreeId: 'wt',
+      activeTabId: 'tab-gg1',
+      tabOrder: ['tab-t1', 'tab-gg1']
+    }
+    const tabs: Tab[] = [terminalTab('tab-t1', 'g1', 'term-1', 0), gitGraphTab('tab-gg1', 'g1', 1)]
+    expect(
+      getGroupVisibleTabOrder(group, tabs, new Set(['term-1']), new Set(), new Set(), new Set())
+    ).toEqual([
+      { type: 'terminal', id: 'term-1', tabId: 'tab-t1' },
+      { type: 'editor', id: 'tab-gg1', tabId: 'tab-gg1' }
     ])
   })
 })

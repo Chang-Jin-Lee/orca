@@ -279,7 +279,9 @@ export function useTabGroupWorkspaceModel({
         destroyWorkspaceWebviews(browserState.browserPagesByWorkspace, item.entityId)
         closeBrowserTab(item.entityId)
         closeUnifiedTab(item.id)
-      } else if (item.contentType === 'simulator') {
+      } else if (item.contentType === 'simulator' || item.contentType === 'git-graph') {
+        // git-graph (like simulator) has no backing OpenFile entity, so close
+        // the unified tab directly without touching openFiles.
         closeUnifiedTab(item.id)
       } else {
         const canCloseTab = closeEditorIfUnreferenced(item.entityId, item.id)
@@ -344,7 +346,8 @@ export function useTabGroupWorkspaceModel({
           closeUnifiedTab(item.id)
         } else if (item.contentType === 'terminal') {
           closeTab(item.entityId)
-        } else if (item.contentType === 'simulator') {
+        } else if (item.contentType === 'simulator' || item.contentType === 'git-graph') {
+          // git-graph (like simulator) has no backing OpenFile entity.
           closeUnifiedTab(item.id)
         } else {
           const canCloseTab = closeEditorIfUnreferenced(item.entityId, item.id)

@@ -88,6 +88,16 @@ export function getGroupVisibleTabOrder(
       }
       seenSimulators.add(tab.id)
       result.push({ type: 'simulator', id: tab.id, tabId: tab.id })
+    } else if (tab.contentType === 'git-graph') {
+      // git-graph has no backing entity in editorEntityIds, but it is a real
+      // visible chip that routes through activeTabType 'editor'. Emit it as an
+      // editor-typed ref keyed by the unified tab id so keyboard cycling lands
+      // on it and activateCyclableTab's editor branch re-activates it via tabId.
+      if (seenEditors.has(tab.id)) {
+        continue
+      }
+      seenEditors.add(tab.id)
+      result.push({ type: 'editor', id: tab.id, tabId: tab.id })
     } else {
       if (!editorEntityIds.has(tab.entityId) || seenEditors.has(tab.id)) {
         continue
