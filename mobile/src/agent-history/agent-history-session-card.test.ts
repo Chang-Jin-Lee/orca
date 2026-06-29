@@ -81,7 +81,7 @@ describe('buildMobileAgentHistorySections', () => {
         now: NOW
       }
     )
-    const allCards = sections.flatMap((s) => s.cards)
+    const allCards = sections.flatMap((s) => s.data)
     expect(allCards.map((card) => card.id)).toEqual(['claude:1'])
   })
 
@@ -90,7 +90,7 @@ describe('buildMobileAgentHistorySections', () => {
       [session(), session({ id: 'claude:2', title: 'Repair terminal tabs' })],
       { query: 'repair', scope: 'all', scopeFilterPaths: [], activeWorktreePath: null, now: NOW }
     )
-    expect(sections.flatMap((s) => s.cards).map((card) => card.id)).toEqual(['claude:2'])
+    expect(sections.flatMap((s) => s.data).map((card) => card.id)).toEqual(['claude:2'])
   })
 
   // Why: the host union widens, so the screen must narrow scoped tabs by cwd
@@ -107,7 +107,7 @@ describe('buildMobileAgentHistorySections', () => {
       activeWorktreePath: '/Users/ada/repo/app',
       now: NOW
     })
-    expect(sections.flatMap((s) => s.cards).map((card) => card.id)).toEqual(['claude:in'])
+    expect(sections.flatMap((s) => s.data).map((card) => card.id)).toEqual(['claude:in'])
   })
 
   it('narrows Project scope to the active worktree plus same-repo sibling paths', () => {
@@ -125,7 +125,7 @@ describe('buildMobileAgentHistorySections', () => {
     })
     expect(
       sections
-        .flatMap((s) => s.cards)
+        .flatMap((s) => s.data)
         .map((card) => card.id)
         .sort()
     ).toEqual(['claude:active', 'claude:sibling'])
@@ -147,7 +147,7 @@ describe('buildMobileAgentHistorySections', () => {
     })
     expect(
       sections
-        .flatMap((s) => s.cards)
+        .flatMap((s) => s.data)
         .map((card) => card.id)
         .sort()
     ).toEqual(['claude:a', 'claude:b'])
@@ -167,7 +167,7 @@ describe('buildMobileAgentHistorySections', () => {
     })
     expect(
       sections
-        .flatMap((s) => s.cards)
+        .flatMap((s) => s.data)
         .map((card) => card.id)
         .sort()
     ).toEqual(['claude:a', 'claude:b'])

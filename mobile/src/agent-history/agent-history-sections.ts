@@ -9,10 +9,12 @@ import {
   type MobileAgentHistoryCard
 } from './agent-history-session-card'
 
+// Why: `data` (not `cards`) is the field name React Native's SectionList reads
+// for each section's rows — naming it anything else renders empty sections.
 export type MobileAgentHistorySection = {
   key: string
   label: string
-  cards: MobileAgentHistoryCard[]
+  data: MobileAgentHistoryCard[]
 }
 
 // Why: the host treats scopePaths as a WIDENING union (it adds in-scope sessions
@@ -50,7 +52,7 @@ export function buildMobileAgentHistorySections(
   return groups.map((group) => ({
     key: group.key,
     label: group.label,
-    cards: group.sessions.map((session) =>
+    data: group.sessions.map((session) =>
       buildMobileAgentHistoryCard(session, options.activeWorktreePath, options.now)
     )
   }))

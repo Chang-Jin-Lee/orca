@@ -62,7 +62,7 @@ export function MobileAgentSessionHistoryList({
           <Text style={styles.groupHeaderText} numberOfLines={1}>
             {section.label}
           </Text>
-          <Text style={styles.groupHeaderCount}>{section.cards.length}</Text>
+          <Text style={styles.groupHeaderCount}>{section.data.length}</Text>
         </View>
       )}
       renderItem={renderItem}
