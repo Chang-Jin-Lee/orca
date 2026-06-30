@@ -71,8 +71,9 @@ export function createPtySizeReassertion(options: PtySizeReassertionOptions): Pt
 
     void options
       .getAppliedSize(ptyId)
-      .then(forwardIfDrifted)
-      .catch(() => forwardIfDrifted(null))
+      // Why: when readback is unavailable, one guarded resize is safer than
+      // silently leaving the visible desktop pane at an unverified PTY size.
+      .then(forwardIfDrifted, () => forwardIfDrifted(null))
       .finally(() => {
         inFlight = false
         if (pending && !disposed) {

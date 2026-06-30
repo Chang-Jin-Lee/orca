@@ -11243,6 +11243,8 @@ describe('connectPanePty', () => {
     } {
       const originalResizeObserver = globalThis.ResizeObserver
       const originalElement = globalThis.Element
+      const hadResizeObserver = 'ResizeObserver' in globalThis
+      const hadElement = 'Element' in globalThis
       type ResizeObserverCallbackLike = ConstructorParameters<typeof ResizeObserver>[0]
       class MockElement extends EventTarget {
         dataset: Record<string, string> = {}
@@ -11273,8 +11275,16 @@ describe('connectPanePty', () => {
       return {
         trigger: () => MockResizeObserver.instances[0]?.trigger(),
         restore: () => {
-          globalThis.ResizeObserver = originalResizeObserver
-          globalThis.Element = originalElement
+          if (hadResizeObserver) {
+            globalThis.ResizeObserver = originalResizeObserver
+          } else {
+            Reflect.deleteProperty(globalThis, 'ResizeObserver')
+          }
+          if (hadElement) {
+            globalThis.Element = originalElement
+          } else {
+            Reflect.deleteProperty(globalThis, 'Element')
+          }
         }
       }
     }
@@ -11372,11 +11382,18 @@ describe('connectPanePty', () => {
           restoredLeafId: LEAF_2,
           paneTransportsRef: { current: new Map([[1, createMockTransport('pty-pane-1')]]) }
         })
+        const fit = vi.fn()
+        pane.fitAddon = {
+          ...pane.fitAddon,
+          fit,
+          proposeDimensions: vi.fn(() => ({ cols: 130, rows: 50 }))
+        } as never
 
         connectPanePty(pane as never, manager as never, deps as never)
         await flushAsyncTicks()
         setDriverForPty('pty-pane-2', { kind: 'mobile', clientId: 'phone-1' })
         transport.resize.mockClear()
+        fit.mockClear()
         vi.mocked(window.api.pty.getSize).mockClear()
         vi.mocked(window.api.pty.reportGeometry).mockClear()
 
@@ -11386,6 +11403,7 @@ describe('connectPanePty', () => {
         expect(window.api.pty.getSize).not.toHaveBeenCalled()
         expect(window.api.pty.reportGeometry).not.toHaveBeenCalled()
         expect(transport.resize).not.toHaveBeenCalled()
+        expect(fit).not.toHaveBeenCalled()
       } finally {
         setDriverForPty('pty-pane-2', { kind: 'idle' })
         observer.restore()

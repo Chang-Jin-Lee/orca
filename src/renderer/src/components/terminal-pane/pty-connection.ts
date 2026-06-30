@@ -2256,7 +2256,11 @@ export function connectPanePty(
     if (!currentPtyId) {
       return
     }
-    if (!getFitOverrideForPty(currentPtyId)) {
+    const fitOverride = getFitOverrideForPty(currentPtyId)
+    if (!fitOverride) {
+      if (shouldSuppressDesktopPtyResize()) {
+        return
+      }
       requestStablePaneFit(pane as ManagedPaneInternal, () =>
         ptySizeReassertion.request({ fit: false })
       )
