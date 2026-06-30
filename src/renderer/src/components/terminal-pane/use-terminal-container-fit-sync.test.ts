@@ -8,6 +8,7 @@ import {
   isTerminalContainerResizeSettling,
   resetTerminalContainerResizeSettleForTests
 } from '@/lib/pane-manager/terminal-container-resize-settle'
+import { hydrateOverrides, setFitOverride } from '@/lib/pane-manager/mobile-fit-overrides'
 import {
   TERMINAL_CONTAINER_RESIZE_DEBOUNCE_MS,
   TERMINAL_CONTAINER_RESIZE_LEADING_FIT_MAX_SCROLLBACK_ROWS,
@@ -63,24 +64,72 @@ function createPaneElement(): HTMLElement {
   } as unknown as HTMLElement
 }
 
-function createManagerWithScrollback(scrollbackRows: number): {
+type MockPane = {
+  container: HTMLElement
+  fitAddon: {
+    proposeDimensions: ReturnType<typeof vi.fn>
+  }
+  terminal: {
+    buffer: {
+      active: {
+        type: 'normal'
+        baseY: number
+      }
+    }
+    cols: number
+    rows: number
+    resize: ReturnType<typeof vi.fn>
+  }
+}
+
+function createManagerWithScrollback(
+  scrollbackRows: number,
+  options: {
+    cols?: number
+    ptyId?: string
+    rows?: number
+    proposedDimensions?: { cols: number; rows: number }
+  } = {}
+): {
   fitAllPanes: ReturnType<typeof vi.fn>
   getPanes: ReturnType<typeof vi.fn>
+  pane: MockPane
 } {
+  const terminal = {
+    buffer: {
+      active: {
+        type: 'normal',
+        baseY: scrollbackRows
+      }
+    },
+    cols: options.cols ?? 80,
+    rows: options.rows ?? 24,
+    resize: vi.fn((cols: number, rows: number) => {
+      terminal.cols = cols
+      terminal.rows = rows
+    })
+  } satisfies MockPane['terminal']
+  const pane = {
+    container: {
+      dataset: {
+        ptyId: options.ptyId
+      }
+    } as unknown as HTMLElement,
+    fitAddon: {
+      proposeDimensions: vi.fn(
+        () =>
+          options.proposedDimensions ?? {
+            cols: options.cols ?? 80,
+            rows: options.rows ?? 24
+          }
+      )
+    },
+    terminal
+  } satisfies MockPane
   return {
     fitAllPanes: vi.fn(),
-    getPanes: vi.fn(() => [
-      {
-        terminal: {
-          buffer: {
-            active: {
-              type: 'normal',
-              baseY: scrollbackRows
-            }
-          }
-        }
-      }
-    ])
+    getPanes: vi.fn(() => [pane]),
+    pane
   }
 }
 
@@ -115,6 +164,7 @@ describe('useTerminalContainerFitSync', () => {
     for (const cleanup of mocks.cleanupCallbacks.splice(0)) {
       cleanup()
     }
+    hydrateOverrides([])
     resetTerminalContainerResizeSettleForTests()
     vi.useRealTimers()
     vi.unstubAllGlobals()
@@ -187,6 +237,75 @@ describe('useTerminalContainerFitSync', () => {
     expect(mocks.fitPanes).toHaveBeenCalledTimes(1)
     expect(isTerminalContainerResizeSettling()).toBe(false)
     expect(paneElement.dispatchEvent).toHaveBeenCalledTimes(1)
+  })
+
+  it('lets large-scrollback panes track rows live while preserving columns until settle', () => {
+    const paneElement = createPaneElement()
+    const container = {
+      classList: { contains: () => false },
+      querySelectorAll: () => [paneElement]
+    } as unknown as HTMLDivElement
+    const manager = createManagerWithScrollback(
+      TERMINAL_CONTAINER_RESIZE_LEADING_FIT_MAX_SCROLLBACK_ROWS + 1,
+      {
+        cols: 80,
+        rows: 24,
+        proposedDimensions: { cols: 120, rows: 32 }
+      }
+    )
+
+    useTerminalContainerFitSync({
+      isVisible: true,
+      isSyncFitEnabled: true,
+      managerRef: { current: manager as never },
+      containerRef: { current: container }
+    })
+
+    mockResizeObservers[0]?.trigger()
+
+    expect(mocks.fitPanes).not.toHaveBeenCalled()
+    expect(manager.pane.terminal.resize).toHaveBeenCalledTimes(1)
+    expect(manager.pane.terminal.resize).toHaveBeenCalledWith(80, 32)
+    expect(manager.pane.terminal.cols).toBe(80)
+    expect(manager.pane.terminal.rows).toBe(32)
+
+    vi.advanceTimersByTime(TERMINAL_CONTAINER_RESIZE_DEBOUNCE_MS)
+
+    expect(mocks.fitPanes).toHaveBeenCalledTimes(1)
+  })
+
+  it('skips row-only live resize while a mobile-fit override owns the PTY size', () => {
+    const paneElement = createPaneElement()
+    const container = {
+      classList: { contains: () => false },
+      querySelectorAll: () => [paneElement]
+    } as unknown as HTMLDivElement
+    setFitOverride('pty-mobile', 'mobile-fit', 60, 20)
+    const manager = createManagerWithScrollback(
+      TERMINAL_CONTAINER_RESIZE_LEADING_FIT_MAX_SCROLLBACK_ROWS + 1,
+      {
+        cols: 80,
+        ptyId: 'pty-mobile',
+        rows: 24,
+        proposedDimensions: { cols: 120, rows: 32 }
+      }
+    )
+
+    useTerminalContainerFitSync({
+      isVisible: true,
+      isSyncFitEnabled: true,
+      managerRef: { current: manager as never },
+      containerRef: { current: container }
+    })
+
+    mockResizeObservers[0]?.trigger()
+
+    expect(manager.pane.terminal.resize).not.toHaveBeenCalled()
+    expect(mocks.fitPanes).not.toHaveBeenCalled()
+
+    vi.advanceTimersByTime(TERMINAL_CONTAINER_RESIZE_DEBOUNCE_MS)
+
+    expect(mocks.fitPanes).toHaveBeenCalledTimes(1)
   })
 
   it('flushes the held PTY resize when the manager is unavailable at settle time', () => {
@@ -324,11 +443,12 @@ describe('useTerminalContainerFitSync', () => {
       classList: { contains: () => false },
       querySelectorAll: () => [paneElement]
     } as unknown as HTMLDivElement
+    const manager = createManagerWithScrollback(0)
 
     useTerminalContainerFitSync({
       isVisible: true,
       isSyncFitEnabled: true,
-      managerRef: { current: createManagerWithScrollback(0) as never },
+      managerRef: { current: manager as never },
       containerRef: { current: container }
     })
 
@@ -344,6 +464,7 @@ describe('useTerminalContainerFitSync', () => {
 
     mocks.minimizedChangedCallbacks[0]?.(false)
     expect(mocks.fitPanes).not.toHaveBeenCalled()
+    expect(manager.pane.terminal.resize).not.toHaveBeenCalled()
 
     vi.advanceTimersByTime(TERMINAL_CONTAINER_RESIZE_DEBOUNCE_MS)
 

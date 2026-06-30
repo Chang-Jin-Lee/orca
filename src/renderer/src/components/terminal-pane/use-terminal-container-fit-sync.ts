@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { SYNC_FIT_PANES_EVENT } from '@/constants/terminal'
 import type { PaneManager } from '@/lib/pane-manager/pane-manager'
+import { getFitOverrideForPty } from '@/lib/pane-manager/mobile-fit-overrides'
 import { holdPtyResizesForPaneSubtrees } from '@/lib/pane-manager/pane-pty-resize-hold'
 import { beginTerminalContainerResizeSettle } from '@/lib/pane-manager/terminal-container-resize-settle'
 import { fitPanes } from './pane-helpers'
@@ -40,6 +41,26 @@ function canFitImmediatelyDuringContainerResize(manager: PaneManager): boolean {
 function getNormalScrollbackRows(pane: ManagedPaneView): number {
   const baseY = pane.terminal.buffer?.active?.baseY
   return typeof baseY === 'number' ? baseY : Number.POSITIVE_INFINITY
+}
+
+function fitRowsWithoutColumnReflow(manager: PaneManager): void {
+  for (const pane of manager.getPanes()) {
+    const ptyId = pane.container.dataset.ptyId
+    if (ptyId && getFitOverrideForPty(ptyId)) {
+      continue
+    }
+    try {
+      const dims = pane.fitAddon.proposeDimensions()
+      if (!dims || dims.rows === pane.terminal.rows || pane.terminal.cols <= 0) {
+        continue
+      }
+      // Why: xterm scrollback reflow is column-driven. During a heavy resize
+      // settle, keep columns frozen but let the viewport height track live.
+      pane.terminal.resize(pane.terminal.cols, dims.rows)
+    } catch {
+      // Container may not have dimensions yet.
+    }
+  }
 }
 
 export function useTerminalContainerFitSync({
@@ -117,6 +138,13 @@ export function useTerminalContainerFitSync({
       }
       fitPanes(manager)
     }
+    function fitRowsDuringResizeSettle(): void {
+      const manager = managerRef.current
+      if (!manager) {
+        return
+      }
+      fitRowsWithoutColumnReflow(manager)
+    }
     function beginResizeSettle({
       armMaxTimer = true,
       allowLeadingFit = false
@@ -176,8 +204,14 @@ export function useTerminalContainerFitSync({
       // the held final PTY grid still needs to reach the backend.
       releasePendingResizeSettle(flush)
     }
-    function scheduleFinalResizeSettle(allowLeadingFit = true): void {
+    function scheduleFinalResizeSettle({
+      allowLeadingFit = true,
+      allowRowOnlyFit = true
+    }: { allowLeadingFit?: boolean; allowRowOnlyFit?: boolean } = {}): void {
       beginResizeSettle({ allowLeadingFit })
+      if (allowRowOnlyFit) {
+        fitRowsDuringResizeSettle()
+      }
       clearTimer()
       timerId = setTimeout(() => {
         timerId = null
@@ -194,7 +228,7 @@ export function useTerminalContainerFitSync({
         clearMaxSettleTimer()
         return
       }
-      scheduleFinalResizeSettle(false)
+      scheduleFinalResizeSettle({ allowLeadingFit: false, allowRowOnlyFit: false })
     })
     const resizeObserver = new ResizeObserver(() => {
       scheduleFinalResizeSettle()
