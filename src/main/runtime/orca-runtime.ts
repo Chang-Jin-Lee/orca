@@ -18175,19 +18175,15 @@ export class OrcaRuntimeService {
   // Why (#4389): resolves an orchestration worktree selector to the workspace
   // key used to scope coordinator runs/tasks/dispatches. Goes through the same
   // selector resolution as lineage so it is provider-agnostic and works for
-  // SSH/remote runtimes (no local-path assumptions). Returns null when there is
-  // no selector or it cannot be resolved, which falls back to legacy/global
-  // (unscoped) behavior for single-orchestrator installs.
+  // SSH/remote runtimes (no local-path assumptions). Omitted selectors keep the
+  // legacy/global behavior; explicit bad selectors must fail instead of
+  // silently widening to the global coordinator.
   async resolveWorkspaceKeyForSelector(selector?: string | null): Promise<string | null> {
     if (!selector) {
       return null
     }
-    try {
-      const worktree = await this.resolveWorktreeSelector(selector)
-      return worktreeWorkspaceKey(worktree.id)
-    } catch {
-      return null
-    }
+    const worktree = await this.resolveWorktreeSelector(selector)
+    return worktreeWorkspaceKey(worktree.id)
   }
 
   // Why (#4389): tasks created by a worker/coordinator terminal belong to that

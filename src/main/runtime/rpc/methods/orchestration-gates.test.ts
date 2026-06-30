@@ -108,6 +108,29 @@ describe('orchestration start/stop guard scoping (#4389)', () => {
     }
   })
 
+  it('does not fall back to the global coordinator when an explicit worktree selector fails', async () => {
+    const db = new OrchestrationDb(':memory:')
+    const runtime = makeRuntime(db)
+    vi.mocked(runtime.resolveWorkspaceKeyForSelector).mockRejectedValueOnce(
+      new Error('selector_not_found')
+    )
+    const dispatcher = new RpcDispatcher({ runtime, methods: ORCHESTRATION_GATE_METHODS })
+    try {
+      const response = await dispatcher.dispatch(
+        makeRequest('orchestration.run', {
+          spec: 'missing worktree',
+          from: 'coord_missing',
+          worktree: 'branch:missing'
+        })
+      )
+
+      expect(response.ok).toBe(false)
+      expect(db.getActiveCoordinatorRun()).toBeUndefined()
+    } finally {
+      db.close()
+    }
+  })
+
   it('rejects a second run in the SAME worktree', async () => {
     const db = new OrchestrationDb(':memory:')
     const runtime = makeRuntime(db)

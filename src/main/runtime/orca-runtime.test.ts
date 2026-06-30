@@ -2132,6 +2132,18 @@ describe('OrcaRuntimeService', () => {
     await expect(runtime.showManagedWorktree('active')).rejects.toThrow('selector_not_found')
   })
 
+  it('only uses global orchestration scope when the selector is omitted', async () => {
+    const runtime = new OrcaRuntimeService(store)
+
+    await expect(runtime.resolveWorkspaceKeyForSelector()).resolves.toBeNull()
+    await expect(runtime.resolveWorkspaceKeyForSelector(`id:${TEST_WORKTREE_ID}`)).resolves.toBe(
+      `worktree:${TEST_WORKTREE_ID}`
+    )
+    await expect(runtime.resolveWorkspaceKeyForSelector('branch:missing')).rejects.toThrow(
+      'selector_not_found'
+    )
+  })
+
   it('does not resolve the floating-terminal sentinel as a managed worktree', async () => {
     const runtime = new OrcaRuntimeService(store)
 
