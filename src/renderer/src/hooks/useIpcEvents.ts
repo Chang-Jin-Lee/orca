@@ -1645,6 +1645,9 @@ export function useIpcEvents(): void {
           if (data.title) {
             store.setTabCustomTitle(tab.id, data.title, { recordInteraction: false })
           }
+          if (data.initialAgentStatus && !data.command) {
+            store.queueTabInitialAgentStatus(tab.id, data.initialAgentStatus)
+          }
           if (data.command) {
             store.queueTabStartupCommand(tab.id, {
               command: data.command,

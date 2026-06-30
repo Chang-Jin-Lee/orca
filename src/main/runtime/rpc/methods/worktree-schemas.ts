@@ -152,6 +152,12 @@ export const WorktreeCreate = z
     automationProvenanceRequest: AutomationWorkspaceProvenanceRequest.optional()
   })
   .superRefine((params, ctx) => {
+    if (params.startupInitialAgentStatus && !params.startupCommand) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'startupInitialAgentStatus requires startupCommand'
+      })
+    }
     if ((params.parentWorkspace || params.parentWorktree) && params.noParent === true) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,

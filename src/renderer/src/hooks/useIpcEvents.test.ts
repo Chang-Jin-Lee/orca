@@ -2266,6 +2266,30 @@ describe('useIpcEvents updater integration', () => {
     })
 
     createTab.mockClear()
+    queueTabInitialAgentStatus.mockClear()
+    requestTerminalCreateListenerRef.current({
+      requestId: 'req-renderer-backed-status-only',
+      worktreeId: 'wt-2',
+      title: 'Codex',
+      presentation: 'background',
+      initialAgentStatus: { agent: 'codex', prompt: 'Fix the first status' }
+    })
+
+    expect(createTab).toHaveBeenCalledWith('wt-2', undefined, undefined, {
+      activate: false,
+      recordInteraction: false
+    })
+    expect(queueTabInitialAgentStatus).toHaveBeenCalledWith('tab-new', {
+      agent: 'codex',
+      prompt: 'Fix the first status'
+    })
+    expect(replyTerminalCreate).toHaveBeenCalledWith({
+      requestId: 'req-renderer-backed-status-only',
+      tabId: 'tab-new',
+      title: 'Codex'
+    })
+
+    createTab.mockClear()
     registerAgentLaunchConfig.mockClear()
     createTerminalListenerRef.current({
       worktreeId: 'wt-2',
