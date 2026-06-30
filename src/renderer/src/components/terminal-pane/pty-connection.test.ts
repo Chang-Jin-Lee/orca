@@ -8260,11 +8260,8 @@ describe('connectPanePty', () => {
   })
 
   it('does not leak the interactive latch across a same-chunk close+open to a stale frame', async () => {
-    // Why (STA-1041 hardening): a single chunk can close the active submit frame
-    // and open a new one (`…?2026l…?2026h…`). The new frame opened long after the
-    // keystroke, so it must NOT inherit the prior frame's interactive latch and
-    // fast-path; it must coalesce behind the 1s fallback. Without first opening a
-    // genuinely interactive frame, there is no latch to leak and the test is moot.
+    // Why: a same-chunk close+open must re-evaluate the new frame from its own
+    // open time so a stale frame can't inherit the prior frame's fast path.
     const restoreNavigator = temporarilySetNavigatorUserAgent(
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
     )
@@ -8326,11 +8323,8 @@ describe('connectPanePty', () => {
   })
 
   it('coalesces a second synchronized frame that opens after the window with no keystroke', async () => {
-    // Why (STA-1041 hardening, complementary guard): two synchronized frames in
-    // SEPARATE chunks — the first interactive (recent keystroke), the second
-    // opening after the 400ms window with no keystroke. The second frame's START
-    // must re-evaluate interactivity from its own open time and coalesce behind
-    // the 1s fallback. Passes pre- and post-hardening; guards against regressions.
+    // Why: the second frame opens after the interactive window, so its START must
+    // be judged independently and stay on the 1s fallback path.
     const restoreNavigator = temporarilySetNavigatorUserAgent(
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
     )
