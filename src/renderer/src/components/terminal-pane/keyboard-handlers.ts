@@ -22,6 +22,8 @@ import { splitTerminalPaneWithInheritedCwd } from './terminal-pane-split-with-in
 import { useAppStore } from '@/store'
 import { recordTerminalUserInputForLeaf } from './terminal-input-activity'
 import { copyTerminalSelection } from './terminal-selection-copy'
+import { writeTerminalClipboardText } from './terminal-clipboard-write'
+import { showTerminalClipboardCopyFailedToast } from './terminal-clipboard-copy-failure-toast'
 import {
   markTerminalFollowOutput,
   markTerminalPinnedViewport,
@@ -287,9 +289,9 @@ export function useTerminalKeyboardShortcuts({
         e.stopImmediatePropagation()
         void copyTerminalSelection({
           terminal: pane.terminal,
-          writeClipboardText: window.api.ui.writeClipboardText
+          writeClipboardText: writeTerminalClipboardText
         }).catch(() => {
-          /* ignore clipboard write failures */
+          showTerminalClipboardCopyFailedToast()
         })
         return
       }

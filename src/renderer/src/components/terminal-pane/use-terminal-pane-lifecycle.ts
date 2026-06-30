@@ -101,6 +101,8 @@ import { recordCreatedTerminalPaneSplit } from './terminal-pane-split-completion
 import { closeTerminalTab } from '../terminal/terminal-tab-actions'
 import { seedStartupSessionRestoredBanner } from './session-restored-banner-pane-state'
 import { copyTerminalSelection } from './terminal-selection-copy'
+import { writeTerminalClipboardText } from './terminal-clipboard-write'
+import { showTerminalClipboardCopyFailedToast } from './terminal-clipboard-copy-failure-toast'
 
 export function recordRuntimeCreatedTerminalPaneSplit(
   createdPane: unknown,
@@ -653,7 +655,7 @@ export function useTerminalPaneLifecycle({
         const osc52Disposable = pane.terminal.parser.registerOscHandler(52, (data) =>
           handleOsc52ClipboardRequest(data, {
             allowClipboardWrite: settingsRef.current?.terminalAllowOsc52Clipboard === true,
-            writeClipboardText: window.api.ui.writeClipboardText,
+            writeClipboardText: writeTerminalClipboardText,
             onBlockedWrite: showOsc52ClipboardBlockedToast,
             onWriteFailure: showOsc52ClipboardFailedToast
           })
@@ -862,9 +864,9 @@ export function useTerminalPaneLifecycle({
           }
           void copyTerminalSelection({
             terminal: pane.terminal,
-            writeClipboardText: window.api.ui.writeClipboardText
+            writeClipboardText: writeTerminalClipboardText
           }).catch(() => {
-            /* ignore clipboard write failures */
+            showTerminalClipboardCopyFailedToast()
           })
         })
         selectionDisposablesRef.current.set(pane.id, selectionDisposable)

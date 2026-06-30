@@ -2451,6 +2451,16 @@
                 "writeTimeout": "Se canceló la suelta de archivos: la terminal no aceptó la ruta antes del tiempo de seguridad.",
                 "writeRejected": "Se canceló la suelta de archivos: la terminal no pudo aceptar la ruta."
               }
+            },
+            "clipboard": {
+              "copy": {
+                "failure": {
+                  "toast": {
+                    "title": "Terminal copy failed",
+                    "description": "The system clipboard did not update. Your selection is still highlighted."
+                  }
+                }
+              }
             }
           },
           "use": {

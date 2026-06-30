@@ -239,7 +239,20 @@ describe('registerClipboardHandlers', () => {
     expect(clipboardWriteTextMock).toHaveBeenCalledWith('primary text', 'selection')
   })
 
-  it('rejects standard text writes when the clipboard read-back does not match', async () => {
+  it('does not verify standard text writes by default', async () => {
+    clipboardReadTextMock.mockReturnValue('old clipboard')
+
+    registerClipboardHandlers({} as never)
+
+    const handlers = getRegisteredHandlers()
+    await expect(
+      handlers.get('clipboard:writeText')?.(makeClipboardEvent(), 'copilot answer')
+    ).resolves.toBeUndefined()
+    expect(clipboardWriteTextMock).toHaveBeenCalledWith('copilot answer')
+    expect(clipboardReadTextMock).not.toHaveBeenCalled()
+  })
+
+  it('rejects verified standard text writes when the clipboard read-back does not match', async () => {
     // Why: Electron can return without throwing while the OS clipboard keeps its
     // previous contents (#5611), so the handler must surface a failure instead.
     clipboardReadTextMock.mockReturnValue('old clipboard')
@@ -248,7 +261,9 @@ describe('registerClipboardHandlers', () => {
 
     const handlers = getRegisteredHandlers()
     await expect(
-      handlers.get('clipboard:writeText')?.(makeClipboardEvent(), 'copilot answer')
+      handlers.get('clipboard:writeText')?.(makeClipboardEvent(), 'copilot answer', {
+        verify: true
+      })
     ).rejects.toThrow('Clipboard write verification failed')
     expect(clipboardWriteTextMock).toHaveBeenCalledWith('copilot answer')
   })
@@ -263,7 +278,9 @@ describe('registerClipboardHandlers', () => {
 
     const handlers = getRegisteredHandlers()
     await expect(
-      handlers.get('clipboard:writeSelectionText')?.(makeClipboardEvent(), 'primary text')
+      handlers.get('clipboard:writeSelectionText')?.(makeClipboardEvent(), 'primary text', {
+        verify: true
+      })
     ).resolves.toBeUndefined()
     expect(clipboardWriteTextMock).toHaveBeenCalledWith('primary text', 'selection')
   })
@@ -511,10 +528,6 @@ describe('registerClipboardHandlers', () => {
   it('yields before writing large text clipboard IPC payloads', async () => {
     vi.useFakeTimers()
     const text = 'é'.repeat(300_000)
-    // Why: the handler reads the clipboard back to verify the write landed, so
-    // the mock must echo what was written for the success path under test.
-    clipboardReadTextMock.mockReturnValue(text)
-
     registerClipboardHandlers({} as never)
 
     const handlers = getRegisteredHandlers()

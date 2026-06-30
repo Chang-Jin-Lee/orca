@@ -2451,6 +2451,16 @@
                 "writeTimeout": "ファイルドロップをキャンセルしました: 安全タイムアウト前にターミナルがパスを受け付けませんでした。",
                 "writeRejected": "ファイルドロップをキャンセルしました: ターミナルがパスを受け付けられませんでした。"
               }
+            },
+            "clipboard": {
+              "copy": {
+                "failure": {
+                  "toast": {
+                    "title": "Terminal copy failed",
+                    "description": "The system clipboard did not update. Your selection is still highlighted."
+                  }
+                }
+              }
             }
           },
           "use": {

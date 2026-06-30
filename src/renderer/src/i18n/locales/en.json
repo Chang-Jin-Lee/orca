@@ -2451,6 +2451,16 @@
                 "writeTimeout": "File drop cancelled: terminal did not accept the path before the safety timeout.",
                 "writeRejected": "File drop cancelled: terminal could not accept the path."
               }
+            },
+            "clipboard": {
+              "copy": {
+                "failure": {
+                  "toast": {
+                    "title": "Terminal copy failed",
+                    "description": "The system clipboard did not update. Your selection is still highlighted."
+                  }
+                }
+              }
             }
           },
           "use": {

@@ -2451,6 +2451,16 @@
                 "writeTimeout": "파일 드롭이 취소되었습니다. 안전 시간 제한 전에 터미널이 경로를 받지 않았습니다.",
                 "writeRejected": "파일 드롭이 취소되었습니다. 터미널이 경로를 받을 수 없습니다."
               }
+            },
+            "clipboard": {
+              "copy": {
+                "failure": {
+                  "toast": {
+                    "title": "Terminal copy failed",
+                    "description": "The system clipboard did not update. Your selection is still highlighted."
+                  }
+                }
+              }
             }
           },
           "use": {
