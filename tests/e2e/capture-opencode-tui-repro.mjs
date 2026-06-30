@@ -7,12 +7,11 @@
 import { createRequire } from 'node:module'
 import { createWriteStream, existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
-import { fileURLToPath } from 'node:url'
 
 const require = createRequire(import.meta.url)
 const pty = require('node-pty')
 
-const scriptDir = path.dirname(fileURLToPath(import.meta.url))
+const scriptDir = import.meta.dirname
 const repoRoot = path.resolve(scriptDir, '..', '..')
 
 function readOption(name, fallback) {

@@ -1,6 +1,5 @@
 import { readFileSync } from 'node:fs'
-import { fileURLToPath } from 'node:url'
-import { dirname, resolve } from 'node:path'
+import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { buildSettingsNavigationMetadata } from './useSettingsNavigationMetadata'
 import type { Repo } from '../../../shared/types'
@@ -169,7 +168,7 @@ describe('settings navigation metadata', () => {
   })
 
   it('does not import Settings page or pane UI modules from the metadata hook', () => {
-    const testDir = dirname(fileURLToPath(import.meta.url))
+    const testDir = import.meta.dirname
     const hookSource = readFileSync(resolve(testDir, 'useSettingsNavigationMetadata.ts'), 'utf8')
     const importLines = hookSource
       .split('\n')
@@ -182,7 +181,7 @@ describe('settings navigation metadata', () => {
   })
 
   it('does not import Settings page or pane UI modules from the quick action registry', () => {
-    const testDir = dirname(fileURLToPath(import.meta.url))
+    const testDir = import.meta.dirname
     const registrySource = readFileSync(
       resolve(testDir, '../components/cmd-j/quick-actions.ts'),
       'utf8'
