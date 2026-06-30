@@ -63,12 +63,17 @@ import {
   shouldInstallManagedHooks
 } from './startup/configure-process'
 import { ensureVirtualDisplayForHeadlessServe } from './startup/ensure-virtual-display'
-import { consumeGpuFallbackMarker, writeGpuFallbackMarker } from './startup/gpu-fallback-marker'
+import {
+  readActiveGpuFallbackMarker,
+  writeGpuFallbackMarker,
+  type GpuFallbackEnvironment,
+  type WindowsGpuFallbackEnvironment
+} from './startup/gpu-fallback-marker'
 import {
   DEFAULT_GPU_CRASH_FALLBACK_THRESHOLD,
   DEFAULT_GPU_CRASH_FALLBACK_WINDOW_MS,
   GpuCrashFallbackTracker,
-  isGpuChildProcessType
+  isGpuFallbackCrashCandidate
 } from './crash-reporting/gpu-crash-fallback-decision'
 import {
   shouldSuppressDevEducation,
@@ -196,7 +201,7 @@ let keybindings: KeybindingService | null = null
 let expectedRendererReload: { webContentsId: number; until: number } | null = null
 let firstWindowStartupServicesReady: Promise<void> = Promise.resolve()
 // Why: GPU child crashes clustered right after launch indicate a broken driver;
-// track them so Orca can relaunch once with hardware acceleration disabled.
+// track them so Orca can move this build onto software rendering.
 const gpuLaunchTimeMs = Date.now()
 const gpuCrashFallbackTracker = new GpuCrashFallbackTracker({
   windowMs: DEFAULT_GPU_CRASH_FALLBACK_WINDOW_MS,
@@ -527,8 +532,10 @@ if (hasSingleInstanceLock) {
     platform: process.platform
   })
   configureElectronNetworkCompatibility()
-  enableMainProcessGpuFeatures()
   maybeApplyGpuFallbackForThisLaunch()
+  if (!gpuFallbackActiveThisLaunch) {
+    enableMainProcessGpuFeatures()
+  }
   // Why: headless serve backs browser panes with offscreen BrowserWindows, which
   // need an X display on Linux. Ensure one (Xvfb) before whenReady; the result
   // gates whether the offscreen backend is installed so capability stays honest.
@@ -997,14 +1004,30 @@ async function presentRendererRecoveryPrompt(recentRecoveryCount: number): Promi
   }
 }
 
+function getGpuFallbackEnvironment(): GpuFallbackEnvironment {
+  return {
+    appVersion: app.getVersion(),
+    electronVersion: process.versions.electron ?? '',
+    platform: process.platform
+  }
+}
+
+function getWindowsGpuFallbackEnvironment(): WindowsGpuFallbackEnvironment | null {
+  const environment = getGpuFallbackEnvironment()
+  if (environment.platform !== 'win32') {
+    return null
+  }
+  return { ...environment, platform: 'win32' }
+}
+
 // Why: the GPU-fallback marker must be read before app.whenReady() resolves so
-// app.disableHardwareAcceleration() can take effect. Desktop only; headless
-// serve already runs software rendering on the platforms that need it.
+// app.disableHardwareAcceleration() can take effect. Windows desktop only -
+// headless serve already runs software rendering on the platforms that need it.
 function maybeApplyGpuFallbackForThisLaunch(): void {
-  if (isServeMode) {
+  if (isServeMode || process.platform !== 'win32') {
     return
   }
-  const marker = consumeGpuFallbackMarker(app.getPath('userData'))
+  const marker = readActiveGpuFallbackMarker(app.getPath('userData'), getGpuFallbackEnvironment())
   if (!marker) {
     return
   }
@@ -1016,9 +1039,9 @@ function maybeApplyGpuFallbackForThisLaunch(): void {
   })
 }
 
-// Why: a burst of GPU child crashes right after launch means hardware
-// acceleration is unusable on this machine. Persist a marker and relaunch once
-// with software rendering instead of letting the GPU keep crashing.
+// Why: a burst of crash-shaped Windows GPU child failures right after launch
+// means hardware acceleration is unusable on this machine. Persist a build-
+// scoped marker and relaunch into software rendering instead of looping crashes.
 function handleGpuChildCrash(reason: string, exitCode: number | null): void {
   // Software rendering already active or shutting down: nothing more to do.
   if (gpuFallbackActiveThisLaunch || isQuitting || isServeMode) {
@@ -1033,11 +1056,20 @@ function handleGpuChildCrash(reason: string, exitCode: number | null): void {
     exitCode,
     crashesInWindow: result.crashesInWindow
   })
+  const engagedAt = Date.now()
+  const environment = getWindowsGpuFallbackEnvironment()
+  if (!environment) {
+    return
+  }
   try {
-    writeGpuFallbackMarker(app.getPath('userData'), {
-      engagedAt: Date.now(),
-      crashesInWindow: result.crashesInWindow
-    })
+    writeGpuFallbackMarker(
+      app.getPath('userData'),
+      {
+        engagedAt,
+        crashesInWindow: result.crashesInWindow
+      },
+      environment
+    )
   } catch (error) {
     console.warn('[gpu-fallback] failed to persist marker:', error)
     return
@@ -1721,7 +1753,13 @@ app.whenReady().then(async () => {
       serviceName: details.serviceName,
       type: details.type
     })
-    if (isGpuChildProcessType(details.type)) {
+    if (
+      isGpuFallbackCrashCandidate({
+        platform: process.platform,
+        processType: details.type,
+        reason: details.reason
+      })
+    ) {
       handleGpuChildCrash(details.reason, details.exitCode ?? null)
     }
   })
