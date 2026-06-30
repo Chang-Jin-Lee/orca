@@ -5,7 +5,7 @@
 // non-git tree can't wedge the `serve` runtime (issue #5308).
 import { Worker } from 'worker_threads'
 import { join } from 'path'
-import { app } from 'electron'
+import { getAppEnvironment } from '../../shared/app-environment'
 import type { FsChangeEvent } from '../../shared/types'
 import type { FileWatcherHostMessage, FileWatcherWorkerMessage } from './file-watcher-worker'
 
@@ -31,7 +31,10 @@ const WORKER_TEARDOWN_TIMEOUT_MS = 5000
 type WorkerExitWaitResult = 'exit' | 'timeout'
 
 function getFileWatcherWorkerPath(): string {
-  if (app.isPackaged) {
+  // Why: in a packaged Electron app the worker lives inside app.asar under
+  // resourcesPath. The node server has no resourcesPath, so resolve relative to
+  // this module's directory (where the bundle co-locates the worker).
+  if (getAppEnvironment().isPackaged() && process.resourcesPath) {
     return join(process.resourcesPath, 'app.asar', 'out', 'main', 'file-watcher-worker.js')
   }
   return join(__dirname, 'file-watcher-worker.js')

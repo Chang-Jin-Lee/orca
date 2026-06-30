@@ -7,7 +7,7 @@ files with no cleaner ownership seam: restart, replaceDaemonProvider, and the
 module-level spawner/adapter singletons must stay co-located so a future
 change cannot leave them drifting out of sync. */
 import { join } from 'path'
-import { app } from 'electron'
+import { getAppEnvironment } from '../../shared/app-environment'
 import { mkdirSync, existsSync, unlinkSync, writeFileSync } from 'fs'
 import { fork } from 'child_process'
 import { connect } from 'net'
@@ -60,23 +60,24 @@ let adapter: DaemonPtyRouter | DaemonPtyAdapter | null = null
 let restartInFlight: Promise<RestartDaemonResult> | null = null
 
 function getRuntimeDir(): string {
-  const dir = join(app.getPath('userData'), 'daemon')
+  const dir = join(getAppEnvironment().getPath('userData'), 'daemon')
   mkdirSync(dir, { recursive: true })
   return dir
 }
 
 function getHistoryDir(): string {
-  const dir = join(app.getPath('userData'), 'terminal-history')
+  const dir = join(getAppEnvironment().getPath('userData'), 'terminal-history')
   mkdirSync(dir, { recursive: true })
   return dir
 }
 
 function getDaemonEntryPath(): string {
-  const appPath = app.getAppPath()
+  const env = getAppEnvironment()
+  const appPath = env.getAppPath()
   // Why: electron-builder unpacks daemon-entry.js so child_process.fork() can
   // execute it from disk. In packaged apps app.getAppPath() points at
   // app.asar, so redirect to the unpacked sibling before joining the script.
-  const basePath = app.isPackaged ? appPath.replace('app.asar', 'app.asar.unpacked') : appPath
+  const basePath = env.isPackaged() ? appPath.replace('app.asar', 'app.asar.unpacked') : appPath
   const directEntryPath = join(basePath, 'daemon-entry.js')
   if (existsSync(directEntryPath)) {
     return directEntryPath
@@ -195,9 +196,10 @@ function createOutOfProcessLauncher(runtimeDir: string): DaemonLauncher {
         // worktree; in packaged apps it happens when the stable
         // /Applications/Orca.app path is replaced during update.
         const identity = await getDaemonLaunchIdentity(runtimeDir, socketPath, tokenPath, entryPath)
+        const env = getAppEnvironment()
         const stalePackagedBundle =
-          app.isPackaged &&
-          (await isDaemonStaleForCurrentBundle(runtimeDir, socketPath, tokenPath, app.getVersion()))
+          env.isPackaged() &&
+          (await isDaemonStaleForCurrentBundle(runtimeDir, socketPath, tokenPath, env.getVersion()))
         if (identity === 'mismatch' || stalePackagedBundle) {
           // Why: replacing a healthy daemon kills its child PTYs; defer code
           // freshness until no live terminal sessions would be lost.
@@ -239,7 +241,7 @@ function createOutOfProcessLauncher(runtimeDir: string): DaemonLauncher {
     // before respawn so the new daemon does not race the stale process.
     await killStaleDaemon(runtimeDir, socketPath, tokenPath)
 
-    const userDataPath = app.getPath('userData')
+    const userDataPath = getAppEnvironment().getPath('userData')
     const child = fork(entryPath, ['--socket', socketPath, '--token', tokenPath], {
       // Why: detached daemons can outlive dev worktrees. Starting from
       // userData keeps process.cwd() valid after a repo/worktree is deleted.
@@ -309,7 +311,7 @@ function createOutOfProcessLauncher(runtimeDir: string): DaemonLauncher {
                 pid: child.pid,
                 startedAtMs: getProcessStartedAtMs(child.pid),
                 entryPath,
-                appVersion: app.getVersion()
+                appVersion: getAppEnvironment().getVersion()
               }),
               { mode: 0o600 }
             )

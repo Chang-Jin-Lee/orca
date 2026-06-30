@@ -13,7 +13,7 @@
 import { tmpdir } from 'os'
 import { basename, win32 as pathWin32 } from 'path'
 import { mkdirSync, writeFileSync, chmodSync, existsSync } from 'fs'
-import { app } from 'electron'
+import { hasAppEnvironment, getAppEnvironment } from '../../shared/app-environment'
 import type * as pty from 'node-pty'
 import {
   encodePowerShellCommand,
@@ -49,7 +49,9 @@ export type ShellReadySignal = {
 // ── Shell wrapper files ─────────────────────────────────────────────
 
 function getShellReadyWrapperRoot(): string {
-  const userDataPath = app?.getPath?.('userData') ?? process.env.ORCA_USER_DATA_PATH ?? tmpdir()
+  const userDataPath = hasAppEnvironment()
+    ? getAppEnvironment().getPath('userData')
+    : (process.env.ORCA_USER_DATA_PATH ?? tmpdir())
   return `${userDataPath}/shell-ready`
 }
 
