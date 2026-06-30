@@ -30,6 +30,7 @@ import { tabHasLivePty } from '@/lib/tab-has-live-pty'
 import {
   callRuntimeRpc,
   getActiveRuntimeTarget,
+  isRuntimeScopeForbiddenError,
   RuntimeRpcCallError
 } from '../../runtime/runtime-rpc-client'
 import { toRuntimeWorktreeSelector } from '../../runtime/runtime-worktree-selector'
@@ -523,6 +524,32 @@ function toLegacyDetectedWorktreeResult(
 
 function isRuntimeMethodNotFoundError(error: unknown): boolean {
   return error instanceof RuntimeRpcCallError && error.code === 'method_not_found'
+}
+
+// Why: a mobile-scope web pairing is denied worktree/repo RPCs, which would
+// otherwise be swallowed into empty workspaces on every repo. Surface one
+// deduped, actionable toast (stable id) instead of spamming per-repo, steering
+// the user to re-pair via the full-access browser link.
+const RUNTIME_SCOPE_FORBIDDEN_TOAST_ID = 'runtime-scope-forbidden'
+
+function notifyRuntimeScopeForbiddenIfNeeded(error: unknown): boolean {
+  if (!isRuntimeScopeForbiddenError(error)) {
+    return false
+  }
+  toast.error(
+    translate(
+      'auto.store.slices.worktrees.runtimeScopeForbiddenTitle',
+      'This connection has limited (mobile) access'
+    ),
+    {
+      id: RUNTIME_SCOPE_FORBIDDEN_TOAST_ID,
+      description: translate(
+        'auto.store.slices.worktrees.runtimeScopeForbiddenDescription',
+        'Workspaces are unavailable on a mobile-scope pairing. Reconnect using the browser access link from Settings → Runtime Environments → Share this Orca server.'
+      )
+    }
+  )
+  return true
 }
 
 function applyDetectedWorktreeUpdates(
@@ -2005,6 +2032,9 @@ export const createWorktreeSlice: StateCreator<AppState, [], [], WorktreeSlice> 
       })
       return result
     } catch (err) {
+      if (notifyRuntimeScopeForbiddenIfNeeded(err)) {
+        return null
+      }
       console.error(`Failed to fetch detected worktrees for repo ${repoId}:`, err)
       return null
     }
@@ -2131,6 +2161,9 @@ export const createWorktreeSlice: StateCreator<AppState, [], [], WorktreeSlice> 
       await refreshRemoteWorktreeLineageBestEffort(settings, set)
       return detected.authoritative
     } catch (err) {
+      if (notifyRuntimeScopeForbiddenIfNeeded(err)) {
+        return false
+      }
       console.error(`Failed to fetch worktrees for repo ${repoId}:`, err)
       return false
     }
@@ -2584,18 +2617,15 @@ export const createWorktreeSlice: StateCreator<AppState, [], [], WorktreeSlice> 
     ]
     const nextCandidateName = (current: string, attempt: number): string =>
       attempt === 0 ? current : `${current}-${attempt + 1}`
-    const isBranchNameOverrideConflict = (error: Error): boolean =>
-      Boolean(
-        branchNameOverride &&
-        (/^Branch ".+" already exists\./i.test(error.message) ||
-          /already exists locally/i.test(error.message) ||
-          /already exists on a remote/i.test(error.message) ||
-          /already has pr #\d+/i.test(error.message))
-      )
 
     try {
       for (let attempt = 0; attempt < 25; attempt += 1) {
         const candidateName = nextCandidateName(name, attempt)
+        // Why: older runtimes may still reject exact PR branch overrides on
+        // collision, so the renderer retries both branch and worktree names.
+        const candidateBranchNameOverride = branchNameOverride
+          ? nextCandidateName(branchNameOverride, attempt)
+          : undefined
         try {
           // Why: Manual sort is user-authored order. Stamp new workspaces
           // deliberately at the top instead of relying on sortOrder fallback.
@@ -2610,7 +2640,9 @@ export const createWorktreeSlice: StateCreator<AppState, [], [], WorktreeSlice> 
             name: candidateName,
             baseBranch,
             ...(compareBaseRef ? { compareBaseRef } : {}),
-            ...(branchNameOverride ? { branchNameOverride } : {}),
+            ...(candidateBranchNameOverride
+              ? { branchNameOverride: candidateBranchNameOverride }
+              : {}),
             setupDecision,
             sparseCheckout,
             ...(displayName ? { displayName } : {}),
@@ -2651,7 +2683,9 @@ export const createWorktreeSlice: StateCreator<AppState, [], [], WorktreeSlice> 
                     name: candidateName,
                     baseBranch,
                     ...(compareBaseRef ? { compareBaseRef } : {}),
-                    ...(branchNameOverride ? { branchNameOverride } : {}),
+                    ...(candidateBranchNameOverride
+                      ? { branchNameOverride: candidateBranchNameOverride }
+                      : {}),
                     setupDecision,
                     sparseCheckout,
                     ...(displayName ? { displayName } : {}),
@@ -2747,9 +2781,6 @@ export const createWorktreeSlice: StateCreator<AppState, [], [], WorktreeSlice> 
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error)
           const shouldRetry = retryableConflictPatterns.some((pattern) => pattern.test(message))
-          if (error instanceof Error && isBranchNameOverrideConflict(error)) {
-            throw error
-          }
           if (!shouldRetry || attempt === 24) {
             throw error
           }

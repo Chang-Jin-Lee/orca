@@ -7,8 +7,12 @@ const LEADING_AGENT_TITLE_DECORATION_RE =
   // eslint-disable-next-line no-control-regex -- intentional unicode status-glyph ranges
   /^(?:[✳✦⏲◇✋⠀-⣿]+|[.*]\s)\s*/
 
+export function stripLeadingAgentTitleDecorationOrEmpty(title: string): string {
+  return title.replace(LEADING_AGENT_TITLE_DECORATION_RE, '').trimStart()
+}
+
 export function stripLeadingAgentTitleDecoration(title: string): string {
-  const stripped = title.replace(LEADING_AGENT_TITLE_DECORATION_RE, '').trimStart()
+  const stripped = stripLeadingAgentTitleDecorationOrEmpty(title)
   // Why: never return empty — a title that is *only* a status glyph should keep
   // its original text rather than collapse to a blank tab label.
   return stripped.length > 0 ? stripped : title

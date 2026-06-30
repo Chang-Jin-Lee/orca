@@ -1,4 +1,4 @@
-import { createHash } from 'crypto'
+import { createHash } from 'node:crypto'
 import {
   closeSync,
   mkdirSync,
@@ -8,8 +8,8 @@ import {
   rmSync,
   statSync,
   writeFileSync
-} from 'fs'
-import { join } from 'path'
+} from 'node:fs'
+import { join } from 'node:path'
 import { getAppEnvironment } from '../shared/app-environment'
 import type { WorkspaceSessionState } from '../shared/types'
 import {

@@ -1,4 +1,4 @@
-import { statSync } from 'fs'
+import { statSync } from 'node:fs'
 import { getSecretStore } from '../shared/secret-store'
 import {
   credentialDecryptionMessage,

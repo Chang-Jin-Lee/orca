@@ -13,10 +13,10 @@ import {
   copyFileSync,
   statSync,
   realpathSync
-} from 'fs'
-import { writeFile, rename, mkdir, rm, copyFile } from 'fs/promises'
-import { join, dirname, isAbsolute, resolve, sep } from 'path'
-import { homedir } from 'os'
+} from 'node:fs'
+import { writeFile, rename, mkdir, rm, copyFile } from 'node:fs/promises'
+import { join, dirname, isAbsolute, resolve, sep } from 'node:path'
+import { homedir } from 'node:os'
 import { randomUUID } from 'node:crypto'
 import type {
   Automation,
@@ -210,6 +210,7 @@ import {
 } from './terminal-scrollback-snapshots'
 import { track } from './telemetry/client'
 import { getCohortAtEmit } from './telemetry/cohort-classifier'
+import { isStartupDiagnosticsEnabled, logStartupDiagnostic } from './startup/startup-diagnostics'
 
 function encrypt(plaintext: string): string {
   const secretStore = getSecretStore()
@@ -384,6 +385,15 @@ const WORKSPACE_SESSION_PATCH_FULL_NORMALIZATION_KEYS = new Set<keyof WorkspaceS
   'tabsByWorktree',
   'terminalLayoutsByTabId'
 ])
+
+function logPersistenceStartupMilestone(
+  event: string,
+  details: Record<string, unknown> = {}
+): void {
+  if (isStartupDiagnosticsEnabled()) {
+    logStartupDiagnostic(event, { t: Math.round(performance.now()), ...details })
+  }
+}
 
 function workspaceSessionPatchNeedsFullNormalization(patch: WorkspaceSessionPatch): boolean {
   return Object.keys(patch).some((key) =>
@@ -2620,12 +2630,22 @@ export class Store {
     // social contract we installed them under.
     const dataFile = getDataFile()
     const fileExistedOnLoad = existsSync(dataFile)
+    logPersistenceStartupMilestone('persistence-load-start', {
+      fileExists: fileExistedOnLoad
+    })
 
     let result: PersistedState | null = null
     try {
       if (fileExistedOnLoad) {
+        const readStartedAt = performance.now()
         const raw = readFileSync(dataFile, 'utf-8')
+        logPersistenceStartupMilestone('persistence-read-done', {
+          bytes: Buffer.byteLength(raw),
+          durationMs: Math.round(performance.now() - readStartedAt)
+        })
+        logPersistenceStartupMilestone('persistence-json-parse-start')
         const parsed = JSON.parse(raw) as PersistedState
+        logPersistenceStartupMilestone('persistence-json-parse-done')
 
         // Why: secret settings are stored encrypted on disk via safeStorage.
         // Decrypt at the load boundary so the rest of the app sees plaintext.
@@ -3218,7 +3238,12 @@ export class Store {
     }
     result = folderScopeConnectionMigration.state
 
-    return this.migrateTelemetry(result, fileExistedOnLoad)
+    const migrated = this.migrateTelemetry(result, fileExistedOnLoad)
+    logPersistenceStartupMilestone('persistence-load-done', {
+      repos: migrated.repos.length,
+      workspaceSessionBytes: Buffer.byteLength(JSON.stringify(migrated.workspaceSession))
+    })
+    return migrated
   }
 
   // One-shot telemetry cohort migration. Runs on every `load()` but is a

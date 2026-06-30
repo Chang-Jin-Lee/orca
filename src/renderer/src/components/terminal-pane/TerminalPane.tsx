@@ -1,5 +1,6 @@
 /* eslint-disable max-lines -- Why: terminal pane component co-locates title state, layout serialization, and portal rendering to keep pane lifecycle consistent. */
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useShallow } from 'zustand/react/shallow'
 import { createPortal } from 'react-dom'
 import type { CSSProperties } from 'react'
 import type { IDisposable } from '@xterm/xterm'
@@ -79,6 +80,7 @@ import {
 } from '@/lib/pane-manager/mobile-driver-state'
 import { shouldChatTakeOverMobileSurface } from '../native-chat/native-chat-send-eligibility'
 import { canToggleNativeChat } from '../native-chat/native-chat-availability'
+import type { AgentType } from '../../../../shared/agent-status-types'
 import { resolvePaneKeyForManager } from '@/lib/pane-manager/pane-key-resolution'
 import { safeFit } from '@/lib/pane-manager/pane-tree-ops'
 import { captureTerminalShutdownLayout } from './terminal-shutdown-layout-capture'
@@ -559,18 +561,23 @@ export default function TerminalPane({
       )?.label
   )
   // The native-chat toggle joins the pane header's split/close cluster. Eligible
-  // when Orca launched a *supported* agent here or one was detected live (a pane
-  // of this tab has an agent-status entry, keyed `${tabId}:…`). Carry the agent
-  // identity, not just "an agent exists", so the gate can reject Grok et al.
-  const detectedAgent = useAppStore((store) => {
-    for (const [paneKey, entry] of Object.entries(store.agentStatusByPaneKey)) {
-      const sep = paneKey.indexOf(':')
-      if (sep > 0 && paneKey.slice(0, sep) === tabId) {
-        return entry.agentType ?? null
+  // when Orca launched a *supported* agent here or one was detected live for the
+  // leaf, keyed `${tabId}:${leafId}`. Carry the agent identity, not just "an
+  // agent exists", so the gate can reject Grok et al.
+  // Scoped to this tab's panes (leafId → agentType) and shallow-compared so an
+  // unrelated tab's agent status tick doesn't re-render this pane.
+  const tabAgentTypeByLeaf = useAppStore(
+    useShallow((store) => {
+      const prefix = `${tabId}:`
+      const byLeaf: Record<string, AgentType> = {}
+      for (const [paneKey, entry] of Object.entries(store.agentStatusByPaneKey)) {
+        if (paneKey.startsWith(prefix) && entry.agentType) {
+          byLeaf[paneKey.slice(prefix.length)] = entry.agentType
+        }
       }
-    }
-    return null
-  })
+      return byLeaf
+    })
+  )
   const toggleTabViewMode = useAppStore((store) => store.toggleTabViewMode)
   const savedLayout = useAppStore((store) => store.terminalLayoutsByTabId[tabId] ?? EMPTY_LAYOUT)
   const terminalTab = useAppStore((store) =>
@@ -581,14 +588,36 @@ export default function TerminalPane({
   const titleResolvedAgent =
     resolveTabAgentFromTitle(unifiedTabLabel ?? '') ??
     (terminalTab ? resolveTabAgentFromTitle(terminalTab.title) : null)
-  const canToggleChat = canToggleNativeChat({
-    experimentalNativeChatEnabled: nativeChatEnabled,
-    contentType: 'terminal',
-    launchAgent: terminalTab?.launchAgent,
-    detectedAgent,
-    resolvedAgent: titleResolvedAgent,
-    isChatViewMode
-  })
+  // Per-leaf eligibility: a split can mix a supported agent in one leaf with an
+  // unsupported one in another, so the toggle is gated by the specific leaf.
+  // A leaf's own live agent is authoritative; the tab-wide launch/title hints
+  // only fill in before hooks arrive (or for the single-pane case) so they
+  // can't enable the toggle on a sibling actually running an unsupported agent.
+  const canToggleChatForLeaf = useCallback(
+    (leafId: string | null): boolean => {
+      const detectedAgent = leafId ? (tabAgentTypeByLeaf[leafId] ?? null) : null
+      // Scope the "always allow toggling back" rule to the leaf actually showing
+      // chat — passing the tab-wide flag would re-enable the toggle on an
+      // unsupported sibling whenever any leaf in the split is in chat view.
+      const isChatViewForLeaf = effectiveChatViewMode && leafId !== null && chatLeafId === leafId
+      return canToggleNativeChat({
+        experimentalNativeChatEnabled: nativeChatEnabled,
+        contentType: 'terminal',
+        launchAgent: detectedAgent ? null : terminalTab?.launchAgent,
+        detectedAgent,
+        resolvedAgent: detectedAgent ? null : titleResolvedAgent,
+        isChatViewMode: isChatViewForLeaf
+      })
+    },
+    [
+      tabAgentTypeByLeaf,
+      effectiveChatViewMode,
+      chatLeafId,
+      nativeChatEnabled,
+      terminalTab?.launchAgent,
+      titleResolvedAgent
+    ]
+  )
   const toggleNativeChatForLeaf = useCallback(
     (leafId: string) => {
       if (!unifiedTabId) {
@@ -2712,6 +2741,11 @@ export default function TerminalPane({
   const activePaneIsChatLeaf = Boolean(
     isChatViewMode && activePane?.leafId && activePane.leafId === chatLeafId
   )
+  // Header toggle gates on the active leaf; the context-menu toggle gates on the
+  // leaf the menu was opened over — so a split mixing supported/unsupported
+  // agents shows the toggle only on the leaf that can actually render chat.
+  const activePaneCanToggleChat = canToggleChatForLeaf(activePane?.leafId ?? null)
+  const contextMenuCanToggleChat = canToggleChatForLeaf(contextMenuLeafId)
   return (
     <>
       <div
@@ -2842,7 +2876,7 @@ export default function TerminalPane({
         onClosePane={contextMenu.onClosePane}
         onClearScreen={contextMenu.onClearScreen}
         onForkAgentSession={() => void contextMenu.onForkAgentSession()}
-        canToggleNativeChat={canToggleChat}
+        canToggleNativeChat={contextMenuCanToggleChat}
         isNativeChatView={contextMenuIsChatView}
         onToggleNativeChat={handleContextMenuToggleNativeChat}
         onCopyAgentSessionContext={() => void contextMenu.onCopyAgentSessionContext()}
@@ -2898,7 +2932,7 @@ export default function TerminalPane({
         hiddenStartupStyle={hiddenStartupStyle}
         managerRef={managerRef}
         paneTransportsRef={paneTransportsRef}
-        canToggleNativeChat={canToggleChat}
+        canToggleNativeChat={activePaneCanToggleChat}
         isChatViewMode={activePaneIsChatLeaf}
         onToggleNativeChat={handleToggleNativeChat}
         onSplitPane={splitTerminalPaneFromHeader}

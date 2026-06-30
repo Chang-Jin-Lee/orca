@@ -1,5 +1,5 @@
-import { getAgentLabel, titleHasAgentName } from '../../../shared/agent-detection'
-import type { TuiAgent } from '../../../shared/types'
+import { getAgentLabel, titleHasAgentName } from './agent-detection'
+import type { TuiAgent } from './types'
 
 // Maps getAgentLabel()'s product labels to TuiAgent ids — the fallback for
 // agents whose foreground PROCESS name isn't self-identifying (Claude Code runs

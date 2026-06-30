@@ -323,7 +323,11 @@ function createPane(paneId: number) {
         bracketedPasteMode: false
       },
       options: {
-        ignoreBracketedPasteMode: false
+        ignoreBracketedPasteMode: false,
+        theme: {
+          foreground: '#eeeeee',
+          background: '#111111'
+        }
       },
       write: vi.fn(),
       resize: vi.fn(),
@@ -951,6 +955,82 @@ describe('connectPanePty', () => {
     expect(deps.onPtyExitRef.current).not.toHaveBeenCalled()
     expect(manager.closePane).not.toHaveBeenCalled()
     expect(manager.setActivePane).toHaveBeenCalledWith(1, { focus: true })
+  })
+
+  it('keeps a worktree sole terminal mounted when its freshly-spawned PTY exits before input (direnv failure)', async () => {
+    // Why (regression): a PR worktree can ship an .envrc whose direnv command
+    // fails, so the only terminal's login shell exits non-zero immediately. The
+    // sole-pane branch must NOT route to onPtyExitRef — that closes the tab and
+    // deactivates the just-created worktree (setActiveWorktree(null)), bouncing
+    // the user to the Landing screen. The dead pane stays mounted instead.
+    const { connectPanePty } = await import('./pty-connection')
+    const transport = createMockTransport('tab-pty')
+    transportFactoryQueue.push(transport)
+    const manager = createManager(1)
+    const deps = createDeps()
+
+    connectPanePty(createPane(1) as never, manager as never, deps as never)
+    const onPtySpawn = createdTransportOptions[0]?.onPtySpawn as
+      | ((ptyId: string) => void)
+      | undefined
+    const onPtyExit = createdTransportOptions[0]?.onPtyExit as ((ptyId: string) => void) | undefined
+    expect(onPtySpawn).toBeTypeOf('function')
+    expect(onPtyExit).toBeTypeOf('function')
+
+    // A genuine fresh spawn (onPtySpawn fires only for non-reattach spawns) that
+    // the user never typed into.
+    onPtySpawn?.('tab-pty')
+    onPtyExit?.('tab-pty')
+
+    expect(deps.onPtyExitRef.current).not.toHaveBeenCalled()
+    expect(manager.closePane).not.toHaveBeenCalled()
+  })
+
+  it('tears down the sole terminal when a freshly-spawned PTY exits after the user typed input', async () => {
+    // Why: an explicit `exit` (or any typed input) is a deliberate close, not a
+    // failed-startup shell, so the worktree should deactivate as before.
+    const { connectPanePty } = await import('./pty-connection')
+    const pane = createPane(1)
+    const transport = createMockTransport('tab-pty')
+    transportFactoryQueue.push(transport)
+    const manager = createManager(1)
+    const deps = createDeps()
+
+    connectPanePty(pane as never, manager as never, deps as never)
+    const onPtySpawn = createdTransportOptions[0]?.onPtySpawn as
+      | ((ptyId: string) => void)
+      | undefined
+    const onPtyExit = createdTransportOptions[0]?.onPtyExit as ((ptyId: string) => void) | undefined
+    expect(onPtySpawn).toBeTypeOf('function')
+    expect(onPtyExit).toBeTypeOf('function')
+
+    onPtySpawn?.('tab-pty')
+    sendTerminalInputThroughPane(pane, 'exit\r')
+    onPtyExit?.('tab-pty')
+
+    expect(deps.onPtyExitRef.current).toHaveBeenCalledWith('tab-pty')
+    expect(manager.closePane).not.toHaveBeenCalled()
+  })
+
+  it('tears down the sole terminal when a reattached (not freshly spawned) PTY exits', async () => {
+    // Why: reattach/coldRestore skip onPtySpawn, so a previously-live session
+    // that is now dead must still route through onPtyExitRef — the keep-mounted
+    // guard is strictly for brand-new shells that died on startup.
+    const { connectPanePty } = await import('./pty-connection')
+    const transport = createMockTransport('tab-pty')
+    transportFactoryQueue.push(transport)
+    const manager = createManager(1)
+    const deps = createDeps()
+
+    connectPanePty(createPane(1) as never, manager as never, deps as never)
+    const onPtyExit = createdTransportOptions[0]?.onPtyExit as ((ptyId: string) => void) | undefined
+    expect(onPtyExit).toBeTypeOf('function')
+
+    // No onPtySpawn call: simulates a reattach to a persisted session.
+    onPtyExit?.('tab-pty')
+
+    expect(deps.onPtyExitRef.current).toHaveBeenCalledWith('tab-pty')
+    expect(manager.closePane).not.toHaveBeenCalled()
   })
 
   it('closes a split pane when an established PTY exits after output', async () => {
@@ -5158,7 +5238,8 @@ describe('connectPanePty', () => {
 
     capturedDataCallback.current?.('\x1b]11;?\x1b\\startup frame\r\n')
 
-    expect(pane.terminal.write).toHaveBeenCalledWith('\x1b]11;?\x1b\\', expect.any(Function))
+    expect(transport.sendInput).toHaveBeenCalledWith('\x1b]11;rgb:1111/1111/1111\x1b\\')
+    expect(pane.terminal.write).not.toHaveBeenCalledWith('\x1b]11;?\x1b\\', expect.any(Function))
     expect(pane.terminal.write).not.toHaveBeenCalledWith(
       '\x1b]11;?\x1b\\startup frame\r\n',
       expect.any(Function)
@@ -5200,7 +5281,8 @@ describe('connectPanePty', () => {
 
     capturedDataCallback.current?.('\x1b]11;?\x1b\\startup frame\r\n')
 
-    expect(pane.terminal.write).toHaveBeenCalledWith('\x1b]11;?\x1b\\', expect.any(Function))
+    expect(transport.sendInput).toHaveBeenCalledWith('\x1b]11;rgb:1111/1111/1111\x1b\\')
+    expect(pane.terminal.write).not.toHaveBeenCalledWith('\x1b]11;?\x1b\\', expect.any(Function))
     expect(pane.terminal.write).not.toHaveBeenCalledWith(
       '\x1b]11;?\x1b\\startup frame\r\n',
       expect.any(Function)
@@ -5235,7 +5317,8 @@ describe('connectPanePty', () => {
 
     capturedDataCallback.current?.('\x1b]11;?\x1b\\startup frame\r\n')
 
-    expect(pane.terminal.write).toHaveBeenCalledWith('\x1b]11;?\x1b\\', expect.any(Function))
+    expect(transport.sendInput).toHaveBeenCalledWith('\x1b]11;rgb:1111/1111/1111\x1b\\')
+    expect(pane.terminal.write).not.toHaveBeenCalledWith('\x1b]11;?\x1b\\', expect.any(Function))
     expect(pane.terminal.write).not.toHaveBeenCalledWith(
       '\x1b]11;?\x1b\\startup frame\r\n',
       expect.any(Function)
@@ -5270,7 +5353,8 @@ describe('connectPanePty', () => {
 
     capturedDataCallback.current?.('\x1b]11;?\x1b\\startup frame\r\n')
 
-    expect(pane.terminal.write).toHaveBeenCalledWith('\x1b]11;?\x1b\\', expect.any(Function))
+    expect(transport.sendInput).toHaveBeenCalledWith('\x1b]11;rgb:1111/1111/1111\x1b\\')
+    expect(pane.terminal.write).not.toHaveBeenCalledWith('\x1b]11;?\x1b\\', expect.any(Function))
     expect(pane.terminal.write).not.toHaveBeenCalledWith(
       '\x1b]11;?\x1b\\startup frame\r\n',
       expect.any(Function)
@@ -5534,7 +5618,7 @@ describe('connectPanePty', () => {
     binding.dispose()
   })
 
-  it('keeps a Yazi-style hidden capability-query burst on the live xterm path', async () => {
+  it('answers hidden OSC color queries directly inside a mixed capability-query burst', async () => {
     const { connectPanePty } = await import('./pty-connection')
     const transport = createMockTransport('pty-id')
     const capturedDataCallback: { current: ((data: string) => void) | null } = { current: null }
@@ -5560,8 +5644,48 @@ describe('connectPanePty', () => {
     const coalescedChunk = `${queryBurst}\x1b[?2026h${'codex redraw '.repeat(8_000)}`
     capturedDataCallback.current?.(coalescedChunk)
 
-    expect(pane.terminal.write).toHaveBeenCalledWith(queryBurst, expect.any(Function))
+    expect(transport.sendInput).toHaveBeenCalledWith('\x1b]11;rgb:1111/1111/1111\x1b\\')
+    expect(pane.terminal.write).toHaveBeenCalledWith(
+      '\x1b[c\x1b[>q\x1b[14t\x1b[16t',
+      expect.any(Function)
+    )
     expect(pane.terminal.write).not.toHaveBeenCalledWith(coalescedChunk, expect.any(Function))
+
+    binding.dispose()
+  })
+
+  it('answers adjacent hidden Codex OSC color queries directly', async () => {
+    const { connectPanePty } = await import('./pty-connection')
+    const transport = createMockTransport('pty-id')
+    const capturedDataCallback: { current: ((data: string) => void) | null } = { current: null }
+    transport.connect.mockImplementation(async ({ callbacks }: { callbacks: ConnectCallbacks }) => {
+      capturedDataCallback.current = callbacks.onData ?? null
+      return 'pty-id'
+    })
+    transportFactoryQueue.push(transport)
+
+    const pane = createPane(1)
+    const manager = createManager(1)
+    const binding = connectPanePty(
+      pane as never,
+      manager as never,
+      createDeps({
+        isVisibleRef: { current: false },
+        startup: { command: 'codex' }
+      }) as never
+    )
+    await flushAsyncTicks(6)
+
+    const queries = '\x1b]10;?\x1b\\\x1b]11;?\x1b\\'
+    capturedDataCallback.current?.(`${queries}startup frame\r\n`)
+
+    expect(transport.sendInput).toHaveBeenCalledWith('\x1b]10;rgb:eeee/eeee/eeee\x1b\\')
+    expect(transport.sendInput).toHaveBeenCalledWith('\x1b]11;rgb:1111/1111/1111\x1b\\')
+    expect(pane.terminal.write).not.toHaveBeenCalledWith(queries, expect.any(Function))
+    expect(pane.terminal.write).not.toHaveBeenCalledWith(
+      `${queries}startup frame\r\n`,
+      expect.any(Function)
+    )
 
     binding.dispose()
   })
@@ -5876,7 +6000,7 @@ describe('connectPanePty', () => {
     binding.dispose()
   })
 
-  it('keeps split hidden Codex OSC color queries on the live xterm path', async () => {
+  it('answers split hidden Codex OSC color queries directly', async () => {
     const { connectPanePty } = await import('./pty-connection')
     const transport = createMockTransport('pty-id')
     const capturedDataCallback: { current: ((data: string) => void) | null } = { current: null }
@@ -5901,7 +6025,8 @@ describe('connectPanePty', () => {
     capturedDataCallback.current?.('\x1b]11;?')
     capturedDataCallback.current?.(`\x1b\\\x1b[?2026h${'codex redraw '.repeat(8_000)}`)
 
-    expect(pane.terminal.write).toHaveBeenCalledWith('\x1b]11;?\x1b\\', expect.any(Function))
+    expect(transport.sendInput).toHaveBeenCalledWith('\x1b]11;rgb:1111/1111/1111\x1b\\')
+    expect(pane.terminal.write).not.toHaveBeenCalledWith('\x1b]11;?\x1b\\', expect.any(Function))
     expect(pane.terminal.write).not.toHaveBeenCalledWith(
       `\x1b\\\x1b[?2026h${'codex redraw '.repeat(8_000)}`,
       expect.any(Function)
@@ -5910,7 +6035,7 @@ describe('connectPanePty', () => {
     binding.dispose()
   })
 
-  it('keeps hidden Codex OSC color queries split before the prefix on the live xterm path', async () => {
+  it('answers hidden Codex OSC color queries split before the prefix directly', async () => {
     const { connectPanePty } = await import('./pty-connection')
     const transport = createMockTransport('pty-id')
     const capturedDataCallback: { current: ((data: string) => void) | null } = { current: null }
@@ -5935,7 +6060,8 @@ describe('connectPanePty', () => {
     capturedDataCallback.current?.('\x1b]')
     capturedDataCallback.current?.(`11;?\x1b\\\x1b[?2026h${'codex redraw '.repeat(8_000)}`)
 
-    expect(pane.terminal.write).toHaveBeenCalledWith('\x1b]11;?\x1b\\', expect.any(Function))
+    expect(transport.sendInput).toHaveBeenCalledWith('\x1b]11;rgb:1111/1111/1111\x1b\\')
+    expect(pane.terminal.write).not.toHaveBeenCalledWith('\x1b]11;?\x1b\\', expect.any(Function))
     expect(pane.terminal.write).not.toHaveBeenCalledWith(
       `11;?\x1b\\\x1b[?2026h${'codex redraw '.repeat(8_000)}`,
       expect.any(Function)
@@ -10445,6 +10571,80 @@ describe('connectPanePty', () => {
       expect(manager.closePane).toHaveBeenCalledWith(2)
     })
 
+    it('does NOT tear down a newborn pane when the snapshot was requested before it bound', async () => {
+      // Why (regression): a snapshot requested before the spawn bound cannot
+      // prove the fresh ptyId dead. Drives the REAL reconcile body to prove the
+      // boundAt wiring, not just forwarding.
+      const { connectPanePty } = await import('./pty-connection')
+      const capturedDataCallback: { current: ((data: string) => void) | null } = { current: null }
+      const transport = createMockTransport('pty-pane-2')
+      transport.connect.mockImplementation(
+        async ({ callbacks }: { callbacks: ConnectCallbacks }) => {
+          capturedDataCallback.current = callbacks.onData ?? null
+          return 'pty-pane-2'
+        }
+      )
+      transportFactoryQueue.push(transport)
+      const manager = createManager(2)
+      const deps = createDeps({
+        restoredLeafId: LEAF_2,
+        paneTransportsRef: { current: new Map([[1, createMockTransport('pty-pane-1')]]) }
+      })
+
+      const binding = connectPanePty(createPane(2) as never, manager as never, deps as never)
+      // Why: clear the freshly-split early-return guard so the ONLY remaining
+      // protection is the freshness guard this test exercises.
+      capturedDataCallback.current?.('shell prompt')
+      const onPtySpawn = createdTransportOptions[0]?.onPtySpawn as
+        | ((ptyId: string) => void)
+        | undefined
+      expect(onPtySpawn).toBeTypeOf('function')
+
+      // Record boundAt via the spawn chokepoint; bracket it with a real timestamp.
+      const beforeSpawn = performance.now()
+      onPtySpawn?.('pty-pane-2')
+
+      // requestedAt < boundAt: stale snapshot can't prove the fresh pane dead.
+      binding.reconcileIfSessionDead(new Set(['pty-pane-1']), beforeSpawn - 1)
+
+      expect(manager.closePane).not.toHaveBeenCalled()
+      expect(deps.onPtyExitRef.current).not.toHaveBeenCalled()
+    })
+
+    it('tears down the pane when the snapshot was requested after it bound', async () => {
+      const { connectPanePty } = await import('./pty-connection')
+      const capturedDataCallback: { current: ((data: string) => void) | null } = { current: null }
+      const transport = createMockTransport('pty-pane-2')
+      transport.connect.mockImplementation(
+        async ({ callbacks }: { callbacks: ConnectCallbacks }) => {
+          capturedDataCallback.current = callbacks.onData ?? null
+          return 'pty-pane-2'
+        }
+      )
+      transportFactoryQueue.push(transport)
+      const manager = createManager(2)
+      const deps = createDeps({
+        restoredLeafId: LEAF_2,
+        paneTransportsRef: { current: new Map([[1, createMockTransport('pty-pane-1')]]) }
+      })
+
+      const binding = connectPanePty(createPane(2) as never, manager as never, deps as never)
+      // Why: clear the freshly-split early-return guard so onExit reaches close.
+      capturedDataCallback.current?.('shell prompt')
+      const onPtySpawn = createdTransportOptions[0]?.onPtySpawn as
+        | ((ptyId: string) => void)
+        | undefined
+      expect(onPtySpawn).toBeTypeOf('function')
+
+      onPtySpawn?.('pty-pane-2')
+      const afterSpawn = performance.now()
+
+      // requestedAt > boundAt: the snapshot postdates the bind, so absence is real.
+      binding.reconcileIfSessionDead(new Set(['pty-pane-1']), afterSpawn + 1)
+
+      expect(manager.closePane).toHaveBeenCalledWith(2)
+    })
+
     it('routes the last pane through onPtyExitRef when its session is dead', async () => {
       const { connectPanePty } = await import('./pty-connection')
       const transport = createMockTransport('pty-pane-1')
@@ -10699,7 +10899,7 @@ describe('connectPanePty', () => {
       }
     }
 
-    it('fires listSessions at most once across many keystrokes in one resume window', async () => {
+    it('does not fire listSessions for first input on a fresh mount', async () => {
       const listSessions = vi.mocked(window.api.pty.listSessions)
       listSessions.mockClear()
       const { typeKeystroke } = await connectActivePaneWithInput()
@@ -10708,19 +10908,31 @@ describe('connectPanePty', () => {
         typeKeystroke('x')
       }
 
-      expect(listSessions).toHaveBeenCalledTimes(1)
+      expect(listSessions).not.toHaveBeenCalled()
     })
 
-    it('re-arms one re-check after a visibility resume', async () => {
+    it('fires listSessions once for the first input after a visibility resume', async () => {
       const listSessions = vi.mocked(window.api.pty.listSessions)
       listSessions.mockClear()
       const { binding, typeKeystroke } = await connectActivePaneWithInput()
 
+      binding.noteVisibilityResume()
+      typeKeystroke('a')
+      typeKeystroke('b')
+
+      expect(listSessions).toHaveBeenCalledTimes(1)
+    })
+
+    it('re-arms one re-check after a second visibility resume', async () => {
+      const listSessions = vi.mocked(window.api.pty.listSessions)
+      listSessions.mockClear()
+      const { binding, typeKeystroke } = await connectActivePaneWithInput()
+
+      binding.noteVisibilityResume()
       typeKeystroke('a')
       typeKeystroke('b')
       expect(listSessions).toHaveBeenCalledTimes(1)
 
-      // Resume re-arms exactly one more re-check.
       binding.noteVisibilityResume()
       typeKeystroke('c')
       typeKeystroke('d')
@@ -10743,8 +10955,35 @@ describe('connectPanePty', () => {
         paneTransportsRef: { current: new Map([[1, createMockTransport('pty-pane-1')]]) }
       })
       const pane = createPane(2)
-      connectPanePty(pane as never, manager as never, deps as never)
+      const binding = connectPanePty(pane as never, manager as never, deps as never) as unknown as {
+        noteVisibilityResume: () => void
+      }
 
+      binding.noteVisibilityResume()
+      sendTerminalInputThroughPane(pane, 'x')
+      sendTerminalInputThroughPane(pane, 'y')
+
+      expect(listSessions).not.toHaveBeenCalled()
+    })
+
+    it('never fires listSessions for an SSH pane after resume', async () => {
+      const listSessions = vi.mocked(window.api.pty.listSessions)
+      listSessions.mockClear()
+      const { connectPanePty } = await import('./pty-connection')
+      const transport = createMockTransport('ssh-pty-2')
+      transport.getConnectionId.mockReturnValue('ssh-connection-1')
+      transportFactoryQueue.push(transport)
+      const manager = createManager(2)
+      const deps = createDeps({
+        restoredLeafId: LEAF_2,
+        paneTransportsRef: { current: new Map([[1, createMockTransport('pty-pane-1')]]) }
+      })
+      const pane = createPane(2)
+      const binding = connectPanePty(pane as never, manager as never, deps as never) as unknown as {
+        noteVisibilityResume: () => void
+      }
+
+      binding.noteVisibilityResume()
       sendTerminalInputThroughPane(pane, 'x')
       sendTerminalInputThroughPane(pane, 'y')
 

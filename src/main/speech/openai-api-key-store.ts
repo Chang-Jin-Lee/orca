@@ -1,7 +1,7 @@
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
 import { getSecretStore } from '../../shared/secret-store'
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'fs'
-import { homedir } from 'os'
-import { join } from 'path'
 
 type StoredOpenAiKey = {
   encryptedKeyBase64: string

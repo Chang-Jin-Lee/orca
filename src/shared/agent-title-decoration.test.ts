@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { stripLeadingAgentTitleDecoration } from './agent-title-decoration'
+import {
+  stripLeadingAgentTitleDecoration,
+  stripLeadingAgentTitleDecorationOrEmpty
+} from './agent-title-decoration'
 
 describe('stripLeadingAgentTitleDecoration', () => {
   it("strips Claude's ✳ idle glyph", () => {
@@ -23,5 +26,10 @@ describe('stripLeadingAgentTitleDecoration', () => {
   it('keeps the original when the title is only a status glyph', () => {
     expect(stripLeadingAgentTitleDecoration('✳')).toBe('✳')
     expect(stripLeadingAgentTitleDecoration('✳ ')).toBe('✳ ')
+  })
+
+  it('can strip to empty when the caller supplies its own fallback label', () => {
+    expect(stripLeadingAgentTitleDecorationOrEmpty('✳')).toBe('')
+    expect(stripLeadingAgentTitleDecorationOrEmpty('✳ ')).toBe('')
   })
 })
