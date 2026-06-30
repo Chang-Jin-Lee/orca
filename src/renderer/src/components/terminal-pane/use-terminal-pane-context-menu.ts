@@ -15,6 +15,7 @@ import { pasteTerminalClipboard } from './terminal-clipboard-paste'
 import {
   executeTerminalPastePlan,
   planTerminalPasteWithYield,
+  type TerminalPasteExecutionResult,
   type TerminalPasteSource,
   type TerminalPasteTextOptions
 } from './terminal-paste-coordinator'
@@ -23,7 +24,7 @@ import { resolveTerminalPasteRuntime } from './terminal-paste-runtime'
 import { getTerminalPasteSshRemotePlatform } from './terminal-paste-ssh-platform'
 import { isTerminalPanePasteTargetCurrent } from './terminal-paste-target-state'
 import { writeTerminalPastePtyInput } from './terminal-pty-paste-writer'
-import { maybeScheduleWebglAtlasRecoveryForPaste } from './terminal-webgl-paste-recovery'
+import { beginPasteWebglAtlasRecoveryForPaste } from './terminal-webgl-paste-recovery'
 import {
   REQUEST_ACTIVE_TERMINAL_PANE_SPLIT_EVENT,
   type RequestActiveTerminalPaneSplitDetail
@@ -229,21 +230,29 @@ export function useTerminalPaneContextMenu({
       forceBracketedPasteForMultiline: options?.forceBracketedPasteForMultiline,
       terminalBracketedPasteMode: pane.terminal.modes.bracketedPasteMode
     })
-    const execution = await executeTerminalPastePlan(plan, {
-      pasteText: (pasteText, pasteOptions) =>
-        pasteTerminalText(pane.terminal, pasteText, pasteOptions),
-      writePty: (data) => writeTerminalPastePtyInput(transport, data),
-      isTargetCurrent: () => isPanePasteTargetMounted(pane, transport, ptyId),
-      canContinue: () => isPanePasteTargetMounted(pane, transport, ptyId)
-    })
+    const webglAtlasRecovery = beginPasteWebglAtlasRecoveryForPaste(plan, pane.terminal)
+    let execution: TerminalPasteExecutionResult
+    try {
+      execution = await executeTerminalPastePlan(plan, {
+        pasteText: (pasteText, pasteOptions) =>
+          pasteTerminalText(pane.terminal, pasteText, pasteOptions),
+        writePty: (data) => writeTerminalPastePtyInput(transport, data),
+        isTargetCurrent: () => isPanePasteTargetMounted(pane, transport, ptyId),
+        canContinue: () => isPanePasteTargetMounted(pane, transport, ptyId)
+      })
+    } catch (error) {
+      webglAtlasRecovery.cancel()
+      throw error
+    }
     if (execution.status !== 'pasted') {
+      webglAtlasRecovery.cancel()
       onPasteError(formatTerminalPasteExecutionError(execution.reason))
       return false
     }
+    webglAtlasRecovery.complete()
     if (text) {
       recordTerminalUserInputForLeaf(tabId, pane.leafId)
     }
-    maybeScheduleWebglAtlasRecoveryForPaste(plan)
     return true
   }
 

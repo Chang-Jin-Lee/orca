@@ -115,7 +115,7 @@ import {
 } from '@/components/terminal-quick-commands/TerminalQuickCommandDialog'
 import { keybindingMatchesAction } from '../../../../shared/keybindings'
 import { pasteTerminalClipboard } from './terminal-clipboard-paste'
-import { maybeScheduleWebglAtlasRecoveryForPaste } from './terminal-webgl-paste-recovery'
+import { beginPasteWebglAtlasRecoveryForPaste } from './terminal-webgl-paste-recovery'
 import { restoreTerminalFitToDesktop, restoreTerminalFitsToDesktop } from './terminal-fit-restore'
 import { useVisibleTerminalTabClaim } from './use-visible-terminal-tab-claim'
 
@@ -128,6 +128,7 @@ import { pasteTerminalText } from './terminal-bracketed-paste'
 import {
   executeTerminalPastePlan,
   planTerminalPasteWithYield,
+  type TerminalPasteExecutionResult,
   type TerminalPasteSource,
   type TerminalPasteTextOptions
 } from './terminal-paste-coordinator'
@@ -1612,30 +1613,38 @@ export default function TerminalPane({
         forceBracketedPasteForMultiline: options?.forceBracketedPasteForMultiline,
         terminalBracketedPasteMode: pane.terminal.modes.bracketedPasteMode
       })
-      const execution = await executeTerminalPastePlan(plan, {
-        pasteText: (pasteText, pasteOptions) =>
-          pasteTerminalText(pane.terminal, pasteText, pasteOptions),
-        writePty: (data) => writeTerminalPastePtyInput(transport, data),
-        isTargetCurrent: () => {
-          if (!isPanePasteTargetMounted(pane, transport, ptyId)) {
-            return false
-          }
-          return isTerminalPanePasteFocusCurrent({
-            requireSameFocusedElement: keyboardOwnedPaste,
-            activeElementAtDispatch,
-            paneContainer: pane.container
-          })
-        },
-        canContinue: () => isPanePasteTargetMounted(pane, transport, ptyId)
-      })
+      const webglAtlasRecovery = beginPasteWebglAtlasRecoveryForPaste(plan, pane.terminal)
+      let execution: TerminalPasteExecutionResult
+      try {
+        execution = await executeTerminalPastePlan(plan, {
+          pasteText: (pasteText, pasteOptions) =>
+            pasteTerminalText(pane.terminal, pasteText, pasteOptions),
+          writePty: (data) => writeTerminalPastePtyInput(transport, data),
+          isTargetCurrent: () => {
+            if (!isPanePasteTargetMounted(pane, transport, ptyId)) {
+              return false
+            }
+            return isTerminalPanePasteFocusCurrent({
+              requireSameFocusedElement: keyboardOwnedPaste,
+              activeElementAtDispatch,
+              paneContainer: pane.container
+            })
+          },
+          canContinue: () => isPanePasteTargetMounted(pane, transport, ptyId)
+        })
+      } catch (error) {
+        webglAtlasRecovery.cancel()
+        throw error
+      }
       if (execution.status !== 'pasted') {
+        webglAtlasRecovery.cancel()
         setTerminalError(formatTerminalPasteExecutionError(execution.reason))
         return
       }
+      webglAtlasRecovery.complete()
       if (text) {
         recordTerminalUserInputForLeaf(tabId, pane.leafId)
       }
-      maybeScheduleWebglAtlasRecoveryForPaste(plan)
     }
 
     const pasteFromClipboard = (
@@ -2394,21 +2403,27 @@ export default function TerminalPane({
           },
           terminalBracketedPasteMode: clickedPane.terminal.modes.bracketedPasteMode
         })
-        const execution = await executeTerminalPastePlan(plan, {
-          pasteText: (pasteText, pasteOptions) =>
-            pasteTerminalText(clickedPane.terminal, pasteText, pasteOptions),
-          writePty: (data) => writeTerminalPastePtyInput(transport, data),
-          isTargetCurrent: targetStillMounted,
-          canContinue: targetStillMounted
-        })
+        const webglAtlasRecovery = beginPasteWebglAtlasRecoveryForPaste(plan, clickedPane.terminal)
+        let execution: TerminalPasteExecutionResult
+        try {
+          execution = await executeTerminalPastePlan(plan, {
+            pasteText: (pasteText, pasteOptions) =>
+              pasteTerminalText(clickedPane.terminal, pasteText, pasteOptions),
+            writePty: (data) => writeTerminalPastePtyInput(transport, data),
+            isTargetCurrent: targetStillMounted,
+            canContinue: targetStillMounted
+          })
+        } catch (error) {
+          webglAtlasRecovery.cancel()
+          throw error
+        }
         if (execution.status !== 'pasted') {
+          webglAtlasRecovery.cancel()
           setTerminalError(formatTerminalPasteExecutionError(execution.reason))
           return
         }
+        webglAtlasRecovery.complete()
         recordTerminalUserInputForLeaf(tabId, clickedPane.leafId)
-        // Why: a middle-click URL paste into a bracketed-paste-mode TUI can
-        // corrupt the shared WebGL glyph atlas just like menu/keyboard pastes.
-        maybeScheduleWebglAtlasRecoveryForPaste(plan)
       })
     },
     [getPrimarySelectionMiddleClickPane, tabId, worktreeId]
