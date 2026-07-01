@@ -4,9 +4,9 @@ import { getLinearOrganizationUrlKeyFromIssueUrl } from '../../../shared/linear-
 import { buildLinearIssueContextSnapshot } from '@/lib/linear-issue-context-snapshot'
 
 export function isLinearLinkedWorkItem(
-  item: Pick<LinkedWorkItemSummary, 'linearIdentifier'> | null | undefined
+  item: Pick<LinkedWorkItemSummary, 'provider' | 'linearIdentifier'> | null | undefined
 ): boolean {
-  return Boolean(item?.linearIdentifier)
+  return item?.provider === 'linear' || Boolean(item?.linearIdentifier?.trim())
 }
 
 export function buildLinearIssueLinkedWorkItem(issue: LinearIssue): LinkedWorkItemSummary {
@@ -14,8 +14,8 @@ export function buildLinearIssueLinkedWorkItem(issue: LinearIssue): LinkedWorkIt
   return {
     type: 'issue',
     provider: 'linear',
-    // Why: Linear issue identifiers are strings; keep numeric issue metadata
-    // empty while preserving the real source through `linearIdentifier`.
+    // Why: Linear issue prose must not enter prompt metadata; keep only the
+    // string identifier/link and leave numeric issue metadata empty.
     number: 0,
     title: issue.title,
     url: issue.url,

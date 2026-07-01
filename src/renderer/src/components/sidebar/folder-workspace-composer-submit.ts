@@ -69,6 +69,7 @@ function buildFolderWorkspaceLinkedStartupPlan(args: {
   agentArgs?: string | null
   agentEnv?: Record<string, string>
   platform: NodeJS.Platform
+  isRemote: boolean
 }): AgentStartupPlan | null {
   const { prompt, draftPrompt } = resolveQuickCreateLinkedWorkItemPrompt(
     args.linkedWorkItem,
@@ -84,7 +85,8 @@ function buildFolderWorkspaceLinkedStartupPlan(args: {
           cmdOverrides: args.agentCmdOverrides ?? {},
           agentArgs: args.agentArgs,
           agentEnv: args.agentEnv,
-          platform: args.platform
+          platform: args.platform,
+          isRemote: args.isRemote
         })
       : null
   if (draftLaunchPlan) {
@@ -110,6 +112,7 @@ function buildFolderWorkspaceLinkedStartupPlan(args: {
     agentArgs: args.agentArgs,
     agentEnv: args.agentEnv,
     platform: args.platform,
+    isRemote: args.isRemote,
     allowEmptyPromptLaunch: true
   })
   if (startupPlan && linkedDraftPrompt) {
@@ -152,6 +155,7 @@ export async function submitFolderWorkspaceCreate({
   agentCmdOverrides,
   agentArgs,
   agentEnv,
+  isRemote,
   launchSource = 'sidebar',
   runtimeEnvironmentId = null,
   createFolderWorkspace,
@@ -159,11 +163,14 @@ export async function submitFolderWorkspaceCreate({
 }: SubmitFolderWorkspaceCreateParams): Promise<boolean> {
   const linkedName = linkedWorkItem ? getLinkedItemDisplayName(linkedWorkItem) : null
   const nameIsAutoManaged = !name.trim() || name === lastAutoName || isWorkItemLookupText(name)
-  const workspaceName =
+      const workspaceName =
     nameIsAutoManaged && linkedName
       ? linkedName
       : name.trim() || linkedName || `${projectGroup.name} workspace`
   const launchPlatform = getFolderWorkspaceAgentLaunchPlatform(projectGroup)
+  // Why: an SSH folder group runs the plain `orca` relay shim, so the Linux-only
+  // `orca-ide` rename must not be applied for remote launches.
+  const launchIsRemote = isRemote ?? Boolean(projectGroup.connectionId)
   const startupPlan =
     quickAgent && linkedWorkItem
       ? buildFolderWorkspaceLinkedStartupPlan({
@@ -173,7 +180,8 @@ export async function submitFolderWorkspaceCreate({
           agentCmdOverrides,
           agentArgs,
           agentEnv,
-          platform: launchPlatform
+          platform: launchPlatform,
+          isRemote: launchIsRemote
         })
       : quickAgent
         ? buildAgentStartupPlan({
@@ -183,6 +191,7 @@ export async function submitFolderWorkspaceCreate({
             agentArgs,
             agentEnv,
             platform: launchPlatform,
+            isRemote: launchIsRemote,
             allowEmptyPromptLaunch: true
           })
         : null
@@ -227,6 +236,7 @@ export async function submitFolderWorkspaceCreate({
           launchConfig: startupPlan.launchConfig,
           ...(startupPlan.launchToken ? { launchToken: startupPlan.launchToken } : {}),
           launchAgent: quickAgent,
+          ...(startupPlan.draftPrompt ? { draftPrompt: startupPlan.draftPrompt } : {}),
           ...(startupPlan.startupCommandDelivery
             ? { startupCommandDelivery: startupPlan.startupCommandDelivery }
             : {}),

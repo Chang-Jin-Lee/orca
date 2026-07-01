@@ -82,6 +82,7 @@ export function buildSkillCommandForRuntime(
   if (resolvedRuntime.runtime !== 'wsl') {
     return normalizedCommand
   }
+
   const distroArg = resolvedRuntime.wslDistro?.trim()
     ? ` -d ${quotePowerShellSingle(resolvedRuntime.wslDistro.trim())}`
     : ''
@@ -98,13 +99,15 @@ function normalizeWindowsSkillUpdateCommand(
     return command
   }
 
-  const updateMatch = /^npx\s+skills\s+update\s+([A-Za-z0-9_-]+)\s+--global$/i.exec(command.trim())
+  const trimmedCommand = command.trim()
+  const updateMatch = /^npx\s+skills\s+update\s+([A-Za-z0-9_-]+)\s+--global$/i.exec(trimmedCommand)
   if (!updateMatch) {
     return command
   }
 
-  // Why: native Windows `skills update` is unreliable; reinstalling from the
-  // canonical repo is idempotent and keeps setup flows usable.
+  // Why: the `skills update` subcommand is currently unreliable on native
+  // Windows, while reinstalling from the same repo source is idempotent and
+  // keeps the setup affordance working.
   return buildAgentFeatureSkillInstallCommand([updateMatch[1]])
 }
 

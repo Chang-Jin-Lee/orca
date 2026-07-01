@@ -11,8 +11,6 @@ import { AgentCapabilitiesSetupAction } from './AgentCapabilitiesSetupAction'
 import {
   AddReposAction,
   SetupScriptAction,
-  SplitTerminalShortcutHint,
-  TwoAgentsAction,
   WorkspacesAction
 } from './FeatureWallSetupWorkflowActions'
 import { ConnectIntegrationsList } from './ConnectIntegrationsList'
@@ -20,7 +18,6 @@ import { BrowserAction } from './FeatureWallBrowserAction'
 import {
   SetupBrowserVisual,
   SetupMultipleReposVisual,
-  SetupTwoAgentsVisual,
   SetupWorkspacesVisual
 } from './FeatureWallSetupStepVisuals'
 import { AgentStep } from '../onboarding/AgentStep'
@@ -147,9 +144,6 @@ function SelectedStepAction(props: FeatureWallSetupChecklistProps): React.JSX.El
   if (activeStep.id === 'notifications') {
     return <NotificationAction />
   }
-  if (activeStep.id === 'split-terminal') {
-    return <TwoAgentsAction done={activeDone} />
-  }
   if (activeStep.id === 'two-worktrees') {
     return <WorkspacesAction done={activeDone} />
   }
@@ -179,9 +173,6 @@ function SelectedStepAction(props: FeatureWallSetupChecklistProps): React.JSX.El
 }
 
 function SelectedStepVisual(props: { stepId: FeatureWallSetupStepId }): React.JSX.Element | null {
-  if (props.stepId === 'split-terminal') {
-    return <SetupTwoAgentsVisual />
-  }
   if (props.stepId === 'two-worktrees') {
     return <SetupWorkspacesVisual />
   }
@@ -272,7 +263,6 @@ export function FeatureWallSetupChecklist(
   // Only steps with a visual constrain the caption to a narrow column so the
   // illustration can sit beside it; captionless steps let the copy run full width.
   const hasStepVisual =
-    activeStep?.id === 'split-terminal' ||
     activeStep?.id === 'two-worktrees' ||
     activeStep?.id === 'browser' ||
     activeStep?.id === 'add-two-repos'
@@ -378,11 +368,6 @@ export function FeatureWallSetupChecklist(
                 >
                   {activeStep.description}
                 </p>
-                {activeStep.id === 'split-terminal' ? (
-                  <div className="mt-3">
-                    <SplitTerminalShortcutHint />
-                  </div>
-                ) : null}
                 {/* Action lives under the caption, not after the grid, so it sits just
                     below the copy instead of being pushed down by the taller visual. */}
                 <div className={cn('min-w-0', isEmbedded ? 'mt-8' : 'mt-7')}>

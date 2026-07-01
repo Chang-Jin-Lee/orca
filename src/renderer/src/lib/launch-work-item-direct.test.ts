@@ -326,52 +326,46 @@ describe('launchWorkItemDirect', () => {
     )
   })
 
-  it('pastes prompt-time Linear context in direct-launch drafts without CLI setup copy', async () => {
-    vi.mocked(buildAgentDraftLaunchPlan).mockReturnValueOnce(null)
+  it('queues prompt-time Linear context as a startup draft without CLI setup copy', async () => {
     const { launchWorkItemDirect } = await import('./launch-work-item-direct')
 
-    await launchWorkItemDirect({
-      repoId: 'repo-1',
-      launchSource: 'task_page',
-      telemetrySource: 'sidebar',
-      openModalFallback: vi.fn(),
-      item: {
-        type: 'issue',
-        number: null,
-        title: 'Ship Linear parity',
-        url: 'https://linear.app/acme/issue/ENG-42/ship-linear-parity',
-        linearIdentifier: 'ENG-42',
-        linkedContext: {
-          provider: 'linear',
-          version: 1,
-          renderedText: [
-            'Linear issue context snapshot',
-            'Identifier: ENG-42',
-            'Title: Ship Linear parity',
-            'Description:',
-            'Actual Linear issue body with a distinctive direct launch detail.'
-          ].join('\n')
+    await expect(
+      launchWorkItemDirect({
+        repoId: 'repo-1',
+        launchSource: 'task_page',
+        telemetrySource: 'sidebar',
+        openModalFallback: vi.fn(),
+        item: {
+          type: 'issue',
+          number: null,
+          title: 'Ship Linear parity',
+          url: 'https://linear.app/acme/issue/ENG-42/ship-linear-parity',
+          linearIdentifier: 'ENG-42',
+          linkedContext: {
+            provider: 'linear',
+            version: 1,
+            renderedText: [
+              'Linear issue context snapshot',
+              'Identifier: ENG-42',
+              'Title: Ship Linear parity',
+              'Description:',
+              'Actual Linear issue body with a distinctive direct launch detail.'
+            ].join('\n')
+          }
         }
-      }
-    })
+      })
+    ).resolves.toBe(true)
 
-    expect(pasteDraftWhenAgentReady).toHaveBeenCalledWith({
-      tabId: 'tab-1',
-      content: expect.stringContaining(
-        'Actual Linear issue body with a distinctive direct launch detail.'
-      ),
-      agent: 'codex',
-      submit: false,
-      forcePaste: false,
-      onTimeout: expect.any(Function)
-    })
-    const draft = mocks.pasteDraftWhenAgentReady.mock.calls[0]?.[0]?.content
+    expect(buildAgentDraftLaunchPlan).not.toHaveBeenCalled()
+    const draft = mocks.activateAndRevealWorktree.mock.calls[0]?.[1]?.startup?.draftPrompt
     expect(draft).toContain('Linked Linear issue: ENG-42')
     expect(draft).toContain('--- BEGIN LINKED WORK ITEM CONTEXT ---')
+    expect(draft).toContain('Actual Linear issue body with a distinctive direct launch detail.')
     expect(draft).not.toContain('orca linear')
     expect(draft).not.toContain('Orca Settings')
     expect(draft).not.toContain('PATH')
     expect(draft).not.toContain('fetch the full ticket')
+    expect(pasteDraftWhenAgentReady).not.toHaveBeenCalled()
   })
 
   it('does not auto-submit generated Linear context in submit-after-ready direct launches', async () => {
@@ -412,6 +406,44 @@ describe('launchWorkItemDirect', () => {
       agent: 'codex',
       submit: false,
       forcePaste: false,
+      onTimeout: expect.any(Function)
+    })
+  })
+
+  it('preserves explicit Linear paste content submit-after-ready behavior', async () => {
+    mocks.ensureDetectedAgents.mockResolvedValue(['claude'])
+    const { launchWorkItemDirect } = await import('./launch-work-item-direct')
+
+    await expect(
+      launchWorkItemDirect({
+        repoId: 'repo-1',
+        launchSource: 'task_page',
+        openModalFallback: vi.fn(),
+        agentOverride: 'claude',
+        promptDelivery: 'submit-after-ready',
+        item: {
+          type: 'issue',
+          number: null,
+          title: 'Ship Linear parity',
+          url: 'https://linear.app/acme/issue/ENG-42/ship-linear-parity',
+          linearIdentifier: 'ENG-42',
+          pasteContent: 'Use this explicit user prompt.',
+          linkedContext: {
+            provider: 'linear',
+            version: 1,
+            renderedText: 'This generated Linear source should not replace explicit paste content.'
+          }
+        }
+      })
+    ).resolves.toBe(true)
+
+    expect(buildAgentDraftLaunchPlan).not.toHaveBeenCalled()
+    expect(pasteDraftWhenAgentReady).toHaveBeenCalledWith({
+      tabId: 'tab-1',
+      content: 'Use this explicit user prompt.',
+      agent: 'claude',
+      submit: true,
+      forcePaste: true,
       onTimeout: expect.any(Function)
     })
   })
@@ -468,7 +500,8 @@ describe('launchWorkItemDirect', () => {
       cmdOverrides: {},
       agentArgs: '--yolo',
       agentEnv: {},
-      platform: 'linux'
+      platform: 'linux',
+      isRemote: true
     })
     expect(buildAgentStartupPlan).toHaveBeenCalledWith({
       agent: 'cursor',
@@ -477,16 +510,18 @@ describe('launchWorkItemDirect', () => {
       agentArgs: '--yolo',
       agentEnv: {},
       platform: 'linux',
+      isRemote: true,
       allowEmptyPromptLaunch: true
     })
-    expect(pasteDraftWhenAgentReady).toHaveBeenCalledWith({
-      tabId: 'tab-1',
-      content: 'https://github.com/acme/repo/issues/77',
-      agent: 'cursor',
-      submit: false,
-      forcePaste: false,
-      onTimeout: expect.any(Function)
-    })
+    expect(mocks.activateAndRevealWorktree).toHaveBeenCalledWith(
+      'wt-ssh',
+      expect.objectContaining({
+        startup: expect.objectContaining({
+          draftPrompt: 'https://github.com/acme/repo/issues/77'
+        })
+      })
+    )
+    expect(pasteDraftWhenAgentReady).not.toHaveBeenCalled()
   })
 
   it('does not launch a disabled saved agent even when another agent is available', async () => {
