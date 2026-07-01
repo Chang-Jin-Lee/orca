@@ -2551,15 +2551,15 @@
             "c337c9d75c": "Cerrar"
           },
           "TerminalSshReconnectOverlay": {
-            "authFailed": "Authentication failed for {{value0}}. Connect again to continue this terminal session.",
-            "reconnectFailed": "The SSH connection to {{value0}} failed. Connect again to continue this terminal session.",
-            "connecting": "Connecting to {{value0}}. This terminal will resume after the host is available.",
-            "connected": "SSH is connected.",
-            "disconnected": "This terminal is waiting for {{value0}}. Connect to continue this SSH session.",
-            "connectFailed": "SSH connection failed",
-            "title": "SSH connection required",
-            "connectingButton": "Connecting...",
-            "connectButton": "Connect"
+            "authFailed": "Error de autenticación en {{value0}}. Vuelve a conectar para continuar esta sesión de terminal.",
+            "reconnectFailed": "La conexión SSH a {{value0}} falló. Vuelve a conectar para continuar esta sesión de terminal.",
+            "connecting": "Conectando a {{value0}}. Esta terminal se reanudará cuando el host esté disponible.",
+            "connected": "SSH está conectado.",
+            "disconnected": "Esta terminal está esperando {{value0}}. Conéctate para continuar esta sesión SSH.",
+            "connectFailed": "Error de conexión SSH",
+            "title": "Se requiere conexión SSH",
+            "connectingButton": "Conectando...",
+            "connectButton": "Conectar"
           }
         }
       },

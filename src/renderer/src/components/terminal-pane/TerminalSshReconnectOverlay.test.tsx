@@ -6,6 +6,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { TerminalSshReconnectOverlay } from './TerminalSshReconnectOverlay'
+import { useAppStore } from '@/store'
+import type { SshConnectionState } from '../../../../shared/ssh-types'
 
 const toastMocks = vi.hoisted(() => ({
   error: vi.fn()
@@ -35,6 +37,7 @@ function installSshConnect(connect: ReturnType<typeof vi.fn>): void {
 
 describe('TerminalSshReconnectOverlay', () => {
   beforeEach(() => {
+    useAppStore.setState(useAppStore.getInitialState(), true)
     toastMocks.error.mockReset()
   })
 
@@ -96,5 +99,32 @@ describe('TerminalSshReconnectOverlay', () => {
 
     await waitFor(() => expect(toastMocks.error).toHaveBeenCalledWith('Passphrase rejected'))
     expect(screen.getByRole('button', { name: 'Connect' })).toBeEnabled()
+  })
+
+  it('publishes the returned SSH state so deferred terminal reattach can resume', async () => {
+    const connectedState: SshConnectionState = {
+      targetId: 'ssh-target-1',
+      status: 'connected',
+      error: null,
+      reconnectAttempt: 0,
+      remotePlatform: 'linux'
+    }
+    const connect = vi.fn().mockResolvedValue(connectedState)
+    installSshConnect(connect)
+    const user = userEvent.setup()
+
+    render(
+      <TerminalSshReconnectOverlay
+        targetId="ssh-target-1"
+        targetLabel="devbox"
+        status="disconnected"
+      />
+    )
+
+    await user.click(screen.getByRole('button', { name: 'Connect' }))
+
+    await waitFor(() =>
+      expect(useAppStore.getState().sshConnectionStates.get('ssh-target-1')).toEqual(connectedState)
+    )
   })
 })

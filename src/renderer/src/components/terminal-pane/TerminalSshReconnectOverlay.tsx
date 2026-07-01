@@ -3,6 +3,7 @@ import { Loader2, Server, ServerOff } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { useMountedRef } from '@/hooks/useMountedRef'
+import { useAppStore } from '@/store'
 import type { SshConnectionStatus } from '../../../../shared/ssh-types'
 import { translate } from '@/i18n/i18n'
 
@@ -12,6 +13,8 @@ type TerminalSshReconnectOverlayProps = {
   status: SshConnectionStatus
 }
 
+// Why: relay deployment/reconnect are host-driven transient states; the
+// failure statuses need a user-initiated retry before the PTY can resume.
 function isConnectingStatus(status: SshConnectionStatus): boolean {
   return status === 'connecting' || status === 'deploying-relay' || status === 'reconnecting'
 }
@@ -64,6 +67,7 @@ export function TerminalSshReconnectOverlay({
 }: TerminalSshReconnectOverlayProps): React.JSX.Element {
   const [connecting, setConnecting] = useState(false)
   const mountedRef = useMountedRef()
+  const setSshConnectionState = useAppStore((store) => store.setSshConnectionState)
   const isConnecting = connecting || isConnectingStatus(status)
   const showConnect = canConnectStatus(status)
 
@@ -73,7 +77,12 @@ export function TerminalSshReconnectOverlay({
     }
     setConnecting(true)
     try {
-      await window.api.ssh.connect({ targetId })
+      const connectState = await window.api.ssh.connect({ targetId })
+      if (connectState) {
+        // Why: ssh.connect can resolve before the global state-change IPC lands;
+        // the waiting deferred PTY reattach path keys off this renderer store.
+        setSshConnectionState(targetId, connectState)
+      }
     } catch (err) {
       toast.error(
         err instanceof Error
@@ -88,7 +97,7 @@ export function TerminalSshReconnectOverlay({
         setConnecting(false)
       }
     }
-  }, [isConnecting, mountedRef, targetId])
+  }, [isConnecting, mountedRef, setSshConnectionState, targetId])
 
   return (
     <div
@@ -121,32 +130,26 @@ export function TerminalSshReconnectOverlay({
             <Server className="size-3.5 shrink-0 text-muted-foreground" />
             <span className="truncate text-xs font-medium">{targetLabel}</span>
           </div>
-          {showConnect ? (
-            <Button size="sm" onClick={() => void handleConnect()} disabled={isConnecting}>
-              {isConnecting ? (
-                <>
-                  <Loader2 className="size-3.5 animate-spin" />
-                  {translate(
-                    'auto.components.terminal.pane.TerminalSshReconnectOverlay.connectingButton',
-                    'Connecting...'
-                  )}
-                </>
-              ) : (
-                translate(
-                  'auto.components.terminal.pane.TerminalSshReconnectOverlay.connectButton',
-                  'Connect'
-                )
-              )}
-            </Button>
-          ) : (
-            <Button size="sm" disabled>
-              <Loader2 className="size-3.5 animate-spin" />
-              {translate(
-                'auto.components.terminal.pane.TerminalSshReconnectOverlay.connectingButton',
-                'Connecting...'
-              )}
-            </Button>
-          )}
+          <Button
+            size="sm"
+            onClick={showConnect ? () => void handleConnect() : undefined}
+            disabled={!showConnect || isConnecting}
+          >
+            {!showConnect || isConnecting ? (
+              <>
+                <Loader2 className="size-3.5 animate-spin" />
+                {translate(
+                  'auto.components.terminal.pane.TerminalSshReconnectOverlay.connectingButton',
+                  'Connecting...'
+                )}
+              </>
+            ) : (
+              translate(
+                'auto.components.terminal.pane.TerminalSshReconnectOverlay.connectButton',
+                'Connect'
+              )
+            )}
+          </Button>
         </div>
       </div>
     </div>

@@ -30,8 +30,8 @@ The SSH deferred reattach path correctly avoids surprise passphrase prompts, but
 
 - `TerminalPane` resolves the worktree SSH target from Zustand state.
 - If the target is user-managed and `sshConnectionStates[targetId]?.status !== 'connected'`, render the overlay.
-- The overlay button calls `window.api.ssh.connect({ targetId })`.
-- Existing SSH store updates drive both overlay state and the waiting `connectPanePty` deferred reattach continuation.
+- The overlay button calls `window.api.ssh.connect({ targetId })` and writes a returned connection state into the renderer store.
+- SSH store updates then drive both overlay state and the waiting `connectPanePty` deferred reattach continuation.
 
 ## Edge Cases
 
@@ -46,6 +46,7 @@ The SSH deferred reattach path correctly avoids surprise passphrase prompts, but
 - Unit/component test for the overlay: disconnected renders a `Connect` button and clicking calls `window.api.ssh.connect` with the target ID.
 - Unit/component test for the overlay: connecting renders a disabled progress button.
 - Unit/component test for the overlay: failed connect shows an error toast and re-enables the button.
+- Unit/component test for the overlay: returned connect state updates the renderer SSH store so deferred terminal reattach can resume before the state-change IPC lands.
 - Typecheck and lint the touched renderer files.
 - Electron validation: load a connected SSH worktree, simulate the target becoming disconnected, and verify the active terminal surface shows the connect instruction and button.
 
@@ -69,7 +70,7 @@ The overlay must read like a quiet Orca empty/error state: centered in the termi
 ## Lightweight Eng Review
 
 - Scope: kept to terminal-pane UI and the existing SSH connect API; no backend reconnect behavior changes.
-- Architecture/data flow: `TerminalPane` owns the empty terminal surface, while SSH connection state remains in the existing store and `window.api.ssh.connect` path.
+- Architecture/data flow: `TerminalPane` owns the empty terminal surface, while SSH connection state remains in the existing store and `window.api.ssh.connect` path. The overlay mirrors a successful returned connect state into the store because the state-change IPC can arrive later than the call result.
 - Failure modes covered:
   - Passphrase-gated reconnect waits without visible action.
   - Store status missing during hydration.
@@ -77,6 +78,7 @@ The overlay must read like a quiet Orca empty/error state: centered in the termi
   - Runtime-owned SSH targets should not show a dead connect button.
 - Test coverage required:
   - Component tests for overlay states and connect invocation.
+  - Component test for returned connect-state publication.
   - Integration/Electron screenshots for connected -> disconnected -> reconnecting -> connected states.
 - Performance/blast radius: no polling, no new IPC except user-clicked connect; one extra store subscription in mounted terminal panes.
 - UI quality bar: token-based centered terminal empty state with a single primary action and no layout overlap.

@@ -2551,15 +2551,15 @@
             "c337c9d75c": "閉じる"
           },
           "TerminalSshReconnectOverlay": {
-            "authFailed": "Authentication failed for {{value0}}. Connect again to continue this terminal session.",
-            "reconnectFailed": "The SSH connection to {{value0}} failed. Connect again to continue this terminal session.",
-            "connecting": "Connecting to {{value0}}. This terminal will resume after the host is available.",
-            "connected": "SSH is connected.",
-            "disconnected": "This terminal is waiting for {{value0}}. Connect to continue this SSH session.",
-            "connectFailed": "SSH connection failed",
-            "title": "SSH connection required",
-            "connectingButton": "Connecting...",
-            "connectButton": "Connect"
+            "authFailed": "{{value0}} の認証に失敗しました。このターミナルセッションを続行するには再接続してください。",
+            "reconnectFailed": "{{value0}} への SSH 接続に失敗しました。このターミナルセッションを続行するには再接続してください。",
+            "connecting": "{{value0}} に接続中です。ホストが利用可能になったらこのターミナルが再開されます。",
+            "connected": "SSH が接続されました。",
+            "disconnected": "このターミナルは {{value0}} の接続を待機しています。この SSH セッションを続行するには接続してください。",
+            "connectFailed": "SSH 接続に失敗しました",
+            "title": "SSH 接続が必要です",
+            "connectingButton": "接続中...",
+            "connectButton": "接続"
           }
         }
       },

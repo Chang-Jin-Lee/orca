@@ -288,6 +288,8 @@ export default function TerminalPane({
   isVisibleRef.current = isRendererVisible
   const sshReconnectTargetId = useAppStore((store) => {
     const connectionId = getConnectionIdFromState(store, worktreeId)
+    // Why: runtime-owned SSH targets are internal plumbing users can't connect
+    // to directly, so a reconnect prompt would offer a misleading action.
     if (!connectionId || isRuntimeOwnedSshTargetId(connectionId)) {
       return null
     }
@@ -2739,7 +2741,7 @@ export default function TerminalPane({
   const managedPanes = managerRef.current?.getPanes() ?? []
   const showSshReconnectOverlay = Boolean(
     isActive &&
-    terminalContentVisible &&
+    isVisible &&
     sshReconnectTargetId &&
     sshReconnectStatus &&
     sshReconnectStatus !== 'connected'

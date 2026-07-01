@@ -2551,15 +2551,15 @@
             "c337c9d75c": "关闭"
           },
           "TerminalSshReconnectOverlay": {
-            "authFailed": "Authentication failed for {{value0}}. Connect again to continue this terminal session.",
-            "reconnectFailed": "The SSH connection to {{value0}} failed. Connect again to continue this terminal session.",
-            "connecting": "Connecting to {{value0}}. This terminal will resume after the host is available.",
-            "connected": "SSH is connected.",
-            "disconnected": "This terminal is waiting for {{value0}}. Connect to continue this SSH session.",
-            "connectFailed": "SSH connection failed",
-            "title": "SSH connection required",
-            "connectingButton": "Connecting...",
-            "connectButton": "Connect"
+            "authFailed": "{{value0}} 身份验证失败。请重新连接以继续此终端会话。",
+            "reconnectFailed": "与 {{value0}} 的 SSH 连接失败。请重新连接以继续此终端会话。",
+            "connecting": "正在连接到 {{value0}}。主机可用后，此终端将恢复。",
+            "connected": "SSH 已连接。",
+            "disconnected": "此终端正在等待 {{value0}}。请连接以继续此 SSH 会话。",
+            "connectFailed": "SSH 连接失败",
+            "title": "需要 SSH 连接",
+            "connectingButton": "连接中...",
+            "connectButton": "连接"
           }
         }
       },
