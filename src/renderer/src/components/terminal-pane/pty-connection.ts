@@ -3245,18 +3245,27 @@ export function connectPanePty(
     }
 
     let replayWriteQueue = Promise.resolve()
-    let pendingReplayData: string | null = null
+    type PendingReplayData = {
+      data: string
+      clearBeforeReplay: boolean
+    }
+
+    let pendingReplayData: PendingReplayData | null = null
     let replayDrainQueued = false
     const drainReplayDataQueue = async (): Promise<void> => {
       while (pendingReplayData !== null) {
-        const data = pendingReplayData
+        const { data, clearBeforeReplay } = pendingReplayData
         pendingReplayData = null
-        // Relay replay buffer holds the last 100 KB of output, which may
-        // overlap with content already rendered in xterm before the
-        // disconnect. Clear first to prevent duplication on SSH reconnect.
-        await writeReplayDataAsync('\x1b[2J\x1b[3J\x1b[H')
+        // Relay replay buffers may overlap with content already rendered in
+        // xterm. Local eager replay decides this earlier so metadata-only frames
+        // can keep restored scrollback while still using the replay guard.
+        if (clearBeforeReplay) {
+          await writeReplayDataAsync('\x1b[2J\x1b[3J\x1b[H')
+        }
         await writeReplayDataAsync(data)
-        await writeReplayDataAsync(POST_REPLAY_REATTACH_RESET)
+        if (clearBeforeReplay || data.length > 0) {
+          await writeReplayDataAsync(POST_REPLAY_REATTACH_RESET)
+        }
         if (disposed) {
           pendingReplayData = null
           return
@@ -3267,8 +3276,11 @@ export function connectPanePty(
         manager.rebuildPaneWebgl(pane.id)
       }
     }
-    const replayDataCallback = (data: string): void => {
-      pendingReplayData = data
+    const replayDataCallback = (data: string, meta: { clearBeforeReplay?: boolean } = {}): void => {
+      pendingReplayData = {
+        data,
+        clearBeforeReplay: meta.clearBeforeReplay !== false
+      }
       if (replayDrainQueued) {
         return
       }
@@ -3279,7 +3291,9 @@ export function connectPanePty(
         .finally(() => {
           replayDrainQueued = false
           if (pendingReplayData !== null) {
-            replayDataCallback(pendingReplayData)
+            replayDataCallback(pendingReplayData.data, {
+              clearBeforeReplay: pendingReplayData.clearBeforeReplay
+            })
           }
         })
     }
