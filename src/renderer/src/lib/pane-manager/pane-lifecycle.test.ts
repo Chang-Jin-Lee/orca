@@ -231,6 +231,21 @@ describe('attachWebgl', () => {
     expect(pane.terminal.loadAddon).toHaveBeenCalledTimes(1)
   })
 
+  it('keeps later auto panes on DOM after WebGL context loss', () => {
+    const firstPane = createPane()
+    const secondPane = createPane()
+
+    attachWebgl(firstPane)
+    expect(firstPane.terminal.loadAddon).toHaveBeenCalledTimes(1)
+
+    webglMock.contextLossHandler?.()
+    attachWebgl(secondPane)
+
+    expect(firstPane.webglAddon).toBeNull()
+    expect(secondPane.webglAddon).toBeNull()
+    expect(secondPane.terminal.loadAddon).not.toHaveBeenCalled()
+  })
+
   it('repaints the current buffer after WebGL attaches', () => {
     const pane = createPane()
     pane.terminalGpuAcceleration = 'on'
@@ -416,6 +431,7 @@ describe('attachWebgl', () => {
 
     expect(() => attachWebgl(pane)).not.toThrow()
     expect(pane.webglAddon).toBeNull()
+    expect(webglMock.dispose).toHaveBeenCalledOnce()
     expect(pane.terminal.dispose).not.toHaveBeenCalled()
     expect(webglMock.recordRendererCrashBreadcrumb).toHaveBeenCalledWith(
       'terminal_webgl_attach_error',

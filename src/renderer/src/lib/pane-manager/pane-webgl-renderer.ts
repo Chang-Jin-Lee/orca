@@ -102,8 +102,9 @@ export function attachWebgl(pane: ManagedPaneInternal): void {
     pane.webglAddon = null
     return
   }
+  let webglAddon: WebglAddon | null = null
   try {
-    const webglAddon = new WebglAddon()
+    webglAddon = new WebglAddon()
     webglAddon.onContextLoss(() => {
       recordRendererCrashBreadcrumb('terminal_webgl_context_loss', {
         paneId: pane.id,
@@ -117,6 +118,9 @@ export function attachWebgl(pane: ManagedPaneInternal): void {
       // Why: Chromium starts reclaiming terminal contexts under pressure.
       // Recreating WebGL for this pane can loop context loss and leave xterm
       // visually blank, so keep the pane on the DOM renderer until remount.
+      if (pane.terminalGpuAcceleration === 'auto') {
+        suggestedRendererType = 'dom'
+      }
       pane.webglDisabledAfterContextLoss = true
       disposeWebgl(pane, { refreshDimensions: true })
     })
@@ -135,6 +139,11 @@ export function attachWebgl(pane: ManagedPaneInternal): void {
       errorName: err instanceof Error ? err.name : typeof err,
       errorMessage: err instanceof Error ? err.message : String(err)
     })
+    try {
+      webglAddon?.dispose()
+    } catch {
+      /* ignore */
+    }
     // WebGL not available — default DOM renderer is fine, but log it for debugging
     console.warn('[terminal] WebGL unavailable for pane', pane.id, '— using DOM renderer:', err)
     pane.webglAddon = null
