@@ -67,6 +67,28 @@ describe('runComposerInitialCommitAction', () => {
     expect(resubmit).not.toHaveBeenCalled()
   })
 
+  it('renders thrown createInitialCommit errors and does not retry workspace creation', async () => {
+    const setCreateError = vi.fn()
+    const resubmit = vi.fn()
+
+    await runComposerInitialCommitAction({
+      sourceRepoId: 'repo-1',
+      createInitialCommit: vi.fn().mockRejectedValue(new Error('transport down')),
+      getCurrentRepoId: () => 'repo-1',
+      isSubmitInFlight: () => false,
+      setPending: vi.fn(),
+      setCreateError,
+      setBaseBranch: vi.fn(),
+      resubmit
+    })
+
+    expect(setCreateError).toHaveBeenCalledWith({
+      title: 'Could not create initial commit',
+      message: 'transport down'
+    })
+    expect(resubmit).not.toHaveBeenCalled()
+  })
+
   it('skips resubmit when workspace creation is already in flight', async () => {
     const setCreateError = vi.fn()
     const setBaseBranch = vi.fn()

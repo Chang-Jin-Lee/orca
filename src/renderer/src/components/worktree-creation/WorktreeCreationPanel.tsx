@@ -5,6 +5,7 @@ import { retryBackgroundWorktreeCreation } from '@/lib/worktree-creation-flow'
 import { createInitialCommitAndRetryWorktreeCreation } from '@/lib/worktree-creation-initial-commit'
 import { getCreationProgressLabel } from '@/lib/pending-worktree-creation'
 import { translate } from '@/i18n/i18n'
+import { Button } from '@/components/ui/button'
 
 /**
  * In-frame creation state, shown in the workspace content area while a worktree
@@ -143,11 +144,13 @@ export default function WorktreeCreationPanel({
               )}
             </button>
             {entry.errorAction === 'create-initial-commit' ? (
-              <button
+              <Button
                 type="button"
+                variant="link"
+                size="xs"
                 onClick={() => void createInitialCommitAndRetryWorktreeCreation(creationId)}
                 disabled={entry.initialCommitPending === true}
-                className="inline-flex items-center gap-1 text-foreground hover:underline disabled:pointer-events-none disabled:opacity-60"
+                className="h-auto p-0 text-xs text-foreground hover:text-foreground"
               >
                 {entry.initialCommitPending === true ? (
                   <Loader2 className="size-3 animate-spin" />
@@ -156,7 +159,7 @@ export default function WorktreeCreationPanel({
                   'auto.components.worktree.creation.WorktreeCreationPanel.d2339d41a1',
                   'Create initial commit'
                 )}
-              </button>
+              </Button>
             ) : null}
             <button
               type="button"
