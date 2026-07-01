@@ -26,6 +26,8 @@ function handleMarkdownAnchorClick(
   href: string | undefined,
   onLinkClick: CommentMarkdownLinkClickHandler | undefined
 ): void {
+  // Why: link clicks should not also trigger an outer row/card click handler;
+  // images only claim the click when an image handler is wired below.
   event.stopPropagation()
   if (href?.trim().toLowerCase().startsWith('file:')) {
     event.preventDefault()

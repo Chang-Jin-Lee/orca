@@ -36,6 +36,8 @@ function findTerminalTabWorktreeId(
   terminalTabId: string
 ): string | null {
   for (const [worktreeId, tabs] of Object.entries(tabsByWorktree)) {
+    // Why: tabsByWorktree stores TerminalTab records; unified tabs carry
+    // entityId, but the terminal owner lookup must use the backing tab id.
     if (tabs.some((tab) => tab.id === terminalTabId)) {
       return worktreeId
     }
@@ -65,9 +67,10 @@ export function resolveNativeChatFileLinkContext(
     return null
   }
 
-  const worktree =
-    state.getKnownWorktreeById(worktreeId) ??
-    findWorktreeFallback(state.worktreesByRepo, worktreeId)
+  const knownWorktree = state.getKnownWorktreeById(worktreeId)
+  const worktree = knownWorktree?.path
+    ? knownWorktree
+    : findWorktreeFallback(state.worktreesByRepo, worktreeId)
   if (!worktree?.path) {
     return null
   }

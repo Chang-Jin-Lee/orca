@@ -1,10 +1,25 @@
 import { describe, expect, it } from 'vitest'
+import type { TerminalTab } from '../../../../shared/types'
 import type { AppState } from '@/store/types'
 import {
   resolveNativeChatFileLink,
   resolveNativeChatFileLinkContext,
   type NativeChatFileLinkContext
 } from './native-chat-file-link'
+
+function terminalTab(overrides: Partial<TerminalTab> = {}): TerminalTab {
+  return {
+    id: 'tab-1',
+    ptyId: null,
+    worktreeId: 'wt-1',
+    title: 'Terminal 1',
+    customTitle: null,
+    color: null,
+    sortOrder: 0,
+    createdAt: 0,
+    ...overrides
+  }
+}
 
 function state(overrides: Partial<AppState> = {}): AppState {
   return {
@@ -15,7 +30,7 @@ function state(overrides: Partial<AppState> = {}): AppState {
     repos: [],
     settings: { activeRuntimeEnvironmentId: null },
     tabsByWorktree: {
-      'wt-1': [{ id: 'tab-1' } as never]
+      'wt-1': [terminalTab()]
     },
     worktreesByRepo: {
       repo: [{ id: 'wt-1', repoId: 'repo', path: '/repo/worktree' } as never]
@@ -48,6 +63,24 @@ describe('resolveNativeChatFileLinkContext', () => {
 
   it('returns null when the terminal tab has no worktree owner', () => {
     expect(resolveNativeChatFileLinkContext(state({ tabsByWorktree: {} }), 'tab-1')).toBeNull()
+  })
+
+  it('falls back to repo-scoped worktrees when a known worktree has no path', () => {
+    expect(
+      resolveNativeChatFileLinkContext(
+        state({
+          getKnownWorktreeById: () => ({ id: 'wt-1' }) as never,
+          worktreesByRepo: {
+            repo: [{ id: 'wt-1', repoId: 'repo', path: '/repo/fallback' } as never]
+          }
+        }),
+        'tab-1'
+      )
+    ).toEqual({
+      worktreeId: 'wt-1',
+      worktreePath: '/repo/fallback',
+      runtimeEnvironmentId: null
+    })
   })
 })
 
