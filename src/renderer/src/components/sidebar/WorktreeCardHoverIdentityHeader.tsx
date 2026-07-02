@@ -69,7 +69,7 @@ export function WorktreeCardHoverIdentityHeader({
   return (
     // Why: detail sections keep the left rule; the hover title stays flush so
     // it reads as the panel heading rather than another inset section.
-    <div className="min-w-0" data-worktree-hover-identity-header="">
+    <div className="min-w-0 cursor-text" data-worktree-hover-identity-header="">
       {identityOrder === 'branch-first' ? branchIdentity : workspaceIdentity}
       {identityOrder === 'branch-first' ? workspaceIdentity : branchIdentity}
     </div>
