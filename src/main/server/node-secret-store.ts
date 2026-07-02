@@ -1,5 +1,5 @@
 import { join } from 'node:path'
-import { existsSync, readFileSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
 import {
   createCipheriv,
   createDecipheriv,
@@ -9,7 +9,7 @@ import {
   type DecipherGCM
 } from 'node:crypto'
 import { hostname, userInfo } from 'node:os'
-import { writeSecureFile, hardenExistingSecureFile } from '../../shared/secure-file'
+import { writeSecureFileExclusive, hardenExistingSecureFile } from '../../shared/secure-file'
 import type { SecretStore } from '../../shared/secret-store'
 
 /**
@@ -90,17 +90,13 @@ export class NodeSecretStore implements SecretStore {
     if (this.key) {
       return this.key
     }
-    if (existsSync(this.keyPath)) {
-      try {
-        const stored = Buffer.from(readFileSync(this.keyPath, 'utf8').trim(), 'base64')
-        if (stored.length === 32) {
-          hardenExistingSecureFile(this.keyPath)
-          this.key = stored
-          return stored
-        }
-      } catch {
-        // Fall through and regenerate; a corrupt key file is unrecoverable for
-        // existing ciphertext anyway, so a fresh key is the best we can do.
+    try {
+      const stored = this.readExistingKey()
+      this.key = stored
+      return stored
+    } catch (error) {
+      if (!isNotFoundError(error)) {
+        throw error
       }
     }
     // Why: mix in host/user identity so a key file copied to a different machine
@@ -110,9 +106,29 @@ export class NodeSecretStore implements SecretStore {
       .update(`${hostname()}:${safeUsername()}`)
       .digest()
     const key = Buffer.from(seed)
-    writeSecureFile(this.keyPath, key.toString('base64'))
+    try {
+      writeSecureFileExclusive(this.keyPath, key.toString('base64'))
+    } catch (error) {
+      if (isAlreadyExistsError(error)) {
+        // Another server process won first-run creation; reuse its key instead
+        // of replacing it and orphaning any ciphertext already written.
+        const stored = this.readExistingKey()
+        this.key = stored
+        return stored
+      }
+      throw error
+    }
     this.key = key
     return key
+  }
+
+  private readExistingKey(): Buffer {
+    const stored = Buffer.from(readFileSync(this.keyPath, 'utf8').trim(), 'base64')
+    if (stored.length !== 32) {
+      throw new Error('NodeSecretStore: invalid encryption key file')
+    }
+    hardenExistingSecureFile(this.keyPath)
+    return stored
   }
 }
 
@@ -122,4 +138,21 @@ function safeUsername(): string {
   } catch {
     return 'unknown'
   }
+}
+
+function isNotFoundError(error: unknown): boolean {
+  return isNodeErrorCode(error, 'ENOENT')
+}
+
+function isAlreadyExistsError(error: unknown): boolean {
+  return isNodeErrorCode(error, 'EEXIST')
+}
+
+function isNodeErrorCode(error: unknown, code: string): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    (error as NodeJS.ErrnoException).code === code
+  )
 }

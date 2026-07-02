@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { mkdtempSync, realpathSync, rmSync } from 'node:fs'
+import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { NodeAppEnvironment } from './node-app-environment'
@@ -92,6 +92,16 @@ describe('NodeSecretStore', () => {
     const cipher = new NodeSecretStore({ userDataPath: dir }).encryptString('persist-me')
     // A fresh instance must reuse the persisted key and decrypt successfully.
     expect(new NodeSecretStore({ userDataPath: dir }).decryptString(cipher)).toBe('persist-me')
+  })
+
+  it('does not replace an existing invalid key with a fresh key', () => {
+    const keyPath = join(dir, 'node-secret-store.key')
+    writeFileSync(keyPath, 'not-a-valid-32-byte-key')
+
+    expect(() => new NodeSecretStore({ userDataPath: dir }).encryptString('secret')).toThrow(
+      /invalid encryption key/
+    )
+    expect(readFileSync(keyPath, 'utf8')).toBe('not-a-valid-32-byte-key')
   })
 
   it('rejects non-Orca ciphertext so callers fall back to plaintext-legacy handling', () => {
