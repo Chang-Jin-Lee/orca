@@ -6,7 +6,7 @@ import {
   markComplexScriptOutput,
   resetTerminalWebglSuggestion
 } from './pane-webgl-renderer'
-import { attachLigatures, openTerminal } from './pane-lifecycle'
+import { attachLigatures, openTerminal, setLigaturesEnabled } from './pane-lifecycle'
 import {
   buildDefaultTerminalOptions,
   DEFAULT_TERMINAL_FAST_SCROLL_SENSITIVITY,
@@ -407,6 +407,71 @@ describe('attachLigatures', () => {
     expect(pane.terminal.loadAddon).toHaveBeenCalledTimes(1)
     expect(pane.terminal.refresh).toHaveBeenCalledWith(0, 23)
     expect(pane.ligaturesAddon).not.toBeNull()
+  })
+})
+
+describe('setLigaturesEnabled with a stale attach backoff', () => {
+  beforeEach(() => {
+    webglMock.contextLossHandler = null
+    webglMock.dispose.mockClear()
+    vi.mocked(WebglAddon).mockClear()
+    resetTerminalWebglSuggestion()
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    vi.stubGlobal('navigator', {
+      platform: 'MacIntel',
+      userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)'
+    })
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      callback(16)
+      return 1
+    })
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    vi.restoreAllMocks()
+  })
+
+  // Why: a live WebGL pane must survive a ligature toggle even when another
+  // pane latched the module-global attach backoff on a transient failure. The
+  // reattach here has the same "live addon proves context creation works"
+  // precondition as rebuildAttachedWebgl, so it must clear the backoff too.
+  function latchAttachBackoffFromUnrelatedPane(): void {
+    vi.mocked(WebglAddon).mockImplementationOnce(() => {
+      throw new Error('WebGL2 not supported null')
+    })
+    const failingPane = createPane()
+    failingPane.terminalGpuAcceleration = 'on'
+    attachWebgl(failingPane)
+    expect(failingPane.webglAddon).toBeNull()
+  }
+
+  it('keeps a live pane on WebGL when enabling ligatures', () => {
+    const pane = createPane()
+    pane.terminalGpuAcceleration = 'on'
+    attachWebgl(pane)
+    expect(pane.webglAddon).not.toBeNull()
+
+    latchAttachBackoffFromUnrelatedPane()
+
+    setLigaturesEnabled(pane, true)
+
+    expect(pane.webglAddon).not.toBeNull()
+  })
+
+  it('keeps a live pane on WebGL when disabling ligatures', () => {
+    const pane = createPane()
+    pane.terminalGpuAcceleration = 'on'
+    attachWebgl(pane)
+    attachLigatures(pane)
+    expect(pane.webglAddon).not.toBeNull()
+    expect(pane.ligaturesAddon).not.toBeNull()
+
+    latchAttachBackoffFromUnrelatedPane()
+
+    setLigaturesEnabled(pane, false)
+
+    expect(pane.webglAddon).not.toBeNull()
   })
 })
 

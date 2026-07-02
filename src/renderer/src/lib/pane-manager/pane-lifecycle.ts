@@ -16,7 +16,12 @@ import { activateOrcaTerminalUnicodeProvider } from './pane-terminal-unicode-pro
 import { attachTerminalMouseWheelMultiplier } from './pane-terminal-mouse-wheel'
 import { attachTerminalScrollIntentTracking } from './terminal-scroll-intent'
 import { attachDomRendererFocusClassSync } from './pane-dom-focus-class-sync'
-import { attachWebgl, cancelPendingWebglRefresh, disposeWebgl } from './pane-webgl-renderer'
+import {
+  attachWebgl,
+  cancelPendingWebglRefresh,
+  clearTerminalWebglAttachBackoff,
+  disposeWebgl
+} from './pane-webgl-renderer'
 
 // ---------------------------------------------------------------------------
 // Pane creation, terminal open/close, addon management
@@ -150,6 +155,9 @@ export function attachLigatures(pane: ManagedPaneInternal): void {
     // forces a fresh atlas that includes the ligated glyphs.
     if (pane.webglAddon) {
       disposeWebgl(pane)
+      // Why: the live addon just proved context creation works, so a stale
+      // attach backoff from an unrelated pane must not downgrade this one to DOM.
+      clearTerminalWebglAttachBackoff()
       attachWebgl(pane)
     }
   } catch (err) {
@@ -170,6 +178,9 @@ export function setLigaturesEnabled(pane: ManagedPaneInternal, enabled: boolean)
     // renders as the non-ligated fallback immediately.
     if (pane.webglAddon) {
       disposeWebgl(pane)
+      // Why: the live addon just proved context creation works, so a stale
+      // attach backoff from an unrelated pane must not downgrade this one to DOM.
+      clearTerminalWebglAttachBackoff()
       attachWebgl(pane)
     }
   }
