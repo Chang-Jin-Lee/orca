@@ -363,7 +363,21 @@ describe('registerPtyHandlers', () => {
   afterEach(() => {
     _resetWslCachesForTests()
     vi.useRealTimers()
-    unregisterSshPtyProvider('ssh-1')
+    // Why: sshProviders is module-level state; any id left registered leaks
+    // into later tests (pty:listSessions sweeps every registered provider).
+    for (const leakedConnectionId of [
+      'ssh-1',
+      'ssh-a',
+      'ssh-b',
+      'ssh-expired-runtime',
+      'ssh-fresh-fail',
+      'ssh-reattach-1',
+      'ssh-reattach-fail',
+      'ssh-reattach-ok',
+      'ssh-runtime-env'
+    ]) {
+      unregisterSshPtyProvider(leakedConnectionId)
+    }
     setLocalPtyProvider(new LocalPtyProvider())
     if (savedProcessPlatform) {
       Object.defineProperty(process, 'platform', savedProcessPlatform)
@@ -7164,6 +7178,34 @@ describe('registerPtyHandlers', () => {
     expect(writeAccepted(mainWindowIpcEvent, { id: result.id, data: 1 })).toBe(false)
     expect(writeAccepted(foreignWindowIpcEvent, { id: result.id, data: 'x' })).toBe(false)
     expect(mockProc.proc.write).not.toHaveBeenCalled()
+  })
+
+  it('silently drops writes to a live PTY after ownership loss until pty:listSessions rebuilds it (frozen-terminal repro)', async () => {
+    const mockProc = createMockProc()
+    spawnMock.mockReturnValue(mockProc.proc)
+    registerPtyHandlers(mainWindow as never)
+    const result = (await handlers.get('pty:spawn')!(null, {
+      cols: 80,
+      rows: 24
+    })) as { id: string }
+    const write = getPtyWriteListener()
+
+    write(mainWindowIpcEvent, { id: result.id, data: 'alive' })
+    expect(mockProc.proc.write).toHaveBeenCalledWith('alive')
+
+    // Field failure shape (Discord #performance / #2836): a pane can keep
+    // rendering with a ptyId whose ownership entry is gone while the provider
+    // still holds the live PTY — every keystroke then vanishes with no error,
+    // no log, and no signal back to the renderer.
+    deletePtyOwnership(result.id)
+    write(mainWindowIpcEvent, { id: result.id, data: 'dropped' })
+    expect(mockProc.proc.write).not.toHaveBeenCalledWith('dropped')
+
+    // pty:listSessions rebuilds ownership from provider sessions — the
+    // revival lever the frozen-pane e2e probes depend on.
+    await handlers.get('pty:listSessions')!(null, undefined)
+    write(mainWindowIpcEvent, { id: result.id, data: 'revived' })
+    expect(mockProc.proc.write).toHaveBeenCalledWith('revived')
   })
 
   it('chunks large acknowledged pty writes before provider writes', async () => {
