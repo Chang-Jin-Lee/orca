@@ -393,6 +393,12 @@ async function applyWorkspaceCleanupProgress(
     replace?: false
   ) => void
 ): Promise<void> {
+  if (
+    scanToken !== latestWorkspaceCleanupScanToken ||
+    scanToken === finalizedWorkspaceCleanupScanToken
+  ) {
+    return
+  }
   const state = getState()
   const previousCandidates =
     progress.candidateMode === 'append' &&
@@ -404,6 +410,12 @@ async function applyWorkspaceCleanupProgress(
     state,
     scanToken
   )
+  if (
+    scanToken !== latestWorkspaceCleanupScanToken ||
+    scanToken === finalizedWorkspaceCleanupScanToken
+  ) {
+    return
+  }
   const candidates = mergeWorkspaceCleanupProgressCandidates({
     previousCandidates,
     nextCandidates: enrichedProgressCandidates,
@@ -414,6 +426,7 @@ async function applyWorkspaceCleanupProgress(
     scanToken !== latestWorkspaceCleanupScanToken ||
     scanToken === finalizedWorkspaceCleanupScanToken
   ) {
+    workspaceCleanupProgressCandidateIndex = null
     return
   }
   setState((state) => {
