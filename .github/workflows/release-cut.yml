@@ -16,7 +16,8 @@ name: Cut Release
 #   5. Write package.json, commit (detached), tag, push tag.
 #   6. If ref was the tip of origin/main, fast-forward main to include the
 #      version-bump commit so developers see the right version locally.
-#   7. Build and publish artifacts from the tag.
+#   7. Build artifacts from the tag, publish the matching npm server package,
+#      then publish the GitHub Release.
 
 on:
   workflow_dispatch:
@@ -68,6 +69,7 @@ jobs:
       tag: ${{ steps.tag.outputs.tag || steps.version.outputs.recovered_tag }}
       should_release: ${{ steps.tag.outputs.tag != '' || steps.version.outputs.recovered_tag != '' }}
       latest_published_rc_tag: ${{ steps.publish_drafts.outputs.latest_published_tag }}
+      published_rc_tags_json: ${{ steps.publish_drafts.outputs.published_tags_json }}
     steps:
       - name: Checkout ref
         uses: actions/checkout@v6
@@ -1149,6 +1151,7 @@ jobs:
       - cut
       - build
       - build-mac
+      - publish-orca-server
       - terminal-rendering-golden
     runs-on: ubuntu-latest
     permissions:
@@ -1214,9 +1217,41 @@ jobs:
             --prerelease="$prerelease" \
             --repo "$GITHUB_REPOSITORY"
 
+  publish-orca-server-published-rc-drafts:
+    needs:
+      - cut
+    # Why: publish-complete-draft-releases can expose one or more recovered
+    # RCs before this run cuts a new tag. Publish the matching npm RCs too so
+    # @stablyai/orca-server stays aligned with every public desktop RC.
+    if: ${{ needs.cut.outputs.published_rc_tags_json != '' && needs.cut.outputs.published_rc_tags_json != '[]' }}
+    strategy:
+      fail-fast: true
+      max-parallel: 1
+      matrix:
+        tag: ${{ fromJSON(needs.cut.outputs.published_rc_tags_json) }}
+    uses: ./.github/workflows/publish-orca-server.yml
+    with:
+      tag: ${{ matrix.tag }}
+    secrets: inherit
+
+  publish-orca-server:
+    needs:
+      - cut
+      - build
+      - build-mac
+      - terminal-rendering-golden
+    # Why: make npm part of the release gate. The GitHub Release is only made
+    # public after the same desktop tag has been published to npm.
+    if: ${{ needs.cut.outputs.tag != '' && startsWith(needs.cut.outputs.tag, 'v') }}
+    uses: ./.github/workflows/publish-orca-server.yml
+    with:
+      tag: ${{ needs.cut.outputs.tag }}
+    secrets: inherit
+
   homebrew-bump-published-rc-draft:
     needs:
       - cut
+      - publish-orca-server-published-rc-drafts
     # Why: publish-complete-draft-releases can expose a recovered RC without
     # running the build/publish jobs; still advance the RC cask to that tag.
     if: ${{ needs.cut.outputs.latest_published_rc_tag != '' }}

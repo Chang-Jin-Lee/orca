@@ -306,6 +306,62 @@ describe('Electron runtime package contract', () => {
     expect(copyStep.run).toContain('git add "$CASK_PATH"')
   })
 
+  it('publishes the npm server package from the same desktop release tags', () => {
+    const releaseWorkflow = parse(
+      readFileSync(join(projectDir, '.github/workflows/release-cut.yml'), 'utf8')
+    )
+    const npmWorkflow = parse(
+      readFileSync(join(projectDir, '.github/workflows/publish-orca-server.yml'), 'utf8')
+    )
+    const releaseCutJob = releaseWorkflow.jobs.cut
+    const npmReleaseJob = releaseWorkflow.jobs['publish-orca-server']
+    const npmRecoveredRcJob = releaseWorkflow.jobs['publish-orca-server-published-rc-drafts']
+    const publishReleaseJob = releaseWorkflow.jobs['publish-release']
+    const npmResolveJob = npmWorkflow.jobs.resolve
+    const npmPublishJob = npmWorkflow.jobs.publish
+    const resolveStep = npmResolveJob.steps.find(
+      (step) => step.name === 'Resolve npm version from desktop release tag'
+    )
+    const publishStep = npmPublishJob.steps.find((step) => step.name === 'Publish to npm')
+    const distTagStep = npmPublishJob.steps.find(
+      (step) => step.name === 'Ensure npm dist-tag points at release version'
+    )
+
+    expect(npmWorkflow.on.workflow_call.inputs.tag.required).toBe(true)
+    expect(npmWorkflow.on.workflow_call.secrets.NPM_TOKEN.required).toBe(true)
+    expect(npmWorkflow.on.workflow_dispatch.inputs.tag.required).toBe(true)
+    expect(npmWorkflow.on.push).toBeUndefined()
+
+    expect(resolveStep.run).toContain('npm_dist_tag=alpha')
+    expect(resolveStep.run).toContain('npm_dist_tag=latest')
+    expect(resolveStep.run).toContain('package.json version $package_version does not match')
+    expect(npmWorkflow.jobs.prebuilds.needs).toBe('resolve')
+    expect(npmPublishJob.needs).toEqual(['resolve', 'prebuilds'])
+    expect(publishStep.run).toBe('npm publish --access public --tag "$NPM_DIST_TAG"')
+    expect(publishStep.env.NODE_AUTH_TOKEN).toBe('${{ secrets.NPM_TOKEN }}')
+    expect(distTagStep.run).toContain(
+      'npm dist-tag add "@stablyai/orca-server@$ORCA_SERVER_VERSION" "$NPM_DIST_TAG"'
+    )
+
+    expect(releaseCutJob.outputs.published_rc_tags_json).toBe(
+      '${{ steps.publish_drafts.outputs.published_tags_json }}'
+    )
+    expect(npmReleaseJob.needs).toEqual(['cut', 'build', 'build-mac', 'terminal-rendering-golden'])
+    expect(npmReleaseJob.uses).toBe('./.github/workflows/publish-orca-server.yml')
+    expect(npmReleaseJob.with.tag).toBe('${{ needs.cut.outputs.tag }}')
+    expect(npmReleaseJob.secrets).toBe('inherit')
+    expect(publishReleaseJob.needs).toContain('publish-orca-server')
+
+    expect(npmRecoveredRcJob.strategy['max-parallel']).toBe(1)
+    expect(npmRecoveredRcJob.strategy.matrix.tag).toBe(
+      '${{ fromJSON(needs.cut.outputs.published_rc_tags_json) }}'
+    )
+    expect(npmRecoveredRcJob.with.tag).toBe('${{ matrix.tag }}')
+    expect(releaseWorkflow.jobs['homebrew-bump-published-rc-draft'].needs).toContain(
+      'publish-orca-server-published-rc-drafts'
+    )
+  })
+
   it('installs the Electron package binary in PR checks without changing native module ABI', () => {
     const prWorkflow = readFileSync(join(projectDir, '.github/workflows/pr.yml'), 'utf8')
     const parsedWorkflow = parse(prWorkflow)
