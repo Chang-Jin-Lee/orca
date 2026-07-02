@@ -3,6 +3,26 @@ import type { AiVaultListResult, AiVaultSession } from '../../../../shared/ai-va
 
 const SESSION_LIMIT = 500
 
+// Panel entry and window refocus must show sessions started since the last
+// scan, so they bypass the main process's 15s cache — but a full scan parses
+// up to ~1000 transcripts, so bound forced scans to one per interval. Module
+// scope so the throttle survives panel remounts (the panel unmounts per tab).
+const FORCED_RESCAN_MIN_INTERVAL_MS = 5_000
+let lastForcedRescanAt = 0
+
+function consumeForcedRescanBudget(): boolean {
+  const now = Date.now()
+  if (now - lastForcedRescanAt < FORCED_RESCAN_MIN_INTERVAL_MS) {
+    return false
+  }
+  lastForcedRescanAt = now
+  return true
+}
+
+export function resetAiVaultForcedRescanThrottleForTest(): void {
+  lastForcedRescanAt = 0
+}
+
 type AiVaultRefreshArgs = { force?: boolean; background?: boolean }
 
 export function useAiVaultSessionRefresh(scopePaths: readonly string[]): {
@@ -40,6 +60,11 @@ export function useAiVaultSessionRefresh(scopePaths: readonly string[]): {
     refreshInFlightRef.current = true
     const refreshId = refreshIdRef.current + 1
     refreshIdRef.current = refreshId
+    // A manual force scan counts against the throttle so an auto rescan right
+    // after the button press doesn't trigger a second full scan.
+    if (args.force === true) {
+      lastForcedRescanAt = Date.now()
+    }
     // Background (refocus) refreshes usually resolve from the main-process
     // cache; suppressing the loading flag avoids a spinner flash on every
     // return to the app.
@@ -101,20 +126,20 @@ export function useAiVaultSessionRefresh(scopePaths: readonly string[]): {
   }, [])
 
   // Re-scan on mount and whenever the active scope changes, since the scanner
-  // tailors its in-scope results to scopePaths.
+  // tailors its in-scope results to scopePaths. Force (throttled) so
+  // re-entering the panel shows sessions newer than the 15s cache.
   useEffect(() => {
-    void refresh()
+    void refresh({ force: consumeForcedRescanBudget() })
   }, [refresh, scopePathsKey])
 
   // Sessions started while the app was backgrounded should appear when the
-  // user returns; non-force so the main process's 15s scan cache rate-limits
-  // rapid focus flips.
+  // user returns, so refocus also bypasses the scan cache (throttled).
   useEffect(() => {
     const onRefocus = (): void => {
       if (document.visibilityState !== 'visible') {
         return
       }
-      void refresh({ background: true })
+      void refresh({ background: true, force: consumeForcedRescanBudget() })
     }
     window.addEventListener('focus', onRefocus)
     document.addEventListener('visibilitychange', onRefocus)

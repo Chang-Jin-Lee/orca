@@ -4,7 +4,10 @@ import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AiVaultListResult } from '../../../../shared/ai-vault-types'
-import { useAiVaultSessionRefresh } from './ai-vault-session-refresh'
+import {
+  resetAiVaultForcedRescanThrottleForTest,
+  useAiVaultSessionRefresh
+} from './ai-vault-session-refresh'
 
 const EMPTY_RESULT: AiVaultListResult = {
   sessions: [],
@@ -46,10 +49,19 @@ async function dispatch(target: EventTarget, type: string): Promise<void> {
   await flushMicrotasks()
 }
 
+let nowMs = 1_000_000
+
+function advanceClock(ms: number): void {
+  nowMs += ms
+}
+
 beforeEach(() => {
   listSessionsMock.mockReset().mockResolvedValue(EMPTY_RESULT)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- test-only window.api shim
   ;(window as any).api = { aiVault: { listSessions: listSessionsMock } }
+  nowMs = 1_000_000
+  vi.spyOn(Date, 'now').mockImplementation(() => nowMs)
+  resetAiVaultForcedRescanThrottleForTest()
 })
 
 afterEach(() => {
@@ -59,16 +71,28 @@ afterEach(() => {
 })
 
 describe('useAiVaultSessionRefresh refocus behavior', () => {
-  it('re-scans without force when the window regains focus', async () => {
+  it('bypasses the scan cache on mount so panel entry shows new sessions', async () => {
+    await renderHook()
+    await flushMicrotasks()
+
+    expect(listSessionsMock).toHaveBeenCalledTimes(1)
+    expect(listSessionsMock.mock.calls[0]?.[0]).toMatchObject({ force: true })
+  })
+
+  it('re-scans with a cache bypass on refocus once the throttle allows it', async () => {
     await renderHook()
     await flushMicrotasks()
     expect(listSessionsMock).toHaveBeenCalledTimes(1)
 
+    // Within the throttle window a refocus still refreshes, but from cache.
     await dispatch(window, 'focus')
-
     expect(listSessionsMock).toHaveBeenCalledTimes(2)
-    // Non-force so the main process's 15s scan cache rate-limits focus flips.
-    expect(listSessionsMock.mock.calls[1]?.[0]).toMatchObject({ force: undefined })
+    expect(listSessionsMock.mock.calls[1]?.[0]).toMatchObject({ force: false })
+
+    advanceClock(6_000)
+    await dispatch(window, 'focus')
+    expect(listSessionsMock).toHaveBeenCalledTimes(3)
+    expect(listSessionsMock.mock.calls[2]?.[0]).toMatchObject({ force: true })
   })
 
   it('re-scans when the document becomes visible again', async () => {
@@ -152,5 +176,19 @@ describe('useAiVaultSessionRefresh refocus behavior', () => {
     })
 
     expect(listSessionsMock).toHaveBeenLastCalledWith(expect.objectContaining({ force: true }))
+  })
+
+  it('counts a manual force refresh against the rescan throttle', async () => {
+    await renderHook()
+    await flushMicrotasks()
+
+    advanceClock(6_000)
+    await act(async () => {
+      await latest?.refresh({ force: true })
+    })
+
+    // The button just scanned; an immediate refocus reuses that fresh cache.
+    await dispatch(window, 'focus')
+    expect(listSessionsMock).toHaveBeenLastCalledWith(expect.objectContaining({ force: false }))
   })
 })
