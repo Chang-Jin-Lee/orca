@@ -75,6 +75,11 @@ import {
 import { translate } from '@/i18n/i18n'
 
 const POLL_MS = 2_000
+// Why: while the popover is open the Resource Manager is in explicit use, so
+// the session inventory is refreshed on this slower cadence (matching the
+// former background poll rate). This stays gated on `open`, so the closed
+// status-bar badge never runs a global daemon PTY inventory.
+const SESSION_LIST_POLL_MS = 10_000
 
 type SortOption = 'memory' | 'cpu' | 'name'
 
@@ -891,8 +896,17 @@ export function ResourceUsageStatusSegment({
     const memTimer = window.setInterval(() => {
       void fetchSnapshot()
     }, POLL_MS)
+    // Why: while the popover stays open, an externally-exited or newly-spawned
+    // session (daemon-side, another window, a crash) would otherwise keep the
+    // list and the trigger/orphan counts stale until the user acts. Re-poll the
+    // session inventory on the slower cadence — only while open, so the closed
+    // badge never reintroduces a background global daemon scan.
+    const sessionsTimer = window.setInterval(() => {
+      void refreshSessions()
+    }, SESSION_LIST_POLL_MS)
     return () => {
       window.clearInterval(memTimer)
+      window.clearInterval(sessionsTimer)
     }
   }, [open, runtimeEnvironmentActive, fetchSnapshot, refreshSessions])
 
@@ -900,8 +914,17 @@ export function ResourceUsageStatusSegment({
     if (runtimeEnvironmentActive) {
       setSessions([])
       setSessionsError(false)
+      return
     }
-  }, [runtimeEnvironmentActive])
+    // Why: a transient sessionsError raised while the popover was open can no
+    // longer self-heal in the background once closed (no closed-popover poll),
+    // so it would leave the always-visible "daemon unreachable" badge stuck
+    // even after the daemon recovers. Clear it on close; the next open
+    // re-evaluates reachability from a fresh refreshSessions().
+    if (!open) {
+      setSessionsError(false)
+    }
+  }, [open, runtimeEnvironmentActive])
 
   const repoDisplayNameById = useMemo(() => {
     const map = new Map<string, string>()
