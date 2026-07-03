@@ -11996,13 +11996,36 @@ describe('connectPanePty', () => {
     const manager = createManager(1)
     const deps = createDeps()
 
-    connectPanePty(pane as never, manager as never, deps as never)
+    const binding = connectPanePty(pane as never, manager as never, deps as never)
     await flushAsyncTicks()
-    await vi.advanceTimersByTimeAsync(2_000)
+    // Why: connect wiring and the first cadence sample land after an
+    // environment-dependent number of async ticks; drive until the codex
+    // foreground sample is actually observed before simulating the exit.
+    for (
+      let elapsed = 0;
+      elapsed < 10_000 && api.pty.getForegroundProcess.mock.calls.length === 0;
+      elapsed += 250
+    ) {
+      binding.syncProcessTracking()
+      await vi.advanceTimersByTimeAsync(250)
+    }
+    expect(api.pty.getForegroundProcess.mock.calls.length).toBeGreaterThan(0)
+    await vi.advanceTimersByTimeAsync(250)
+    await flushAsyncTicks()
 
     foregroundProcess = null
-    await vi.advanceTimersByTimeAsync(1_500)
+    // Why: the exit backstop needs two idle inspection samples on a jittered
+    // cadence, and scheduleNextPoll early-returns are permanent until the next
+    // startProcessTracking call; re-arm each step and advance until the repair
+    // lands so environment-sensitive interleaving cannot strand the poll loop.
+    const repairedRowState = (): string | undefined =>
+      (mockStoreState.agentStatusByPaneKey[paneKey] as { state?: string } | undefined)?.state
+    for (let elapsed = 0; elapsed < 30_000 && repairedRowState() !== 'done'; elapsed += 500) {
+      binding.syncProcessTracking()
+      await vi.advanceTimersByTimeAsync(500)
+    }
 
+    expect(api.pty.getForegroundProcess.mock.calls.length).toBeGreaterThan(2)
     expect(mockStoreState.agentStatusByPaneKey[paneKey]).toMatchObject({
       state: 'done',
       prompt: 'Handle vanished Codex process',
