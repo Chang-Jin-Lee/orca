@@ -221,6 +221,34 @@ own wins (freeze class, bounded memory, input-loss guards) must be validated
 with freeze scenarios and real typing, not DSR. Also learned: dev-mode runs
 are ~2× slower across the board and fences need `--dsr-timeout-ms` headroom.
 
+### 2026-07-02 — 51× loss attributed: scheduler fixed-nap drip (task #9)
+
+The renderer output scheduler (`pane-terminal-output-scheduler.ts`) drained
+at most 2×16KB per tick, then slept 4ms (high-priority) / 16ms (background)
+regardless of parse speed. Isolation bench (fake timers, instant-parse
+terminal — `pane-terminal-output-scheduler-throughput.bench.test.ts`,
+`ORCA_TERMINAL_PERF_BENCH=1`): **background cadence = 1.9 MB/s — matching
+prod's measured 2.0 MB/s agent-tui ceiling**; foreground = 27 MB/s (only
+when arrivals re-poke 0ms drains; Chromium's ~4ms timer clamp makes the
+sustained real-world HP ceiling ~8 MB/s). Classification: pty-connection's
+`isLatencySensitiveForegroundOutput` routes sizable no-recent-input chunks
+to the queue, so floods always ride the drip.
+
+Fix (committed 9e8bb2243): high-priority drains are now **parse-clocked** —
+a pacer re-arms a 0ms drain when xterm's write callback confirms the batch
+parsed — and carry 8 writes/tick (128KB ≈ 1.3ms parse). Isolation ceiling:
+27 → **117.6 MB/s** (parse-limited). Background cadence deliberately
+unchanged (protects the focused pane; hidden panes are term-speed-2's job).
+`DRAIN_TIME_BUDGET_MS` still bounds tick work (cooperative-drain intent of
+#7139 preserved; its budget-yield test still passes). 621 tests green.
+
+Open follow-ups from this attribution: (a) end-to-end dev verification (in
+progress); (b) whether main's `background:true` delivery marking demotes
+visible-pane floods to the background drip — check
+`window.__terminalOutputSchedulerDebug` counters in a dev run; (c) ascii-log
+gap (13 vs 83 MB/s headless) — likely per-chunk `beforeWrite` side-effect
+scanning; profile after (a).
+
 ## Success criteria (baseline-relative; finalize after task 1)
 
 - DSR-under-load p90 in Orca within striking distance of iTerm2 on the same
