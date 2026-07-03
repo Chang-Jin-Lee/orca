@@ -1,65 +1,34 @@
+import { stripTerminalControl } from './terminal-control-sequence-strip'
+
 type CodexErrorOutputStatusDetector = {
   observe: (data: string) => boolean
   reset: () => void
 }
 
-const ESC = String.fromCharCode(0x1b)
-const BEL = String.fromCharCode(0x07)
-const ANSI_ESCAPE_RE = new RegExp(
-  `${ESC}(?:[@-Z\\\\-_]|\\[[0-?]*[ -/]*[@-~]|\\][^${BEL}]*(?:${BEL}|${ESC}\\\\))`,
-  'g'
-)
-const INCOMPLETE_ANSI_ESCAPE_RE = new RegExp(
-  `${ESC}(?:\\[[0-?]*[ -/]*|\\][^${BEL}${ESC}]*|\\S?)?$`,
-  'g'
-)
 const CODEX_STREAM_DISCONNECTED_MARKER = 'stream disconnected before completion:'
-const CODEX_STREAM_DISCONNECTED_CARRY_LENGTH = CODEX_STREAM_DISCONNECTED_MARKER.length - 1
+const MARKER_SEAM_LENGTH = CODEX_STREAM_DISCONNECTED_MARKER.length - 1
 const MAX_PENDING_STREAM_ERROR_LINE_LENGTH = 8_000
+// Why: the fatal line's prefix (quote, grep filename, echo chrome) can land in
+// an earlier chunk than the marker; keep the unterminated line's tail so the
+// prefix check still sees it after a chunk split.
+const LINE_CONTEXT_LIMIT = 300
 const RETRY_NOTICE_RE = /;\s*retrying\b/
 
-function terminalControlMayAffectText(data: string): boolean {
-  for (let index = 0; index < data.length; index += 1) {
-    const code = data.charCodeAt(index)
-    if (
-      code === 0x0d ||
-      code === 0x1b ||
-      (code <= 0x1f && code !== 0x0a) ||
-      (code >= 0x7f && code <= 0x9f)
-    ) {
-      return true
-    }
+function updateLineContext(lineContext: string, data: string): string {
+  const lastTerminator = Math.max(data.lastIndexOf('\r'), data.lastIndexOf('\n'))
+  if (lastTerminator >= 0) {
+    return data.length - (lastTerminator + 1) > LINE_CONTEXT_LIMIT
+      ? data.slice(-LINE_CONTEXT_LIMIT)
+      : data.slice(lastTerminator + 1)
   }
-  return false
+  if (data.length >= LINE_CONTEXT_LIMIT) {
+    return data.slice(-LINE_CONTEXT_LIMIT)
+  }
+  return (lineContext + data).slice(-LINE_CONTEXT_LIMIT)
 }
 
-function stripTerminalControl(data: string): string {
-  if (!terminalControlMayAffectText(data)) {
-    return data
-  }
-  const withoutAnsi = data.replace(ANSI_ESCAPE_RE, '').replace(INCOMPLETE_ANSI_ESCAPE_RE, '')
-  let output = ''
-  for (let index = 0; index < withoutAnsi.length; index += 1) {
-    const code = withoutAnsi.charCodeAt(index)
-    if ((code <= 0x1f && code !== 0x0a && code !== 0x0d) || (code >= 0x7f && code <= 0x9f)) {
-      continue
-    }
-    output += withoutAnsi[index]
-  }
-  return output
-}
-
-function appendMarkerCarry(carry: string, data: string): string {
-  if (data.length >= CODEX_STREAM_DISCONNECTED_CARRY_LENGTH) {
-    return data.slice(-CODEX_STREAM_DISCONNECTED_CARRY_LENGTH)
-  }
-  return (carry + data).slice(-CODEX_STREAM_DISCONNECTED_CARRY_LENGTH)
-}
-
-function updatePendingLine(pendingLine: string, data: string): string {
-  return (pendingLine + data).slice(0, MAX_PENDING_STREAM_ERROR_LINE_LENGTH)
-}
-
+// Why: a bare \r truncates the extracted message at the first wrapped or
+// redrawn row; acceptable for a repair heuristic — the state fix still lands.
 function findLineEnd(value: string, start: number): number {
   const carriageReturnIndex = value.indexOf('\r', start)
   const newlineIndex = value.indexOf('\n', start)
@@ -79,10 +48,10 @@ function findLineStart(value: string, markerIndex: number): number {
 }
 
 function isLikelyCodexFatalLinePrefix(prefix: string): boolean {
-  const trimmed = prefix.trim()
-  // Why: transient retry notices prefix the marker with words like
-  // "stream error:"; Codex's fatal TUI cell only has whitespace/glyph chrome.
-  return trimmed === '' || !/[A-Za-z0-9:/"'`|\\-]/.test(trimmed)
+  // Why: codex renders the fatal cell as "■ {message}" (or the bare line in
+  // exec mode); echoes of the error text — exec-output "└"/indent rows,
+  // queued-prompt "›", quotes, grep output — must not complete a live turn.
+  return prefix === '' || prefix.trim() === '■'
 }
 
 function normalizeStreamErrorLine(line: string): string | null {
@@ -133,53 +102,62 @@ function findCompletedStreamErrorLine(rawText: string): {
 export function createCodexErrorOutputStatusDetector(args: {
   onStreamError: (message: string) => void
 }): CodexErrorOutputStatusDetector {
-  let markerCarry = ''
+  let lineContext = ''
   let pendingLine: string | null = null
 
   const reset = (): void => {
-    markerCarry = ''
+    lineContext = ''
     pendingLine = null
+  }
+
+  const scanForCompletedLine = (rawText: string): boolean => {
+    const result = findCompletedStreamErrorLine(rawText)
+    pendingLine = result.pendingLine
+    if (!result.message) {
+      return false
+    }
+    args.onStreamError(result.message)
+    return true
   }
 
   return {
     observe(data: string): boolean {
       if (pendingLine !== null) {
-        pendingLine = updatePendingLine(pendingLine, data)
-        const lineEnd = findLineEnd(pendingLine, 0)
-        if (lineEnd === -1 && pendingLine.length < MAX_PENDING_STREAM_ERROR_LINE_LENGTH) {
-          markerCarry = appendMarkerCarry(markerCarry, data)
+        const combined = (pendingLine + data).slice(0, MAX_PENDING_STREAM_ERROR_LINE_LENGTH)
+        const lineEnd = findLineEnd(combined, 0)
+        lineContext = updateLineContext(lineContext, data)
+        if (lineEnd === -1 && combined.length < MAX_PENDING_STREAM_ERROR_LINE_LENGTH) {
+          pendingLine = combined
           return false
         }
-        const message = normalizeStreamErrorLine(
-          lineEnd === -1 ? pendingLine : pendingLine.slice(0, lineEnd)
-        )
         pendingLine = null
-        markerCarry = appendMarkerCarry(markerCarry, data)
-        if (!message) {
+        const message = normalizeStreamErrorLine(
+          lineEnd === -1 ? combined : combined.slice(0, lineEnd)
+        )
+        if (message) {
+          args.onStreamError(message)
+          return true
+        }
+        // Why: a pending line can resolve into a rejected retry notice whose
+        // chunk already carries the real fatal line — rescan the remainder.
+        return lineEnd === -1 ? false : scanForCompletedLine(combined.slice(lineEnd + 1))
+      }
+
+      const previousLineContext = lineContext
+      lineContext = updateLineContext(previousLineContext, data)
+      if (!data.includes(CODEX_STREAM_DISCONNECTED_MARKER)) {
+        if (
+          previousLineContext === '' ||
+          !(
+            previousLineContext.slice(-MARKER_SEAM_LENGTH) + data.slice(0, MARKER_SEAM_LENGTH)
+          ).includes(CODEX_STREAM_DISCONNECTED_MARKER)
+        ) {
           return false
         }
-        args.onStreamError(message)
-        return true
       }
-
-      const seam = markerCarry + data.slice(0, CODEX_STREAM_DISCONNECTED_CARRY_LENGTH)
-      if (
-        !data.includes(CODEX_STREAM_DISCONNECTED_MARKER) &&
-        !seam.includes(CODEX_STREAM_DISCONNECTED_MARKER)
-      ) {
-        markerCarry = appendMarkerCarry(markerCarry, data)
-        return false
-      }
-
-      const rawText = data.includes(CODEX_STREAM_DISCONNECTED_MARKER) ? data : markerCarry + data
-      const result = findCompletedStreamErrorLine(rawText)
-      pendingLine = result.pendingLine
-      markerCarry = appendMarkerCarry(markerCarry, data)
-      if (!result.message) {
-        return false
-      }
-      args.onStreamError(result.message)
-      return true
+      // Why: prepend the current line's earlier chunks so a marker at the
+      // chunk edge keeps its true prefix and seam-split markers complete.
+      return scanForCompletedLine(previousLineContext + data)
     },
     reset
   }

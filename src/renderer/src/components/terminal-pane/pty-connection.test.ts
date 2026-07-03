@@ -1633,6 +1633,118 @@ describe('connectPanePty', () => {
     })
   })
 
+  it('does not complete a new turn when a remounted pane repaints the handled error line', async () => {
+    const { connectPanePty } = await import('./pty-connection')
+    const firstDataCallback: { current: ((data: string) => void) | null } = { current: null }
+    const firstTransport = createMockTransport()
+    firstTransport.connect.mockImplementation(
+      async ({ callbacks }: { callbacks: ConnectCallbacks }) => {
+        firstDataCallback.current = callbacks.onData ?? null
+        return 'pty-codex'
+      }
+    )
+    transportFactoryQueue.push(firstTransport)
+
+    const paneKey = makePaneKey('tab-1', LEAF_1)
+    mockStoreState.agentStatusByPaneKey[paneKey] = {
+      paneKey,
+      state: 'working',
+      prompt: 'First turn',
+      agentType: 'codex',
+      updatedAt: Date.now(),
+      stateStartedAt: Date.now(),
+      stateHistory: []
+    }
+
+    const firstBinding = connectPanePty(
+      createPane(1) as never,
+      createManager(1) as never,
+      createDeps() as never
+    )
+    await flushAsyncTicks()
+    expect(firstDataCallback.current).not.toBeNull()
+
+    const fatalLine =
+      '■ stream disconnected before completion: error sending request for url (http://openclaw:2455/backend-api/codex/responses)\r\n'
+    firstDataCallback.current?.(fatalLine)
+    expect(mockStoreState.agentStatusByPaneKey[paneKey]).toMatchObject({ state: 'done' })
+    firstBinding.dispose()
+
+    mockStoreState.setAgentStatus.mockClear()
+    mockStoreState.agentStatusByPaneKey[paneKey] = {
+      paneKey,
+      state: 'working',
+      prompt: 'Second turn',
+      agentType: 'codex',
+      updatedAt: Date.now(),
+      stateStartedAt: Date.now() + 1,
+      stateHistory: []
+    }
+
+    const secondDataCallback: { current: ((data: string) => void) | null } = { current: null }
+    const secondTransport = createMockTransport()
+    secondTransport.connect.mockImplementation(
+      async ({ callbacks }: { callbacks: ConnectCallbacks }) => {
+        secondDataCallback.current = callbacks.onData ?? null
+        return 'pty-codex'
+      }
+    )
+    transportFactoryQueue.push(secondTransport)
+    connectPanePty(createPane(1) as never, createManager(1) as never, createDeps() as never)
+    await flushAsyncTicks()
+    expect(secondDataCallback.current).not.toBeNull()
+
+    secondDataCallback.current?.(fatalLine)
+
+    expect(mockStoreState.setAgentStatus).not.toHaveBeenCalled()
+    expect(mockStoreState.agentStatusByPaneKey[paneKey]).toMatchObject({
+      state: 'working',
+      prompt: 'Second turn'
+    })
+  })
+
+  it('preserves tool detail when repairing a working row from a title completion', async () => {
+    const { connectPanePty } = await import('./pty-connection')
+    const transport = createMockTransport('pty-codex')
+    transportFactoryQueue.push(transport)
+
+    const paneKey = makePaneKey('tab-1', LEAF_1)
+    mockStoreState.agentStatusByPaneKey[paneKey] = {
+      paneKey,
+      state: 'working',
+      prompt: 'Run the migration',
+      agentType: 'codex',
+      updatedAt: Date.now(),
+      stateStartedAt: Date.now(),
+      stateHistory: [],
+      toolName: 'Bash',
+      toolInput: 'pnpm run migrate'
+    }
+
+    connectPanePty(createPane(1) as never, createManager(1) as never, createDeps() as never)
+
+    const titleHandler = createdTransportOptions[0]?.onTitleChange as
+      | ((title: string, rawTitle: string) => void)
+      | undefined
+    if (!titleHandler) {
+      throw new Error('Expected onTitleChange to be registered')
+    }
+    titleHandler('Codex working', 'Codex working')
+    titleHandler('Codex done', 'Codex done')
+
+    expect(mockStoreState.setAgentStatus).toHaveBeenCalledWith(
+      paneKey,
+      expect.objectContaining({
+        state: 'done',
+        prompt: 'Run the migration',
+        agentType: 'codex',
+        toolName: 'Bash',
+        toolInput: 'pnpm run migrate'
+      }),
+      expect.anything()
+    )
+  })
+
   it('does not run stream-disconnect completion for idle panes with no working Codex row', async () => {
     const { connectPanePty } = await import('./pty-connection')
     const capturedDataCallback: { current: ((data: string) => void) | null } = { current: null }
