@@ -258,6 +258,36 @@ describe('terminal mouse wheel multiplier', () => {
     expect(reports).toEqual([0, 0, 0, 1])
   })
 
+  it('suppresses a decaying trackpad-like momentum tail after active scrolling', () => {
+    const state = createTerminalTuiMouseWheelDistanceState()
+
+    const reports = [16, 20, 24, 28, 20, 12, 6, 3].map((deltaY, index) =>
+      resolveTerminalTuiMouseWheelReportCount(
+        { deltaY, deltaMode: DOM_DELTA_PIXEL, timeStamp: index * 16 },
+        1,
+        state,
+        { cellHeight: 16 }
+      )
+    )
+
+    expect(reports).toEqual([1, 1, 2, 2, 0, 0, 0, 0])
+  })
+
+  it('suppresses alternating trackpad-like momentum after direction changes', () => {
+    const state = createTerminalTuiMouseWheelDistanceState()
+
+    const reports = [16, 20, 24, -16, -20, -24, -18, -10, 6, -4].map((deltaY, index) =>
+      resolveTerminalTuiMouseWheelReportCount(
+        { deltaY, deltaMode: DOM_DELTA_PIXEL, timeStamp: index * 16 },
+        1,
+        state,
+        { cellHeight: 16 }
+      )
+    )
+
+    expect(reports).toEqual([1, 1, 2, 1, 1, 2, 0, 0, 0, 0])
+  })
+
   it('resets pending fractional distance when the user changes direction', () => {
     const state = createTerminalTuiMouseWheelDistanceState()
 

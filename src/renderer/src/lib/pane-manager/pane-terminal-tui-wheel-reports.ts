@@ -11,6 +11,10 @@ const TUI_WHEEL_BURST_MAX_INTERVAL_MS = 45
 const TUI_WHEEL_BURST_MAX_BONUS_ROWS = 3
 const TUI_WHEEL_BURST_RAMP_EVENTS = 4
 const TUI_WHEEL_MOMENTUM_TAIL_DECAY_RATIO = 0.85
+const TUI_TRACKPAD_MOMENTUM_TAIL_DECAY_RATIO = 0.85
+const TUI_TRACKPAD_TAIL_IDLE_MS = 120
+const TUI_TRACKPAD_TAIL_REENGAGE_DISTANCE_ROWS = 1
+const TUI_TRACKPAD_TAIL_REENGAGE_RATIO = 1.5
 const TUI_WHEEL_COMPRESSED_MAX_DISTANCE_ROWS_PER_EVENT = 6
 const TUI_WHEEL_BURST_MAX_DISTANCE_ROWS_PER_EVENT = 9
 
@@ -40,6 +44,10 @@ export type TerminalTuiMouseWheelDistanceState = {
   lastInputAt: number | null
   pendingDirection: -1 | 0 | 1
   pendingRows: number
+  trackpadLastDirection: -1 | 0 | 1
+  trackpadLastDistanceRows: number | null
+  trackpadLastInputAt: number | null
+  trackpadTailActive: boolean
 }
 
 export function createTerminalTuiMouseWheelDistanceState(): TerminalTuiMouseWheelDistanceState {
@@ -48,7 +56,11 @@ export function createTerminalTuiMouseWheelDistanceState(): TerminalTuiMouseWhee
     lastDistanceRows: null,
     lastInputAt: null,
     pendingDirection: 0,
-    pendingRows: 0
+    pendingRows: 0,
+    trackpadLastDirection: 0,
+    trackpadLastDistanceRows: null,
+    trackpadLastInputAt: null,
+    trackpadTailActive: false
   }
 }
 
@@ -92,11 +104,25 @@ function canBurstBoostWheelEvent(event: TerminalTuiWheelEventInput): boolean {
   return hasDiscreteLegacyWheelDelta(event)
 }
 
+function isTrackpadLikePixelWheelEvent(event: TerminalTuiWheelEventInput): boolean {
+  return (
+    (event.deltaMode ?? DOM_DELTA_PIXEL) === DOM_DELTA_PIXEL &&
+    !isDiscreteTerminalTuiWheelEvent(event)
+  )
+}
+
 function wheelInputTime(event: TerminalTuiWheelEventInput): number | null {
   if (typeof event.timeStamp === 'number' && Number.isFinite(event.timeStamp)) {
     return event.timeStamp
   }
   return null
+}
+
+function resetTrackpadMomentumState(state: TerminalTuiMouseWheelDistanceState): void {
+  state.trackpadLastDirection = 0
+  state.trackpadLastDistanceRows = null
+  state.trackpadLastInputAt = null
+  state.trackpadTailActive = false
 }
 
 function normalizeCellHeight(cellHeight: number | undefined): number {
@@ -184,6 +210,60 @@ function resolveBurstWheelDistanceRows(
   return TUI_WHEEL_BURST_MAX_BONUS_ROWS * cadence * (state.fastStreak / TUI_WHEEL_BURST_RAMP_EVENTS)
 }
 
+function shouldSuppressTrackpadMomentumTail(
+  event: TerminalTuiWheelEventInput,
+  state: TerminalTuiMouseWheelDistanceState,
+  distanceRows: number
+): boolean {
+  if (!isTrackpadLikePixelWheelEvent(event)) {
+    resetTrackpadMomentumState(state)
+    return false
+  }
+
+  const currentInputAt = wheelInputTime(event)
+  const elapsedMs =
+    currentInputAt === null || state.trackpadLastInputAt === null
+      ? null
+      : currentInputAt - state.trackpadLastInputAt
+  if (elapsedMs !== null && elapsedMs > TUI_TRACKPAD_TAIL_IDLE_MS) {
+    resetTrackpadMomentumState(state)
+  }
+
+  const direction = resolveTerminalWheelDirection(event)
+  const lastDistanceRows = state.trackpadLastDistanceRows
+  const isDecayingSameDirection =
+    state.trackpadLastDirection === direction &&
+    lastDistanceRows !== null &&
+    distanceRows < lastDistanceRows * TUI_TRACKPAD_MOMENTUM_TAIL_DECAY_RATIO
+  const isStrongNewGesture =
+    lastDistanceRows !== null &&
+    distanceRows >= TUI_TRACKPAD_TAIL_REENGAGE_DISTANCE_ROWS &&
+    distanceRows > lastDistanceRows * TUI_TRACKPAD_TAIL_REENGAGE_RATIO
+
+  if (state.trackpadTailActive && !isStrongNewGesture) {
+    state.trackpadLastDirection = direction
+    state.trackpadLastDistanceRows = distanceRows
+    state.trackpadLastInputAt = currentInputAt
+    state.pendingRows = 0
+    return true
+  }
+
+  if (isDecayingSameDirection) {
+    state.trackpadTailActive = true
+    state.trackpadLastDirection = direction
+    state.trackpadLastDistanceRows = distanceRows
+    state.trackpadLastInputAt = currentInputAt
+    state.pendingRows = 0
+    return true
+  }
+
+  state.trackpadTailActive = false
+  state.trackpadLastDirection = direction
+  state.trackpadLastDistanceRows = distanceRows
+  state.trackpadLastInputAt = currentInputAt
+  return false
+}
+
 export function normalizeTerminalTuiMouseWheelMultiplier(value: number | undefined): number {
   if (typeof value !== 'number' || !Number.isFinite(value)) {
     return TERMINAL_TUI_MOUSE_WHEEL_MULTIPLIER
@@ -212,6 +292,10 @@ export function resolveTerminalTuiMouseWheelReportCount(
   state.pendingDirection = direction
 
   const distanceRows = resolveWheelDistanceRows(event, metrics)
+  if (shouldSuppressTrackpadMomentumTail(event, state, distanceRows)) {
+    return 0
+  }
+
   const rows =
     Math.min(
       TUI_WHEEL_BURST_MAX_DISTANCE_ROWS_PER_EVENT,
