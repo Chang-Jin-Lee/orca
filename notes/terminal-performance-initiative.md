@@ -175,6 +175,38 @@ BMW-group crash work remains the team's priority gate above all of this
 (#7150's wedge guards overlap it); this plan runs measurement and revival
 prep in parallel without displacing it.
 
+## Findings log
+
+### 2026-07-02 — baseline + decomposition (results committed in tools/benchmarks/results/)
+
+Same machine, unattended serial runs (Orca 1.4.91 prod, Terminal.app, Ghostty
+1.3.1; iTerm2 not installed, VS Code pending):
+
+| metric | Orca prod | Terminal.app | Ghostty |
+|---|---|---|---|
+| DSR idle p50/p99 (ms) | 0.69 / 22.7 | 0.35 / 0.68 | 0.19 / 0.72 |
+| DSR under 1 MB/s agent load p50/p99 (ms) | **134 / 292** | 0.45 / 7.9 | 0.21 / 6.1 |
+| agent-tui fenced throughput | **2.0 MB/s** | 37 | 78 |
+| ascii-log fenced throughput | 13 MB/s | 39 | 93 |
+
+Decomposition of the 51× agent-tui gap — both pipeline ends are fast:
+
+- Bare `@xterm/headless` (114×85, scrollback 5000): agent-tui **103 MB/s**
+  (`terminal-headless-parse-bench.mjs`). The xterm parser is not the problem.
+- Daemon `Session` ingest (emulator + pending-output recording + fanout):
+  agent-tui **103 MB/s** (`session-ingest-throughput.bench.test.ts`,
+  `ORCA_TERMINAL_PERF_BENCH=1`). The daemon is not the problem.
+
+Conclusions: (1) idle latency is fine — the extra process hop costs ~0.5 ms,
+so the utilityProcess router is deprioritized by data; (2) the crisis is
+queueing between daemon egress and renderer parse completion — main
+per-chunk processing, the 512 KB delivery/ACK pacing (ACKs fire after
+renderer write callbacks, so renderer slowness throttles delivery
+multiplicatively), and renderer per-chunk layers above xterm; (3) the
+agent-TUI shape (DEC-2026 frames + erase/repaint) is 6.5× worse than plain
+text inside Orca while being equal-cost everywhere else — profile it in the
+renderer first (task #9).
+
 ## Success criteria (baseline-relative; finalize after task 1)
 
 - DSR-under-load p90 in Orca within striking distance of iTerm2 on the same
