@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   TERMINAL_TUI_MOUSE_WHEEL_MULTIPLIER,
   attachTerminalMouseWheelMultiplier,
-  createTerminalTuiMouseWheelAccelerationState,
+  createTerminalTuiMouseWheelDistanceState,
   normalizeTerminalTuiMouseWheelMultiplier,
   resolveTerminalTuiMouseWheelReportCount,
   shouldMultiplyTerminalMouseWheel
@@ -90,47 +90,175 @@ describe('terminal mouse wheel multiplier', () => {
     expect(normalizeTerminalTuiMouseWheelMultiplier(20)).toBe(10)
   })
 
-  it('keeps deliberate TUI wheel ticks precise even with a fast max', () => {
-    const state = createTerminalTuiMouseWheelAccelerationState()
+  it('keeps deliberate TUI wheel ticks precise at the one-report setting', () => {
+    const state = createTerminalTuiMouseWheelDistanceState()
 
-    const reports = [0, 200, 400, 600].map((timeStamp) =>
-      resolveTerminalTuiMouseWheelReportCount({ deltaY: 12, timeStamp }, 5, state)
+    const reports = [0, 200, 400, 600].map(() =>
+      resolveTerminalTuiMouseWheelReportCount(
+        { deltaY: 12, deltaMode: DOM_DELTA_PIXEL, wheelDeltaY: -120 },
+        1,
+        state,
+        { cellHeight: 16 }
+      )
     )
 
     expect(reports).toEqual([1, 1, 1, 1])
   })
 
-  it('keeps the one-report setting precise even during fast TUI wheel bursts', () => {
-    const state = createTerminalTuiMouseWheelAccelerationState()
+  it('scales notched TUI wheel ticks by the configured multiplier', () => {
+    const state = createTerminalTuiMouseWheelDistanceState()
 
-    const reports = [0, 50, 100, 150, 200, 250].map((timeStamp) =>
-      resolveTerminalTuiMouseWheelReportCount({ deltaY: 12, timeStamp }, 1, state)
+    const reports = [0, 50, 100, 150].map(() =>
+      resolveTerminalTuiMouseWheelReportCount(
+        { deltaY: 12, deltaMode: DOM_DELTA_PIXEL, wheelDeltaY: -120 },
+        5,
+        state,
+        { cellHeight: 16 }
+      )
     )
 
-    expect(reports).toEqual([1, 1, 1, 1, 1, 1])
+    expect(reports).toEqual([5, 5, 5, 5])
   })
 
-  it('accelerates repeated same-direction TUI wheel ticks with a front-loaded curve', () => {
-    const state = createTerminalTuiMouseWheelAccelerationState()
+  it('keeps paced 1x TUI wheel ticks precise', () => {
+    const state = createTerminalTuiMouseWheelDistanceState()
 
-    const reports = [0, 50, 100, 150, 200, 250].map((timeStamp) =>
-      resolveTerminalTuiMouseWheelReportCount({ deltaY: 12, timeStamp }, 5, state)
+    const reports = [0, 80, 160, 240].map((timeStamp) =>
+      resolveTerminalTuiMouseWheelReportCount(
+        { deltaY: 12, deltaMode: DOM_DELTA_PIXEL, wheelDeltaY: -120, timeStamp },
+        1,
+        state,
+        { cellHeight: 16 }
+      )
     )
 
-    expect(reports).toEqual([1, 5, 5, 5, 5, 5])
+    expect(reports).toEqual([1, 1, 1, 1])
   })
 
-  it('resets TUI wheel acceleration when the user changes direction', () => {
-    const state = createTerminalTuiMouseWheelAccelerationState()
+  it('adds a burst boost for very fast 1x TUI wheel scrolling', () => {
+    const state = createTerminalTuiMouseWheelDistanceState()
+
+    const reports = [0, 16, 32, 48, 64].map((timeStamp) =>
+      resolveTerminalTuiMouseWheelReportCount(
+        { deltaY: 12, deltaMode: DOM_DELTA_PIXEL, wheelDeltaY: -120, timeStamp },
+        1,
+        state,
+        { cellHeight: 16 }
+      )
+    )
+
+    expect(reports).toEqual([1, 1, 3, 3, 4])
+  })
+
+  it('uses a hotter compressed wheel distance curve for larger TUI wheel movements', () => {
+    const state = createTerminalTuiMouseWheelDistanceState()
 
     const reports = [
-      resolveTerminalTuiMouseWheelReportCount({ deltaY: 12, timeStamp: 0 }, 5, state),
-      resolveTerminalTuiMouseWheelReportCount({ deltaY: 12, timeStamp: 50 }, 5, state),
-      resolveTerminalTuiMouseWheelReportCount({ deltaY: -12, timeStamp: 100 }, 5, state),
-      resolveTerminalTuiMouseWheelReportCount({ deltaY: -12, timeStamp: 150 }, 5, state)
+      resolveTerminalTuiMouseWheelReportCount(
+        { deltaY: 16, deltaMode: DOM_DELTA_PIXEL, wheelDeltaY: -120 },
+        1,
+        state,
+        { cellHeight: 16 }
+      ),
+      resolveTerminalTuiMouseWheelReportCount(
+        { deltaY: 16 * 12, deltaMode: DOM_DELTA_PIXEL, wheelDeltaY: -120 * 12 },
+        1,
+        state,
+        { cellHeight: 16 }
+      )
     ]
 
-    expect(reports).toEqual([1, 5, 1, 5])
+    expect(reports).toEqual([1, 6])
+  })
+
+  it('caps a single accelerated TUI wheel event before it becomes a huge jump', () => {
+    const state = createTerminalTuiMouseWheelDistanceState()
+
+    const reports = resolveTerminalTuiMouseWheelReportCount(
+      { deltaY: 16 * 200, deltaMode: DOM_DELTA_PIXEL, wheelDeltaY: -120 * 200 },
+      1,
+      state,
+      { cellHeight: 16 }
+    )
+
+    expect(reports).toBe(6)
+  })
+
+  it('lets aggressive repeated TUI wheel events exceed the single-event cap', () => {
+    const state = createTerminalTuiMouseWheelDistanceState()
+
+    const reports = [0, 16, 32, 48, 64].map((timeStamp) =>
+      resolveTerminalTuiMouseWheelReportCount(
+        {
+          deltaY: 16 * 200,
+          deltaMode: DOM_DELTA_PIXEL,
+          timeStamp,
+          wheelDeltaY: -120 * 200
+        },
+        1,
+        state,
+        { cellHeight: 16 }
+      )
+    )
+
+    expect(reports).toEqual([6, 6, 8, 8, 9])
+  })
+
+  it('does not carry burst boost into a decaying momentum tail', () => {
+    const state = createTerminalTuiMouseWheelDistanceState()
+
+    const reports = [
+      [200, 0],
+      [200, 16],
+      [200, 32],
+      [80, 48],
+      [20, 64],
+      [5, 80]
+    ].map(([rows, timeStamp]) =>
+      resolveTerminalTuiMouseWheelReportCount(
+        {
+          deltaY: 16 * rows,
+          deltaMode: DOM_DELTA_PIXEL,
+          timeStamp,
+          wheelDeltaY: -120 * rows
+        },
+        1,
+        state,
+        { cellHeight: 16 }
+      )
+    )
+
+    expect(reports).toEqual([6, 6, 8, 6, 6, 4])
+  })
+
+  it('retains fractional trackpad distance until it reaches a full row', () => {
+    const state = createTerminalTuiMouseWheelDistanceState()
+
+    const reports = [4, 4, 4, 4].map((deltaY) =>
+      resolveTerminalTuiMouseWheelReportCount({ deltaY, deltaMode: DOM_DELTA_PIXEL }, 1, state, {
+        cellHeight: 16
+      })
+    )
+
+    expect(reports).toEqual([0, 0, 0, 1])
+  })
+
+  it('resets pending fractional distance when the user changes direction', () => {
+    const state = createTerminalTuiMouseWheelDistanceState()
+
+    const reports = [
+      resolveTerminalTuiMouseWheelReportCount({ deltaY: 4, deltaMode: DOM_DELTA_PIXEL }, 1, state, {
+        cellHeight: 16
+      }),
+      resolveTerminalTuiMouseWheelReportCount(
+        { deltaY: -12, deltaMode: DOM_DELTA_PIXEL },
+        1,
+        state,
+        { cellHeight: 16 }
+      )
+    ]
+
+    expect(reports).toEqual([0, 0])
   })
 
   it('multiplies discrete wheel events when mouse reporting is active', () => {
@@ -204,7 +332,8 @@ describe('terminal mouse wheel multiplier', () => {
         attachCustomWheelEventHandler: (handler) => {
           handlers.push(handler)
         },
-        element: target
+        element: target,
+        rows: 24
       },
       { getTuiMouseWheelMultiplier: () => 1 }
     )
@@ -229,10 +358,9 @@ describe('terminal mouse wheel multiplier', () => {
     expect(shouldMultiplyTerminalMouseWheel(dispatched[0]!, target)).toBe(false)
   })
 
-  it('paces accelerated TUI wheel reports after the immediate first report', async () => {
+  it('drains resolved TUI wheel reports without a frame-rate cap', async () => {
     vi.stubGlobal('WheelEvent', TestWheelEvent)
     const handlers: ((event: WheelEvent) => boolean)[] = []
-    const scheduledFrames: (() => void)[] = []
     const target = Object.assign(new EventTarget(), {
       classList: {
         contains: (className: string) => className === 'enable-mouse-events'
@@ -245,11 +373,11 @@ describe('terminal mouse wheel multiplier', () => {
         attachCustomWheelEventHandler: (handler) => {
           handlers.push(handler)
         },
-        element: target
+        element: target,
+        rows: 24
       },
       {
-        getTuiMouseWheelMultiplier: () => 3,
-        scheduleWheelReplayFrame: (callback) => scheduledFrames.push(callback)
+        getTuiMouseWheelMultiplier: () => 3
       }
     )
     const firstEvent = new TestWheelEvent('wheel', {
@@ -283,14 +411,10 @@ describe('terminal mouse wheel multiplier', () => {
 
     expect(handlers[0]?.(firstEvent)).toBe(false)
     await Promise.resolve()
-    expect(dispatched).toHaveLength(1)
+    expect(dispatched).toHaveLength(3)
 
     expect(handlers[0]?.(secondEvent)).toBe(false)
     await Promise.resolve()
-    expect(dispatched).toHaveLength(2)
-    expect(scheduledFrames).toHaveLength(1)
-
-    scheduledFrames.shift()?.()
-    expect(dispatched).toHaveLength(4)
+    expect(dispatched).toHaveLength(6)
   })
 })

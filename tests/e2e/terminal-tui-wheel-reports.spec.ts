@@ -1,7 +1,12 @@
 import type { Page } from '@stablyai/playwright-test'
+import path from 'node:path'
 import { test, expect } from './helpers/orca-app'
 import { ensureTerminalVisible, waitForActiveWorktree, waitForSessionReady } from './helpers/store'
-import { waitForActiveTerminalManager } from './helpers/terminal'
+import {
+  execInTerminal,
+  waitForActivePanePtyId,
+  waitForActiveTerminalManager
+} from './helpers/terminal'
 
 type WheelReportSample = {
   reportCount: number
@@ -14,6 +19,10 @@ type TimedWheelReportSample = WheelReportSample & {
 }
 
 const PHYSICAL_MOUSE_WHEEL_DELTA = -120
+const VISIBLE_TUI_FIXTURE_PATH = path.join(
+  process.cwd(),
+  'tests/e2e/fixtures/visible-tui-scroll-fixture.cjs'
+)
 
 async function probeSmallMouseWheelReports(
   page: Page,
@@ -194,6 +203,82 @@ async function probeTimedSmallMouseWheelReports(
   )
 }
 
+async function readVisibleTuiOffset(page: Page): Promise<number | null> {
+  return page.evaluate(() => {
+    const state = window.__store?.getState()
+    const worktreeId = state?.activeWorktreeId
+    const tabId =
+      state?.activeTabType === 'terminal'
+        ? state.activeTabId
+        : worktreeId
+          ? (state?.activeTabIdByWorktree?.[worktreeId] ?? null)
+          : null
+    const manager = tabId ? window.__paneManagers?.get(tabId) : null
+    const pane = manager?.getActivePane?.() ?? manager?.getPanes?.()[0] ?? null
+    if (!pane?.terminal) {
+      return null
+    }
+
+    for (let row = 0; row < pane.terminal.rows; row += 1) {
+      const text = pane.terminal.buffer.active.getLine(row)?.translateToString(true) ?? ''
+      const match = /TUI_SCROLL_ROW_(\d+)/.exec(text)
+      if (match) {
+        return Number(match[1])
+      }
+    }
+    return null
+  })
+}
+
+async function dispatchTuiWheel(
+  page: Page,
+  options: {
+    deltaY: number
+    wheelDeltaY?: number
+  }
+): Promise<void> {
+  await page.evaluate(({ deltaY, wheelDeltaY }) => {
+    const state = window.__store?.getState()
+    const worktreeId = state?.activeWorktreeId
+    const tabId =
+      state?.activeTabType === 'terminal'
+        ? state.activeTabId
+        : worktreeId
+          ? (state?.activeTabIdByWorktree?.[worktreeId] ?? null)
+          : null
+    const manager = tabId ? window.__paneManagers?.get(tabId) : null
+    const pane = manager?.getActivePane?.() ?? manager?.getPanes?.()[0] ?? null
+    if (!pane?.terminal.element) {
+      throw new Error('Active terminal pane unavailable')
+    }
+
+    const screen = pane.terminal.element.querySelector<HTMLElement>('.xterm-screen')
+    if (!screen) {
+      throw new Error('Active terminal screen unavailable')
+    }
+    const rect = screen.getBoundingClientRect()
+    const event = new WheelEvent('wheel', {
+      bubbles: true,
+      cancelable: true,
+      clientX: rect.left + rect.width / 2,
+      clientY: rect.top + Math.min(rect.height - 1, 40),
+      deltaMode: WheelEvent.DOM_DELTA_PIXEL,
+      deltaY
+    })
+    if (wheelDeltaY !== undefined) {
+      Object.defineProperty(event, 'wheelDeltaY', {
+        configurable: true,
+        value: wheelDeltaY
+      })
+      Object.defineProperty(event, 'wheelDelta', {
+        configurable: true,
+        value: wheelDeltaY
+      })
+    }
+    pane.terminal.element.dispatchEvent(event)
+  }, options)
+}
+
 test.describe('terminal TUI wheel reports', () => {
   test('notched mouse wheel ticks produce immediate mouse-reporting TUI scroll reports', async ({
     orcaPage
@@ -215,9 +300,92 @@ test.describe('terminal TUI wheel reports', () => {
     expect(samples.at(-1)?.reports.join('')).toContain('\x1b[<65;')
   })
 
-  test('fast notched mouse wheel ticks accelerate while slow ticks stay precise', async ({
+  test('fullscreen mouse-reporting TUI scroll distance follows wheel magnitude @headful', async ({
+    electronApp,
     orcaPage
   }) => {
+    await electronApp.evaluate(({ BrowserWindow }) => {
+      const win = BrowserWindow.getAllWindows()[0]
+      if (!win) {
+        throw new Error('No BrowserWindow available')
+      }
+      if (win.isMinimized()) {
+        win.restore()
+      }
+      win.show()
+      win.focus()
+      win.setFullScreen(true)
+    })
+    await expect
+      .poll(() =>
+        electronApp.evaluate(
+          ({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.isFullScreen() ?? false
+        )
+      )
+      .toBe(true)
+    await orcaPage.waitForTimeout(1200)
+
+    await waitForSessionReady(orcaPage)
+    await waitForActiveWorktree(orcaPage)
+    await ensureTerminalVisible(orcaPage)
+    await waitForActiveTerminalManager(orcaPage, 30_000)
+    await orcaPage.evaluate(() =>
+      window.__store?.getState().updateSettings({ terminalTuiScrollSensitivity: 1 })
+    )
+
+    const ptyId = await waitForActivePanePtyId(orcaPage)
+    await execInTerminal(orcaPage, ptyId, `node ${JSON.stringify(VISIBLE_TUI_FIXTURE_PATH)}`)
+
+    await expect
+      .poll(() => readVisibleTuiOffset(orcaPage), {
+        timeout: 10_000,
+        message: 'visible fullscreen TUI did not render numbered rows'
+      })
+      .toBe(0)
+
+    await dispatchTuiWheel(orcaPage, {
+      deltaY: 10,
+      wheelDeltaY: PHYSICAL_MOUSE_WHEEL_DELTA
+    })
+    await expect
+      .poll(() => readVisibleTuiOffset(orcaPage), {
+        timeout: 5_000,
+        message: 'single notched wheel tick did not visibly scroll the TUI'
+      })
+      .toBe(1)
+
+    const cellHeight = await orcaPage.evaluate(() => {
+      const state = window.__store?.getState()
+      const worktreeId = state?.activeWorktreeId
+      const tabId =
+        state?.activeTabType === 'terminal'
+          ? state.activeTabId
+          : worktreeId
+            ? (state?.activeTabIdByWorktree?.[worktreeId] ?? null)
+            : null
+      const manager = tabId ? window.__paneManagers?.get(tabId) : null
+      const pane = manager?.getActivePane?.() ?? manager?.getPanes?.()[0] ?? null
+      const screen = pane?.terminal.element?.querySelector<HTMLElement>('.xterm-screen')
+      if (!pane?.terminal || !screen) {
+        throw new Error('Active terminal screen unavailable')
+      }
+      return screen.getBoundingClientRect().height / pane.terminal.rows
+    })
+
+    await dispatchTuiWheel(orcaPage, {
+      deltaY: cellHeight * 12,
+      wheelDeltaY: PHYSICAL_MOUSE_WHEEL_DELTA * 12
+    })
+
+    await expect
+      .poll(() => readVisibleTuiOffset(orcaPage), {
+        timeout: 5_000,
+        message: 'larger wheel movement did not visibly move the TUI farther'
+      })
+      .toBe(7)
+  })
+
+  test('TUI scroll setting scales notched mouse wheel reports', async ({ orcaPage }) => {
     await waitForSessionReady(orcaPage)
     await waitForActiveWorktree(orcaPage)
     await ensureTerminalVisible(orcaPage)
@@ -232,17 +400,22 @@ test.describe('terminal TUI wheel reports', () => {
       ticks: 5
     })
     await orcaPage.waitForTimeout(220)
-    const fast = await probeTimedSmallMouseWheelReports(orcaPage, {
+    const paced = await probeTimedSmallMouseWheelReports(orcaPage, {
       drainWaitMs: 220,
-      intervalMs: 40,
+      intervalMs: 80,
       ticks: 5
     })
 
-    expect(slow.reports.length, `slow SGR mouse reports: ${JSON.stringify(slow.samples)}`).toBe(5)
     expect(
-      fast.samples.map((sample) => sample.reportDelta),
-      `fast per-tick SGR mouse reports: ${JSON.stringify(fast.samples)}`
-    ).toEqual([1, 5, 5, 5, 5])
-    expect(fast.reports.length, `fast SGR mouse reports: ${JSON.stringify(fast.samples)}`).toBe(21)
+      slow.samples.map((sample) => sample.reportDelta),
+      `slow per-tick SGR mouse reports: ${JSON.stringify(slow.samples)}`
+    ).toEqual([5, 5, 5, 5, 5])
+    expect(
+      paced.samples.map((sample) => sample.reportDelta),
+      `paced per-tick SGR mouse reports: ${JSON.stringify(paced.samples)}`
+    ).toEqual([5, 5, 5, 5, 5])
+    expect(paced.reports.length, `paced SGR mouse reports: ${JSON.stringify(paced.samples)}`).toBe(
+      25
+    )
   })
 })
