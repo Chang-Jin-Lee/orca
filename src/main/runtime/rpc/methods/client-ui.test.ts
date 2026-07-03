@@ -182,7 +182,16 @@ describe('client UI RPC methods', () => {
         githubItemsQuery: 'is:open',
         githubProjectHiddenFieldIdsByView: {
           'project-1:view-1': ['field-1']
-        }
+        },
+        linearMode: 'projects',
+        linearContext: {
+          kind: 'project',
+          id: 'project-9',
+          workspaceId: 'workspace-1',
+          model: 'project'
+        },
+        jiraPreset: 'assigned',
+        jiraQuery: 'ENG'
       },
       workspaceCleanup: {
         dismissals: {
@@ -218,7 +227,16 @@ describe('client UI RPC methods', () => {
         githubItemsQuery: 'is:open',
         githubProjectHiddenFieldIdsByView: {
           'project-1:view-1': ['field-1']
-        }
+        },
+        linearMode: 'projects',
+        linearContext: {
+          kind: 'project',
+          id: 'project-9',
+          workspaceId: 'workspace-1',
+          model: 'project'
+        },
+        jiraPreset: 'assigned',
+        jiraQuery: 'ENG'
       },
       workspaceCleanup: {
         dismissals: {
