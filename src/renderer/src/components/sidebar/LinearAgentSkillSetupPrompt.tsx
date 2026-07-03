@@ -115,9 +115,8 @@ export function LinearAgentSkillSetupPrompt({
     sourceKinds: GLOBAL_AGENT_SKILL_SOURCE_KINDS
   })
   const command = useMemo(
-    () =>
-      buildSkillCommandForRuntime(ORCA_LINEAR_SKILL_INSTALL_COMMAND, agentRuntime, currentPlatform),
-    [agentRuntime, currentPlatform]
+    () => buildSkillCommandForRuntime(ORCA_LINEAR_SKILL_INSTALL_COMMAND, agentRuntime),
+    [agentRuntime]
   )
   const canonicalSkillInstalled = hasInstalledAgentSkill(skill.skills, ORCA_LINEAR_SKILL_NAME, {
     sourceKinds: GLOBAL_AGENT_SKILL_SOURCE_KINDS
@@ -132,8 +131,8 @@ export function LinearAgentSkillSetupPrompt({
       ? ORCA_LINEAR_SKILL_UPDATE_COMMAND
       : LINEAR_TICKETS_SKILL_UPDATE_COMMAND
   const installedCommand = useMemo(
-    () => buildSkillCommandForRuntime(updateCommand, agentRuntime, currentPlatform),
-    [agentRuntime, updateCommand, currentPlatform]
+    () => buildSkillCommandForRuntime(updateCommand, agentRuntime),
+    [agentRuntime, updateCommand]
   )
   const terminalShellOverride = getLinearPromptTerminalShellOverride(
     currentPlatform,

@@ -6,7 +6,6 @@ import { createRoot, type Root } from 'react-dom/client'
 import type { CliInstallStatus } from '../../../../shared/cli-install-types'
 import type { DiscoveredSkill } from '../../../../shared/skills'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type * as CliSkillRuntimeSetupModule from '../settings/CliSkillRuntimeSetup'
 import {
   LinearAgentSkillSetupPrompt,
   _linearAgentSkillSetupPromptInternalsForTests
@@ -37,8 +36,8 @@ vi.mock('@/lib/agent-skill-cli-prerequisite', () => ({
     status?.state === 'installed' && status.pathConfigured
 }))
 
-vi.mock('../settings/CliSkillRuntimeSetup', async (importOriginal) => ({
-  ...(await importOriginal<typeof CliSkillRuntimeSetupModule>()),
+vi.mock('../settings/CliSkillRuntimeSetup', () => ({
+  buildSkillCommandForRuntime: (command: string) => command,
   ensureWslCliAvailableForAgentSkillTerminal: vi.fn(async () => null),
   getWslCliDistroRequest: () => undefined
 }))
@@ -178,52 +177,6 @@ describe('LinearAgentSkillSetupPrompt update command', () => {
 
     expect(mocks.panelProps.at(-1)).toEqual(
       expect.objectContaining({ installedCommand: 'npx skills update orca-linear --global' })
-    )
-  })
-
-  it('uses add instead of update for installed canonical Linear skills on native Windows', async () => {
-    mocks.skillState.skills = [discoveredSkill({ name: 'orca-linear' })]
-
-    await renderPrompt({ currentPlatform: 'win32' })
-
-    expect(mocks.panelProps.at(-1)).toEqual(
-      expect.objectContaining({
-        installedCommand:
-          'npx skills add https://github.com/stablyai/orca --skill orca-linear --global'
-      })
-    )
-  })
-
-  it('uses add instead of update for installed legacy Linear skills on native Windows', async () => {
-    mocks.skillState.skills = [legacyLinearSkillPath()]
-
-    await renderPrompt({ currentPlatform: 'win32' })
-
-    expect(mocks.panelProps.at(-1)).toEqual(
-      expect.objectContaining({
-        installedCommand:
-          'npx skills add https://github.com/stablyai/orca --skill linear-tickets --global'
-      })
-    )
-  })
-
-  it('keeps WSL Linear skill updates on the update path from Windows hosts', async () => {
-    mocks.skillState.skills = [discoveredSkill({ name: 'orca-linear' })]
-
-    await renderPrompt({
-      currentPlatform: 'win32',
-      settings: {
-        localAgentRuntime: 'wsl',
-        localAgentWslDistro: 'Fedora',
-        terminalWindowsShell: 'wsl.exe',
-        activeRuntimeEnvironmentId: null
-      }
-    })
-
-    expect(mocks.panelProps.at(-1)).toEqual(
-      expect.objectContaining({
-        installedCommand: expect.stringContaining('npx skills update orca-linear --global')
-      })
     )
   })
 })
