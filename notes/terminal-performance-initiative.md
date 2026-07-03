@@ -120,6 +120,31 @@ Ack-driven pause/resume of the actual PTY through the daemon protocol
 (≤500 KB). Converts flood-induced buffered lag into shell blocking — the
 correct physics. Sequence after #7139 lands (interacts with its drain pacing).
 
+Design (2026-07-03, implement after the term-speed-2 revival merges —
+same files):
+
+- Signal source: main already tracks per-pty pending + in-flight
+  (`pendingData`, `rendererInFlightCharsByPty` in `ipc/pty.ts`). When a
+  pty's pending exceeds HIGH (256 KB), main asks the producer to pause;
+  below LOW (32 KB), resume.
+- Producer side: two new protocol notifications (`pausePty`/`resumePty`,
+  protocol vNext, version-gated like `supportsIncrementalCheckpoints`);
+  daemon `Session` calls node-pty `pause()`/`resume()` — stops reading the
+  pty fd, kernel buffer fills, the shell blocks on write: true kernel
+  backpressure, identical physics to VS Code's 100k/5k design.
+  `LocalPtyProvider` calls pause/resume directly.
+- Safety invariants: (1) failsafe auto-resume after 5 s regardless of
+  watermark, so a lost resume can never wedge a shell; (2) resume on
+  detach/exit/kill/daemon-reconnect; (3) pause must not suppress the
+  interactive-echo bypass — with the pipeline fixed (11.5 MB/s dev), the
+  HIGH watermark is only reachable during genuine floods where echo is
+  already queued; (4) PTY reads never stop for model/tail ingestion
+  (term-speed-2 invariant #1) — pause gates the fd read, so daemon-side
+  emulator state pauses with it, which is correct (state = what was read).
+- Tests: watermark transition unit tests, lost-resume failsafe, kill/exit
+  cleanup, plus an e2e pressure scenario asserting bounded main memory and
+  a blocked producer (`yes` exits promptly on SIGINT while paused).
+
 ### 6. Extend the measurement rig
 
 - True keypress→pixel latency: Typometer manual protocol (the DSR probe stops
