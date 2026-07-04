@@ -105,6 +105,24 @@ describe('resolveComposerBranchSelection', () => {
     ).toBe('feature/user-profile')
   })
 
+  it('falls back to the sanitized path for slash names git would reject', () => {
+    // Why: a slash name that also contains a git-invalid character (space,
+    // trailing slash, or `..`) must NOT be passed verbatim — check-ref-format
+    // would reject it and abort worktree creation. Return undefined so the
+    // backend re-derives a valid branch from the sanitized name.
+    for (const workspaceName of ['feature/my branch', 'feature/', 'feature/..x']) {
+      expect(
+        resolveComposerBranchNameOverrideForCreate({
+          branchNameOverride: undefined,
+          branchAutoName: '',
+          workspaceName,
+          preserveWorkspaceNameEdits: false,
+          createBranchFromWorkspaceName: true
+        })
+      ).toBeUndefined()
+    }
+  })
+
   it('keeps plain typed branch names on the existing sanitized-name path', () => {
     expect(
       resolveComposerBranchNameOverrideForCreate({

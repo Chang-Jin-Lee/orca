@@ -100,6 +100,33 @@ export function resolveComposerReuseOverride(args: {
 }
 
 /**
+ * True when `name` is a branch ref `git check-ref-format --branch` would
+ * accept. Mirrors git's rules synchronously so branch mode can preserve a
+ * slash-containing typed name only when git will actually take it — an invalid
+ * name (space, trailing slash, `..`, etc.) must fall back to the sanitized-name
+ * derivation instead of being passed verbatim and aborting worktree creation.
+ */
+function isValidGitBranchName(name: string): boolean {
+  if (name.length === 0 || name.startsWith('-')) {
+    return false
+  }
+  if (name.startsWith('/') || name.endsWith('/') || name.includes('//')) {
+    return false
+  }
+  if (name.endsWith('.') || name.includes('..') || name.includes('@{') || name === '@') {
+    return false
+  }
+  // Disallowed: control chars, space, and ~ ^ : ? * [ \ DEL.
+  // eslint-disable-next-line no-control-regex -- Why: git rejects control chars in refs.
+  if (/[\x00-\x20\x7f~^:?*[\\]/.test(name)) {
+    return false
+  }
+  return !name
+    .split('/')
+    .some((segment) => segment.length === 0 || segment.startsWith('.') || segment.endsWith('.lock'))
+}
+
+/**
  * The branch-name override to apply when creating a worktree from the composer.
  *
  * With no resolver-provided override, branch mode (#6721) keeps a
@@ -118,8 +145,12 @@ export function resolveComposerBranchNameOverrideForCreate(args: {
 }): string | undefined {
   if (!args.branchNameOverride) {
     // Why: branch mode keeps slash-containing git branch names while the
-    // workspace folder name may still be sanitized separately.
-    return args.createBranchFromWorkspaceName && args.workspaceName.includes('/')
+    // workspace folder name may still be sanitized separately. Only preserve
+    // names git will accept as a ref — otherwise fall back to the sanitized
+    // derivation so `check-ref-format` doesn't reject the override and abort.
+    return args.createBranchFromWorkspaceName &&
+      args.workspaceName.includes('/') &&
+      isValidGitBranchName(args.workspaceName)
       ? args.workspaceName
       : undefined
   }
