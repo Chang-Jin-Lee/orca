@@ -7,7 +7,11 @@ import { useAppStore } from '@/store'
 import { makePaneKey } from '../../../shared/stable-pane-id'
 import type { PaneForegroundAgentEntry } from '@/store/slices/pane-foreground-agent'
 import type { TerminalTab, TuiAgent } from '../../../shared/types'
-import { resolveTabAgentFromSignals, useTabAgent } from './use-tab-agent'
+import {
+  resolveLaunchedAgentExitEvidence,
+  resolveTabAgentFromSignals,
+  useTabAgent
+} from './use-tab-agent'
 
 const initialAppState = useAppStore.getInitialState()
 const LEAF_ID = '11111111-1111-4111-8111-111111111111'
@@ -121,6 +125,24 @@ describe('resolveTabAgentFromSignals process identity', () => {
         launchAgent: 'codex'
       })
     ).toBe('codex')
+  })
+})
+
+describe('resolveLaunchedAgentExitEvidence shell-foreground gate', () => {
+  const baseArgs = {
+    title: '✳ Claude Code',
+    hasObservedAgentSignal: true,
+    hookAgent: null,
+    hasCompletedHook: false,
+    processShellForeground: true
+  }
+
+  it('counts shell-foreground proof as local launched-agent exit evidence', () => {
+    expect(resolveLaunchedAgentExitEvidence({ ...baseArgs, isRemote: false })).toBe(true)
+  })
+
+  it('never counts a shell-foreground flag as remote launched-agent exit evidence', () => {
+    expect(resolveLaunchedAgentExitEvidence({ ...baseArgs, isRemote: true })).toBe(false)
   })
 })
 

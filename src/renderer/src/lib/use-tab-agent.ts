@@ -45,7 +45,9 @@ export function resolveLaunchedAgentExitEvidence(args: {
   }
   // Why: OSC 133;D proved the foreground returned to the shell — process-grade
   // exit evidence that doesn't depend on the agent leaving a clean title.
-  if (args.processShellForeground && args.hasObservedAgentSignal) {
+  // Local-only by construction (remote panes have no shell-foreground producer);
+  // the gate keeps the invariant even for out-of-pipeline callers.
+  if (!args.isRemote && args.processShellForeground && args.hasObservedAgentSignal) {
     return true
   }
   if (!titleShowsNoAgent(args.title, args.defaultTitle)) {

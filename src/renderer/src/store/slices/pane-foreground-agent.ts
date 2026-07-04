@@ -61,6 +61,9 @@ export const createPaneForegroundAgentSlice: StateCreator<
     set((s) => clearEntriesByTabPrefixes(s.paneForegroundAgentByPaneKey, [`${tabIdPrefix}:`]) ?? s)
   },
   clearPaneForegroundAgentByWorktree: (worktreeId) => {
+    // Why: entries carry no worktreeId, so this must run while the worktree's
+    // tabs are still in tabsByWorktree (removeWorktree prunes them only after
+    // awaiting terminal teardown).
     set((s) => {
       const prefixes = (s.tabsByWorktree[worktreeId] ?? []).map((tab) => `${tab.id}:`)
       return clearEntriesByTabPrefixes(s.paneForegroundAgentByPaneKey, prefixes) ?? s

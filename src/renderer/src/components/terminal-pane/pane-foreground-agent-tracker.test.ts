@@ -87,14 +87,32 @@ describe('createPaneForegroundAgentTracker', () => {
     expect(publish).toHaveBeenLastCalledWith({ agent: null, shellForeground: false })
   })
 
-  it('publishes shell foreground when the read lands after a fast command already exited', async () => {
-    readForegroundProcess.mockResolvedValue('zsh')
+  it('does not treat a nested shell seen mid-command as prompt proof', async () => {
+    // Why: 133;D cancels pending reads, so a read that still runs means the
+    // command is live — a shell foreground here is a nested sh/bash, and a
+    // shell-foreground mark would suppress live title identity in the pane.
+    readForegroundProcess.mockResolvedValue('sh')
+    const tracker = makeTracker()
+
+    tracker.onCommandStarted()
+    await flushSettleRead(
+      COMMAND_SETTLE_MS + WRAPPER_RESOLVE_RETRY_MS + SECOND_WRAPPER_RETRY_MS + 10_000
+    )
+
+    expect(readForegroundProcess).toHaveBeenCalledTimes(3)
+    expect(publish).not.toHaveBeenCalledWith({ agent: null, shellForeground: true })
+    expect(publish).toHaveBeenLastCalledWith({ agent: null, shellForeground: false })
+  })
+
+  it('recognizes an agent started from a nested shell on a ladder re-read', async () => {
+    readForegroundProcess.mockResolvedValueOnce('bash').mockResolvedValueOnce('gemini')
     const tracker = makeTracker()
 
     tracker.onCommandStarted()
     await flushSettleRead(COMMAND_SETTLE_MS)
+    await flushSettleRead(WRAPPER_RESOLVE_RETRY_MS)
 
-    expect(publish).toHaveBeenLastCalledWith({ agent: null, shellForeground: true })
+    expect(publish).toHaveBeenLastCalledWith({ agent: 'gemini', shellForeground: false })
   })
 
   it('marks shell foreground on command finished without any foreground read', () => {

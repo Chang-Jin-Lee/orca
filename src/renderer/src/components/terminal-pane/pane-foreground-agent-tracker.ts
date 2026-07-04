@@ -1,5 +1,4 @@
 import { recognizeAgentProcess } from '../../../../shared/agent-process-recognition'
-import { isShellProcess } from '../../../../shared/agent-detection'
 import type { PaneForegroundAgentEntry } from '@/store/slices/pane-foreground-agent'
 
 // Why: the read must land after the shell has exec'd the command; and when it
@@ -21,8 +20,8 @@ type PaneForegroundAgentTrackerDeps = {
 /**
  * Publishes process-table identity for a pane at OSC 133 command boundaries:
  * one foreground read when a command starts (that is when the foreground
- * changes), and a no-RPC shell-foreground mark when it finishes — 133;D itself
- * proves the command exited back to the prompt.
+ * changes), and a no-RPC shell-foreground mark when it finishes — 133;D is
+ * the ONLY source of shell-foreground proof; reads never produce it.
  */
 export function createPaneForegroundAgentTracker(deps: PaneForegroundAgentTrackerDeps): {
   onCommandStarted: () => void
@@ -68,10 +67,10 @@ export function createPaneForegroundAgentTracker(deps: PaneForegroundAgentTracke
       deps.publish({ agent: recognized.agent, shellForeground: false })
       return
     }
-    if (processName && isShellProcess(processName)) {
-      deps.publish({ agent: null, shellForeground: true })
-      return
-    }
+    // Why: a shell seen here is NOT prompt proof — 133;D cancels pending reads,
+    // so a still-live generation means the command is running and the shell is
+    // a nested one (sh/bash without integration); marking shell-foreground
+    // would suppress live title identity. Only 133;D proves the prompt.
     const retryDelay = WRAPPER_RESOLVE_RETRY_DELAYS_MS[retryIndex]
     if (retryDelay !== undefined && processName) {
       scheduleRead(retryDelay, retryIndex + 1)
