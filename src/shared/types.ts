@@ -1133,6 +1133,10 @@ export type PRInfo = {
   // Keeping the head SHA in cached PR metadata lets the checks panel poll the
   // correct commit without re-querying GitHub or guessing from local branch refs.
   headSha?: string
+  // Why: a merged branch-matched PR stays visible when the worktree head is one
+  // of the PR's own commits (behind update-branch/web commits). Cache staleness
+  // checks must honor that confirmation without re-querying GitHub.
+  confirmedContainedHeadOid?: string
   /** Target branch name for PR-created worktree compare-base repair. */
   baseRefName?: string
   prRepo?: GitHubRepositoryIdentity

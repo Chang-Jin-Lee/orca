@@ -1039,7 +1039,10 @@ function buildPRRefreshCandidate(
   )
   const cachedFallbackPRNumber = cachedPR?.number ?? null
   const cachedMergedPRMovedPastHead =
-    worktree.linkedPR == null && cachedPR?.state === 'merged' && cachedPR.headSha !== worktree.head
+    worktree.linkedPR == null &&
+    cachedPR?.state === 'merged' &&
+    cachedPR.headSha !== worktree.head &&
+    cachedPR.confirmedContainedHeadOid !== worktree.head
   const fallbackPRNumber =
     worktree.linkedPR == null && !cachedMergedPRMovedPastHead
       ? (cachedFallbackPRNumber ?? hostedReviewFallbackPRNumber)
@@ -1264,7 +1267,8 @@ function shouldPreserveExistingPRForFallbackMiss(args: {
   const worktree = args.worktreeId ? findWorktreeById(args.state, args.worktreeId) : null
   const worktreeHead = worktree?.head
   // Why: merged branch PRs are only safe to keep when cached PR metadata still
-  // matches the commit this stored worktree is actually on.
+  // matches the commit this stored worktree is actually on — exactly, or via a
+  // head main confirmed to be part of the merged PR.
   const preservesMergedPRForCurrentHead =
     args.nextPR === null &&
     args.linkedPRNumber == null &&
@@ -1273,7 +1277,8 @@ function shouldPreserveExistingPRForFallbackMiss(args: {
     args.currentPR.headSha.length > 0 &&
     typeof worktreeHead === 'string' &&
     worktreeHead.length > 0 &&
-    args.currentPR.headSha === worktreeHead
+    (args.currentPR.headSha === worktreeHead ||
+      args.currentPR.confirmedContainedHeadOid === worktreeHead)
 
   // Why: fallback PR numbers come from already-visible cache, not durable
   // worktree metadata. A branch/fallback miss is weaker than the current exact
