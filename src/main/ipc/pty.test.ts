@@ -7133,6 +7133,49 @@ describe('registerPtyHandlers', () => {
     }
   })
 
+  it('carves reply-eliciting queries out of a pending-cap bulk drop so probes survive', async () => {
+    vi.useFakeTimers()
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const mockProc = createMockProc()
+    spawnMock.mockReturnValue(mockProc.proc)
+
+    try {
+      registerPtyHandlers(mainWindow as never)
+      const spawn = (await handlers.get('pty:spawn')!(null, {
+        cols: 80,
+        rows: 24,
+        cwd: '/tmp'
+      })) as { id: string }
+      const ackData = getPtyAckDataListener()
+      mainWindow.webContents.send.mockClear()
+
+      // Saturate the in-flight window so everything after buffers in pendingData.
+      mockProc.emitData('x'.repeat(600 * 1024))
+      vi.advanceTimersByTime(2)
+      for (let index = 0; index < 32; index++) {
+        vi.advanceTimersByTime(1)
+      }
+
+      // Flood past the pending cap WITH an embedded DSR probe — the program
+      // that wrote it blocks on the reply (the bench DSR timeout).
+      mockProc.emitData(`${'y'.repeat(2 * 1024 * 1024)}\x1b[6n${'y'.repeat(1024 * 1024)}`)
+      // While latched, a later probe must also be carved out (bounded).
+      mockProc.emitData(`${'z'.repeat(32 * 1024)}\x1b[0c${'z'.repeat(32 * 1024)}`)
+
+      mainWindow.webContents.send.mockClear()
+      ackData(null, { id: spawn.id, charCount: 512 * 1024 })
+      vi.advanceTimersByTime(2)
+      expect(mainWindow.webContents.send).toHaveBeenCalledWith('pty:data', {
+        id: spawn.id,
+        data: '\x1b[6n\x1b[0c',
+        droppedOutput: true
+      })
+    } finally {
+      errorSpy.mockRestore()
+      vi.useRealTimers()
+    }
+  })
+
   it('scales the pending-output cap with the scrollback setting', async () => {
     vi.useFakeTimers()
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})

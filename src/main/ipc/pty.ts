@@ -18,6 +18,7 @@ import type { OrcaRuntimeService } from '../runtime/orca-runtime'
 import type { Store } from '../persistence'
 import type { GlobalSettings, TuiAgent } from '../../shared/types'
 import { terminalOutputBacklogCapChars } from '../../shared/terminal-scrollback-policy'
+import { extractHiddenStartupRendererQueryData } from '../../shared/terminal-reply-query-extraction'
 import { recordCrashBreadcrumb } from '../crash-reporting/crash-breadcrumb-store'
 import type { SleepingAgentLaunchConfig } from '../../shared/agent-session-resume'
 import type { ProjectExecutionRuntimeResolution } from '../../shared/project-execution-runtime'
@@ -1797,6 +1798,24 @@ export function registerPtyHandlers(
 
   const pendingDataDropWarnedPtys = new Set<string>()
 
+  // Why capped: the drop path guarantees O(1) memory per PTY; salvaged query
+  // bytes are tiny (a DSR probe is 4 chars) and anything past the cap means a
+  // pathological stream, where degrading to the plain sentinel is fine.
+  const DROPPED_QUERY_SALVAGE_MAX_CHARS = 4096
+
+  // Why: a bulk drop must not swallow reply-eliciting queries embedded in the
+  // flood (DSR 6n / CPR, DA1/DA2, DECRQM, OSC 10/11 probes). The program that
+  // wrote them blocks on the reply (the bench DSR timeout). Carve just the
+  // query bytes out and let them ride the droppedOutput sentinel — content is
+  // healed by the snapshot restore, so replies cannot double-fire.
+  function extractDroppedPtyQueryBytes(data: string): string {
+    if (!data.includes('\x1b')) {
+      return ''
+    }
+    const extracted = extractHiddenStartupRendererQueryData(data, '')
+    return extracted.statelessQueryData + extracted.statefulQueryData + extracted.oscColorQueryData
+  }
+
   function dropOversizedPendingPtyData(id: string, pending: PendingPtyData): PendingPtyData {
     const capChars = pendingDataCapChars()
     if (pending.droppedOutput === true || pending.data.length <= capChars) {
@@ -1824,11 +1843,15 @@ export function registerPtyHandlers(
       sendModelRestoreNeededMarker(id, 'pending-cap', runtime?.getPtyOutputSequence(id))
     }
     pendingDroppedChars += pending.data.length
-    // Why empty data, not a trimmed tail: a mid-stream gap would silently
-    // corrupt the pane. The droppedOutput sentinel routes the pane through
+    // Why no trimmed content tail: a mid-stream gap would silently corrupt
+    // the pane. The droppedOutput sentinel routes the pane through
     // hidden-output restore, which repaints from the authoritative main-owned
-    // buffer and realigns with the live stream by sequence.
-    return { data: '', droppedOutput: true }
+    // buffer and realigns with the live stream by sequence. Only carved-out
+    // query bytes ride along so their replies survive the drop.
+    return {
+      data: extractDroppedPtyQueryBytes(pending.data).slice(0, DROPPED_QUERY_SALVAGE_MAX_CHARS),
+      droppedOutput: true
+    }
   }
 
   function appendPendingPtyData(
@@ -1841,8 +1864,14 @@ export function registerPtyHandlers(
   ): PendingPtyData {
     // Why: once over the cap, stay dropped at O(1) memory until the renderer
     // can receive again — the restore sentinel supersedes any interim bytes.
+    // Queries arriving while latched still get carved out (bounded) so their
+    // replies survive the whole drop episode, not just the first burst.
     if (existing?.droppedOutput === true) {
-      return existing
+      if (existing.data.length >= DROPPED_QUERY_SALVAGE_MAX_CHARS) {
+        return existing
+      }
+      const salvaged = extractDroppedPtyQueryBytes(data)
+      return salvaged ? { ...existing, data: existing.data + salvaged } : existing
     }
     const nextContainsBackgroundOutput =
       existing?.containsBackgroundOutput === true || containsBackgroundOutput
@@ -1916,8 +1945,9 @@ export function registerPtyHandlers(
         updateProducerFlowControl(id)
         // Why: the buffered bytes were dropped at the pending cap; tell the
         // renderer so the pane repaints from the main-owned buffer snapshot
-        // instead of continuing a stream with a silent gap.
-        sendPtyDataToRenderer(id, { id, data: '', droppedOutput: true })
+        // instead of continuing a stream with a silent gap. data carries only
+        // the carved-out query bytes (see extractDroppedPtyQueryBytes).
+        sendPtyDataToRenderer(id, { id, data: pending.data, droppedOutput: true })
         writes++
         continue
       }

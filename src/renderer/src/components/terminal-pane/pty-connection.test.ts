@@ -6303,13 +6303,21 @@ describe('connectPanePty', () => {
     async function connectHiddenPane(deps: ReturnType<typeof createDeps>): Promise<{
       transport: MockTransport
       pane: ReturnType<typeof createPane>
-      dataCallback: (data: string, meta?: { seq?: number; rawLength?: number }) => void
+      dataCallback: (
+        data: string,
+        meta?: { seq?: number; rawLength?: number; droppedOutput?: boolean }
+      ) => void
       binding: { syncProcessTracking: () => void; dispose: () => void }
     }> {
       const { connectPanePty } = await import('./pty-connection')
       const transport = createMockTransport('pty-id')
       const capturedDataCallback: {
-        current: ((data: string, meta?: { seq?: number; rawLength?: number }) => void) | null
+        current:
+          | ((
+              data: string,
+              meta?: { seq?: number; rawLength?: number; droppedOutput?: boolean }
+            ) => void)
+          | null
       } = { current: null }
       transport.connect.mockImplementation(
         async ({ callbacks }: { callbacks: ConnectCallbacks }) => {
@@ -6627,7 +6635,7 @@ describe('connectPanePty', () => {
       expect(getMainBufferSnapshot).not.toHaveBeenCalled()
     })
 
-    it('fetches a fresh snapshot when a marker lands while a restore is in flight', async () => {
+    it('gates marker re-arms during an in-flight foreground restore and repaints once after', async () => {
       enableMainAuthority()
       const deps = createDeps({ isVisibleRef: { current: true } })
       await connectHiddenPane(deps)
@@ -6646,20 +6654,182 @@ describe('connectPanePty', () => {
       }>()
       getMainBufferSnapshot
         .mockReturnValueOnce(firstSnapshot.promise)
-        .mockResolvedValue({ data: 'fresh snapshot\r\n', cols: 100, rows: 30, seq: 96 })
+        .mockResolvedValue({ data: 'post-flood repaint\r\n', cols: 100, rows: 30, seq: 96 })
       const { _dispatchPtyModelRestoreNeededForTest } = await import('./pty-model-restore-channel')
 
       _dispatchPtyModelRestoreNeededForTest({ id: 'pty-id', reason: 'pending-cap', markerSeq: 64 })
       await flushAsyncTicks(4)
       expect(getMainBufferSnapshot).toHaveBeenCalledTimes(1)
 
-      // Second drop while the first snapshot is still being serialized — the
-      // in-flight snapshot may predate it, so a fresh one must follow.
-      _dispatchPtyModelRestoreNeededForTest({ id: 'pty-id', reason: 'pending-cap', markerSeq: 80 })
-      firstSnapshot.resolve({ data: 'stale snapshot\r\n', cols: 100, rows: 30, seq: 64 })
-      await flushAsyncTicks(20)
+      try {
+        // Why (rc.7.perf feedback loop): a second drop marker while the first
+        // snapshot is still serializing on a VISIBLE pane is this pane's own
+        // restore backpressure. Re-fetching per marker kept the loop alive for
+        // the whole flood — the marker must NOT schedule another fetch.
+        vi.useFakeTimers()
+        _dispatchPtyModelRestoreNeededForTest({
+          id: 'pty-id',
+          reason: 'pending-cap',
+          markerSeq: 80
+        })
+        firstSnapshot.resolve({ data: 'first snapshot\r\n', cols: 100, rows: 30, seq: 64 })
+        await flushAsyncTicks(20)
+        expect(getMainBufferSnapshot).toHaveBeenCalledTimes(1)
 
-      expect(getMainBufferSnapshot).toHaveBeenCalledTimes(2)
+        // Flood quiet: the suppression window elapses and exactly ONE deferred
+        // repaint fetches a fresh snapshot to heal the dropped gap.
+        vi.advanceTimersByTime(2_100)
+        await flushAsyncTicks(20)
+        expect(getMainBufferSnapshot).toHaveBeenCalledTimes(2)
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    describe('foreground flood restore feedback loop (rc.7.perf)', () => {
+      function writtenFloodData(pane: ReturnType<typeof createPane>): string {
+        return pane.terminal.write.mock.calls.map((call) => String(call[0])).join('')
+      }
+
+      async function startInFlightRestore(): Promise<{
+        pane: ReturnType<typeof createPane>
+        dataCallback: (
+          data: string,
+          meta?: { seq?: number; rawLength?: number; droppedOutput?: boolean }
+        ) => void
+        getMainBufferSnapshot: ReturnType<typeof vi.fn>
+        resolveFirstSnapshot: (snapshot: {
+          data: string
+          cols: number
+          rows: number
+          seq: number
+        }) => void
+      }> {
+        enableMainAuthority()
+        const deps = createDeps({ isVisibleRef: { current: true } })
+        const { pane, dataCallback } = await connectHiddenPane(deps)
+        const transportOptions = createdTransportOptions.at(-1) as {
+          onPtySpawn?: (ptyId: string) => void
+        }
+        transportOptions.onPtySpawn?.('pty-id')
+        const getMainBufferSnapshot = window.api.pty.getMainBufferSnapshot as unknown as ReturnType<
+          typeof vi.fn
+        >
+        const firstSnapshot = createDeferred<{
+          data: string
+          cols: number
+          rows: number
+          seq: number
+        }>()
+        getMainBufferSnapshot
+          .mockReturnValueOnce(firstSnapshot.promise)
+          .mockResolvedValue({ data: 'repaint snapshot\r\n', cols: 100, rows: 30, seq: 5_000_000 })
+        const { _dispatchPtyModelRestoreNeededForTest } =
+          await import('./pty-model-restore-channel')
+        _dispatchPtyModelRestoreNeededForTest({
+          id: 'pty-id',
+          reason: 'pending-cap',
+          markerSeq: 64
+        })
+        await flushAsyncTicks(4)
+        expect(getMainBufferSnapshot).toHaveBeenCalledTimes(1)
+        return {
+          pane,
+          dataCallback,
+          getMainBufferSnapshot,
+          resolveFirstSnapshot: (snapshot) => firstSnapshot.resolve(snapshot)
+        }
+      }
+
+      it('abandons the restore on queue overflow, writes the stream through, and repaints once', async () => {
+        const { pane, dataCallback, getMainBufferSnapshot, resolveFirstSnapshot } =
+          await startInFlightRestore()
+
+        // Flood while the snapshot is in flight: overflows the 512KB restore
+        // queue — the live stream is outrunning snapshot fetch+replay.
+        dataCallback('f'.repeat(300 * 1024), { seq: 300 * 1024 + 64, rawLength: 300 * 1024 })
+        dataCallback('g'.repeat(300 * 1024), { seq: 600 * 1024 + 64, rawLength: 300 * 1024 })
+
+        try {
+          vi.useFakeTimers()
+          resolveFirstSnapshot({ data: 'flood snapshot\r\n', cols: 100, rows: 30, seq: 64 })
+          await flushAsyncTicks(20)
+
+          // Cut 1: the overflow abandons the restore instead of re-fetching.
+          expect(getMainBufferSnapshot).toHaveBeenCalledTimes(1)
+
+          // Cut 2: drop sentinels and seq-gap chunks during the flood window
+          // must not re-arm restores — the post-gap bytes write through.
+          dataCallback('', { droppedOutput: true })
+          dataCallback('AFTER-FLOOD', { seq: 700 * 1024, rawLength: 11 })
+          await flushAsyncTicks(8)
+          expect(getMainBufferSnapshot).toHaveBeenCalledTimes(1)
+          expect(writtenFloodData(pane)).toContain('AFTER-FLOOD')
+
+          // After the flood goes quiet: exactly ONE deferred repaint.
+          vi.advanceTimersByTime(2_100)
+          await flushAsyncTicks(20)
+          expect(getMainBufferSnapshot).toHaveBeenCalledTimes(2)
+          vi.advanceTimersByTime(5_000)
+          await flushAsyncTicks(20)
+          expect(getMainBufferSnapshot).toHaveBeenCalledTimes(2)
+        } finally {
+          vi.useRealTimers()
+        }
+      })
+
+      it('salvages stateful queries out of an overflowing restore queue', async () => {
+        const { pane, dataCallback } = await startInFlightRestore()
+
+        // Queue 400KB, then a chunk that overflows the cap and carries a DSR
+        // probe. The content is discarded (snapshot owns it) but the query
+        // must reach xterm so its reply flows.
+        dataCallback('a'.repeat(400 * 1024), { seq: 400 * 1024, rawLength: 400 * 1024 })
+        dataCallback(`${'b'.repeat(200 * 1024)}\x1b[6n`, {
+          seq: 600 * 1024 + 4,
+          rawLength: 200 * 1024 + 4
+        })
+        await flushAsyncTicks(8)
+
+        const written = writtenFloodData(pane)
+        expect(written).toContain('\x1b[6n')
+        expect(written).not.toContain('aaaa')
+        expect(written).not.toContain('bbbb')
+      })
+
+      it('keeps the hidden-pane drop sentinel arming a reveal restore (gate unchanged)', async () => {
+        enableMainAuthority()
+        const isVisibleRef = { current: false }
+        const deps = createDeps({ isVisibleRef })
+        const { pane, dataCallback } = await connectHiddenPane(deps)
+        const transportOptions = createdTransportOptions.at(-1) as {
+          onPtySpawn?: (ptyId: string) => void
+        }
+        transportOptions.onPtySpawn?.('pty-id')
+        const getMainBufferSnapshot = window.api.pty.getMainBufferSnapshot as unknown as ReturnType<
+          typeof vi.fn
+        >
+        getMainBufferSnapshot.mockResolvedValue({
+          data: 'hidden reveal snapshot\r\n',
+          cols: 100,
+          rows: 30,
+          seq: 64
+        })
+
+        // Hidden pane: the sentinel latches restore-needed but must not fetch.
+        dataCallback('', { droppedOutput: true })
+        await flushAsyncTicks(8)
+        expect(getMainBufferSnapshot).not.toHaveBeenCalled()
+
+        // Reveal: the latched restore fetches exactly one snapshot.
+        isVisibleRef.current = true
+        const { requestTerminalBacklogRecovery } =
+          await import('@/lib/pane-manager/pane-terminal-output-scheduler')
+        requestTerminalBacklogRecovery(pane.terminal as never)
+        await flushAsyncTicks(20)
+        expect(getMainBufferSnapshot).toHaveBeenCalledTimes(1)
+        expect(writtenFloodData(pane)).toContain('hidden reveal snapshot')
+      })
     })
 
     describe('post-restore backlog reconciliation', () => {

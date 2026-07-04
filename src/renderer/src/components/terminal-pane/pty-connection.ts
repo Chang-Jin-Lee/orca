@@ -14,6 +14,15 @@ import { getWorktreeMapFromState } from '@/store/selectors'
 import { parseWorkspaceKey } from '../../../../shared/workspace-scope'
 import { createTerminalZeroDimensionsMessage } from '../../../../shared/terminal-zero-dimensions-diagnostic'
 import { parseTerminalOscColorQuery } from '../../../../shared/terminal-osc-color-reply'
+import {
+  HIDDEN_STARTUP_RENDERER_QUERY_PENDING_CHARS,
+  containsCsiRendererQuery,
+  containsStatefulRendererQuery,
+  extractHiddenStartupRendererQueryData,
+  findCsiFinalByteIndex,
+  isStatefulRendererReplyCsiQuery,
+  isStatelessRendererReplyCsiQuery
+} from '../../../../shared/terminal-reply-query-extraction'
 import { serializeWithAbsoluteCursor } from '../../../../shared/terminal-serialize-absolute-cursor'
 import type { PtyBufferSnapshot, PtyConnectResult } from './pty-transport'
 import { createIpcPtyTransport } from './pty-transport'
@@ -205,6 +214,18 @@ const HIDDEN_OUTPUT_RESTORE_PENDING_CHARS = 512 * 1024
 const HIDDEN_OUTPUT_RESTORE_DEFERRED_RETRY_MS = 50
 const HIDDEN_OUTPUT_RESTORE_DEFERRED_RETRY_MAX = 3
 const HIDDEN_OUTPUT_RESTORE_FOREGROUND_TIMEOUT_MS = 750
+// Why (rc.7.perf DSR-timeout feedback loop): under a foreground flood the
+// restore pipeline is its own bottleneck — each synchronous snapshot replay
+// starves ACK processing, main pins at the in-flight cap, drops at the
+// pending cap, and every drop marker re-armed another restore until the
+// flood ended. Backpressure evidence opens this suppression window: drop
+// markers inside it must not re-arm restores; live bytes write through and
+// ONE deferred repaint (when the window closes) heals the visual gap.
+const HIDDEN_OUTPUT_RESTORE_FLOOD_SUPPRESS_MS = 2000
+// Backstop for the same loop: a single in-flight restore task may re-iterate
+// (fresh-snapshot marks, unmappable slices) only this many times before it
+// abandons and lets live bytes flow.
+const HIDDEN_OUTPUT_RESTORE_MAX_LOOP_ITERATIONS = 3
 const TERMINAL_RENDERER_RISK_SCAN_TAIL_CHARS = 256
 const SYNCHRONIZED_OUTPUT_START_SEQUENCE = '\x1b[?2026h'
 const SYNCHRONIZED_OUTPUT_END_SEQUENCE = '\x1b[?2026l'
@@ -511,157 +532,6 @@ function containsHiddenStartupRendererQuery(data: string): boolean {
   // Why: hidden Codex startup must not live-render ordinary redraw floods, but
   // query chunks still need xterm's built-in terminal replies to unblock TUIs.
   return containsCsiRendererQuery(data) || data.includes('\x1b]10;?') || data.includes('\x1b]11;?')
-}
-
-const HIDDEN_STARTUP_RENDERER_QUERY_PENDING_CHARS = 64
-
-function extractHiddenStartupRendererQueryData(
-  data: string,
-  pending: string
-): {
-  statelessQueryData: string
-  statefulQueryData: string
-  oscColorQueryData: string
-  pending: string
-} {
-  const input = pending + data
-  let statelessQueryData = ''
-  let statefulQueryData = ''
-  let oscColorQueryData = ''
-  let offset = 0
-
-  while (offset < input.length) {
-    const candidateIndex = input.indexOf('\x1b', offset)
-    if (candidateIndex === -1) {
-      break
-    }
-    if (candidateIndex + 1 >= input.length) {
-      return {
-        statelessQueryData,
-        statefulQueryData,
-        oscColorQueryData,
-        pending: input.slice(candidateIndex)
-      }
-    }
-    if (input.startsWith('\x1b[', candidateIndex)) {
-      const finalByteIndex = findCsiFinalByteIndex(input, candidateIndex + 2)
-      if (finalByteIndex === -1) {
-        return {
-          statelessQueryData,
-          statefulQueryData,
-          oscColorQueryData,
-          pending: input.slice(
-            candidateIndex,
-            candidateIndex + HIDDEN_STARTUP_RENDERER_QUERY_PENDING_CHARS
-          )
-        }
-      }
-      const sequence = input.slice(candidateIndex, finalByteIndex + 1)
-      if (isStatelessRendererReplyCsiQuery(sequence)) {
-        statelessQueryData += sequence
-      } else if (isStatefulRendererReplyCsiQuery(sequence)) {
-        statefulQueryData += sequence
-      }
-      offset = finalByteIndex + 1
-      continue
-    }
-
-    if (input.startsWith('\x1b]', candidateIndex)) {
-      const query = parseTerminalOscColorQuery(input, candidateIndex)
-      if (query.kind === 'partial') {
-        return {
-          statelessQueryData,
-          statefulQueryData,
-          oscColorQueryData,
-          pending: input.slice(
-            candidateIndex,
-            candidateIndex + HIDDEN_STARTUP_RENDERER_QUERY_PENDING_CHARS
-          )
-        }
-      }
-      if (query.kind === 'none') {
-        offset = candidateIndex + 2
-        continue
-      }
-      oscColorQueryData += input.slice(candidateIndex, query.endIndex)
-      offset = query.endIndex
-      continue
-    }
-
-    if (parseTerminalOscColorQuery(input, candidateIndex).kind === 'partial') {
-      return {
-        statelessQueryData,
-        statefulQueryData,
-        oscColorQueryData,
-        pending: input.slice(candidateIndex)
-      }
-    }
-
-    {
-      offset = candidateIndex + 1
-      continue
-    }
-  }
-
-  return { statelessQueryData, statefulQueryData, oscColorQueryData, pending: '' }
-}
-
-function containsCsiRendererQuery(data: string): boolean {
-  let offset = data.indexOf('\x1b[')
-  while (offset !== -1) {
-    const finalByteIndex = findCsiFinalByteIndex(data, offset + 2)
-    if (finalByteIndex === -1) {
-      return false
-    }
-    const sequence = data.slice(offset, finalByteIndex + 1)
-    if (isStatelessRendererReplyCsiQuery(sequence) || isStatefulRendererReplyCsiQuery(sequence)) {
-      return true
-    }
-    offset = data.indexOf('\x1b[', finalByteIndex + 1)
-  }
-  return false
-}
-
-function containsStatefulRendererQuery(data: string): boolean {
-  let offset = data.indexOf('\x1b[')
-  while (offset !== -1) {
-    const finalByteIndex = findCsiFinalByteIndex(data, offset + 2)
-    if (finalByteIndex === -1) {
-      return false
-    }
-    const sequence = data.slice(offset, finalByteIndex + 1)
-    if (isStatefulRendererReplyCsiQuery(sequence)) {
-      return true
-    }
-    offset = data.indexOf('\x1b[', finalByteIndex + 1)
-  }
-  return false
-}
-
-function findCsiFinalByteIndex(data: string, offset: number): number {
-  for (let index = offset; index < data.length; index++) {
-    const code = data.charCodeAt(index)
-    if (code >= 0x40 && code <= 0x7e) {
-      return index
-    }
-  }
-  return -1
-}
-
-function isStatelessRendererReplyCsiQuery(sequence: string): boolean {
-  if (sequence.endsWith('c')) {
-    return true
-  }
-  return (
-    sequence === '\x1b[5n' ||
-    sequence === '\x1b[>q' ||
-    sequence === '\x1b[14t' ||
-    sequence === '\x1b[16t'
-  )
-}
-
-function isStatefulRendererReplyCsiQuery(sequence: string): boolean {
-  return sequence === '\x1b[6n' || (sequence.startsWith('\x1b[?') && sequence.endsWith('$p'))
 }
 
 let codexRestartNoticePresenceSource: Record<
@@ -1018,6 +888,7 @@ export function connectPanePty(
   let unregisterDocumentVisibilityRecovery: (() => void) | null = null
   let cleanupHiddenOutputRestoreDeferredRetry = (): void => {}
   let cleanupHiddenOutputRestoreForegroundDeadline = (): void => {}
+  let cleanupHiddenOutputRestoreFloodRepaint = (): void => {}
   let resetRendererOrderedSeqForPtyExit: (exitedPtyId: string) => void = () => {}
   let cleanupStartupDraftPasteTimers = (): void => {}
   let unregisterE2ePtyDataInjection = (): void => {}
@@ -4031,6 +3902,9 @@ export function connectPanePty(
     // can reuse the pane object for a different session before visibility.
     let hiddenOutputRestorePtyId: string | null = null
     let hiddenOutputRestoreGeneration = 0
+    // Flood-backpressure suppression (HIDDEN_OUTPUT_RESTORE_FLOOD_SUPPRESS_MS).
+    let hiddenOutputRestoreFloodSuppressedUntil = 0
+    let hiddenOutputRestoreFloodRepaintTimer: ReturnType<typeof setTimeout> | null = null
     // Why: after a snapshot restore, main can still drain ACK-backlog chunks
     // whose bytes the snapshot already covers — writing them unguarded
     // duplicates visible output. Track the restored baseline seq (per PTY)
@@ -4158,6 +4032,57 @@ export function connectPanePty(
       window.api.pty.setHiddenRendererPty?.(ptyId, hidden)
     }
 
+    function isHiddenOutputRestoreFloodSuppressed(): boolean {
+      return Date.now() < hiddenOutputRestoreFloodSuppressedUntil
+    }
+
+    // True when a drop/gap signal on a visible pane is attributable to this
+    // pane's OWN restore backpressure (a restore is replaying right now, or
+    // one was just cut off for outrunning the stream). Such signals must not
+    // re-arm restores — that is the rc.7.perf feedback loop.
+    function isForegroundRestoreBackpressureContext(): boolean {
+      return (
+        shouldWritePtyOutputForeground(deps.isVisibleRef.current) &&
+        (hiddenOutputRestoreInFlight !== null || isHiddenOutputRestoreFloodSuppressed())
+      )
+    }
+
+    function clearHiddenOutputRestoreFloodRepaintTimer(): void {
+      if (hiddenOutputRestoreFloodRepaintTimer === null) {
+        return
+      }
+      clearTimeout(hiddenOutputRestoreFloodRepaintTimer)
+      hiddenOutputRestoreFloodRepaintTimer = null
+    }
+    cleanupHiddenOutputRestoreFloodRepaint = clearHiddenOutputRestoreFloodRepaintTimer
+
+    function resetHiddenOutputRestoreFloodSuppression(): void {
+      hiddenOutputRestoreFloodSuppressedUntil = 0
+      clearHiddenOutputRestoreFloodRepaintTimer()
+    }
+
+    // Extends the suppression window and (re)schedules the single deferred
+    // repaint for when the flood goes quiet. Every backpressure signal resets
+    // the timer, so it fires exactly once, SUPPRESS_MS after the last signal.
+    function noteHiddenOutputRestoreFloodBackpressure(): void {
+      hiddenOutputRestoreFloodSuppressedUntil = Date.now() + HIDDEN_OUTPUT_RESTORE_FLOOD_SUPPRESS_MS
+      const ptyId = transport.getPtyId()
+      if (ptyId === null) {
+        return
+      }
+      clearHiddenOutputRestoreFloodRepaintTimer()
+      hiddenOutputRestoreFloodRepaintTimer = setTimeout(() => {
+        hiddenOutputRestoreFloodRepaintTimer = null
+        if (disposed || transport.getPtyId() !== ptyId) {
+          return
+        }
+        // Why one repaint: bytes were dropped during the flood, so the screen
+        // has a gap the live stream cannot heal. Now that the flood is quiet,
+        // a single snapshot restore repaints from main's authoritative buffer.
+        markHiddenOutputRestoreNeeded()
+      }, HIDDEN_OUTPUT_RESTORE_FLOOD_SUPPRESS_MS)
+    }
+
     // Why: main reports dropped renderer-bound bytes (hidden gate / pending
     // cap) out-of-band — routed per PTY by pty-model-restore-channel.ts.
     function handleModelRestoreNeededMarker(): void {
@@ -4167,6 +4092,14 @@ export function connectPanePty(
       // Why: dropped bytes invalidate every cross-chunk carry — a partial
       // OSC-9999 prefix spanning the gap would corrupt the next live chunk.
       transport.resetCrossChunkParserState?.()
+      // Why gated (rc.7.perf loop): on a visible pane these markers are the
+      // product of our own restore starving ACKs. Re-arming per marker kept
+      // the snapshot-fetch loop alive for the whole flood; defer to one
+      // post-flood repaint instead and let live bytes flow.
+      if (isForegroundRestoreBackpressureContext()) {
+        noteHiddenOutputRestoreFloodBackpressure()
+        return
+      }
       // Why: parity with the hidden skip path — a marker landing while a
       // restore is in flight means the in-flight snapshot may predate the
       // drop, so a fresh snapshot must follow. Captured BEFORE the mark: on a
@@ -4650,6 +4583,28 @@ export function connectPanePty(
       recordHiddenRendererSkip(data.length)
     }
 
+    // Why: discarding queued flood bytes must never swallow terminal queries —
+    // a lost DSR/CPR (or color/DA) reply hangs the querying program (the bench
+    // DSR timeout). The discarded CONTENT is owned by the snapshot repaint;
+    // the queries are re-played to xterm immediately so replies still flow.
+    // Only called for bytes that are being thrown away, so replies cannot
+    // double-fire against a later queue drain.
+    function salvageRendererQueriesFromDiscardedRestoreData(data: string): void {
+      if (!data || !data.includes('\x1b')) {
+        return
+      }
+      const extracted = extractHiddenStartupRendererQueryData(data, '')
+      if (extracted.oscColorQueryData) {
+        sendTerminalOscColorQueryReplies(extracted.oscColorQueryData, pane.terminal, (reply) =>
+          transport.sendInput(reply)
+        )
+      }
+      const queryData = extracted.statelessQueryData + extracted.statefulQueryData
+      if (queryData) {
+        writePtyOutputToXterm(queryData, true, { hiddenStartupRendererQuery: true })
+      }
+    }
+
     function queueLiveChunkDuringRestore(data: string, meta?: PtyDataMeta): void {
       if (!data) {
         return
@@ -4663,10 +4618,23 @@ export function connectPanePty(
       }
       hiddenOutputRestorePtyId = ptyId
       hiddenOutputRestoreNeeded = true
+      if (hiddenOutputRestorePendingOverflow) {
+        // Why: the overflow latch means everything queued gets discarded at the
+        // next drain — queueing more only grows the discard. Salvage queries,
+        // drop the content.
+        salvageRendererQueriesFromDiscardedRestoreData(data)
+        armHiddenOutputRestoreForegroundDeadline()
+        return
+      }
       if (hiddenOutputRestorePendingChars + data.length > HIDDEN_OUTPUT_RESTORE_PENDING_CHARS) {
+        const discardedChunks = hiddenOutputRestorePendingChunks
         hiddenOutputRestorePendingChunks = []
         hiddenOutputRestorePendingChars = 0
         hiddenOutputRestorePendingOverflow = true
+        for (const chunk of discardedChunks) {
+          salvageRendererQueriesFromDiscardedRestoreData(chunk.data)
+        }
+        salvageRendererQueriesFromDiscardedRestoreData(data)
         armHiddenOutputRestoreForegroundDeadline()
         return
       }
@@ -4852,26 +4820,33 @@ export function connectPanePty(
       )
     }
 
-    function drainPendingLiveChunksAfterSnapshot(snapshotSeq: number | undefined): boolean {
+    // 'drained' painted every queued live byte; 'overflow' means the queue
+    // blew its cap during this restore (the stream is outrunning snapshot
+    // fetch+replay); 'refetch' means offsets were unmappable and only a
+    // fresher snapshot can realign.
+    function drainPendingLiveChunksAfterSnapshot(
+      snapshotSeq: number | undefined
+    ): 'drained' | 'overflow' | 'refetch' {
       if (hiddenOutputRestorePendingOverflow) {
         hiddenOutputRestorePendingOverflow = false
-        hiddenOutputRestorePendingChunks = []
-        hiddenOutputRestorePendingChars = 0
-        return false
+        discardPendingLiveChunksSalvagingQueries()
+        return 'overflow'
       }
       while (hiddenOutputRestorePendingChunks.length > 0) {
         const chunks = hiddenOutputRestorePendingChunks
         hiddenOutputRestorePendingChunks = []
         hiddenOutputRestorePendingChars = 0
-        for (const chunk of chunks) {
+        for (const [index, chunk] of chunks.entries()) {
           const data = getChunkDataAfterSnapshot(chunk, snapshotSeq)
           if (data === null) {
             // Why: renderer-only OSC stripping makes raw sequence offsets
             // impossible to map onto cleaned text. Fetch a fresher main
             // snapshot instead of risking duplicate visible output.
-            hiddenOutputRestorePendingChunks = []
-            hiddenOutputRestorePendingChars = 0
-            return false
+            for (const discarded of chunks.slice(index)) {
+              salvageRendererQueriesFromDiscardedRestoreData(discarded.data)
+            }
+            discardPendingLiveChunksSalvagingQueries()
+            return 'refetch'
           }
           // Why: drained chunks advance the post-restore continuity point so
           // the live-chunk reconciliation neither re-drops them as duplicates
@@ -4886,12 +4861,20 @@ export function connectPanePty(
         }
         if (hiddenOutputRestorePendingOverflow) {
           hiddenOutputRestorePendingOverflow = false
-          hiddenOutputRestorePendingChunks = []
-          hiddenOutputRestorePendingChars = 0
-          return false
+          discardPendingLiveChunksSalvagingQueries()
+          return 'overflow'
         }
       }
-      return true
+      return 'drained'
+    }
+
+    function discardPendingLiveChunksSalvagingQueries(): void {
+      const discarded = hiddenOutputRestorePendingChunks
+      hiddenOutputRestorePendingChunks = []
+      hiddenOutputRestorePendingChars = 0
+      for (const chunk of discarded) {
+        salvageRendererQueriesFromDiscardedRestoreData(chunk.data)
+      }
     }
 
     function clearPendingLiveChunksDuringRestore(): void {
@@ -4955,7 +4938,10 @@ export function connectPanePty(
       }, HIDDEN_OUTPUT_RESTORE_FOREGROUND_TIMEOUT_MS)
     }
 
-    function abandonHiddenOutputRestoreAndDrainPendingForeground(expectedPtyId: string): void {
+    function abandonHiddenOutputRestoreAndDrainPendingForeground(
+      expectedPtyId: string,
+      opts: { quiet?: boolean } = {}
+    ): void {
       if (transport.getPtyId() !== expectedPtyId || hiddenOutputRestorePtyId !== expectedPtyId) {
         resetHiddenOutputRestoreIfPtyChanged()
         return
@@ -4982,7 +4968,12 @@ export function connectPanePty(
       clearHiddenOutputRestoreForegroundDeadlineTimer()
       hiddenOutputRestoreDeferredRetryAttempts = 0
 
-      writeRestoreUnavailableWarning()
+      // Why quiet exists: flood cuts abandon deliberately and schedule a
+      // post-flood repaint — the "restore unavailable" warning would be
+      // misleading noise the repaint immediately wipes.
+      if (!opts.quiet) {
+        writeRestoreUnavailableWarning()
+      }
       if (hadPendingOverflow) {
         return
       }
@@ -5083,6 +5074,8 @@ export function connectPanePty(
         clearHiddenOutputRestoreState()
         clearRestoredSnapshotBaseline()
         clearPaneMode2031State()
+        // Why: flood-backpressure evidence is per PTY stream too.
+        resetHiddenOutputRestoreFloodSuppression()
         discardTerminalOutput(pane.terminal)
       }
     }
@@ -5229,6 +5222,10 @@ export function connectPanePty(
       hiddenOutputRestoreRetryDeferred = false
 
       hiddenOutputRestoreInFlight = (async () => {
+        // Backstop for the rc.7.perf feedback loop: bound how many snapshot
+        // fetch+replay rounds one task may burn before it must yield to the
+        // live stream.
+        let restoreIterations = 0
         while (!disposed) {
           const currentPtyId = hiddenOutputRestorePtyId
           if (currentPtyId === null) {
@@ -5282,6 +5279,7 @@ export function connectPanePty(
             return
           }
           hiddenOutputRestoreDeferredRetryAttempts = 0
+          restoreIterations += 1
           applyMainBufferSnapshot(snapshot)
           // Why: everything at or before snapshot.seq is now painted; chunks
           // still draining from main's ACK backlog below that point are
@@ -5289,7 +5287,8 @@ export function connectPanePty(
           setRestoredSnapshotBaseline(currentPtyId, snapshot)
           const needsFreshSnapshot = hiddenOutputRestoreFreshSnapshotNeeded
           hiddenOutputRestoreFreshSnapshotNeeded = false
-          if (drainPendingLiveChunksAfterSnapshot(snapshot.seq) && !needsFreshSnapshot) {
+          const drainOutcome = drainPendingLiveChunksAfterSnapshot(snapshot.seq)
+          if (drainOutcome === 'drained' && !needsFreshSnapshot) {
             hiddenOutputRestoreNeeded = false
             hiddenOutputRestorePtyId = null
             clearHiddenOutputRestoreForegroundDeadlineTimer()
@@ -5300,6 +5299,31 @@ export function connectPanePty(
             // in renderer memory. Leave recovery pending for the next visible
             // moment instead of looping hidden snapshots in a throttled tab.
             hiddenOutputRestoreNeeded = true
+            return
+          }
+          if (drainOutcome === 'overflow') {
+            // Cut 1 of the rc.7.perf feedback loop: a FOREGROUND queue
+            // overflow means the live stream outruns snapshot fetch+replay.
+            // Re-fetching would starve ACK processing again and feed the
+            // drop/re-arm cycle — abandon now, let bytes write through, and
+            // heal with one repaint after the flood.
+            noteHiddenOutputRestoreFloodBackpressure()
+            abandonHiddenOutputRestoreAndDrainPendingForeground(currentPtyId, { quiet: true })
+            return
+          }
+          if (restoreIterations >= HIDDEN_OUTPUT_RESTORE_MAX_LOOP_ITERATIONS) {
+            // Backstop: fresh-snapshot marks / unmappable slices re-looping
+            // this many times means the stream is winning the race.
+            warnTerminalLifecycleAnomaly('hidden output restore hit its iteration cap', {
+              tabId: deps.tabId,
+              worktreeId: deps.worktreeId,
+              leafId: pane.leafId,
+              paneId: pane.id,
+              ptyId: currentPtyId,
+              reason: drainOutcome
+            })
+            noteHiddenOutputRestoreFloodBackpressure()
+            abandonHiddenOutputRestoreAndDrainPendingForeground(currentPtyId, { quiet: true })
             return
           }
           hiddenOutputRestoreNeeded = true
@@ -5367,11 +5391,25 @@ export function connectPanePty(
       observeStartupDraftPasteReadiness(data)
       resetHiddenOutputRestoreIfPtyChanged()
       if (meta?.droppedOutput === true) {
-        // Why: main dropped this PTY's buffered output at the pending cap
-        // (renderer was not receiving). The stream has a gap, so repaint the
-        // pane from the main-owned buffer snapshot instead of writing on.
-        markHiddenOutputRestoreNeeded()
-        return
+        // Why gated (rc.7.perf loop): a visible pane's cap-drop during its own
+        // restore is backpressure the restore itself caused — re-arming per
+        // sentinel kept the snapshot-fetch loop alive for the whole flood.
+        // Defer to one post-flood repaint; any carved-out query bytes riding
+        // the sentinel still flow through the normal write path below.
+        if (meta?.background !== true && isForegroundRestoreBackpressureContext()) {
+          noteHiddenOutputRestoreFloodBackpressure()
+        } else {
+          // Why: main dropped this PTY's buffered output at the pending cap
+          // (renderer was not receiving). The stream has a gap, so repaint the
+          // pane from the main-owned buffer snapshot instead of writing on.
+          markHiddenOutputRestoreNeeded()
+          if (data) {
+            // The sentinel can carry query bytes carved out of the bulk drop
+            // (extractDroppedPtyQueryBytes in main) — replies must still flow.
+            salvageRendererQueriesFromDiscardedRestoreData(data)
+          }
+          return
+        }
       }
       respondToTerminalPixelSizeQueries(data)
       observeTerminalBracketedPasteModeOutput(pane.terminal, data)
@@ -5410,17 +5448,28 @@ export function connectPanePty(
         return
       }
       if (reconciliation.action === 'force-fresh-restore') {
-        // Why: in-flight captured BEFORE the mark — on a visible pane the
-        // mark starts the restore synchronously and must not flag itself.
-        const restoreWasInFlight = hiddenOutputRestoreInFlight !== null
-        markHiddenOutputRestoreNeeded()
-        if (restoreWasInFlight) {
-          hiddenOutputRestoreFreshSnapshotNeeded = true
+        // Why gated (rc.7.perf loop): during a foreground flood the seq gaps
+        // come from our own backpressure drops — fetching a snapshot per gap
+        // IS the feedback loop. Retire the stale baseline, write the post-gap
+        // bytes through, and heal with one repaint after the flood.
+        if (foreground && isForegroundRestoreBackpressureContext()) {
+          noteHiddenOutputRestoreFloodBackpressure()
+          clearRestoredSnapshotBaseline()
+          // fall through with the ORIGINAL data/meta — post-gap bytes are new
+        } else {
+          // Why: in-flight captured BEFORE the mark — on a visible pane the
+          // mark starts the restore synchronously and must not flag itself.
+          const restoreWasInFlight = hiddenOutputRestoreInFlight !== null
+          markHiddenOutputRestoreNeeded()
+          if (restoreWasInFlight) {
+            hiddenOutputRestoreFreshSnapshotNeeded = true
+          }
+          return
         }
-        return
+      } else {
+        data = reconciliation.data
+        meta = reconciliation.meta
       }
-      data = reconciliation.data
-      meta = reconciliation.meta
       // Why: a hidden Codex query can be split just before visibility changes;
       // xterm needs the completed query, while other bytes still follow restore.
       const pendingForegroundQuery = foreground
@@ -6349,6 +6398,7 @@ export function connectPanePty(
       }
       cleanupHiddenOutputRestoreDeferredRetry()
       cleanupHiddenOutputRestoreForegroundDeadline()
+      cleanupHiddenOutputRestoreFloodRepaint()
       unregisterBacklogRecovery?.()
       unregisterBacklogRecovery = null
       unregisterDocumentVisibilityRecovery?.()
