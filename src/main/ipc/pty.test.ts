@@ -9380,10 +9380,14 @@ describe('registerPtyHandlers', () => {
       undefined,
       { isRecoveryReloadInFlight }
     )
-    const didFinishLoad = mainWindow.webContents.on.mock.calls.find(
-      ([eventName]) => eventName === 'did-finish-load'
-    )?.[1] as (() => void) | undefined
-    expect(didFinishLoad).toBeTypeOf('function')
+    // This branch registers two did-finish-load listeners (renderer delivery-gate
+    // reset first, orphan sweep second); a real reload fires both, so must we —
+    // otherwise the suppression assertion passes vacuously without reaching the sweep.
+    const didFinishLoadHandlers = mainWindow.webContents.on.mock.calls
+      .filter(([eventName]) => eventName === 'did-finish-load')
+      .map(([, handler]) => handler as () => void)
+    expect(didFinishLoadHandlers.length).toBeGreaterThan(0)
+    const didFinishLoad = (): void => didFinishLoadHandlers.forEach((handler) => handler())
 
     const spawnResult = (await handlers.get('pty:spawn')!(null, { cols: 80, rows: 24 })) as {
       id: string
@@ -9391,8 +9395,8 @@ describe('registerPtyHandlers', () => {
 
     // Without the guard the second load would sweep this PTY as a prior-generation
     // orphan. Under recovery-in-flight neither load may touch it.
-    didFinishLoad?.()
-    didFinishLoad?.()
+    didFinishLoad()
+    didFinishLoad()
 
     expect(killSpy).not.toHaveBeenCalled()
     expect(runtime.onPtyExit).not.toHaveBeenCalled()
@@ -9435,9 +9439,12 @@ describe('registerPtyHandlers', () => {
       undefined,
       { isRecoveryReloadInFlight }
     )
-    const didFinishLoad = mainWindow.webContents.on.mock.calls.find(
-      ([eventName]) => eventName === 'did-finish-load'
-    )?.[1] as (() => void) | undefined
+    // This branch registers two did-finish-load listeners (renderer delivery-gate
+    // reset first, orphan sweep second); a real reload fires both, so must we.
+    const didFinishLoadHandlers = mainWindow.webContents.on.mock.calls
+      .filter(([eventName]) => eventName === 'did-finish-load')
+      .map(([, handler]) => handler as () => void)
+    const didFinishLoad = (): void => didFinishLoadHandlers.forEach((handler) => handler())
 
     const spawnResult = (await handlers.get('pty:spawn')!(null, { cols: 80, rows: 24 })) as {
       id: string
@@ -9445,8 +9452,8 @@ describe('registerPtyHandlers', () => {
 
     // First load only advances the generation; the second sees this PTY as a
     // prior-load orphan. With the flag false the guard must NOT suppress the sweep.
-    didFinishLoad?.()
-    didFinishLoad?.()
+    didFinishLoad()
+    didFinishLoad()
 
     expect(killSpy).toHaveBeenCalled()
     expect(runtime.onPtyExit).toHaveBeenCalledWith(spawnResult.id, -1)
@@ -9477,9 +9484,12 @@ describe('registerPtyHandlers', () => {
       undefined,
       { isRecoveryReloadInFlight }
     )
-    const didFinishLoad = mainWindow.webContents.on.mock.calls.find(
-      ([eventName]) => eventName === 'did-finish-load'
-    )?.[1] as (() => void) | undefined
+    // Fire ALL did-finish-load listeners (gate reset + orphan sweep), as a
+    // real reload does — the sweep listener is the one under test.
+    const didFinishLoadHandlers = mainWindow.webContents.on.mock.calls
+      .filter(([eventName]) => eventName === 'did-finish-load')
+      .map(([, handler]) => handler as () => void)
+    const didFinishLoad = (): void => didFinishLoadHandlers.forEach((handler) => handler())
 
     spawnMock.mockReturnValue({
       onData: vi.fn(() => makeDisposable()),
@@ -9494,7 +9504,7 @@ describe('registerPtyHandlers', () => {
 
     // Advance the generation without sweeping (recovery-in-flight), then spawn a
     // second PTY so the two live in different load generations.
-    didFinishLoad?.()
+    didFinishLoad()
 
     spawnMock.mockReturnValue({
       onData: vi.fn(() => makeDisposable()),
@@ -9507,7 +9517,7 @@ describe('registerPtyHandlers', () => {
     })
     const ptyB = (await handlers.get('pty:spawn')!(null, { cols: 80, rows: 24 })) as { id: string }
 
-    didFinishLoad?.()
+    didFinishLoad()
 
     expect(killSpyA).not.toHaveBeenCalled()
     expect(killSpyB).not.toHaveBeenCalled()
