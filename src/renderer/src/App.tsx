@@ -168,6 +168,11 @@ import { resolveMountedLazyModalIds, type LazyModalId } from './lazy-modal-mount
 import { translate } from '@/i18n/i18n'
 import PinnedTabCloseDialog from './components/terminal-pane/PinnedTabCloseDialog'
 
+// Why: agents alive during a hard kill (crash, forced update install) need a
+// reasonably fresh resume record on disk; one minute bounds the lost window
+// without measurable per-tick cost (the capture skips unchanged records).
+const SLEEPING_AGENT_RESUME_CAPTURE_INTERVAL_MS = 60_000
+
 const isMac = navigator.userAgent.includes('Mac')
 const isWindows = !isMac && navigator.userAgent.includes('Windows')
 const shortcutPlatform: NodeJS.Platform = isMac ? 'darwin' : isWindows ? 'win32' : 'linux'
@@ -1304,6 +1309,22 @@ function App(): React.JSX.Element {
     }
     window.addEventListener('beforeunload', captureAndFlush)
     return () => window.removeEventListener('beforeunload', captureAndFlush)
+  }, [])
+
+  // Why: beforeunload never fires on a hard kill (crash, forced update
+  // install, TerminateProcess), so agents alive at that moment would leave no
+  // resume record. This periodic capture stores only agent session ids — not
+  // scrollback, see the no-periodic-scrollback note below — and the store
+  // action skips unchanged records, so idle ticks write nothing; real changes
+  // flow through the debounced session-write subscriber.
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      if (!shouldPersistWorkspaceSession(useAppStore.getState())) {
+        return
+      }
+      useAppStore.getState().captureAllSleepingAgentSessions()
+    }, SLEEPING_AGENT_RESUME_CAPTURE_INTERVAL_MS)
+    return () => window.clearInterval(timer)
   }, [])
 
   // Own the single window-close-request subscription at the always-mounted App
