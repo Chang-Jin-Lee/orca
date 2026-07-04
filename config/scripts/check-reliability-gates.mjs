@@ -186,7 +186,7 @@ function validateEvidenceRun(gate, run, index, failures) {
   }
   if (!isNonEmptyString(run.command)) {
     failures.push(`${owner}.command must be a non-empty string`)
-  } else if (!gate.commands.includes(run.command)) {
+  } else if (Array.isArray(gate.commands) && !gate.commands.includes(run.command)) {
     failures.push(`${owner}.command must match one of the gate commands`)
   }
   if (!Number.isFinite(run.durationSeconds) || run.durationSeconds < 0) {
@@ -252,18 +252,23 @@ function validateCoveredScope(gate, failures) {
   if (!Array.isArray(gate.coveredPlatforms) || !Array.isArray(gate.coveredProviders)) {
     return
   }
-  for (const platform of gate.coveredPlatforms) {
-    if (!gate.platforms.includes(platform)) {
-      failures.push(`${gate.id}: covered platform is outside risk scope: ${platform}`)
+  if (Array.isArray(gate.platforms)) {
+    for (const platform of gate.coveredPlatforms) {
+      if (!gate.platforms.includes(platform)) {
+        failures.push(`${gate.id}: covered platform is outside risk scope: ${platform}`)
+      }
     }
   }
-  for (const provider of gate.coveredProviders) {
-    if (!gate.providers.includes(provider)) {
-      failures.push(`${gate.id}: covered provider is outside risk scope: ${provider}`)
+  if (Array.isArray(gate.providers)) {
+    for (const provider of gate.coveredProviders) {
+      if (!gate.providers.includes(provider)) {
+        failures.push(`${gate.id}: covered provider is outside risk scope: ${provider}`)
+      }
     }
   }
   if (
     ['partial', 'active'].includes(gate.protection) &&
+    Array.isArray(gate.evidenceRuns) &&
     gate.evidenceRuns.some((run) => isRecord(run) && run.result === 'passed')
   ) {
     const evidencePlatforms = new Set(
