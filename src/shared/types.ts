@@ -2182,6 +2182,11 @@ export type ChangelogData = {
   releasesBehind: number | null
 }
 
+export type UpdateCheckOptions = {
+  includePrerelease?: boolean
+  includePerfPrerelease?: boolean
+}
+
 export type UpdateStatus =
   | { state: 'idle' }
   | { state: 'checking'; userInitiated?: boolean }

@@ -58,8 +58,23 @@ vi.mock('../setup-guide/SetupGuideProgressRing', () => ({
 vi.mock('@/components/ui/dropdown-menu', () => ({
   DropdownMenu: ({ children }: { children: ReactNode }) => <>{children}</>,
   DropdownMenuContent: ({ children }: { children: ReactNode }) => <>{children}</>,
-  DropdownMenuItem: ({ children, onSelect }: { children: ReactNode; onSelect?: () => void }) => (
-    <button data-testid="menu-item" onClick={onSelect}>
+  DropdownMenuItem: ({
+    children,
+    disabled,
+    onSelect,
+    title
+  }: {
+    children: ReactNode
+    disabled?: boolean
+    onSelect?: (event: Event) => void
+    title?: string
+  }) => (
+    <button
+      data-testid="menu-item"
+      disabled={disabled}
+      onClick={(event) => onSelect?.(event.nativeEvent)}
+      title={title}
+    >
       {children}
     </button>
   ),
@@ -250,6 +265,32 @@ describe('SidebarSettingsHelpMenu', () => {
   it('renders Check for Updates menu item', () => {
     const html = renderToStaticMarkup(<SidebarSettingsHelpMenu />)
     expect(html).toContain('Check for Updates')
+    expect(html).toContain('Shift-click checks the latest RC')
+    expect(html).toMatch(/(⌘|Ctrl)-click checks the latest perf build/)
+  })
+
+  it('passes update-check modifier options through the updater bridge', async () => {
+    const container = await renderMenu()
+    const checkButton = findMenuItem(container, 'Check for Updates')
+    const primaryModifier = navigator.userAgent.includes('Mac')
+      ? { metaKey: true }
+      : { ctrlKey: true }
+
+    await act(async () => {
+      checkButton.dispatchEvent(new MouseEvent('click', { bubbles: true, shiftKey: true }))
+    })
+    await act(async () => {
+      checkButton.dispatchEvent(new MouseEvent('click', { bubbles: true, ...primaryModifier }))
+    })
+
+    expect(mocks.updaterCheck).toHaveBeenNthCalledWith(1, {
+      includePrerelease: true,
+      includePerfPrerelease: false
+    })
+    expect(mocks.updaterCheck).toHaveBeenNthCalledWith(2, {
+      includePrerelease: false,
+      includePerfPrerelease: true
+    })
   })
 
   it('renders shortcut keys in the settings tooltip', () => {

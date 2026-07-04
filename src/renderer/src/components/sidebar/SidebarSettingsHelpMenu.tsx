@@ -33,6 +33,10 @@ import { SetupGuideProgressRing } from '../setup-guide/SetupGuideProgressRing'
 import { useSetupGuideProgress } from '../setup-guide/use-setup-guide-progress'
 import { SidebarFeedbackDialog } from './SidebarFeedbackDialog'
 import { translate } from '@/i18n/i18n'
+import {
+  getPerfUpdateModifierLabel,
+  getUpdateCheckClickOptions
+} from '@/lib/update-check-click-options'
 
 const DOCS_URL = 'https://www.onorca.dev/docs'
 const CHANGELOG_URL = 'https://onorca.dev/changelog'
@@ -92,6 +96,8 @@ export function SidebarSettingsHelpMenu(): React.JSX.Element {
   const [isRestartingOrca, setIsRestartingOrca] = useState(false)
   const lastShowOnboardingAtRef = React.useRef(0)
   const mountedRef = useMountedRef()
+  const perfUpdateModifierLabel = getPerfUpdateModifierLabel()
+  const updateCheckHint = `Shift-click checks the latest RC; ${perfUpdateModifierLabel}-click checks the latest perf build.`
 
   const showMilestones =
     setupProgress.ready && setupProgress.coreDoneCount < setupProgress.coreTotal
@@ -148,8 +154,7 @@ export function SidebarSettingsHelpMenu(): React.JSX.Element {
   }
 
   const handleCheckForUpdates = (event: Event): void => {
-    const shiftKey = (event as PointerEvent).shiftKey
-    void window.api.updater.check({ includePrerelease: shiftKey })
+    void window.api.updater.check(getUpdateCheckClickOptions(event as PointerEvent))
   }
 
   const openMilestones = (): void => {
@@ -300,6 +305,7 @@ export function SidebarSettingsHelpMenu(): React.JSX.Element {
             <DropdownMenuItem
               disabled={updateStatus.state === 'checking' || updateStatus.state === 'downloading'}
               onSelect={handleCheckForUpdates}
+              title={updateCheckHint}
             >
               {updateStatus.state === 'checking' ? (
                 <Loader2 className="size-3.5 animate-spin" />

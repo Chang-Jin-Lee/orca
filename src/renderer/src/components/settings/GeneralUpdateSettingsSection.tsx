@@ -7,6 +7,10 @@ import { Button } from '../ui/button'
 import { SearchableSetting } from './SearchableSetting'
 import { SettingsSubsectionHeader } from './SettingsFormControls'
 import { translate } from '@/i18n/i18n'
+import {
+  getPerfUpdateModifierLabel,
+  getUpdateCheckClickOptions
+} from '@/lib/update-check-click-options'
 
 export function GeneralUpdateSettingsSection(): React.JSX.Element {
   const updateStatus = useAppStore((s) => s.updateStatus)
@@ -36,6 +40,8 @@ export function GeneralUpdateSettingsSection(): React.JSX.Element {
   }
 
   const [appVersion, setAppVersion] = useState<string | null>(null)
+  const perfUpdateModifierLabel = getPerfUpdateModifierLabel()
+  const updateCheckHint = `Shift-click checks the latest RC; ${perfUpdateModifierLabel}-click checks the latest perf build.`
 
   useEffect(() => {
     let cancelled = false
@@ -87,14 +93,10 @@ export function GeneralUpdateSettingsSection(): React.JSX.Element {
           <Button
             variant="outline"
             size="sm"
-            // Why: Shift-click opts this check into the release-candidate
-            // channel. Keep the affordance hidden; it's a power-user
-            // shortcut, not a discoverable toggle.
-            onClick={(event) =>
-              window.api.updater.check({
-                includePrerelease: event.shiftKey
-              })
-            }
+            // Why: modifier-click channels are power-user update affordances, not
+            // persistent settings toggles.
+            onClick={(event) => window.api.updater.check(getUpdateCheckClickOptions(event))}
+            title={updateCheckHint}
             disabled={updateStatus.state === 'checking' || updateStatus.state === 'downloading'}
             className="gap-2"
           >
