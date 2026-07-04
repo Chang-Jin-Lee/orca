@@ -349,6 +349,33 @@ function buildWorkspaceFromPage(
   }
 }
 
+// Why: when a session profile is deleted its per-profile partition is removed
+// from the main-process allowlist, so any tab still pointing at it would be
+// denied attachment by will-attach-webview and render blank after a restart or
+// remount (#6923 follow-up). Reset the persisted profile id/partition on those
+// tabs so the webview falls back to the allowlisted default partition, matching
+// the pre-sessionPartition behavior.
+function clearDeletedProfileFromBrowserTabs(
+  browserTabsByWorktree: Record<string, BrowserWorkspace[]>,
+  profileId: string
+): Record<string, BrowserWorkspace[]> {
+  let changed = false
+  const next: Record<string, BrowserWorkspace[]> = {}
+  for (const [worktreeId, tabs] of Object.entries(browserTabsByWorktree)) {
+    let tabsChanged = false
+    const updatedTabs = tabs.map((tab) => {
+      if (tab.sessionProfileId !== profileId) {
+        return tab
+      }
+      tabsChanged = true
+      return { ...tab, sessionProfileId: null, sessionPartition: null }
+    })
+    next[worktreeId] = tabsChanged ? updatedTabs : tabs
+    changed = changed || tabsChanged
+  }
+  return changed ? next : browserTabsByWorktree
+}
+
 function mirrorWorkspaceFromActivePage(
   workspace: BrowserWorkspace,
   pages: BrowserPage[]
@@ -1791,6 +1818,10 @@ export const createBrowserSlice: StateCreator<AppState, [], [], BrowserSlice> = 
               s,
               s.browserSessionProfiles.filter((p) => p.id !== profileId)
             ),
+            browserTabsByWorktree: clearDeletedProfileFromBrowserTabs(
+              s.browserTabsByWorktree,
+              profileId
+            ),
             ...(s.defaultBrowserSessionProfileId === profileId
               ? {
                   defaultBrowserSessionProfileId: null,
@@ -1814,6 +1845,10 @@ export const createBrowserSlice: StateCreator<AppState, [], [], BrowserSlice> = 
           ...profileListByHostUpdate(
             s,
             s.browserSessionProfiles.filter((p) => p.id !== profileId)
+          ),
+          browserTabsByWorktree: clearDeletedProfileFromBrowserTabs(
+            s.browserTabsByWorktree,
+            profileId
           ),
           ...(s.defaultBrowserSessionProfileId === profileId
             ? {

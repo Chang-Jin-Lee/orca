@@ -658,6 +658,28 @@ describe('createBrowserSlice runtime guard', () => {
     )
   })
 
+  it('clears the deleted profile partition from referencing tabs so they fall back to the default partition', async () => {
+    // Regression for #6923 follow-up: deleting a profile de-allowlists its
+    // partition in main. A tab still pointing at it would be denied attachment
+    // by will-attach-webview and render blank after restart/remount. The tab
+    // must reset to the allowlisted default partition instead.
+    const store = createTestStore()
+    mockApi.browser.sessionDeleteProfile.mockResolvedValueOnce(true)
+    store.setState({ browserSessionProfiles: [] })
+    const tab = store.getState().createBrowserTab('wt-1', 'https://example.com', {
+      sessionProfileId: 'profile-isolated',
+      sessionPartition: 'persist:orca-browser-session-profile-isolated'
+    })
+
+    await store.getState().deleteBrowserSessionProfile('profile-isolated')
+
+    const updated = store
+      .getState()
+      .browserTabsByWorktree['wt-1']?.find((t) => t.id === tab.id)
+    expect(updated?.sessionProfileId).toBeNull()
+    expect(updated?.sessionPartition).toBeNull()
+  })
+
   it('creates new browser tabs through the owning runtime for desktop remote worktrees', async () => {
     const store = createTestStore()
     store.setState({
