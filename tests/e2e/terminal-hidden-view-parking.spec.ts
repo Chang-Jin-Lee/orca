@@ -379,7 +379,10 @@ test.describe('Terminal hidden view parking', () => {
     }
   })
 
-  test('keeps bell and title side effects live while parked', async ({ orcaPage }) => {
+  test('keeps bell and title side effects live while parked', async ({
+    orcaPage,
+    testRepoPath
+  }) => {
     await waitForSessionReady(orcaPage)
     await enableTerminalParking(orcaPage)
     const setup = await setUpParkableTabA(orcaPage)
@@ -393,11 +396,21 @@ test.describe('Terminal hidden view parking', () => {
     const marker = `PARKED_SIDE_EFFECT_MARKER_${runId}`
     // Why: OSC 0 title first, then a standalone BEL (the OSC terminator BEL
     // must not count as a bell), then a content marker for the reveal check.
-    // The 30s keep-alive stops the shell prompt from overwriting the title
-    // before the store assertion lands.
+    // The keep-alive stops the shell prompt from overwriting the title before
+    // the store assertion lands, and the interval re-asserts the title against
+    // ConPTY on Windows, whose conhost emits its own title updates into the
+    // stream. Script file (not `node -e`): PowerShell mangles the inline
+    // escaped-quote form, which silently emits nothing.
     const payload = `\x1b]0;${parkedTitle}\x07\x07${marker}\n`
-    const sideEffectScript = `process.stdout.write(${JSON.stringify(payload)}); setTimeout(() => process.exit(0), 30000)`
-    await sendToTerminal(orcaPage, tabAPtyId, `node -e ${JSON.stringify(sideEffectScript)}\r`)
+    const titleOnly = `\x1b]0;${parkedTitle}\x07`
+    const scriptPath = path.join(testRepoPath, `.orca-parked-side-effects-${runId}.mjs`)
+    writeFileSync(
+      scriptPath,
+      `process.stdout.write(${JSON.stringify(payload)})\n` +
+        `setInterval(() => process.stdout.write(${JSON.stringify(titleOnly)}), 500)\n` +
+        `setTimeout(() => process.exit(0), 30000)\n`
+    )
+    await sendToTerminal(orcaPage, tabAPtyId, `node ${JSON.stringify(scriptPath)}\r`)
 
     await expect
       .poll(() => getTerminalTabTitle(orcaPage, worktreeId, tabAId), {
@@ -430,6 +443,7 @@ test.describe('Terminal hidden view parking', () => {
         message: 'parked side-effect marker did not restore when the tab was revealed'
       })
       .toContain(marker)
+    rmSync(scriptPath, { force: true })
   })
 
   test('does not park excluded tabs', async ({ orcaPage }) => {
