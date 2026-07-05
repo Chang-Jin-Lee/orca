@@ -305,13 +305,14 @@ export function getDefaultSettings(homedir: string): GlobalSettings {
     claudeManagedAccounts: [],
     activeClaudeManagedAccountId: null,
     terminalScopeHistoryByWorktree: true,
-    // Why these four differ from PR #7214 (their source): this build has no
-    // main-process side-effect emitter, so the parked watcher MUST stay in
-    // byte mode (authority/gate/query-authority false) or parked panes would
-    // silently lose bell/title/completion notifications. Parking itself ships
-    // default-OFF (opt-in) until the memory win is confirmed in a soak.
+    // Why these three authority/gate flags differ from PR #7214 (their source):
+    // this build has no main-process side-effect emitter, so the parked watcher
+    // MUST stay in byte mode (authority/gate/query-authority false) or parked
+    // panes would silently lose bell/title/completion notifications.
     // When #7214 lands its emitter, reconcile by taking its `true` values.
-    terminalHiddenViewParking: false,
+    // Parking itself ships default-ON (byte mode); the kill switch (`false`)
+    // disables it entirely.
+    terminalHiddenViewParking: true,
     terminalMainSideEffectAuthority: false,
     terminalHiddenDeliveryGate: false,
     terminalModelQueryAuthority: false,
@@ -330,6 +331,8 @@ export function getDefaultSettings(homedir: string): GlobalSettings {
     defaultLinearTeamSelection: null,
     opencodeSessionCookie: '',
     opencodeWorkspaceId: '',
+    minimaxGroupId: '',
+    minimaxUsageModels: 'general',
     geminiCliOAuthEnabled: false,
     agentCmdOverrides: {},
     agentDefaultArgs: { ...DEFAULT_TUI_AGENT_ARGS },

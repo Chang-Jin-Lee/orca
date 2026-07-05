@@ -254,6 +254,7 @@ import {
   createPrIntentCurrentTargetConflictsWithToken,
   createPrIntentGitStatusMatchesToken,
   createPrIntentRunTokenMatches,
+  getCreatePrIntentCommitFailureNoticeMessage,
   getCreatePrIntentStagePaths,
   resolveCreatePrIntentReviewBase,
   resolveCreatePrIntentRemoteStep,
@@ -1027,6 +1028,7 @@ function SourceControlInner(): React.JSX.Element {
     loadSessionCommitDrafts()
   )
   const commitDraftsRef = useRef<CommitDraftsByWorktree>(commitDrafts)
+  const commitErrorsRef = useRef<Record<string, string | null>>({})
   const [commitErrors, setCommitErrors] = useState<Record<string, string | null>>({})
   const [remoteActionErrors, setRemoteActionErrors] = useState<
     Record<string, SourceControlActionError | null>
@@ -1152,6 +1154,13 @@ function SourceControlInner(): React.JSX.Element {
       // user edits made before React's passive state sync effect runs.
       commitDraftsRef.current = next
       setCommitDrafts(next)
+    },
+    []
+  )
+  const setCommitErrorForWorktree = useCallback(
+    (worktreeId: string, message: string | null): void => {
+      commitErrorsRef.current = { ...commitErrorsRef.current, [worktreeId]: message }
+      setCommitErrors((prev) => ({ ...prev, [worktreeId]: message }))
     },
     []
   )
@@ -1917,6 +1926,7 @@ function SourceControlInner(): React.JSX.Element {
       return changed ? next : prev
     }
     updateCommitDrafts((prev) => pruneRecord(prev))
+    commitErrorsRef.current = pruneRecord(commitErrorsRef.current)
     setCommitErrors((prev) => pruneRecord(prev))
     setRemoteActionErrors((prev) => pruneRecord(prev))
     setCommitInFlightByWorktree((prev) => pruneRecord(prev))
@@ -2037,7 +2047,7 @@ function SourceControlInner(): React.JSX.Element {
       commitInFlightRef.current[target.worktreeId] = true
 
       setCommitInFlightByWorktree((prev) => ({ ...prev, [target.worktreeId]: true }))
-      setCommitErrors((prev) => ({ ...prev, [target.worktreeId]: null }))
+      setCommitErrorForWorktree(target.worktreeId, null)
       try {
         const commitResult = await commitRuntimeGit(
           {
@@ -2050,10 +2060,7 @@ function SourceControlInner(): React.JSX.Element {
           message
         )
         if (!commitResult.success) {
-          setCommitErrors((prev) => ({
-            ...prev,
-            [target.worktreeId]: commitResult.error ?? 'Commit failed'
-          }))
+          setCommitErrorForWorktree(target.worktreeId, commitResult.error ?? 'Commit failed')
           return false
         }
 
@@ -2071,7 +2078,7 @@ function SourceControlInner(): React.JSX.Element {
           }
           return writeCommitDraftForWorktree(prev, target.worktreeId, '')
         })
-        setCommitErrors((prev) => ({ ...prev, [target.worktreeId]: null }))
+        setCommitErrorForWorktree(target.worktreeId, null)
         if (!options?.target) {
           void refreshActiveGitStatusAfterMutation()
         }
@@ -2103,10 +2110,10 @@ function SourceControlInner(): React.JSX.Element {
         }
         return true
       } catch (error) {
-        setCommitErrors((prev) => ({
-          ...prev,
-          [target.worktreeId]: error instanceof Error ? error.message : 'Commit failed'
-        }))
+        setCommitErrorForWorktree(
+          target.worktreeId,
+          error instanceof Error ? error.message : 'Commit failed'
+        )
         return false
       } finally {
         setCommitInFlightByWorktree((prev) => ({ ...prev, [target.worktreeId]: false }))
@@ -2122,6 +2129,7 @@ function SourceControlInner(): React.JSX.Element {
       compareBaseRef,
       grouped.staged.length,
       refreshActiveGitStatusAfterMutation,
+      setCommitErrorForWorktree,
       updateCommitDrafts,
       unresolvedConflicts.length,
       worktreePath
@@ -3822,12 +3830,21 @@ function SourceControlInner(): React.JSX.Element {
           if (abortIfStale()) {
             return
           }
+          const commitFailure = commitErrorsRef.current[token.worktreeId] ?? null
           setCreatePrIntentNoticeForWorktree(token.worktreeId, {
             tone: 'destructive',
-            message: translate(
-              'auto.components.right.sidebar.SourceControl.createPrIntentCommitFailed',
-              'Could not commit changes. Fix the issue, then retry Create PR.'
-            )
+            message: getCreatePrIntentCommitFailureNoticeMessage(commitFailure, {
+              fallback: translate(
+                'auto.components.right.sidebar.SourceControl.createPrIntentCommitFailed',
+                'Could not commit changes. Fix the issue, then retry Create PR.'
+              ),
+              withSummary: (summary) =>
+                translate(
+                  'auto.components.right.sidebar.SourceControl.createPrIntentCommitBlockedSummary',
+                  'Commit blocked: {{value0}} Fix the issue, then retry Create PR.',
+                  { value0: summary }
+                )
+            })
           })
           return
         }

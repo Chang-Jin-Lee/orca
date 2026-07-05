@@ -20,6 +20,7 @@ import { ClaudeUsageStore, initClaudeUsagePath } from './claude-usage/store'
 import { CodexUsageStore, initCodexUsagePath } from './codex-usage/store'
 import { OpenCodeUsageStore, initOpenCodeUsagePath } from './opencode-usage/store'
 import { killAllPty } from './ipc/pty'
+import { installRelocatedNodePtyNativeRuntime } from './pty/node-pty-runtime-relocation'
 import { initDaemonPtyProvider, disconnectDaemon, shutdownDaemon } from './daemon/daemon-init'
 import { closeAllWatchers } from './ipc/filesystem-watcher'
 import { disposeWorktreeBaseDirectoryWatchers } from './ipc/worktree-base-directory-watcher'
@@ -99,6 +100,7 @@ import {
 import { ensureWindowsUserDataAclGrant } from './startup/windows-user-data-acl'
 import { shouldQuitWhenAllWindowsClosed } from './startup/window-all-closed-quit-policy'
 import { RateLimitService } from './rate-limits/service'
+import { readMiniMaxSessionCookie } from './minimax/minimax-cookie-store'
 import { getInitialClaudeRateLimitTarget } from './rate-limits/claude-rate-limit-target'
 import { getInitialCodexRateLimitTarget } from './rate-limits/codex-rate-limit-target'
 import {
@@ -574,6 +576,9 @@ if (hasSingleInstanceLock) {
   initClaudeUsagePath()
   initCodexUsagePath()
   initOpenCodeUsagePath()
+  // Why: must run before anything loads node-pty (first PTY spawn) so main
+  // and the daemon it forks both pick up ORCA_NODE_PTY_NATIVE_DIR.
+  installRelocatedNodePtyNativeRuntime()
   crashReports = CrashReportStore.fromUserData()
   recordCrashBreadcrumb('app_started', {
     packaged: app.isPackaged,
@@ -1683,6 +1688,14 @@ app.whenReady().then(async () => {
     return {
       sessionCookie: settings.opencodeSessionCookie,
       workspaceIdOverride: settings.opencodeWorkspaceId
+    }
+  })
+  rateLimits.setMiniMaxConfigResolver(() => {
+    const settings = store!.getSettings()
+    return {
+      sessionCookie: readMiniMaxSessionCookie() ?? '',
+      groupId: settings.minimaxGroupId,
+      models: settings.minimaxUsageModels
     }
   })
   rateLimits.setGeminiCliOAuthEnabledResolver(() => store!.getSettings().geminiCliOAuthEnabled)

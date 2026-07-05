@@ -5,6 +5,7 @@ import {
   titleHasAgentName,
   titleHasAnyLegacyAgentName
 } from './agent-name-token-match'
+import { isLegacyPiCompatibleTitle } from './pi-compatible-synthetic-title'
 
 export { AGY_AGENT_NAME_RE, DROID_AGENT_NAME_RE, HERMES_AGENT_NAME_RE, titleHasAgentName }
 
@@ -41,30 +42,35 @@ export const STRONG_WORKING_KEYWORDS_RE = new RegExp(
 
 export const STRONG_WORKING_KEYWORDS_RE_GLOBAL = new RegExp(STRONG_WORKING_KEYWORDS_RE.source, 'gi')
 
-export const PI_IDLE_PREFIX = '\u03c0 - ' // π -
 export const CURSOR_NATIVE_TITLE_LOWER = 'cursor agent'
 
 // eslint-disable-next-line no-control-regex -- intentional unicode range
 export const BRAILLE_SPINNER_RE = /[\u2800-\u28ff]/g
 
 export function isGeminiTerminalTitle(title: string): boolean {
-  return (
+  // Why: Gemini OSC glyphs are stronger evidence than any cwd/session text.
+  if (
     title.includes(GEMINI_PERMISSION) ||
     title.includes(GEMINI_WORKING) ||
     title.includes(GEMINI_SILENT_WORKING) ||
-    title.includes(GEMINI_IDLE) ||
-    title.toLowerCase().includes('gemini')
-  )
+    title.includes(GEMINI_IDLE)
+  ) {
+    return true
+  }
+  // Why: Pi/OMP titles include cwd/session text; substring matching made
+  // paths like "gemini-project" masquerade as Gemini CLI.
+  if (isPiAgentTitle(title)) {
+    return false
+  }
+  return titleHasAgentName(title, 'gemini')
 }
 
 export function isPiTerminalTitle(title: string): boolean {
-  return title.startsWith(PI_IDLE_PREFIX)
+  return isLegacyPiCompatibleTitle(title) && !containsBrailleSpinner(title)
 }
 
 export function isPiAgentTitle(title: string): boolean {
-  return (
-    isPiTerminalTitle(title) || (containsBrailleSpinner(title) && title.includes(PI_IDLE_PREFIX))
-  )
+  return isLegacyPiCompatibleTitle(title)
 }
 
 export function containsBrailleSpinner(title: string): boolean {

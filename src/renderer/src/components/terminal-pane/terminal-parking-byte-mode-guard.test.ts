@@ -89,9 +89,12 @@ afterEach(() => {
 })
 
 describe('shipped defaults pin byte mode', () => {
-  it('ships all four terminal authority/gate/parking flags OFF', () => {
+  it('ships parking ON but the three authority/gate flags OFF (byte mode)', () => {
+    // Parking is default-ON; the byte-mode safety invariant is the three
+    // authority/gate/query flags staying false so the parked watcher never
+    // consumes the dead pty:sideEffect channel.
     const defaults = getDefaultSettings('/home/guard-test')
-    expect(defaults.terminalHiddenViewParking).toBe(false)
+    expect(defaults.terminalHiddenViewParking).toBe(true)
     expect(defaults.terminalMainSideEffectAuthority).toBe(false)
     expect(defaults.terminalHiddenDeliveryGate).toBe(false)
     expect(defaults.terminalModelQueryAuthority).toBe(false)

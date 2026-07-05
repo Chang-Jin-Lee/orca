@@ -145,10 +145,9 @@ async function skipUnlessParkingWired(page: Page): Promise<void> {
   )
 }
 
-// Why: this standalone extraction ships terminalHiddenViewParking default-OFF
-// (opt-in until the memory win is soak-confirmed); PR #7214 later flips the
-// default to true, making this enable a no-op. Same mutation path as the
-// kill-switch test in terminal-parked-memory.spec.ts.
+// Why: parking ships default-ON, but set it explicitly so the spec is
+// robust to any profile that carried the kill switch (`false`) forward. Same
+// mutation path as the kill-switch test in terminal-parked-memory.spec.ts.
 async function enableTerminalParking(page: Page): Promise<void> {
   await page.evaluate(async () => {
     const store = window.__store

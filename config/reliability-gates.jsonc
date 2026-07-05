@@ -2226,11 +2226,11 @@
       "promotionCriteria": [
         "Run in soak for at least 100 consecutive passes or 14 days across required CI platforms.",
         "Confirm the memory relief and notification correctness on a real Windows multi-agent workspace with parking opted in.",
-        "Land the three parking e2e specs in the scheduled E2E suite with green history before flipping terminalHiddenViewParking on by default."
+        "Land the three parking e2e specs in the scheduled E2E suite with green history to keep terminalHiddenViewParking on by default."
       ],
       "knownGaps": [
         "The three Electron e2e specs are scheduled-suite only, not PR-blocking CI.",
-        "Windows and Linux runs pending; parking itself ships default-off until the soak completes.",
+        "Linux run pending; parking ships default-on (byte mode) with a kill switch.",
         "Fact mode (main-process side-effect authority) is intentionally absent until PR #7214 lands its emitter; the guard pins byte mode until then."
       ],
       "demotionRule": "Demote or quarantine if the gate flakes once without a product bug or harness bug filed to the owner."

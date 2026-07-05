@@ -172,6 +172,23 @@ export class HeadlessEmulator {
     return this.terminal.buffer.active.type === 'alternate'
   }
 
+  /** Why: PSReadLine's Ctrl+L repaint is only safe at an empty prompt — with
+   *  pending input it re-renders at a cached buffer row that ConPTY's fixed
+   *  viewport doesn't track, painting the input well below the prompt. The
+   *  cursor line counts as an empty prompt when everything before the cursor
+   *  ends with a single '>' and nothing follows it ('>>' is PowerShell's
+   *  continuation prompt, i.e. a multiline edit in flight). */
+  isCursorOnEmptyPromptLine(): boolean {
+    const buffer = this.terminal.buffer.active
+    const line = buffer.getLine(buffer.baseY + buffer.cursorY)
+    if (!line) {
+      return false
+    }
+    const upToCursor = line.translateToString(true, 0, buffer.cursorX).trimEnd()
+    const fullLine = line.translateToString(true).trimEnd()
+    return fullLine === upToCursor && upToCursor.endsWith('>') && !upToCursor.endsWith('>>')
+  }
+
   getVisibleLines(): string[] {
     const buffer = this.terminal.buffer.active
     const lines: string[] = []
