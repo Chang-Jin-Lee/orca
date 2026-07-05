@@ -24,6 +24,7 @@ import {
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
+import { normalizeRuntimePathForComparison } from '../../../src/shared/cross-platform-path'
 import { TEST_REPO_PATH_FILE } from '../global-setup'
 import { cleanupE2EDaemons, closeElectronAppForE2E } from './electron-process-shutdown'
 import { createSeededTestRepo, isValidGitRepo } from './seeded-test-repo'
@@ -264,24 +265,40 @@ export const test = base.extend<OrcaTestFixtures, OrcaWorkerFixtures>({
     // public fetch path until the repo lands instead of asserting on the first
     // tick (mirrors the seeded-worktree poll below). updateRepo is idempotent,
     // so running it once the repo appears is safe across poll ticks.
+    // Why node-side matching: the store canonicalizes repo paths in main, so
+    // on Windows the persisted path can differ from the seeded realpath in
+    // separators or drive-letter case; compare via the shared normalizer
+    // instead of strict equality.
+    const repoPathKey = normalizeRuntimePathForComparison(repoPath)
     await playwrightExpect
       .poll(
-        () =>
-          page.evaluate(async (repoPath) => {
+        async () => {
+          const repos = await page.evaluate(async () => {
             const store = window.__store
             if (!store) {
-              return false
+              return null
             }
             await store.getState().fetchRepos()
-            const repo = store.getState().repos.find((candidate) => candidate.path === repoPath)
-            if (!repo) {
-              return false
-            }
-            // Why: the fixture deliberately creates external Git worktrees. New
-            // repos hide those by default after the visibility rollout.
-            await store.getState().updateRepo(repo.id, { externalWorktreeVisibility: 'show' })
-            return true
-          }, repoPath),
+            return store.getState().repos.map((candidate) => ({
+              id: candidate.id,
+              path: candidate.path
+            }))
+          })
+          const repo = repos?.find(
+            (candidate) => normalizeRuntimePathForComparison(candidate.path) === repoPathKey
+          )
+          if (!repo) {
+            return false
+          }
+          // Why: the fixture deliberately creates external Git worktrees. New
+          // repos hide those by default after the visibility rollout.
+          await page.evaluate(async (repoId) => {
+            await window.__store
+              ?.getState()
+              .updateRepo(repoId, { externalWorktreeVisibility: 'show' })
+          }, repo.id)
+          return true
+        },
         {
           timeout: 30_000,
           message: `Expected e2e repo to be loaded: ${repoPath}`
@@ -307,19 +324,32 @@ export const test = base.extend<OrcaTestFixtures, OrcaWorkerFixtures>({
     // so poll the public fetch path until the seeded primary + secondary load.
     await playwrightExpect
       .poll(
-        () =>
-          page.evaluate(async (repoPath) => {
+        async () => {
+          const repos = await page.evaluate(() => {
+            const store = window.__store
+            if (!store) {
+              return null
+            }
+            return store.getState().repos.map((candidate) => ({
+              id: candidate.id,
+              path: candidate.path
+            }))
+          })
+          const repo = repos?.find(
+            (candidate) => normalizeRuntimePathForComparison(candidate.path) === repoPathKey
+          )
+          if (!repo) {
+            return 0
+          }
+          return await page.evaluate(async (repoId) => {
             const store = window.__store
             if (!store) {
               return 0
             }
-            const repo = store.getState().repos.find((candidate) => candidate.path === repoPath)
-            if (!repo) {
-              return 0
-            }
-            await store.getState().fetchWorktrees(repo.id)
-            return store.getState().worktreesByRepo[repo.id]?.length ?? 0
-          }, repoPath),
+            await store.getState().fetchWorktrees(repoId)
+            return store.getState().worktreesByRepo[repoId]?.length ?? 0
+          }, repo.id)
+        },
         {
           timeout: 30_000,
           message: 'seeded e2e worktrees did not load'
@@ -341,21 +371,24 @@ export const test = base.extend<OrcaTestFixtures, OrcaWorkerFixtures>({
     // Why: workspaceSessionReady restoration can overwrite activeWorktreeId
     // after earlier setup calls. Selecting it here ensures every test starts on
     // the seeded repo instead of the "Select a worktree" empty state.
-    await page.evaluate((repoPath: string) => {
+    const allWorktrees = await page.evaluate(() => {
       const store = window.__store
       if (!store) {
-        return
+        return []
       }
-
-      const state = store.getState()
-      const allWorktrees = Object.values(state.worktreesByRepo).flat()
-      const testWorktree = allWorktrees.find(
-        (worktree) => worktree.path === repoPath || worktree.path.startsWith(repoPath)
-      )
-      if (testWorktree) {
-        state.setActiveWorktree(testWorktree.id)
-      }
-    }, repoPath)
+      return Object.values(store.getState().worktreesByRepo)
+        .flat()
+        .map((worktree) => ({ id: worktree.id, path: worktree.path }))
+    })
+    const testWorktree = allWorktrees.find((worktree) => {
+      const worktreePathKey = normalizeRuntimePathForComparison(worktree.path)
+      return worktreePathKey === repoPathKey || worktreePathKey.startsWith(repoPathKey)
+    })
+    if (testWorktree) {
+      await page.evaluate((worktreeId) => {
+        window.__store?.getState().setActiveWorktree(worktreeId)
+      }, testWorktree.id)
+    }
 
     // Best-effort seed of a baseline terminal tab when a fresh isolated
     // profile has none yet.
