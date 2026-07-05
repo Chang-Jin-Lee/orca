@@ -57,7 +57,7 @@
     "openWorktreePalette": "ワークツリーパレットを開く",
     "window": "ウィンドウ",
     "help": "ヘルプ",
-    "paste": "Paste"
+    "paste": "貼り付け"
   },
   "tray": {
     "openOrca": "Orcaを開く",
@@ -652,7 +652,7 @@
         "devDescription": "Dev-only tools for exercising UI states.",
         "devBadge": "Dev",
         "devSearchNotificationPlayground": "Notification playground",
-        "devSearchNotificationPlaygroundDescription": "Trigger representative toast and notification UI states.",
+        "devSearchNotificationPlaygroundDescription": "代表的なトーストと通知の UI 状態をトリガーします。",
         "devSearchKeywordDev": "dev",
         "devSearchKeywordToast": "toast",
         "devSearchKeywordSonner": "sonner",
@@ -876,7 +876,7 @@
           "moved": "moved this",
           "from": "from",
           "to": "to",
-          "activity": "Activity",
+          "activity": "アクティビティ",
           "noActivity": "No activity yet."
         },
         "checkActionRequiredHint": "This check needs a manual action on GitHub (for example, approving the workflow run) before merging is unblocked."
@@ -2014,7 +2014,7 @@
           "13b3ac0a84": "状態",
           "79c54552f7": "フィルター",
           "8a2ffbf9b3": "{{value0}} フィルターを削除します",
-          "19bb6f115f": "reviewed-by"
+          "19bb6f115f": "レビュー済"
         },
         "PRFilterPickers": {
           "fdf387297c": "クリア （",
@@ -4236,7 +4236,7 @@
             "6c1efa2cf8": "レビュー中",
             "6b8285b8dd": "完了",
             "93ac840dcb": "ブロック中",
-            "2c19d1db33": "Play",
+            "2c19d1db33": "再生",
             "111db162bf": "一時停止中",
             "642da473f2": "アラート",
             "6380517b10": "フラグ",
@@ -4394,7 +4394,7 @@
           "5e6f7a8b9c": "This removes the saved SSH host and its credentials from this computer. Remote files are not deleted.",
           "6f7a8b9c0d": "キャンセル",
           "7a8b9c0d1e": "Open settings",
-          "8b9c0d1e2f": "Remove host"
+          "8b9c0d1e2f": "ホストを削除"
         },
         "HostRenameDialog": {
           "1a2b3c4d5e": "Rename host",
@@ -4416,7 +4416,7 @@
           "63f36455cc": "Reconnect",
           "59b553e2aa": "切断",
           "2d3e4f5a6b": "Check connection",
-          "3c4d5e6f7a": "Manage host…",
+          "3c4d5e6f7a": "ホストを管理…",
           "6e7f8a9b0c": "Remove host…"
         },
         "WorkspaceKanbanDrawer": {
@@ -5889,13 +5889,13 @@
           "hostSetupStateNotSetUp": "Not set up",
           "hostSetupStateSettingUp": "Setting up",
           "hostSetupStateError": "Error",
-          "hostSetupStateUnsupported": "Unsupported",
+          "hostSetupStateUnsupported": "未対応",
           "setupPathPending": "Path pending",
           "openSetup": "オープン",
           "removeSetup": "削除",
           "hostSetupBlockedVersion": "Orca server version is incompatible",
           "hostSetupMissingCapability": "Update Orca on this host to set up projects",
-          "setupProjectOnHost": "Set up on another host",
+          "setupProjectOnHost": "別のホストで設定",
           "setupProjectOnHostHelp": "Choose a host, then import an existing checkout, clone the repository there, or track a setup that will be provisioned later.",
           "setupExistingFolder": "既存フォルダをインポート",
           "setupExistingFolderHelp": "Make this project available on another host by linking a checkout that already exists there.",
@@ -5924,7 +5924,7 @@
           "cloneFromUrl": "Clone from URL",
           "cloneFromUrlHelp": "Clone this repository onto the selected host.",
           "addPlannedHost": "Add host placeholder",
-          "addPlannedHostHelp": "Remember this host and finish adding the project later.",
+          "addPlannedHostHelp": "このホストを記憶し、後でプロジェクトの追加を完了します。",
           "existingFolder": "Existing folder",
           "addPlannedHostToHost": "Add {{host}}",
           "addPlannedHostConfirm": "This only records that the project should be available on this host. You can add the folder or clone later.",
@@ -6549,7 +6549,7 @@
           "ab20575a8a": "オフ",
           "ab3a1f9068": "wsl.exe",
           "ask_before_closing_running_terminals_title": "Ask Before Closing Running Terminals",
-          "ask_before_closing_running_terminals_description": "Show a confirmation before closing a terminal that has a running command or agent.",
+          "ask_before_closing_running_terminals_description": "実行中のコマンドやエージェントがあるターミナルを閉じる前に確認を表示します。",
           "scrollSpeed": {
             "title": "スクロール速度",
             "description": "通常のターミナルスクロールバック、修飾キーでの高速スクロール、全画面 TUI のホイール速度を調整します。",
@@ -8229,7 +8229,7 @@
             "0fe0073f0c": "新規ペインとライブ アップデートのデフォルトの terminal フォント サイズ。",
             "5930244899": "フォントサイズ",
             "ask_before_closing_running_terminals_title": "Ask Before Closing Running Terminals",
-            "ask_before_closing_running_terminals_description": "Show a confirmation before closing a terminal that has a running command or agent.",
+            "ask_before_closing_running_terminals_description": "実行中のコマンドやエージェントがあるターミナルを閉じる前に確認を表示します。",
             "scrollSpeed": {
               "title": "スクロール速度",
               "description": "通常のターミナルスクロールバック、修飾キーでの高速スクロール、全画面 TUI のホイール速度を調整します。"
@@ -8360,7 +8360,7 @@
               "integration": {
                 "cards": {
                   "d5b3be8ecd": "Re-check",
-                  "8cbc39f862": "Learn more",
+                  "8cbc39f862": "詳しく見る",
                   "707180d09c": "glab auth login",
                   "4be0616873": "The GitLab CLI is installed but not authenticated. Run this command in a terminal:",
                   "54a640af7a": "Install GitLab CLI",
@@ -8392,7 +8392,7 @@
                 "8c20e76308": "Each connected Jira site has one token stored by the active runtime.",
                 "c24e56c532": "Test",
                 "3e7c10d286": "Testing...",
-                "a2c0015fb8": "Verified",
+                "a2c0015fb8": "確認済み",
                 "e2ff968276": "Connect Jira",
                 "60996beda6": "Add Jira site",
                 "7ca5ffffdb": "Browse, create, and start work from Jira Cloud issues.",
@@ -8417,7 +8417,7 @@
               "integration": {
                 "cards": {
                   "793a06e899": "Re-check",
-                  "1a9475dace": "Learn more",
+                  "1a9475dace": "詳しく見る",
                   "19fb419c12": "Gitea credentials are configured but could not authenticate. Check the token, API base URL, and repository permissions, then restart Orca if environment variables changed.",
                   "60708f23da": "only when Orca cannot derive the API URL from the remote.",
                   "709057ad91": "ORCA_GITEA_API_BASE_URL",
@@ -8575,12 +8575,12 @@
           "07939d084e": "Reset {{value0}} to default",
           "9b02917027": "Reset to default",
           "a799f90f82": "Disable {{value0}}",
-          "25e6e76618": "Disable shortcut",
-          "035a822ef0": "Add shortcut",
+          "25e6e76618": "ショートカットを無効にする",
+          "035a822ef0": "ショートカットを追加",
           "a0e2ef0e61": "Add another shortcut for {{value0}}",
-          "245c83af24": "Add another shortcut",
+          "245c83af24": "別のショートカットを追加",
           "482a60225d": "Enable {{value0}}",
-          "6287677c37": "Enable",
+          "6287677c37": "有効にする",
           "01481b964c": "Add shortcut for {{value0}}"
         },
         "ShortcutRecorderButton": {
@@ -8588,10 +8588,10 @@
           "3732775d74": "Add shortcut for {{value0}}",
           "88764af2c1": "Change shortcut for {{value0}}",
           "30feb099d6": "Change shortcut {{value0}} of {{value1}} for {{value2}}",
-          "5d982a2a1f": "Listening for shortcut",
-          "152e0bcd64": "Add shortcut",
-          "5bd56445da": "Change shortcut",
-          "f5ed5dcbf6": "Press keys…"
+          "5d982a2a1f": "ショートカットを待機中",
+          "152e0bcd64": "ショートカットを追加",
+          "5bd56445da": "ショートカットを変更",
+          "f5ed5dcbf6": "キーを押してください…"
         },
         "ShortcutRemoveButton": {
           "9e29aff18b": "{{value0}} ショートカット {{value1}} を削除",
@@ -8640,21 +8640,21 @@
           "forceDeleteClicked": "Force Delete clicked",
           "devOnlyCallback": "Dev-only callback.",
           "infoToast": "Info toast",
-          "infoToastDescription": "Long informational copy with no explicit action.",
+          "infoToastDescription": "明示的なアクションのない長い情報コピー。",
           "localCanaryBehind": "Local canary is behind origin/canary",
           "successToast": "Success toast",
-          "successToastDescription": "Short confirmation state.",
+          "successToastDescription": "短い確認状態。",
           "settingsSaved": "Settings saved",
-          "shortSuccessCopy": "Short success copy.",
+          "shortSuccessCopy": "短い成功コピー。",
           "errorToast": "Error toast",
-          "errorToastDescription": "Long error copy without recovery actions.",
+          "errorToastDescription": "復元アクションのない長いエラーコピー。",
           "failedToSyncWorkspaceMetadata": "Failed to sync workspace metadata",
           "nativeActionToast": "Native action toast",
-          "nativeActionToastDescription": "Uses Sonner action and cancel slots.",
+          "nativeActionToastDescription": "Sonner アクションとキャンセルスロットを使用。",
           "deleteFailureToast": "Delete failure toast",
-          "deleteFailureToastDescription": "Custom footer with View and Force Delete.",
+          "deleteFailureToastDescription": "表示と強制削除を含むカスタムフッター。",
           "behindBaseRefToast": "Behind base ref toast",
-          "behindBaseRefToastDescription": "Persistent prompt with an inline Settings link and footer action.",
+          "behindBaseRefToastDescription": "インラインの設定リンクとフッターアクション付きの永続プロンプト。",
           "notificationPlayground": "Notification playground",
           "notificationPlaygroundDescription": "Dev-only triggers for checking toast layout, recovery actions, and long-copy wrapping.",
           "devOnly": "Dev only"
@@ -9307,7 +9307,7 @@
                 "f5bc5c4cf1": "The hosting provider reports conflicts, but local Git did not reproduce them. Refresh the review or push the branch to recalculate mergeability.",
                 "5bc9bda2af": "Run from this worktree",
                 "e87fb3d929": "Copy mergeability refresh commands",
-                "1e53e45072": "Copied",
+                "1e53e45072": "コピーしました",
                 "084c516efb": "Copy commands",
                 "5dc3af25c0": "コメントを選択",
                 "d7a2f9c401": "Send unresolved {{value0}} comments",
@@ -9322,10 +9322,10 @@
                 "e8b4c1a903": "Resolved · {{value0}}",
                 "c3a8e5d710": "Needs review · {{value0}}",
                 "a7f0c7e8d1": "Queue",
-                "8a621a2c4f": "Grouped",
-                "b13f85d75c": "Timeline",
+                "8a621a2c4f": "グループ化",
+                "b13f85d75c": "タイムライン",
                 "f5cf324efa": "Comment display options",
-                "5e6e5a13fa": "View",
+                "5e6e5a13fa": "表示",
                 "actionRequiredHint": "This check needs a manual action on GitHub (for example, approving the workflow run) before merging is unblocked."
               },
               "empty": {
@@ -9503,7 +9503,7 @@
                   "d8a4c0e369": "Authenticate before creating a {{value0}}.",
                   "e9b5d1f470": "Check out a branch before creating a {{value0}}.",
                   "f0c6e2a581": "This branch is not ready for a {{value0}} yet.",
-                  "8f9a0b1c2d": "Nothing to commit. Branch is up to date.",
+                  "8f9a0b1c2d": "コミットするものがありません。ブランチは最新です。",
                   "h3i4j5k607": "Checking whether this branch can create a {{value0}}…"
                 }
               }
@@ -9588,14 +9588,14 @@
             "allSessionsLower": "all sessions",
             "thisScope": "This",
             "allScope": "All",
-            "scope": "Scope",
+            "scope": "スコープ",
             "currentWorkspace": "Current workspace",
             "allSessions": "All sessions",
             "viewOptionsAriaLabel": "Session History view options",
-            "viewOptions": "View options",
+            "viewOptions": "表示オプション",
             "agents": "エージェント",
-            "sort": "Sort",
-            "lastUpdated": "Last updated",
+            "sort": "並び替え",
+            "lastUpdated": "最終更新",
             "created": "Created",
             "group": "Group",
             "folder": "フォルダ",
@@ -11710,7 +11710,7 @@
             "4bb7424d6b": "Canceled",
             "6e776f9ef9": "Download failed",
             "756bfc25c9": "開く",
-            "09a9489aa5": "Show",
+            "09a9489aa5": "表示",
             "2a4c4b8e1f": "コピー"
           },
           "BrowserToolbarMenu": {
@@ -11797,7 +11797,7 @@
           "51a470b966": "ssh",
           "b09b2384fd": "一時停止中",
           "eaa02014f8": "有効",
-          "29baf8f4c2": "Source"
+          "29baf8f4c2": "ソース"
         },
         "AutomationEditorDialog": {
           "fb1896a5e7": "キャンセル",
@@ -12067,7 +12067,7 @@
         },
         "AutomationSetupDecisionField": {
           "5a7863909c": "新しいワークスペースごとにセットアップを実行",
-          "18f000ad4e": "Advanced",
+          "18f000ad4e": "詳細設定",
           "874b72195b": "When this automation creates a workspace, prepare it the same way creating a worktree by hand does — run the project's setup and open its terminal tabs."
         }
       },

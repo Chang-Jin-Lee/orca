@@ -2014,7 +2014,7 @@
           "13b3ac0a84": "状态",
           "79c54552f7": "筛选条件",
           "8a2ffbf9b3": "删除 {{value0}} 筛选条件",
-          "19bb6f115f": "reviewed-by"
+          "19bb6f115f": "已审查"
         },
         "PRFilterPickers": {
           "fdf387297c": "清除 （",
@@ -5155,7 +5155,7 @@
           "bf16ef0af2": "关闭",
           "3f6892f307": "开启",
           "b82f86d7d2": "Rich Markdown Spellcheck",
-          "5195f0b9ef": "Show browser spelling underlines and suggestions while editing rich Markdown."
+          "5195f0b9ef": "在编辑富 Markdown 时显示浏览器拼写下划线和建议。"
         },
         "AdvancedNetworkSettingsSection": {
           "3e431564b5": "本地主机，127.0.0.1，*.internal",
@@ -7410,7 +7410,7 @@
             "defaultProjectRuntime": "默认项目运行时",
             "defaultProjectRuntimeDescription": "选择本地 Windows 项目继承的运行时。",
             "d2d2d929c0": "Rich Markdown Spellcheck",
-            "4497e2e2bb": "Show browser spelling underlines and suggestions while editing rich Markdown."
+            "4497e2e2bb": "在编辑富 Markdown 时显示浏览器拼写下划线和建议。"
           }
         },
         "git": {
@@ -8183,7 +8183,7 @@
               "keyword_warp": "warp",
               "keyword_themes": "themes",
               "keyword_yaml": "yaml",
-              "keyword_legacy_title": "Import themes from Warp"
+              "keyword_legacy_title": "从 Warp 导入主题"
             },
             "yaml_import": {
               "title": "从 YAML 导入",
