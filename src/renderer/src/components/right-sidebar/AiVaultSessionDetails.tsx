@@ -3,13 +3,14 @@ import { FileJson, FolderGit2, MessageSquare, Play } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
-import type { AiVaultSession } from '../../../../shared/ai-vault-types'
+import type { AiVaultScope, AiVaultSession } from '../../../../shared/ai-vault-types'
 import { translate } from '@/i18n/i18n'
 import { sessionDetailConversationTurns } from './ai-vault-session-display'
 import {
   aiVaultWorktreeCompactPath,
   aiVaultWorktreeStatusLabel,
   shouldShowAiVaultWorktreeStatusBadge,
+  shouldShowAiVaultSessionWorktreeLine,
   type AiVaultSessionWorktreeInfo
 } from './ai-vault-session-worktree'
 
@@ -17,6 +18,7 @@ export function SessionInlineDetails({
   id,
   session,
   worktreeInfo,
+  vaultScope,
   resumeActions,
   onResumeInWorktree,
   onResumeInNewTab,
@@ -25,6 +27,7 @@ export function SessionInlineDetails({
   id: string
   session: AiVaultSession
   worktreeInfo: AiVaultSessionWorktreeInfo | null
+  vaultScope: AiVaultScope
   resumeActions: {
     worktree: { worktreeId: string | null; disabled: boolean }
     newTab: { worktreeId: string | null; disabled: boolean }
@@ -78,7 +81,7 @@ export function SessionInlineDetails({
           )}
         </SessionReceiptSection>
 
-        {worktreeDisplay ? (
+        {shouldShowAiVaultSessionWorktreeLine(worktreeDisplay, { vaultScope }) ? (
           <SessionReceiptSection
             icon={<FolderGit2 className="size-3" />}
             label={translate(
@@ -86,7 +89,7 @@ export function SessionInlineDetails({
               'Worktree'
             )}
           >
-            <WorktreeMetadataLines worktreeInfo={worktreeDisplay} />
+            <WorktreeMetadataLines worktreeInfo={worktreeDisplay} vaultScope={vaultScope} />
           </SessionReceiptSection>
         ) : null}
       </div>
@@ -200,9 +203,11 @@ function ConversationTurnCard({
 }
 
 function WorktreeMetadataLines({
-  worktreeInfo
+  worktreeInfo,
+  vaultScope
 }: {
   worktreeInfo: AiVaultSessionWorktreeInfo
+  vaultScope: AiVaultScope
 }): React.JSX.Element {
   const compactPath = aiVaultWorktreeCompactPath(worktreeInfo.path)
   const pathLine =
@@ -212,7 +217,7 @@ function WorktreeMetadataLines({
   return (
     <div className="grid min-w-0 gap-1 text-[11px] leading-4">
       <div className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5">
-        {shouldShowAiVaultWorktreeStatusBadge(worktreeInfo.status) ? (
+        {shouldShowAiVaultWorktreeStatusBadge(worktreeInfo.status, { vaultScope }) ? (
           <>
             <span className="shrink-0 text-[10px] font-medium uppercase tracking-[0.04em] text-muted-foreground">
               {aiVaultWorktreeStatusLabel(worktreeInfo.status)}

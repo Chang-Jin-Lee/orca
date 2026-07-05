@@ -10,6 +10,7 @@ import {
   resolveAiVaultSessionWorktreeDisplay,
   resolveAiVaultSessionWorktreeInfo,
   shouldShowAiVaultWorktreeStatusBadge,
+  shouldShowAiVaultSessionWorktreeLine,
   type AiVaultSessionWorktreeInfo
 } from './ai-vault-session-worktree'
 
@@ -206,12 +207,33 @@ describe('aiVaultWorktreeCompactPath', () => {
   })
 })
 
+describe('shouldShowAiVaultSessionWorktreeLine', () => {
+  it('hides the worktree row for the current worktree in workspace scope', () => {
+    expect(
+      shouldShowAiVaultSessionWorktreeLine(makeWorktreeInfo('current'), { vaultScope: 'workspace' })
+    ).toBe(false)
+    expect(
+      shouldShowAiVaultSessionWorktreeLine(makeWorktreeInfo('current'), { vaultScope: 'all' })
+    ).toBe(true)
+    expect(
+      shouldShowAiVaultSessionWorktreeLine(makeWorktreeInfo('active'), { vaultScope: 'workspace' })
+    ).toBe(true)
+    expect(shouldShowAiVaultSessionWorktreeLine(null, { vaultScope: 'workspace' })).toBe(false)
+  })
+})
+
 describe('shouldShowAiVaultWorktreeStatusBadge', () => {
   it('hides the generic active badge but keeps meaningful states', () => {
     expect(shouldShowAiVaultWorktreeStatusBadge('active')).toBe(false)
     expect(shouldShowAiVaultWorktreeStatusBadge('current')).toBe(true)
     expect(shouldShowAiVaultWorktreeStatusBadge('archived')).toBe(true)
     expect(shouldShowAiVaultWorktreeStatusBadge('unavailable')).toBe(true)
+  })
+
+  it('hides the current badge in workspace scope', () => {
+    expect(shouldShowAiVaultWorktreeStatusBadge('current', { vaultScope: 'workspace' })).toBe(false)
+    expect(shouldShowAiVaultWorktreeStatusBadge('current', { vaultScope: 'all' })).toBe(true)
+    expect(shouldShowAiVaultWorktreeStatusBadge('archived', { vaultScope: 'workspace' })).toBe(true)
   })
 })
 

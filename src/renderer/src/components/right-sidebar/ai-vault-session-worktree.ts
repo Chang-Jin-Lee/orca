@@ -7,7 +7,7 @@ import {
   normalizeRuntimePathForComparison,
   normalizeRuntimePathSeparators
 } from '../../../../shared/cross-platform-path'
-import type { AiVaultSession } from '../../../../shared/ai-vault-types'
+import type { AiVaultScope, AiVaultSession } from '../../../../shared/ai-vault-types'
 import type { Worktree } from '../../../../shared/types'
 import { translate } from '@/i18n/i18n'
 
@@ -253,11 +253,35 @@ export function aiVaultWorktreeCompactPath(pathValue: string): string {
   return parts[0] ?? pathValue
 }
 
+export function shouldShowAiVaultSessionWorktreeLine(
+  worktreeInfo: AiVaultSessionWorktreeInfo | null,
+  options?: { vaultScope?: AiVaultScope }
+): worktreeInfo is AiVaultSessionWorktreeInfo {
+  if (!worktreeInfo) {
+    return false
+  }
+  // Why: workspace scope already limits history to the active workspace; the
+  // worktree row adds no value when the session lives in the worktree on screen.
+  if (options?.vaultScope === 'workspace' && worktreeInfo.status === 'current') {
+    return false
+  }
+  return true
+}
+
 export function shouldShowAiVaultWorktreeStatusBadge(
-  status: AiVaultSessionWorktreeStatus
+  status: AiVaultSessionWorktreeStatus,
+  options?: { vaultScope?: AiVaultScope }
 ): boolean {
   // Why: "active" repeats the branch label without adding scan value in dense rows.
-  return status !== 'active'
+  if (status === 'active') {
+    return false
+  }
+  // Why: workspace scope already filters to the active workspace, so "Current
+  // worktree" is redundant in the default history view.
+  if (status === 'current' && options?.vaultScope === 'workspace') {
+    return false
+  }
+  return true
 }
 
 function unavailableWorktreeInfo(pathValue: string): AiVaultSessionWorktreeInfo {
