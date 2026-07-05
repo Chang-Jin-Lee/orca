@@ -184,9 +184,17 @@ export class HeadlessEmulator {
     if (!line) {
       return false
     }
-    const upToCursor = line.translateToString(true, 0, buffer.cursorX).trimEnd()
+    // Why: read the untrimmed prompt so the trailing space of PowerShell's
+    // "> " separator survives. An empty prompt leaves the cursor immediately
+    // after "> ", whereas pending redirection input such as `Get-Process >`
+    // ends in a bare '>' with the cursor abutting it. Keying off the trimmed
+    // '>' alone can't tell them apart and misfires the repaint nudge on
+    // unfinished input; requiring the untrimmed "> " (and excluding the ">> "
+    // continuation prompt) keeps only a genuinely empty prompt.
+    const upToCursorRaw = line.translateToString(false, 0, buffer.cursorX)
+    const upToCursor = upToCursorRaw.trimEnd()
     const fullLine = line.translateToString(true).trimEnd()
-    return fullLine === upToCursor && upToCursor.endsWith('>') && !upToCursor.endsWith('>>')
+    return fullLine === upToCursor && upToCursorRaw.endsWith('> ') && !upToCursorRaw.endsWith('>> ')
   }
 
   getVisibleLines(): string[] {

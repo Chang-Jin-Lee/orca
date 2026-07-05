@@ -477,6 +477,19 @@ describe('Session', () => {
       expect(subprocess.written).toEqual([])
     })
 
+    it('does not send a form feed while a lone redirection operator is pending', async () => {
+      createSession()
+      subprocess.foregroundProcess = 'powershell.exe'
+      subprocess.simulateData('PS C:\\Users\\me> Get-Process >')
+      await vi.advanceTimersByTimeAsync(10)
+      // Why: pending input ending in a single '>' is not an empty prompt — the
+      // cursor abuts the '>' with no trailing "> " separator. Sending Ctrl+L
+      // here repaints the pending command at a stale cached row (the exact
+      // glitch the empty-prompt gate exists to prevent).
+      withPlatform('win32', () => session.clearScrollback())
+      expect(subprocess.written).toEqual([])
+    })
+
     it('does not send or queue a form feed before shell-ready', async () => {
       createSession({ shellReadySupported: true })
       subprocess.foregroundProcess = 'powershell.exe'
