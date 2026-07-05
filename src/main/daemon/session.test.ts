@@ -9,6 +9,7 @@ function createMockSubprocess() {
   let onData: ((data: string) => void) | null = null
   let onExit: ((code: number) => void) | null = null
   let killed = false
+  let clearCalls = 0
   let pid = 12345
 
   return {
@@ -20,13 +21,20 @@ function createMockSubprocess() {
     get pid() {
       return pid
     },
+    foregroundProcess: null as string | null,
     getForegroundProcess(): string | null {
-      return null
+      return this.foregroundProcess
     },
     write(data: string) {
       written.push(data)
     },
     resize(_cols: number, _rows: number) {},
+    get clearCalls() {
+      return clearCalls
+    },
+    clear() {
+      clearCalls++
+    },
     kill() {
       killed = true
       // Simulate async exit
@@ -423,6 +431,58 @@ describe('Session', () => {
       session.signal('SIGINT')
       expect(subprocess.signals).toEqual(['SIGINT'])
       expect(session.isTerminating).toBe(false)
+    })
+  })
+
+  describe('clearScrollback', () => {
+    function withPlatform(platform: NodeJS.Platform, run: () => void): void {
+      const original = process.platform
+      Object.defineProperty(process, 'platform', { value: platform })
+      try {
+        run()
+      } finally {
+        Object.defineProperty(process, 'platform', { value: original })
+      }
+    }
+
+    it('resyncs the native PTY screen state alongside the emulator clear', () => {
+      createSession()
+      session.clearScrollback()
+      // Why: without the subprocess clear, ConPTY keeps a stale cursor row and
+      // the next prompt repaint lands below a blank gap on Windows.
+      expect(subprocess.clearCalls).toBe(1)
+      const take = session.takePendingOutput(false)
+      expect(take?.records).toContainEqual({ kind: 'clear' })
+    })
+
+    it('nudges a Windows PowerShell prompt to repaint with a form feed', () => {
+      createSession()
+      subprocess.foregroundProcess = 'powershell.exe'
+      withPlatform('win32', () => session.clearScrollback())
+      // Why: the ConPTY clear cannot reach PSReadLine's cached cursor row;
+      // Ctrl+L makes PSReadLine repaint the prompt at the true origin.
+      expect(subprocess.written).toEqual(['\x0c'])
+    })
+
+    it('does not send a form feed while a command owns the foreground', () => {
+      createSession()
+      subprocess.foregroundProcess = 'node'
+      withPlatform('win32', () => session.clearScrollback())
+      expect(subprocess.written).toEqual([])
+    })
+
+    it('does not send a form feed on POSIX platforms', () => {
+      createSession()
+      subprocess.foregroundProcess = 'pwsh'
+      withPlatform('linux', () => session.clearScrollback())
+      expect(subprocess.written).toEqual([])
+    })
+
+    it('does not touch the subprocess after dispose', () => {
+      createSession()
+      session.dispose()
+      session.clearScrollback()
+      expect(subprocess.clearCalls).toBe(0)
     })
   })
 

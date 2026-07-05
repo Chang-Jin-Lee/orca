@@ -812,6 +812,13 @@ const api = {
       ipcRenderer.send('pty:signal', { id, signal })
     },
 
+    /** Why: Cmd/Ctrl+K clears the renderer xterm, but the PTY host (ConPTY,
+     * daemon emulator, SSH host buffer) keeps its own screen state and would
+     * repaint the next prompt at the stale cursor row. */
+    clearBuffer: (id: string): void => {
+      ipcRenderer.send('pty:clearBuffer', { id })
+    },
+
     ackColdRestore: (id: string): void => {
       ipcRenderer.send('pty:ackColdRestore', { id })
     },

@@ -1030,6 +1030,16 @@ export function createPtySubprocess(opts: PtySubprocessOptions): SubprocessHandl
         dead = true
       }
     },
+    clear: () => {
+      if (dead) {
+        return
+      }
+      try {
+        proc.clear()
+      } catch {
+        // Best-effort: a clear on a just-exited PTY must not kill the handle.
+      }
+    },
     kill: () => {
       if (dead) {
         return

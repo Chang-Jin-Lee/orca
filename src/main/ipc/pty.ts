@@ -3509,6 +3509,17 @@ export function registerPtyHandlers(
       .catch(() => {})
   })
 
+  ipcMain.removeAllListeners('pty:clearBuffer')
+  ipcMain.on('pty:clearBuffer', (_event, args: { id: string }) => {
+    // Why: the renderer already cleared its own xterm buffer. This clears the
+    // PTY-side state (ConPTY screen buffer, daemon emulator, SSH host buffer)
+    // so the next prompt repaint doesn't land at a stale cursor row.
+    tryGetProviderForPty(args.id)
+      ?.clearBuffer(args.id)
+      .catch(() => {})
+    runtime?.clearHeadlessTerminalBuffer(args.id).catch(() => {})
+  })
+
   ipcMain.handle('pty:kill', async (_event, args: { id: string; keepHistory?: boolean }) => {
     const ownedConnectionId = ptyOwnership.get(args.id)
     const parsedSshId = ownedConnectionId === undefined ? parseAppSshPtyId(args.id) : null

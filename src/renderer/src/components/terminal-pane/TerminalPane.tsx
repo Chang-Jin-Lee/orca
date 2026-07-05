@@ -1048,7 +1048,13 @@ export default function TerminalPane({
       // Why: also clear the host buffer for remote-server panes, or the next
       // host snapshot replays the scrollback we just cleared locally.
       const ptyId = paneTransportsRef.current.get(pane.id)?.getPtyId() ?? null
-      clearWebRuntimeTerminalBuffer(ptyId)
+      const clearedRemoteHostBuffer = clearWebRuntimeTerminalBuffer(ptyId)
+      if (!clearedRemoteHostBuffer && ptyId) {
+        // Why: local/daemon/SSH PTYs keep their own screen state (ConPTY on
+        // Windows), and a stale host cursor row makes the next prompt repaint
+        // land below a blank gap after a frontend-only clear.
+        window.api.pty.clearBuffer(ptyId)
+      }
       persistLayoutSnapshot()
     },
     [paneTransportsRef, persistLayoutSnapshot]

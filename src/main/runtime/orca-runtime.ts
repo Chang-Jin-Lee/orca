@@ -5945,7 +5945,9 @@ export class OrcaRuntimeService {
     })
   }
 
-  private async clearHeadlessTerminalBuffer(ptyId: string): Promise<void> {
+  // Public: desktop-initiated clears (ipc/pty.ts) must also drop this mobile
+  // mirror or a resubscribing mobile client resurrects the cleared scrollback.
+  async clearHeadlessTerminalBuffer(ptyId: string): Promise<void> {
     const state = this.headlessTerminals.get(ptyId)
     if (!state) {
       return
