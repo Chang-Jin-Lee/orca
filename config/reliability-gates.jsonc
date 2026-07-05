@@ -1560,14 +1560,16 @@
             "later stream data queues behind a backpressured socket until drain",
             "interactive session output is prioritized over unrelated backpressured backlog on drain",
             "queued stream data stays bounded while a socket remains backpressured",
-            "global cleanup clears clients that only have backpressured stream writes"
+            "global cleanup clears clients that only have backpressured stream writes",
+            "writes aimed at a destroyed socket are dropped without clearing the live queue or leaking drain listeners"
           ]
         },
         {
           "file": "src/main/daemon/daemon-server.test.ts",
           "assertions": [
             "exit events do not overtake backpressured stream output; the exit frame is written after the drained tail",
-            "interactive bypass and exit-flush ordering hold at the daemon-server seam"
+            "interactive bypass and exit-flush ordering hold at the daemon-server seam",
+            "exit for sessions attached before a same-clientId reconnect is delivered to the current stream socket, not the stale captured one"
           ]
         }
       ],
@@ -1578,8 +1580,8 @@
           "platform": "macos",
           "command": "pnpm exec vitest run --config config/vitest.config.ts src/main/daemon/daemon-stream-data-batcher.test.ts src/main/daemon/daemon-server.test.ts",
           "result": "passed",
-          "durationSeconds": 0.6,
-          "summary": "2 test files passed, 32 tests passed; queue contracts plus the daemon-server exit-ordering regression test added after the adversarial review round."
+          "durationSeconds": 0.7,
+          "summary": "2 test files passed, 34 tests passed; queue contracts, exit-ordering, stale-socket reconnect exit routing, and destroyed-socket guard — the latter two red-proven from the Fable review round."
         }
       ],
       "runtimeBudget": {
@@ -1592,7 +1594,7 @@
       },
       "redGreenEvidence": {
         "status": "partial",
-        "evidence": "The exit-ordering regression test was proven red against the pre-fix branch (exit frame written directly while output sat in the backpressure queue) and green after routing exit through writeEventLine. The five queue contracts were developed red-first on the reliability stack."
+        "evidence": "The exit-ordering regression test was proven red against the pre-fix branch (exit frame written directly while output sat in the backpressure queue) and green after routing exit through writeEventLine. The five queue contracts were developed red-first on the reliability stack. A second (Fable) review round red-proved two more: a stale onExit client reference could wipe the live queue via clear-on-mismatch after a same-clientId reconnect, and destroyed-socket writes leaked never-draining pending entries."
       },
       "performanceBudget": {
         "required": true,

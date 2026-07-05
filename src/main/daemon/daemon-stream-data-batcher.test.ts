@@ -14,6 +14,43 @@ function createBatcher(options?: ConstructorParameters<typeof DaemonStreamDataBa
 }
 
 describe('DaemonStreamDataBatcher', () => {
+  it('drops event writes aimed at a destroyed socket without clearing the live queue', () => {
+    vi.useFakeTimers()
+    try {
+      const { batcher, streamSocket } = createBatcher()
+      streamSocket.write.mockReturnValueOnce(false)
+      batcher.enqueue('client-1', 'session-1', 'head', {
+        flushImmediately: true,
+        flushMaxChars: 1024
+      })
+      batcher.enqueue('client-1', 'session-1', 'tail', {
+        flushImmediately: true,
+        flushMaxChars: 1024
+      })
+      expect(streamSocket.write).toHaveBeenCalledTimes(1)
+
+      // A stale destroyed socket (captured across a same-clientId reconnect)
+      // must not wipe the live socket's queued output or leak drain listeners.
+      const staleSocket = Object.assign(new EventEmitter(), {
+        destroyed: true,
+        write: vi.fn(() => false)
+      }) as unknown as Socket & { write: ReturnType<typeof vi.fn> }
+      batcher.writeEventLine(
+        'client-1',
+        staleSocket,
+        'session-1',
+        '{"type":"event","event":"exit","sessionId":"session-1","payload":{"code":0}}\n'
+      )
+      expect(staleSocket.write).not.toHaveBeenCalled()
+
+      streamSocket.emit('drain')
+      const writes = streamSocket.write.mock.calls.map((c) => String(c[0]))
+      expect(writes.some((w) => w.includes('"data":"tail"'))).toBe(true)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('coalesces background output before writing daemon stream events', () => {
     vi.useFakeTimers()
     try {

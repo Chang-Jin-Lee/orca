@@ -36,6 +36,12 @@ export class BackpressuredStreamWriteQueue {
     lines: BackpressuredStreamLine[],
     opts: WriteStreamLinesOptions = {}
   ): void {
+    // Why: a write aimed at a destroyed socket (a stale reference held across a
+    // reconnect) must not clear the live client's queue or register drain
+    // listeners that can never fire; the frame is dropped instead.
+    if (streamSocket.destroyed) {
+      return
+    }
     const existing = this.byClient.get(clientId)
     if (existing) {
       if (existing.socket === streamSocket && !streamSocket.destroyed) {

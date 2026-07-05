@@ -299,12 +299,16 @@ export class DaemonServer {
               // so the last few milliseconds of PTY data are not stranded.
               this.streamDataBatcher.flush(clientId)
               this.lastInputAtBySessionId.delete(p.sessionId)
-              if (client?.streamSocket) {
+              // Why: the client captured at createOrAttach is stale after a
+              // same-clientId reconnect replaces it; resolve the current owner
+              // so exit frames follow the live socket, not a destroyed one.
+              const liveClient = this.clients.get(clientId)
+              if (liveClient?.streamSocket) {
                 // Why: exit must ride the same ordered path as stream data so it
                 // cannot overtake output queued behind a backpressured socket.
                 this.streamDataBatcher.writeEventLine(
                   clientId,
-                  client.streamSocket,
+                  liveClient.streamSocket,
                   p.sessionId,
                   encodeNdjson({
                     type: 'event',
