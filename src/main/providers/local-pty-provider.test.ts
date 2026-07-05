@@ -231,13 +231,28 @@ describe('LocalPtyProvider', () => {
 
     it('falls back to the safe default cwd for automatic agent startup without an explicit cwd', async () => {
       spawnMock.mockClear()
+      const origHome = process.env.HOME
+      // Pin HOME so we assert the exact resolved candidate, not just non-root-ness —
+      // catches regressions where resolveSafePtyDefaultCwd picks an unintended home.
+      process.env.HOME = '/home/testuser'
 
-      // Why: an omitted cwd resolves to a guaranteed-safe default home (the
-      // guard only rejects root-like paths), so the agent must still launch.
-      await expect(provider.spawn({ cols: 80, rows: 24, command: 'codex' })).resolves.toBeDefined()
+      try {
+        // Why: an omitted cwd resolves to a guaranteed-safe default home (the
+        // guard only rejects root-like paths), so the agent must still launch.
+        await expect(
+          provider.spawn({ cols: 80, rows: 24, command: 'codex' })
+        ).resolves.toBeDefined()
 
-      const spawnCall = spawnMock.mock.calls.at(-1)!
-      expect(isRootLikePath(spawnCall[2].cwd)).toBe(false)
+        const spawnCall = spawnMock.mock.calls.at(-1)!
+        expect(spawnCall[2].cwd).toBe('/home/testuser')
+        expect(isRootLikePath(spawnCall[2].cwd)).toBe(false)
+      } finally {
+        if (origHome === undefined) {
+          delete process.env.HOME
+        } else {
+          process.env.HOME = origHome
+        }
+      }
     })
 
     it('rejects automatic agent startup at POSIX root', async () => {
