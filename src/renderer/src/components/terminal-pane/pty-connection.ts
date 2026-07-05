@@ -2411,6 +2411,19 @@ export function connectPanePty(
     }
     window.api.pty.setRendererPtyVisible?.(ptyId, visible)
   }
+  // Why: STA-1282 — release the parked entry only once this fresh pane has adopted
+  // the PTY. Must be called from EVERY adoption path (bindActivePanePty for
+  // spawn/attach AND the inline daemon/SSH reattach bind in handleReattachResult):
+  // a missed path leaks the claim, so the stale parked feed keeps double-driving
+  // the store and a later re-park's registry-eviction destroy() would kill the
+  // live PTY. Idempotent — safe to call more than once.
+  const finalizeEvictionClaim = (): void => {
+    if (pendingEvictionClaimKey !== null) {
+      claimEvictedPane(pendingEvictionClaimKey)
+      pendingEvictionClaimKey = null
+    }
+  }
+
   const bindActivePanePty = (
     ptyId: string,
     options: {
@@ -2445,14 +2458,7 @@ export function connectPanePty(
     if (options.sampleVisibleForegroundAgent === true) {
       sampleVisiblePaneForegroundAgent()
     }
-    // Why: adoption succeeded — this fresh pane now owns the PTY, so it is safe to
-    // release the parked entry (drops the stale parked feed + removes the registry
-    // entry). Deferring the release to here is what prevents a claim->dispose race
-    // from orphaning the PTY (gate #8).
-    if (pendingEvictionClaimKey !== null) {
-      claimEvictedPane(pendingEvictionClaimKey)
-      pendingEvictionClaimKey = null
-    }
+    finalizeEvictionClaim()
   }
 
   const onPtySpawn = (ptyId: string): void => {
@@ -5556,6 +5562,9 @@ export function connectPanePty(
       deps.updateTabPtyId(deps.tabId, ptyId)
       agentCompletionCoordinator.startProcessTracking()
       sampleVisiblePaneForegroundAgent()
+      // Daemon/SSH reattach binds the PTY inline here (not via bindActivePanePty),
+      // so release the deferred parked claim on this adoption path too (gate #8).
+      finalizeEvictionClaim()
 
       // Why: mobile terminal streaming needs the exact screen state from
       // xterm.js. The shared helper installs both the SerializeAddon-backed
@@ -6412,7 +6421,21 @@ export function connectPanePty(
         agentCompletionCoordinator.dispose()
       },
       releaseForClaim: () => {
-        transport.park?.({})
+        // Release the parked transport's renderer resources without killing the
+        // PTY. Provider-specific: a remote park() intentionally keeps its
+        // per-instance multiplexed stream open (the snapshot channel), so it must
+        // be closed on claim via detach() (closeMultiplexedStream) or the host
+        // subscription + parser leaks on every remote evict/remount — detach()
+        // closes only THIS instance's stream (unique streamId), safe for the
+        // freshly-subscribed pane. Local must stay park({}): its data handler is a
+        // module map keyed by ptyId that the fresh pane's attach already
+        // overwrote, and detach() would unregister that shared handler and sever
+        // the live pane.
+        if (isRemoteRuntimePtyId(transport.getPtyId())) {
+          transport.detach?.()
+        } else {
+          transport.park?.({})
+        }
         agentCompletionCoordinator.dispose()
       }
     })
@@ -6530,6 +6553,12 @@ export function connectPanePty(
         cancelAnimationFrame(pendingGeometryReportRaf)
         pendingGeometryReportRaf = null
       }
+      // STA-1282 accepted gap: OSC-133 command lifecycle + foreground tracking are
+      // fed only from the mounted xterm data handler, so they are NOT retained
+      // while parked (Tier 2). Command boundaries go untracked until remount, when
+      // a fresh lifecycle re-syncs from the mirror. Accepted for the experimental
+      // phase — the pane is not visible, and agent completion/title/status/exit ARE
+      // retained by the parked feed (unlike this, they are gated on !parked below).
       commandLifecycle.dispose()
       paneForegroundAgentTracker.dispose()
       // Why: STA-1282 — when parking, the completion coordinator is handed to

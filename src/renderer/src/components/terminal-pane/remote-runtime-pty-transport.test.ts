@@ -1243,6 +1243,34 @@ describe('createRemoteRuntimePtyTransport', () => {
     expect(onTitleChange).not.toHaveBeenCalled()
   })
 
+  it('detach() releases a parked stream so it stops receiving host output (claim-release: no remote stream/parser leak, STA-1282 gate #8)', async () => {
+    const { createRemoteRuntimePtyTransport } = await import('./remote-runtime-pty-transport')
+    const transport = createRemoteRuntimePtyTransport('env-1', {
+      worktreeId: 'wt-1',
+      onTitleChange: vi.fn(),
+      onPtyExit: vi.fn()
+    })
+
+    await transport.connect({ url: '', callbacks: { onData: vi.fn() } })
+    await vi.waitFor(() => expect(subscriptionSendBinary).toHaveBeenCalled())
+    const { streamId } = latestSubscribePayload()
+
+    // Park keeps the stream open; the parked title feed receives host output.
+    const parkedTitle = vi.fn()
+    transport.park?.({ onTitleChange: parkedTitle })
+    emitOutput(streamId, '\x1b]0;parked-title\x07')
+    await vi.waitFor(() => expect(parkedTitle).toHaveBeenCalledWith('parked-title', 'parked-title'))
+    parkedTitle.mockClear()
+
+    // On remount claim, a remote transport is released via detach() (not another
+    // park), which closes the per-instance multiplexed stream. Without this the
+    // subscription + parser would leak on every remote evict/remount.
+    transport.detach()
+    emitOutput(streamId, '\x1b]0;after-release\x07')
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(parkedTitle).not.toHaveBeenCalled()
+  })
+
   it('processes binary remote data chunks through the terminal parser', async () => {
     const { createRemoteRuntimePtyTransport } = await import('./remote-runtime-pty-transport')
     const onData = vi.fn()

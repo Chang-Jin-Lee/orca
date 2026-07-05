@@ -8237,6 +8237,45 @@ describe('connectPanePty', () => {
     __resetEvictedPaneRegistryForTest()
   })
 
+  it('releases the parked claim once the fresh pane adopts the PTY (STA-1282 gate #8)', async () => {
+    const { connectPanePty } = await import('./pty-connection')
+    const { __resetEvictedPaneRegistryForTest, isPaneParked, registerEvictedPane } =
+      await import('./evicted-pane-registry')
+    __resetEvictedPaneRegistryForTest()
+    const paneKey = makePaneKey('tab-1', LEAF_1)
+    const releaseForClaim = vi.fn()
+    registerEvictedPane({
+      paneKey,
+      tabId: 'tab-1',
+      worktreeId: 'wt-1',
+      getPtyId: () => 'pty-id',
+      destroy: vi.fn(),
+      releaseForClaim
+    })
+    const transport = createMockTransport('pty-id')
+    transport.connect.mockImplementation(async () => 'pty-id')
+    transportFactoryQueue.push(transport)
+    const getMainBufferSnapshot = window.api.pty.getMainBufferSnapshot as unknown as ReturnType<
+      typeof vi.fn
+    >
+    getMainBufferSnapshot.mockResolvedValue(null)
+    const binding = connectPanePty(
+      createPane(1) as never,
+      createManager(1) as never,
+      createDeps() as never
+    )
+    try {
+      await flushAsyncTicks(20)
+      // Adoption ran: the parked entry is released so the stale feed cannot
+      // double-drive and a later re-park cannot destroy() the live PTY.
+      expect(releaseForClaim).toHaveBeenCalledTimes(1)
+      expect(isPaneParked(paneKey)).toBe(false)
+    } finally {
+      binding.dispose()
+      __resetEvictedPaneRegistryForTest()
+    }
+  })
+
   it('keeps all visible bytes after a pending hidden ESC becomes non-query output', async () => {
     const { connectPanePty } = await import('./pty-connection')
     const transport = createMockTransport('pty-id')

@@ -260,6 +260,13 @@ function deactivateEvictionAtRuntime(state: StoreState): void {
   // Stop evicting without a full recompute/signature hash: cancel queued
   // teardowns, drop the dwell timer, and keep the parked registry consistent so
   // a parked tab that closes while disabled is still reaped (gate #8).
+  //
+  // Runs on every store tick while disabled (managed warm panes keep the
+  // subscriber alive), so it must stay cheap: skip the O(managed) managed-tab
+  // prune — while disabled the warm mount map is ignored (the overlay mounts
+  // every non-parked tab) so stale managed ids are harmless and get cleaned on
+  // re-enable. Only the parked close-reconcile is load-bearing, and it itself
+  // early-returns when nothing is parked.
   if (pendingTeardowns.size > 0) {
     for (const [, pending] of pendingTeardowns) {
       pending.cancel()
@@ -267,7 +274,6 @@ function deactivateEvictionAtRuntime(state: StoreState): void {
     pendingTeardowns.clear()
   }
   clearDwellTimer()
-  pruneClosedManagedTabs(state)
   reconcileParkedForClose(state)
 }
 
