@@ -24,10 +24,12 @@ import {
   appendPendingSendCache,
   commandMarkersAsMessages,
   appendCommandMarkerCache,
+  launchPromptAsMessage,
   pendingSendsAsMessages,
   prunePendingSends,
   readCommandMarkerCache,
   readPendingSendCache,
+  shouldPruneLaunchPrompt,
   writePendingSendCache,
   type NativeChatCommandMarker,
   type NativeChatPendingSend
@@ -156,6 +158,9 @@ function NativeChatResolvedView({
   contextMenuActions?: Omit<NativeChatContextMenuActions, 'onPaste'>
 }): React.JSX.Element {
   const session = useNativeChatLiveSession({ paneKey, agent, sessionId, transcriptPath })
+  const launchPrompt = useAppStore((s) => s.nativeChatLaunchPromptByTabId[terminalTabId] ?? null)
+  const clearNativeChatLaunchPrompt = useAppStore((s) => s.clearNativeChatLaunchPrompt)
+  const paneLaunchPrompt = launchPrompt?.agent === agent ? launchPrompt : null
   // Live hook state for this pane, selected directly so the working indicator
   // flips the instant the agent reports 'working' — even when switching to chat
   // mid-turn before the transcript merge has caught up.
@@ -270,6 +275,12 @@ function NativeChatResolvedView({
       writePendingSendCache(pendingScope, prunePendingSends(prev, session.messages))
     )
   }, [session.messages, pendingScope])
+  useEffect(() => {
+    if (!paneLaunchPrompt || !shouldPruneLaunchPrompt(paneLaunchPrompt, session.messages)) {
+      return
+    }
+    clearNativeChatLaunchPrompt(terminalTabId)
+  }, [clearNativeChatLaunchPrompt, paneLaunchPrompt, session.messages, terminalTabId])
   const onOptimisticSend = useCallback(
     (text: string, imagePaths?: string[]) => {
       setWorkingInterrupted(false)
@@ -291,10 +302,32 @@ function NativeChatResolvedView({
     [commandMarkerScope]
   )
 
+  const launchPromptMessage = useMemo(
+    () => launchPromptAsMessage(paneLaunchPrompt, session.messages),
+    [paneLaunchPrompt, session.messages]
+  )
+  const sessionWithLaunchPrompt = useMemo<typeof session>(() => {
+    if (!launchPromptMessage) {
+      return session
+    }
+    return { ...session, messages: [...session.messages, launchPromptMessage] }
+  }, [launchPromptMessage, session])
+
   const sessionAfterCommandBoundaries = useMemo<typeof session>(() => {
-    const messages = applyCommandMarkerBoundaries(session.messages, commandMarkers)
-    return messages === session.messages ? session : { ...session, messages }
-  }, [session, commandMarkers])
+    const messages = applyCommandMarkerBoundaries(sessionWithLaunchPrompt.messages, commandMarkers)
+    return messages === sessionWithLaunchPrompt.messages
+      ? sessionWithLaunchPrompt
+      : { ...sessionWithLaunchPrompt, messages }
+  }, [sessionWithLaunchPrompt, commandMarkers])
+  const launchPromptVisible =
+    launchPromptMessage !== null &&
+    sessionAfterCommandBoundaries.messages.some((message) => message.id === launchPromptMessage.id)
+  const failedLaunchPromptMessageIds = useMemo(() => {
+    if (!paneLaunchPrompt?.failed || !launchPromptVisible || !launchPromptMessage) {
+      return undefined
+    }
+    return new Set([launchPromptMessage.id])
+  }, [paneLaunchPrompt?.failed, launchPromptMessage, launchPromptVisible])
 
   // The streaming preview bubble (if any) sits after the transcript but before
   // the optimistic user echoes — same order mobile uses.
@@ -422,6 +455,7 @@ function NativeChatResolvedView({
             fontScale={fontScale.scale}
             onLinkClick={nativeChatFileLinkClick}
             allowFileUriLinks={fileLinkContext !== null}
+            failedDeliveryMessageIds={failedLaunchPromptMessageIds}
           />
         )}
       </div>

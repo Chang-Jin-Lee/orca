@@ -12448,7 +12448,8 @@
         "title": "允许 {{value0}}？",
         "allow": "允许",
         "deny": "拒绝"
-      }
+      },
+      "launchPromptNotDelivered": "Not delivered — check the terminal"
     },
     "tab": {
       "bar": {

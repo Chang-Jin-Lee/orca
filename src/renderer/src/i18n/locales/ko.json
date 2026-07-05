@@ -12448,7 +12448,8 @@
         "title": "{{value0}}을(를) 허용하시겠습니까?",
         "allow": "허용하다",
         "deny": "부인하다"
-      }
+      },
+      "launchPromptNotDelivered": "Not delivered — check the terminal"
     },
     "tab": {
       "bar": {

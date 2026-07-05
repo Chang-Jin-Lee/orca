@@ -12448,7 +12448,8 @@
         "title": "{{value0}} を許可しますか?",
         "allow": "許可する",
         "deny": "拒否"
-      }
+      },
+      "launchPromptNotDelivered": "Not delivered — check the terminal"
     },
     "tab": {
       "bar": {
