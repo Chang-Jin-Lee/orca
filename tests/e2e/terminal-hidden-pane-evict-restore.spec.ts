@@ -32,7 +32,6 @@ import {
   discoverActivePtyId,
   execInTerminal,
   getTerminalContent,
-  sendToTerminal,
   waitForActiveTerminalManager
 } from './helpers/terminal'
 import { ensureTerminalVisible, waitForActiveWorktree, waitForSessionReady } from './helpers/store'
@@ -82,13 +81,13 @@ async function activateTab(page: Page, tabId: string): Promise<void> {
 }
 
 test.describe('terminal hidden pane eviction', () => {
-  test.beforeEach(async ({ page }) => {
+  test.beforeEach(async ({ orcaPage: page }) => {
     await waitForSessionReady(page)
     await ensureTerminalVisible(page)
     await configureAggressiveEviction(page)
   })
 
-  test('mounted-pane count stays bounded while cycling many tabs', async ({ page }) => {
+  test('mounted-pane count stays bounded while cycling many tabs', async ({ orcaPage: page }) => {
     const tabIds = await createTerminalTabs(page, WARM_BUDGET + 3)
     // Cycle through every tab so each becomes hidden-then-revisited.
     for (const tabId of tabIds) {
@@ -102,7 +101,9 @@ test.describe('terminal hidden pane eviction', () => {
       .toBeLessThanOrEqual(WARM_BUDGET + 2)
   })
 
-  test('re-showing an evicted pane restores its scrollback and accepts input', async ({ page }) => {
+  test('re-showing an evicted pane restores its scrollback and accepts input', async ({
+    orcaPage: page
+  }) => {
     const tabIds = await createTerminalTabs(page, WARM_BUDGET + 3)
     const firstTab = tabIds[0]
 
@@ -110,7 +111,7 @@ test.describe('terminal hidden pane eviction', () => {
     await activateTab(page, firstTab)
     const marker = `evict-marker-${Date.now()}`
     const firstPtyId = await discoverActivePtyId(page)
-    await sendToTerminal(page, firstPtyId, `echo ${marker}`)
+    await execInTerminal(page, firstPtyId, `echo ${marker}`)
     await expect.poll(async () => getTerminalContent(page)).toContain(marker)
 
     // Push the first tab out of the warm budget by visiting the newer tabs.
@@ -127,12 +128,12 @@ test.describe('terminal hidden pane eviction', () => {
     await expect.poll(async () => getTerminalContent(page)).toContain(marker)
     const restoredPtyId = await discoverActivePtyId(page)
     const echo = `after-restore-${Date.now()}`
-    await sendToTerminal(page, restoredPtyId, `echo ${echo}`)
+    await execInTerminal(page, restoredPtyId, `echo ${echo}`)
     await expect.poll(async () => getTerminalContent(page)).toContain(echo)
   })
 
   test('a live process streaming across evict->remount restores contiguous output (no lost/dup)', async ({
-    page
+    orcaPage: page
   }) => {
     // Brennan's #1 fear: how a pane with a live running process appears when you
     // return to it. A shell loop streams monotonically-increasing lines the whole
@@ -188,7 +189,7 @@ test.describe('terminal hidden pane eviction', () => {
   })
 
   test('switching away then immediately back keeps the pane warm (no eviction)', async ({
-    page
+    orcaPage: page
   }) => {
     const tabIds = await createTerminalTabs(page, 2)
     const [tabA, tabB] = tabIds
@@ -196,7 +197,7 @@ test.describe('terminal hidden pane eviction', () => {
     await activateTab(page, tabA)
     const marker = `warm-marker-${Date.now()}`
     const ptyId = await discoverActivePtyId(page)
-    await sendToTerminal(page, ptyId, `echo ${marker}`)
+    await execInTerminal(page, ptyId, `echo ${marker}`)
     await expect.poll(async () => getTerminalContent(page)).toContain(marker)
 
     // Switch away and immediately back — within budget and dwell, so tab A stays
@@ -211,7 +212,7 @@ test.describe('terminal hidden pane eviction', () => {
   })
 
   test('re-showing an evicted pane rehydrates its alternate-screen TUI frame (gate #2)', async ({
-    page
+    orcaPage: page
   }) => {
     // The main mirror captures the alt buffer unconditionally, so an evicted
     // pane whose xterm was torn down must restore the alt-screen frame (cursor,
@@ -242,7 +243,7 @@ test.describe('terminal hidden pane eviction', () => {
   })
 
   test('remounting an evicted pane at a different viewport size repaints and stays usable (gate #4)', async ({
-    page
+    orcaPage: page
   }) => {
     const tabIds = await createTerminalTabs(page, WARM_BUDGET + 3)
     const sizedTab = tabIds[0]
