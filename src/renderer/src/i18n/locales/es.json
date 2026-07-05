@@ -243,7 +243,8 @@
           "a8e4b3af5b": "Proyecto ya agregado",
           "6d3318e813": "No se pudieron importar repositorios",
           "3be0f7df04": "No se puede abrir la carpeta en el host seleccionado",
-          "15cf5319ec": "{{path}} se verificó en {{hostName}}, pero ese host no reportó ninguna carpeta utilizable."
+          "15cf5319ec": "{{path}} se verificó en {{hostName}}, pero ese host no reportó ninguna carpeta utilizable.",
+          "2dcd706774": "Project also exists in another profile"
         },
         "settings": {
           "e12dab333b": "No se pudo cambiar de servidor",
@@ -12307,6 +12308,92 @@
       "nativeChat": {
         "contextMenu": {
           "copy": "Copiar"
+        }
+      },
+      "orca": {
+        "profiles": {
+          "switcher": {
+            "cloud": {
+              "unavailable": "Cloud sign-in unavailable"
+            },
+            "reconnect": "Reconnect profile",
+            "connect": "Connect profile",
+            "organization": "Organization",
+            "create": {
+              "profile": {
+                "for": {
+                  "org": "Create profile for org"
+                }
+              }
+            },
+            "signout": "Sign out",
+            "16e3681072": "New local profile",
+            "e3b91a3d90": "Create an empty profile for separate projects and worktrees.",
+            "f322e1f4d6": "Profile name",
+            "cfa59f8ad1": "Create and Switch",
+            "b4f9d1125d": "Local",
+            "4815f7d163": "Switch profile",
+            "d00d853e2a": "Manage profiles",
+            "c106c674fe": "New local profile"
+          },
+          "management": {
+            "04e7bd2a23": "Transfer",
+            "128c7dfe64": "Copy to",
+            "df8b7d876b": "Move to",
+            "9aa26347b3": "Project moved",
+            "816ce624b6": "Project copied",
+            "2c45bda8d3": "Manage profiles",
+            "2db945e4a0": "Copy or move projects from the active profile to another local profile.",
+            "18dfc4a0f7": "{{count}} projects",
+            "8668cb2946": "No projects in this profile.",
+            "93034915ab": "Create another profile before copying projects."
+          },
+          "project": {
+            "transfer": {
+              "confirm": {
+                "terminal": "{{count}} live terminal tabs",
+                "agent": "{{count}} active agents",
+                "browser": "{{count}} browser workspaces",
+                "move": {
+                  "title": "Move project?",
+                  "description": "Move {{repoName}} to {{targetName}}. Orca removes it from {{activeProfileName}}, keeps files in place, and relaunches into {{targetName}}.",
+                  "action": "Move project"
+                },
+                "copy": {
+                  "title": "Copy project?",
+                  "description": "Copy {{repoName}} to {{targetName}}. Both profiles will point at the same files with separate Orca metadata.",
+                  "action": "Copy project"
+                },
+                "live": {
+                  "work": "Live work in this project"
+                },
+                "cancel": "Cancel"
+              }
+            }
+          },
+          "signout": {
+            "confirm": {
+              "title": "Sign out?",
+              "description": "Sign out of {{profileName}} and keep its projects, worktrees, and local metadata on this device.",
+              "cancel": "Cancel",
+              "action": "Sign out"
+            }
+          },
+          "switch": {
+            "confirm": {
+              "terminal": "{{count}} live terminal tabs",
+              "agent": "{{count}} active agents",
+              "browser": "{{count}} browser workspaces",
+              "target": "the selected profile",
+              "title": "Switch profiles?",
+              "description": "Switching to {{targetName}} will relaunch Orca and reload the workspace for {{activeProfileName}}.",
+              "live": {
+                "work": "Live work in this profile"
+              },
+              "cancel": "Cancel",
+              "switch": "Switch profile"
+            }
+          }
         }
       }
     },

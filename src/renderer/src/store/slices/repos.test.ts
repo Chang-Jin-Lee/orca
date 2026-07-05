@@ -2,11 +2,21 @@ import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { createTestStore, makeWorktree } from './store-test-helpers'
 import { workItemsCacheKey } from './github'
 import type { Project, ProjectHostSetup, Repo } from '../../../../shared/types'
+import { toast } from 'sonner'
 import {
   createCompatibleRuntimeStatusResponseIfNeeded,
   type RuntimeEnvironmentCallRequest
 } from '../../runtime/runtime-compatibility-test-fixture'
 import { clearRuntimeCompatibilityCacheForTests } from '../../runtime/runtime-rpc-client'
+
+vi.mock('sonner', () => ({
+  toast: {
+    error: vi.fn(),
+    info: vi.fn(),
+    success: vi.fn(),
+    warning: vi.fn()
+  }
+}))
 
 const localRepo: Repo = {
   id: 'local-repo',
@@ -50,9 +60,14 @@ const projectGroupsMoveProject = vi.fn()
 const ptyKill = vi.fn()
 const runtimeEnvironmentCall = vi.fn()
 const runtimeEnvironmentTransportCall = vi.fn()
+const orcaProfileFindProjectProfiles = vi.fn()
 
 beforeEach(() => {
   clearRuntimeCompatibilityCacheForTests()
+  vi.mocked(toast.error).mockReset()
+  vi.mocked(toast.info).mockReset()
+  vi.mocked(toast.success).mockReset()
+  vi.mocked(toast.warning).mockReset()
   reposList.mockReset()
   reposAdd.mockReset()
   reposPickFolder.mockReset()
@@ -68,6 +83,7 @@ beforeEach(() => {
   projectsUpdate.mockReset()
   projectGroupsMoveProject.mockReset()
   ptyKill.mockReset()
+  orcaProfileFindProjectProfiles.mockReset()
   runtimeEnvironmentCall.mockReset()
   runtimeEnvironmentTransportCall.mockReset()
   runtimeEnvironmentTransportCall.mockImplementation((args: RuntimeEnvironmentCallRequest) => {
@@ -94,6 +110,9 @@ beforeEach(() => {
       },
       projectGroups: {
         moveProject: projectGroupsMoveProject
+      },
+      orcaProfiles: {
+        findProjectProfiles: orcaProfileFindProjectProfiles
       },
       pty: { kill: ptyKill },
       runtimeEnvironments: { call: runtimeEnvironmentTransportCall }
@@ -240,6 +259,39 @@ describe('repo slice runtime routing', () => {
     })
     expect(reposAdd).not.toHaveBeenCalled()
     expect(reposPickFolder).not.toHaveBeenCalled()
+    expect(orcaProfileFindProjectProfiles).not.toHaveBeenCalled()
+  })
+
+  it('warns when a local project is already present in another profile', async () => {
+    reposAdd.mockResolvedValue({ repo: localRepo })
+    orcaProfileFindProjectProfiles.mockResolvedValue({
+      projects: [
+        {
+          profileId: 'work',
+          profileName: 'Work',
+          profileKind: 'local',
+          repoId: 'work-repo',
+          repoName: 'Local'
+        }
+      ]
+    })
+    const store = createTestStore()
+    store.setState({ activeOrcaProfileId: 'local-default' })
+
+    await expect(store.getState().addRepoPath('/local')).resolves.toEqual({
+      ...localRepo,
+      executionHostId: 'local'
+    })
+
+    expect(orcaProfileFindProjectProfiles).toHaveBeenCalledWith({
+      path: '/local',
+      connectionId: null,
+      executionHostId: 'local',
+      excludeProfileId: 'local-default'
+    })
+    expect(toast.warning).toHaveBeenCalledWith('Project also exists in another profile', {
+      description: 'Work'
+    })
   })
 
   it('sets up a project on a local host through the project setup API', async () => {

@@ -257,6 +257,48 @@ function getSafeAutoForkSyncKey(repo: Repo): string {
   return `${getRepoExecutionHostId(repo)}:${repo.id}:${repo.path}`
 }
 
+function formatProjectPresenceProfileNames(profileNames: readonly string[]): string {
+  const names = [...new Set(profileNames.map((name) => name.trim()).filter(Boolean))]
+  if (names.length <= 3) {
+    return names.join(', ')
+  }
+  return `${names.slice(0, 3).join(', ')} +${names.length - 3} more`
+}
+
+async function warnIfProjectKnownInAnotherProfile(
+  repo: Repo,
+  activeOrcaProfileId: string | null
+): Promise<void> {
+  const findProjectProfiles = window.api.orcaProfiles?.findProjectProfiles
+  if (!findProjectProfiles) {
+    return
+  }
+  try {
+    const result = await findProjectProfiles({
+      path: repo.path,
+      connectionId: repo.connectionId ?? null,
+      executionHostId: getRepoExecutionHostId(repo),
+      excludeProfileId: activeOrcaProfileId
+    })
+    const description = formatProjectPresenceProfileNames(
+      result.projects.map((project) => project.profileName)
+    )
+    if (!description) {
+      return
+    }
+    toast.warning(
+      translate(
+        'auto.store.slices.repos.2dcd706774',
+        'Project also exists in another profile'
+      ),
+      { description }
+    )
+  } catch (err) {
+    // Why: adding a project should not fail because an advisory profile scan failed.
+    console.warn('Failed to check project presence in other profiles:', err)
+  }
+}
+
 function scheduleSafeAutoForkSync(get: () => AppState, repos: readonly Repo[]): void {
   for (const repo of repos) {
     if (repo.kind === 'folder' || repo.forkSyncMode !== 'safe-auto' || !repo.upstream) {
@@ -2068,6 +2110,9 @@ export const createRepoSlice: StateCreator<AppState, [], [], RepoSlice> = (set, 
             description: repo.displayName
           }
         )
+        if (target.kind === 'local') {
+          await warnIfProjectKnownInAnotherProfile(repo, get().activeOrcaProfileId)
+        }
       }
       return repo
     } catch (err) {

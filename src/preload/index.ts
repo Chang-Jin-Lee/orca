@@ -481,6 +481,20 @@ const api = {
       ipcRenderer.invoke('app:pickFloatingWorkspaceDirectory')
   },
 
+  orcaProfiles: {
+    list: () => ipcRenderer.invoke('orcaProfiles:list'),
+    authStatus: () => ipcRenderer.invoke('orcaProfiles:authStatus'),
+    createLocal: (args) => ipcRenderer.invoke('orcaProfiles:createLocal', args),
+    createCloudLinked: (args) => ipcRenderer.invoke('orcaProfiles:createCloudLinked', args),
+    switchProfile: (args) => ipcRenderer.invoke('orcaProfiles:switch', args),
+    transferProject: (args) => ipcRenderer.invoke('orcaProfiles:transferProject', args),
+    findProjectProfiles: (args) => ipcRenderer.invoke('orcaProfiles:findProjectProfiles', args),
+    connectCurrent: () => ipcRenderer.invoke('orcaProfiles:connectCurrent'),
+    refreshAuth: () => ipcRenderer.invoke('orcaProfiles:refreshAuth'),
+    signOutCurrent: () => ipcRenderer.invoke('orcaProfiles:signOutCurrent'),
+    selectOrg: (args) => ipcRenderer.invoke('orcaProfiles:selectOrg', args)
+  } satisfies PreloadApi['orcaProfiles'],
+
   platform: {
     get: () => ({
       platform: process.platform,

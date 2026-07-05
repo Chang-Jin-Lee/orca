@@ -64,6 +64,7 @@ import { onOnboardingReopened } from './components/onboarding/show-onboarding-ev
 import { shouldShowOnboarding } from './components/onboarding/should-show-onboarding'
 import { MarkdownTemplatePicker } from './components/editor/MarkdownTemplatePicker'
 import { FloatingTerminalToggleButton } from './components/floating-terminal/FloatingTerminalToggleButton'
+import { OrcaProfileSwitcher } from './components/orca-profiles/OrcaProfileSwitcher'
 import {
   TOGGLE_FLOATING_TERMINAL_EVENT,
   requestFloatingTerminalOpenMaximized
@@ -405,6 +406,7 @@ function App(): React.JSX.Element {
       fetchFolderWorkspacesForAllHosts: s.fetchFolderWorkspacesForAllHosts,
       fetchAllWorktrees: s.fetchAllWorktrees,
       fetchWorktreeLineage: s.fetchWorktreeLineage,
+      fetchOrcaProfiles: s.fetchOrcaProfiles,
       fetchSettings: s.fetchSettings,
       fetchKeybindings: s.fetchKeybindings,
       initGitHubCache: s.initGitHubCache,
@@ -851,6 +853,7 @@ function App(): React.JSX.Element {
       const startupStartedAt = performance.now()
       logRendererStartupDiagnostic('startup-chain-start')
       try {
+        await actions.fetchOrcaProfiles()
         // Why: repo/worktree hydration routes through settings.activeRuntimeEnvironmentId.
         // Load settings first so a persisted remote runtime does not boot against
         // the local filesystem and then hydrate stale local workspace state.
@@ -1462,6 +1465,8 @@ function App(): React.JSX.Element {
   // Why: suppress right sidebar controls on full-page navigation surfaces
   // since those surfaces intentionally own the full content area.
   const showRightSidebarControls = !creationLayoutActive && canShowRightSidebarForView(activeView)
+  const showProfileSwitcherInSidebarFooter = showSidebar && sidebarOpen
+  const showProfileSwitcherInTopRight = !showProfileSwitcherInSidebarFooter
 
   const handleToggleExpand = (): void => {
     if (!effectiveActiveTabId) {
@@ -2103,6 +2108,7 @@ function App(): React.JSX.Element {
           </TooltipContent>
         </Tooltip>
       )}
+      {showProfileSwitcherInTopRight ? <OrcaProfileSwitcher /> : null}
       {/* Why: when the right sidebar is open, its own header renders
       an identical close button — hide this copy so only one is
       visible at a time. */}
@@ -2112,6 +2118,25 @@ function App(): React.JSX.Element {
       {hasCustomTitleBar && <div className="window-controls-titlebar-spacer" />}
     </>
   )
+  const workspaceProfileSwitcher =
+    showProfileSwitcherInTopRight &&
+    workspaceChromeActive &&
+    leftTitlebarChromeLayout.shouldMount &&
+    !stackedSidebarOpen ? (
+      <div
+        className="absolute top-0 z-10 flex h-[36px] items-center"
+        style={
+          {
+            right: showRightSidebarControls
+              ? 'calc(var(--window-controls-width) + 42px)'
+              : 'var(--window-controls-width)',
+            WebkitAppRegion: 'no-drag'
+          } as React.CSSProperties
+        }
+      >
+        <OrcaProfileSwitcher />
+      </div>
+    ) : null
 
   return (
     <div
@@ -2289,6 +2314,7 @@ function App(): React.JSX.Element {
                             {rightSidebarToggle}
                           </div>
                         )}
+                        {workspaceProfileSwitcher}
                         <div className="flex flex-1 min-w-0 min-h-0 flex-col">
                           {shouldMountTerminalWorkbench ? (
                             <div
