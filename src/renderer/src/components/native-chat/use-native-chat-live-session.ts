@@ -23,6 +23,7 @@ import {
   NATIVE_CHAT_INITIAL_LIMIT,
   nextNativeChatLimit
 } from './native-chat-pagination'
+import { getNativeChatSessionTransport } from './native-chat-session-transport'
 
 export type UseNativeChatLiveSessionArgs = {
   /** Composite `${tabId}:${leafId}` key — selects the live hook entry. */
@@ -34,6 +35,9 @@ export type UseNativeChatLiveSessionArgs = {
   /** Authoritative transcript path from the hook (providerSession), preferred
    *  over reconstructing the path from sessionId. Null when not reported. */
   transcriptPath?: string | null
+  /** Runtime owner of the pane (Model B). Non-null routes read/subscribe to the
+   *  remote runtime host; null/undefined keeps the local IPC path. */
+  runtimeEnvironmentId?: string | null
 }
 
 /** A live session plus the older-history pagination controls the view needs. */
