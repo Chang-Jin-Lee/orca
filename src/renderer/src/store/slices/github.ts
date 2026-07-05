@@ -1005,6 +1005,41 @@ function isStaleExactLinkedPRLookup(
   return findWorktreeById(state, worktreeId)?.linkedPR !== linkedPRNumber
 }
 
+function shouldClearDivergedLinkedMergedPR(args: {
+  pr: PRInfo | null
+  linkedPRNumber: number | null
+  requestHeadOid: string | null
+}): boolean {
+  const { pr, linkedPRNumber, requestHeadOid } = args
+  return (
+    linkedPRNumber != null &&
+    requestHeadOid !== null &&
+    pr?.number === linkedPRNumber &&
+    pr.state === 'merged' &&
+    pr.headDivergedFromMergedPR === true &&
+    pr.headSha !== requestHeadOid &&
+    pr.confirmedContainedHeadOid !== requestHeadOid
+  )
+}
+
+function shouldApplyDivergedLinkedPRClear(args: {
+  worktree: Pick<Worktree, 'linkedPR' | 'branch' | 'head' | 'isBare' | 'isArchived'> | undefined
+  linkedPRNumber: number
+  branch: string
+  requestHeadOid: string | null
+}): boolean {
+  const { worktree, linkedPRNumber, branch, requestHeadOid } = args
+  return (
+    Boolean(worktree) &&
+    requestHeadOid !== null &&
+    worktree?.linkedPR === linkedPRNumber &&
+    worktree.branch.replace(/^refs\/heads\//, '') === branch &&
+    worktree.head === requestHeadOid &&
+    worktree.isBare !== true &&
+    worktree.isArchived !== true
+  )
+}
+
 function buildPRRefreshCandidate(
   state: AppState,
   worktree: Worktree,
@@ -2953,6 +2988,7 @@ export const createGitHubSlice: StateCreator<AppState, [], [], GitHubSlice> = (s
         const candidateWorktree = options?.worktreeId
           ? findWorktreeById(get(), options.worktreeId)
           : null
+        const requestHeadOid = candidateWorktree?.head ?? null
         const outcome = runtimeRepo
           ? await callRuntimeRpc<PRInfo | null>(
               runtimeRepo.target,
@@ -2961,7 +2997,7 @@ export const createGitHubSlice: StateCreator<AppState, [], [], GitHubSlice> = (s
                 repo: runtimeRepo.repo.id,
                 branch,
                 linkedPRNumber,
-                currentHeadOid: candidateWorktree?.head ?? null,
+                currentHeadOid: requestHeadOid,
                 ...(fallbackPRNumber !== null
                   ? { fallbackPRNumber, acceptMergedFallbackPR: fallbackPRSource !== null }
                   : {})
@@ -2980,7 +3016,7 @@ export const createGitHubSlice: StateCreator<AppState, [], [], GitHubSlice> = (s
                 branch,
                 cacheKey,
                 worktreeId: options?.worktreeId,
-                currentHeadOid: candidateWorktree?.head ?? null,
+                currentHeadOid: requestHeadOid,
                 linkedPRNumber,
                 fallbackPRNumber,
                 fallbackPRSource,
@@ -3004,7 +3040,7 @@ export const createGitHubSlice: StateCreator<AppState, [], [], GitHubSlice> = (s
                       fallbackPRNumber,
                       acceptMergedFallbackPR:
                         fallbackPRNumber !== null && fallbackPRSource !== null,
-                      currentHeadOid: candidateWorktree?.head ?? null
+                      currentHeadOid: requestHeadOid
                     })
                     .then((pr) =>
                       pr
@@ -3053,6 +3089,27 @@ export const createGitHubSlice: StateCreator<AppState, [], [], GitHubSlice> = (s
           }
           if (didUpdatePRCache) {
             debouncedSaveCache(get())
+          }
+          if (
+            options?.worktreeId &&
+            linkedPRNumber != null &&
+            shouldClearDivergedLinkedMergedPR({ pr, linkedPRNumber, requestHeadOid })
+          ) {
+            // Why: only clear the durable link that produced this exact probe;
+            // branch/head drift means the stale result no longer owns the worktree.
+            void get().updateWorktreeMeta(
+              options.worktreeId,
+              { linkedPR: null },
+              {
+                shouldApply: (worktree) =>
+                  shouldApplyDivergedLinkedPRClear({
+                    worktree,
+                    linkedPRNumber,
+                    branch,
+                    requestHeadOid
+                  })
+              }
+            )
           }
         }
         if (

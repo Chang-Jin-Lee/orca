@@ -62,7 +62,10 @@ import {
   type LocalGitExecOptions,
   type OwnerRepo
 } from './gh-utils'
-import { isCommitPartOfMergedPR } from './merged-pr-commit-membership'
+import {
+  isCommitPartOfMergedPR,
+  type MergedPRCommitMembership
+} from './merged-pr-commit-membership'
 import { getSshGitProvider } from '../providers/ssh-git-dispatch'
 import {
   hasHostedReviewLocalGitOptions,
@@ -2810,24 +2813,47 @@ export async function getPRForBranchOutcome(
         ? options.currentHeadOid.trim()
         : null
     let confirmedContainedHeadOid: string | null = null
+    let headDivergedFromMergedPR = false
     const mergedPRContainsHead = async (
       candidate: PullRequestLookupData,
       candidateRepo: OwnerRepo | null,
       headOid: string | null
-    ): Promise<boolean> => {
+    ): Promise<MergedPRCommitMembership> => {
       if (!candidateRepo || !headOid) {
-        return false
+        return 'unknown'
       }
-      const contained = await isCommitPartOfMergedPR({
+      const membership = await isCommitPartOfMergedPR({
         ownerRepo: candidateRepo,
         prNumber: candidate.number,
         commitOid: headOid,
         ghOptions
       })
-      if (contained) {
+      if (membership === 'contained') {
         confirmedContainedHeadOid = headOid
       }
-      return contained
+      return membership
+    }
+    const recordLinkedMergedPRDivergence = async (
+      candidate: PullRequestLookupData | null,
+      candidateRepo: OwnerRepo | null
+    ): Promise<void> => {
+      if (
+        typeof linkedPRNumber !== 'number' ||
+        !candidate ||
+        mapPRState(candidate.state, candidate.isDraft) !== 'merged' ||
+        explicitCurrentHeadOid === null ||
+        candidate.headRefOid === explicitCurrentHeadOid
+      ) {
+        return
+      }
+      const membership = await mergedPRContainsHead(
+        candidate,
+        candidateRepo,
+        explicitCurrentHeadOid
+      )
+      if (membership === 'not-contained') {
+        headDivergedFromMergedPR = true
+      }
     }
     const hideMergedImplicitPR = async (
       candidate: PullRequestLookupData | null,
@@ -2850,11 +2876,10 @@ export async function getPRForBranchOutcome(
       // merges, web-committed suggestions). A head that is one of the PR's own
       // commits is the same line of work, not a reused branch name — keep the
       // merged PR visible instead of offering "create a pull request".
-      return !(await mergedPRContainsHead(
-        candidate,
-        candidateRepo,
-        currentHeadOidForMergedImplicit
-      ))
+      return (
+        (await mergedPRContainsHead(candidate, candidateRepo, currentHeadOidForMergedImplicit)) !==
+        'contained'
+      )
     }
 
     if (typeof linkedPRNumber === 'number') {
@@ -2942,6 +2967,7 @@ export async function getPRForBranchOutcome(
       }
       return { kind: 'no-pr', fetchedAt: Date.now() }
     }
+    await recordLinkedMergedPRDivergence(data, dataRepo)
     const fallbackConfirmedMergedBranch =
       typeof fallbackPRNumber === 'number' &&
       mergedBranchLookupNumber === fallbackPRNumber &&
@@ -2949,7 +2975,7 @@ export async function getPRForBranchOutcome(
     const explicitHeadHidesMergedImplicitPR =
       explicitCurrentHeadOid !== null &&
       shouldHideMergedImplicitPR(data, linkedPRNumber, explicitCurrentHeadOid) &&
-      !(await mergedPRContainsHead(data, dataRepo, explicitCurrentHeadOid))
+      (await mergedPRContainsHead(data, dataRepo, explicitCurrentHeadOid)) !== 'contained'
     // Why no lazy-HEAD re-check on preservation: fallback numbers come from
     // callers that already gated them on head equality or confirmed
     // containment; re-hiding against the main-repo HEAD would blank
@@ -3003,6 +3029,7 @@ export async function getPRForBranchOutcome(
         ...(data.mergeStateStatus !== undefined ? { mergeStateStatus: data.mergeStateStatus } : {}),
         headSha: data.headRefOid,
         ...(confirmedContainedHeadOid ? { confirmedContainedHeadOid } : {}),
+        ...(headDivergedFromMergedPR ? { headDivergedFromMergedPR: true } : {}),
         ...(data.baseRefName ? { baseRefName: data.baseRefName } : {}),
         prRepo: dataRepo ?? undefined,
         headRepo: dataHeadRepo ?? undefined,

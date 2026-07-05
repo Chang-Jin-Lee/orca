@@ -929,6 +929,117 @@ describe('getPRForBranch', () => {
     })
   })
 
+  function mockMergedLinkedPRLookup(prNumber = 7447) {
+    resolvePRRepositoryCandidatesMock.mockResolvedValueOnce({
+      candidates: [{ owner: 'acme', repo: 'widgets' }],
+      headRepo: { owner: 'acme', repo: 'widgets' }
+    })
+    ghExecFileAsyncMock.mockResolvedValueOnce({
+      stdout: JSON.stringify({
+        number: prNumber,
+        title: 'Merged linked PR',
+        state: 'MERGED',
+        url: `https://github.com/acme/widgets/pull/${prNumber}`,
+        statusCheckRollup: [],
+        updatedAt: '2026-07-03T21:27:36Z',
+        isDraft: false,
+        mergeable: 'MERGEABLE',
+        baseRefName: 'main',
+        headRefName: 'old-linked-branch',
+        baseRefOid: 'base-oid',
+        headRefOid: 'aaaa1111aaaa1111'
+      })
+    })
+  }
+
+  it('stamps confirmedContainedHeadOid for a linked merged PR when HEAD is its commit', async () => {
+    mockMergedLinkedPRLookup()
+    ghExecFileAsyncMock.mockResolvedValueOnce({
+      stdout: JSON.stringify([{ number: 7447 }])
+    })
+
+    const outcome = await getPRForBranchOutcome('/repo-root', 'new-work', 7447, null, null, {
+      currentHeadOid: 'bbbb2222bbbb2222'
+    })
+
+    expect(outcome).toMatchObject({
+      kind: 'found',
+      pr: {
+        number: 7447,
+        state: 'merged',
+        confirmedContainedHeadOid: 'bbbb2222bbbb2222'
+      }
+    })
+    expect(outcome.kind === 'found' ? outcome.pr.headDivergedFromMergedPR : undefined).toBe(
+      undefined
+    )
+  })
+
+  it('stamps headDivergedFromMergedPR for a linked merged PR with a definite miss', async () => {
+    mockMergedLinkedPRLookup()
+    ghExecFileAsyncMock.mockResolvedValueOnce({
+      stdout: JSON.stringify([{ number: 42 }])
+    })
+
+    const outcome = await getPRForBranchOutcome('/repo-root', 'new-work', 7447, null, null, {
+      currentHeadOid: 'bbbb2222bbbb2222'
+    })
+
+    expect(outcome).toMatchObject({
+      kind: 'found',
+      pr: {
+        number: 7447,
+        state: 'merged',
+        headDivergedFromMergedPR: true
+      }
+    })
+  })
+
+  it('leaves linked merged divergence unset when the membership probe is rate-limited', async () => {
+    mockMergedLinkedPRLookup()
+    rateLimitGuardMock.mockImplementation((bucket?: string) =>
+      bucket === 'core'
+        ? { blocked: true, remaining: 0, limit: 5000, resetAt: 0 }
+        : { blocked: false }
+    )
+
+    const outcome = await getPRForBranchOutcome('/repo-root', 'new-work', 7447, null, null, {
+      currentHeadOid: 'bbbb2222bbbb2222'
+    })
+
+    expect(outcome).toMatchObject({ kind: 'found', pr: { number: 7447, state: 'merged' } })
+    expect(outcome.kind === 'found' ? outcome.pr.headDivergedFromMergedPR : undefined).toBe(
+      undefined
+    )
+    expect(ghExecFileAsyncMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('leaves linked merged divergence unset when the membership probe throws', async () => {
+    mockMergedLinkedPRLookup()
+    ghExecFileAsyncMock.mockRejectedValueOnce(new Error('HTTP 422: No commit found'))
+
+    const outcome = await getPRForBranchOutcome('/repo-root', 'new-work', 7447, null, null, {
+      currentHeadOid: 'bbbb2222bbbb2222'
+    })
+
+    expect(outcome).toMatchObject({ kind: 'found', pr: { number: 7447, state: 'merged' } })
+    expect(outcome.kind === 'found' ? outcome.pr.headDivergedFromMergedPR : undefined).toBe(
+      undefined
+    )
+  })
+
+  it('leaves linked merged divergence unset without a current head oid', async () => {
+    mockMergedLinkedPRLookup()
+
+    const outcome = await getPRForBranchOutcome('/repo-root', 'new-work', 7447, null, null)
+
+    expect(outcome).toMatchObject({ kind: 'found', pr: { number: 7447, state: 'merged' } })
+    expect(outcome.kind === 'found' ? outcome.pr.headDivergedFromMergedPR : undefined).toBe(
+      undefined
+    )
+    expect(ghExecFileAsyncMock).toHaveBeenCalledTimes(1)
+  })
+
   it('prefers branch lookup over a fallback PR number', async () => {
     getOwnerRepoMock.mockResolvedValueOnce({ owner: 'acme', repo: 'widgets' })
     ghExecFileAsyncMock

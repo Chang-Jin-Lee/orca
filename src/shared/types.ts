@@ -1137,6 +1137,9 @@ export type PRInfo = {
   // of the PR's own commits (behind update-branch/web commits). Cache staleness
   // checks must honor that confirmation without re-querying GitHub.
   confirmedContainedHeadOid?: string
+  // Why: clearing a durable linked PR needs a positive divergence signal, not
+  // the absence of a containment confirmation after a rate-limit/error.
+  headDivergedFromMergedPR?: boolean
   /** Target branch name for PR-created worktree compare-base repair. */
   baseRefName?: string
   prRepo?: GitHubRepositoryIdentity

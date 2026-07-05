@@ -12,7 +12,9 @@ const MEMBERSHIP_CACHE_MAX_ENTRIES = 200
 const MEMBERSHIP_DEFINITIVE_TTL_MS = 6 * 60 * 60 * 1000
 const MEMBERSHIP_ERROR_TTL_MS = 5 * 60 * 1000
 
-const membershipCache = new Map<string, { value: boolean; expiresAt: number }>()
+export type MergedPRCommitMembership = 'contained' | 'not-contained' | 'unknown'
+
+const membershipCache = new Map<string, { value: MergedPRCommitMembership; expiresAt: number }>()
 
 function pruneMergedPRCommitMembershipCache(now = Date.now()): void {
   for (const [cacheKey, cached] of membershipCache) {
@@ -38,17 +40,17 @@ export function resetMergedPRCommitMembershipCacheForTest(): void {
  * commit belongs to that PR's history rather than merely sharing a branch name.
  * A worktree sitting on such a commit is on the PR's own line of work (for
  * example behind web-committed suggestions or an update-branch merge), not a
- * reused branch name. Conservative on any failure: returns false.
+ * reused branch name. Conservative on any failure: returns unknown.
  */
 export async function isCommitPartOfMergedPR(args: {
   ownerRepo: OwnerRepo
   prNumber: number
   commitOid: string
   ghOptions: GhExecOptions
-}): Promise<boolean> {
+}): Promise<MergedPRCommitMembership> {
   const oid = args.commitOid.trim().toLowerCase()
   if (!/^[0-9a-f]{4,64}$/.test(oid) || !Number.isInteger(args.prNumber)) {
-    return false
+    return 'unknown'
   }
   const owner = args.ownerRepo.owner
   const repo = args.ownerRepo.repo
@@ -59,10 +61,10 @@ export async function isCommitPartOfMergedPR(args: {
   if (cached && cached.expiresAt > now) {
     return cached.value
   }
-  // Why blocked → uncached false: keep the merged PR hidden without burning
-  // budget; the next poll re-asks once the rate-limit window recovers.
+  // Why blocked stays unknown: hiding a transient branch match is safe, but
+  // callers must not clear a durable linked PR when the probe never ran.
   if (rateLimitGuard('core').blocked) {
-    return false
+    return 'unknown'
   }
   try {
     noteRateLimitSpend('core')
@@ -79,18 +81,20 @@ export async function isCommitPartOfMergedPR(args: {
           entry !== null &&
           (entry as { number?: unknown }).number === args.prNumber
       )
+        ? 'contained'
+        : 'not-contained'
     membershipCache.set(cacheKey, {
       value,
       expiresAt: now + MEMBERSHIP_DEFINITIVE_TTL_MS
     })
     return value
   } catch {
-    // Why: the common failure is 422 for a commit never pushed to GitHub —
-    // definitive "new local work" today, but a push can change it; retry later.
+    // Why: 422 often means "new local work" today, but a later push can make
+    // the answer knowable; preserve durable links until a probe succeeds.
     membershipCache.set(cacheKey, {
-      value: false,
+      value: 'unknown',
       expiresAt: now + MEMBERSHIP_ERROR_TTL_MS
     })
-    return false
+    return 'unknown'
   }
 }
