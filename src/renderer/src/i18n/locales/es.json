@@ -9601,7 +9601,7 @@
             "thisScope": "Este",
             "allScope": "Todo",
             "scope": "Ámbito",
-            "currentWorkspace": "Current workspace",
+            "currentWorkspace": "Espacio de trabajo actual",
             "allSessions": "Todas las sesiones",
             "viewOptionsAriaLabel": "Opciones de vista del historial de sesiones",
             "viewOptions": "Opciones de vista",
