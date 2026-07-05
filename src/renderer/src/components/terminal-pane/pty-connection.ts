@@ -1098,6 +1098,11 @@ export function connectPanePty(
   // parked entry live through the deferred-connect window, so a dispose before
   // adoption (StrictMode / split-group remount) can never orphan the PTY (gate #8).
   let pendingEvictionClaimKey: string | null = null
+  // Why: STA-1282 — adoption paths that bind via bindActivePanePty (direct
+  // attach, spawn) never pass handleReattachResult, so they must drive the
+  // mirror replay for a claimed remount themselves. Late-bound because the
+  // restore helpers live in the data-pipeline scope below.
+  let resolveClaimedRemountReplayAfterAdoption: ((ptyId: string) => void) | null = null
   let connectFrame: number | null = null
   let connectFallbackTimer: ReturnType<typeof setTimeout> | null = null
   let startupGridSettleHandle: TerminalStartupGridSettleHandle | null = null
@@ -2459,6 +2464,7 @@ export function connectPanePty(
       sampleVisiblePaneForegroundAgent()
     }
     finalizeEvictionClaim()
+    resolveClaimedRemountReplayAfterAdoption?.(ptyId)
   }
 
   const onPtySpawn = (ptyId: string): void => {
@@ -4246,6 +4252,22 @@ export function connectPanePty(
       // hidden-restores never charge the counter.
       logTerminalPaneEvictionBreadcrumb('remount-replay', { tabId: deps.tabId, outcome })
       recordEvictionRemountReplayOutcome(outcome)
+    }
+    // STA-1282 gate #5 (codex P1-A): a claimed remount that adopts via
+    // bindActivePanePty (direct attach / spawn — paths that never reach
+    // handleReattachResult) must still drive the mirror replay, or a silent
+    // evicted pane remounts history-blank and the claim outcome never resolves.
+    // Exactly-once: reportEvictionRemountReplayOutcome clears the pending flag,
+    // and handleReattachResult binds inline so it never reaches this hook.
+    resolveClaimedRemountReplayAfterAdoption = (adoptedPtyId: string): void => {
+      if (!evictionRemountReplayPending) {
+        return
+      }
+      if (canUseHiddenOutputSnapshot(adoptedPtyId)) {
+        markHiddenOutputRestoreNeeded()
+      } else {
+        reportEvictionRemountReplayOutcome('nil')
+      }
     }
     let foregroundImmediateBudgetChars = 0
     let foregroundImmediateBudgetWindowStart = 0

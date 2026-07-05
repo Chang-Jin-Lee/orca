@@ -3600,6 +3600,66 @@ describe('connectPanePty', () => {
     expect(remountDeps.updateTabPtyId).toHaveBeenCalledWith('tab-1', 'pty-main')
   })
 
+  it('drives the mirror replay for a claimed eviction remount adopting via direct attach (STA-1282 gate #5)', async () => {
+    const { connectPanePty } = await import('./pty-connection')
+    const { __resetEvictedPaneRegistryForTest, registerEvictedPane } =
+      await import('./evicted-pane-registry')
+    __resetEvictedPaneRegistryForTest()
+    const remountTransport = createMockTransport()
+    transportFactoryQueue.push(remountTransport)
+
+    // A live eager buffer + current-tab ownership routes adoption to the DIRECT
+    // attach branch (eagerLivePtyId), which never passes handleReattachResult —
+    // the codex P1-A path (e.g. a background automation agent's PTY).
+    vi.mocked(getEagerPtyBufferHandle).mockImplementation((ptyId: string) =>
+      ptyId === 'pty-main' ? { flush: () => '', dispose: () => {} } : undefined
+    )
+    mockStoreState = {
+      ...mockStoreState,
+      tabsByWorktree: { 'wt-1': [{ id: 'tab-1', ptyId: 'pty-main' }] },
+      ptyIdsByTabId: { 'tab-1': ['pty-main'] },
+      repos: [{ id: 'repo1', connectionId: null }]
+    }
+    const getMainBufferSnapshot = window.api.pty.getMainBufferSnapshot as unknown as ReturnType<
+      typeof vi.fn
+    >
+    getMainBufferSnapshot.mockResolvedValue({ data: 'parked-history\r\n', cols: 100, rows: 30 })
+
+    // Evicted state: a parked registry entry owns the live PTY.
+    registerEvictedPane({
+      paneKey: makePaneKey('tab-1', LEAF_1),
+      tabId: 'tab-1',
+      worktreeId: 'wt-1',
+      getPtyId: () => 'pty-main',
+      destroy: vi.fn(),
+      releaseForClaim: vi.fn()
+    })
+
+    // Remount: adopts the live PTY via the DIRECT attach path (no
+    // handleReattachResult). The claimed remount must proactively request the
+    // mirror snapshot even though the PTY emits nothing (silent pane).
+    const remountPane = createPane(1)
+    const remountBinding = connectPanePty(
+      remountPane as never,
+      createManager(2) as never,
+      createDeps() as never
+    )
+    try {
+      await flushAsyncTicks(30)
+      expect(remountTransport.attach).toHaveBeenCalledWith(
+        expect.objectContaining({ existingPtyId: 'pty-main' })
+      )
+      expect(getMainBufferSnapshot).toHaveBeenCalled()
+      expect(remountPane.terminal.write).toHaveBeenCalledWith(
+        'parked-history\r\n',
+        expect.any(Function)
+      )
+    } finally {
+      remountBinding.dispose()
+      __resetEvictedPaneRegistryForTest()
+    }
+  })
+
   it('binds a fresh spawn that resolves as a daemon reattach', async () => {
     const { connectPanePty } = await import('./pty-connection')
     let currentPtyId: string | null = null
@@ -8269,6 +8329,51 @@ describe('connectPanePty', () => {
       // Adoption ran: the parked entry is released so the stale feed cannot
       // double-drive and a later re-park cannot destroy() the live PTY.
       expect(releaseForClaim).toHaveBeenCalledTimes(1)
+      expect(isPaneParked(paneKey)).toBe(false)
+    } finally {
+      binding.dispose()
+      __resetEvictedPaneRegistryForTest()
+    }
+  })
+
+  it('parked exit observer clears tab ptyId + drops the entry when the PTY dies in the claim gap (STA-1282 gate #8)', async () => {
+    const { connectPanePty } = await import('./pty-connection')
+    const { __resetEvictedPaneRegistryForTest, isPaneParked } =
+      await import('./evicted-pane-registry')
+    __resetEvictedPaneRegistryForTest()
+    const paneKey = makePaneKey('tab-1', LEAF_1)
+    // A park-capable transport captures the parked sinks the eviction installs.
+    const transport = createMockTransport('pty-id')
+    const parkedSinks: { current: { onPtyExit?: (ptyId: string) => void } | null } = {
+      current: null
+    }
+    const transportLifecycle = transport as unknown as {
+      park: (sinks: { onPtyExit?: (ptyId: string) => void }) => boolean
+      destroy: () => void
+    }
+    transportLifecycle.park = vi.fn((sinks) => {
+      parkedSinks.current = sinks
+      return true
+    })
+    transportLifecycle.destroy = vi.fn()
+    transportFactoryQueue.push(transport)
+    const manager = createManager(1)
+    manager.getActivePane.mockReturnValue({ id: 1, leafId: LEAF_1 })
+    const deps = createDeps()
+    const binding = connectPanePty(createPane(1) as never, manager as never, deps as never)
+    try {
+      await flushAsyncTicks(20)
+      // Evict this pane: the parked transport's onPtyExit is now the ONLY observer
+      // of the live PTY while a fresh pane's remount claim is deferred to adoption.
+      binding.park()
+      expect(isPaneParked(paneKey)).toBe(true)
+      expect(parkedSinks.current?.onPtyExit).toBeTypeOf('function')
+
+      // The PTY dies during that gap: the parked observer must update store/tab
+      // state (clear the stale ptyId) and drop the registry entry so nothing
+      // remounts onto a dead PTY and no parked PTY is orphaned.
+      parkedSinks.current?.onPtyExit?.('pty-id')
+      expect(deps.clearTabPtyId).toHaveBeenCalledWith('tab-1', 'pty-id')
       expect(isPaneParked(paneKey)).toBe(false)
     } finally {
       binding.dispose()
