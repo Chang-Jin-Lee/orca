@@ -825,9 +825,10 @@ export function useComposerState(options: UseComposerStateOptions): UseComposerS
         projects,
         projectHostSetups,
         eligibleRepos,
-        projectGroups
+        projectGroups,
+        hosts: hostOptions
       }),
-    [eligibleRepos, projectGroups, projectHostSetups, projects]
+    [eligibleRepos, hostOptions, projectGroups, projectHostSetups, projects]
   )
   const selectedRepoSettings = useMemo(() => {
     if (!settings) {

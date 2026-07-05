@@ -19,6 +19,7 @@ import {
   isAiVaultSessionInCurrentWorktree,
   type AiVaultSessionWorktreeInfo
 } from './ai-vault-session-worktree'
+import { canUseLocalAiVaultSessionPathActions } from './ai-vault-session-path-actions'
 import {
   extractVaultVirtualRowIndexes,
   getVaultStickyHeaderIndexes,
@@ -279,6 +280,8 @@ function AiVaultVirtualRow({
   const resumeState = row.type === 'session' ? getSessionResumeState(row.session) : null
   const resumeActions = row.type === 'session' ? getSessionResumeActions(row.session) : null
   const resumeLabel = resumeState ? aiVaultSessionResumeLabel(resumeState) : ''
+  const canOpenLocalSessionPaths =
+    row.type === 'session' && canUseLocalAiVaultSessionPathActions(row.session.executionHostId)
 
   return (
     <div
@@ -335,9 +338,11 @@ function AiVaultVirtualRow({
           onCopyResume={() => onCopyResume(row.session, resumeState?.worktreeId)}
           onCopyId={() => onCopyId(row.session)}
           onCopyPath={() => onCopyPath(row.session)}
-          onOpenLog={() => onOpenLog(row.session)}
-          onRevealLog={() => onRevealLog(row.session)}
-          onOpenCwd={row.session.cwd ? () => onOpenCwd(row.session) : undefined}
+          onOpenLog={canOpenLocalSessionPaths ? () => onOpenLog(row.session) : undefined}
+          onRevealLog={canOpenLocalSessionPaths ? () => onRevealLog(row.session) : undefined}
+          onOpenCwd={
+            canOpenLocalSessionPaths && row.session.cwd ? () => onOpenCwd(row.session) : undefined
+          }
         />
       )}
     </div>

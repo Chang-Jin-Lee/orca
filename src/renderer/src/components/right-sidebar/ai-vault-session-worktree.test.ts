@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { AiVaultSession } from '../../../../shared/ai-vault-types'
-import type { Worktree } from '../../../../shared/types'
+import type { Repo, Worktree } from '../../../../shared/types'
 import {
   aiVaultWorktreeCompactPath,
   aiVaultWorktreeJumpTooltip,
@@ -16,6 +16,7 @@ import {
 
 const baseSession: AiVaultSession = {
   id: 'codex:session-1',
+  executionHostId: 'local',
   agent: 'codex',
   sessionId: 'session-1',
   title: 'Find the pane',
@@ -54,6 +55,19 @@ function makeWorktree(overrides: Partial<Worktree> = {}): Worktree {
     isMainWorktree: false
   }
   return { ...worktree, ...overrides }
+}
+
+function makeRepo(overrides: Partial<Repo> = {}): Repo {
+  return {
+    id: 'repo-1',
+    path: '/repo/orca',
+    displayName: 'orca',
+    badgeColor: '#737373',
+    addedAt: 1,
+    connectionId: null,
+    executionHostId: 'local',
+    ...overrides
+  }
 }
 
 describe('resolveAiVaultSessionWorktreeInfo', () => {
@@ -134,6 +148,55 @@ describe('resolveAiVaultSessionWorktreeInfo', () => {
       status: 'active',
       label: 'orca',
       path: '\\\\wsl.localhost\\Ubuntu\\home\\ada\\orca'
+    })
+  })
+
+  it('uses the session host when multiple worktrees share the same path', () => {
+    const localWorktree = makeWorktree({
+      id: 'repo-local::/srv/orca',
+      repoId: 'repo-local',
+      displayName: 'local',
+      path: '/srv/orca',
+      hostId: 'local'
+    })
+    const sshWorktree = makeWorktree({
+      id: 'repo-ssh::/srv/orca',
+      repoId: 'repo-ssh',
+      displayName: 'ssh',
+      path: '/srv/orca',
+      hostId: 'ssh:target-1'
+    })
+
+    expect(
+      resolveAiVaultSessionWorktreeInfo({
+        session: { ...baseSession, cwd: '/srv/orca/src', executionHostId: 'ssh:target-1' },
+        worktrees: [localWorktree, sshWorktree],
+        activeWorktreeId: null
+      })
+    ).toMatchObject({
+      label: 'ssh',
+      worktreeId: sshWorktree.id
+    })
+  })
+
+  it('uses repo host ownership when a legacy worktree lacks host metadata', () => {
+    const worktree = makeWorktree({
+      id: 'repo-ssh::/srv/orca',
+      repoId: 'repo-ssh',
+      displayName: 'ssh',
+      path: '/srv/orca'
+    })
+
+    expect(
+      resolveAiVaultSessionWorktreeInfo({
+        session: { ...baseSession, cwd: '/srv/orca/src', executionHostId: 'ssh:target-1' },
+        repos: [makeRepo({ id: 'repo-ssh', connectionId: 'target-1', executionHostId: null })],
+        worktrees: [worktree],
+        activeWorktreeId: null
+      })
+    ).toMatchObject({
+      label: 'ssh',
+      worktreeId: worktree.id
     })
   })
 })
