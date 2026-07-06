@@ -32,8 +32,11 @@ export function buildStartupCommandSubmission(
   command: string,
   { submit, bracketedPasteSafe }: StartupCommandSubmissionOptions
 ): string {
-  const endsWithSubmit = command.endsWith('\r') || command.endsWith('\n')
-  const body = endsWithSubmit ? command.slice(0, -1) : command
+  // Strip a full CRLF (or lone CR/LF) terminator so a single-line command ending
+  // in \r\n isn't misread as multiline by the \r/\n body check below.
+  const trailingTerminator = /\r\n$|\r$|\n$/.exec(command)?.[0] ?? ''
+  const endsWithSubmit = trailingTerminator.length > 0
+  const body = endsWithSubmit ? command.slice(0, -trailingTerminator.length) : command
   if (bracketedPasteSafe && (body.includes('\n') || body.includes('\r'))) {
     return `${BRACKETED_PASTE_START}${body}${BRACKETED_PASTE_END}${submit}`
   }

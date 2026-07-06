@@ -17,6 +17,12 @@ describe('buildStartupCommandSubmission', () => {
     ).toBe('claude\n')
   })
 
+  it('treats a CRLF-terminated single-line command as single-line', () => {
+    expect(
+      buildStartupCommandSubmission('claude\r\n', { submit: '\r', bracketedPasteSafe: true })
+    ).toBe('claude\r\n')
+  })
+
   it('wraps a multiline command in bracketed paste with a trailing submit byte', () => {
     const command = "claude 'first\nsecond'"
     expect(buildStartupCommandSubmission(command, { submit: '\n', bracketedPasteSafe: true })).toBe(
