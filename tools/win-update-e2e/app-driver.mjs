@@ -183,26 +183,40 @@ async function createWorkspaceFromSeededRepo(page, timeoutMs) {
   }
 }
 
+const OVERLAY_DISMISS_LABELS = ['Got it', 'Dismiss setup scripts', 'Dismiss tip', 'Dismiss update']
+
 /**
- * Best-effort dismissal of the post-worktree-creation overlays (setup-script
- * prompt, feature tips, update banner) that can intercept pointer/focus events
- * over the terminal. Never throws.
+ * Best-effort dismissal of the modals/banners that appear after creating a
+ * worktree (a full-screen "Got it" feature-tip modal, the setup-script prompt,
+ * update banner) and intercept all input over the terminal. Loops because tips
+ * can appear in sequence. Never throws.
  */
-export async function dismissOverlays(page) {
-  const labels = ['Dismiss setup scripts', 'Dismiss tip', 'Dismiss update']
-  for (const name of labels) {
-    await page
-      .getByRole('button', { name })
-      .first()
-      .click({ timeout: 3_000 })
-      .catch(() => {})
+export async function dismissOverlays(page, rounds = 3) {
+  for (let i = 0; i < rounds; i++) {
+    let acted = false
+    for (const name of OVERLAY_DISMISS_LABELS) {
+      const btn = page.getByRole('button', { name }).first()
+      if (await btn.isVisible().catch(() => false)) {
+        await btn.click({ timeout: 3_000 }).catch(() => {})
+        acted = true
+      }
+    }
+    await page.keyboard.press('Escape').catch(() => {})
+    if (!acted) {
+      return
+    }
+    await page.waitForTimeout(400)
   }
 }
 
 /** Create a new terminal tab via the New tab menu. Returns the count after. */
 export async function createTerminalTab(page) {
+  await dismissOverlays(page, 1)
   const before = await page.locator(SORTABLE_TAB).count()
-  await page.getByRole(NEW_TAB_BUTTON.role, { name: NEW_TAB_BUTTON.name }).click({ force: true })
+  await page
+    .getByRole(NEW_TAB_BUTTON.role, { name: NEW_TAB_BUTTON.name })
+    .first()
+    .click({ force: true })
   await page.getByRole('menuitem', { name: NEW_TERMINAL_ITEM }).first().click({ force: true })
   await page.waitForFunction(
     ({ selector, prev }) => document.querySelectorAll(selector).length > prev,
@@ -229,6 +243,14 @@ export async function listTabIds(page) {
  * dropped. Click the pane, then focus the helper textarea as a belt-and-braces.
  */
 export async function focusActiveTerminal(page) {
+  // A feature-tip modal can appear late and swallow keystrokes; clear any before
+  // focusing so typed commands actually reach the shell.
+  for (const name of OVERLAY_DISMISS_LABELS) {
+    const btn = page.getByRole('button', { name }).first()
+    if (await btn.isVisible().catch(() => false)) {
+      await btn.click({ timeout: 2_000 }).catch(() => {})
+    }
+  }
   const surface = page.locator(TERMINAL_SURFACE_VISIBLE).first()
   await surface.click({ position: { x: 24, y: 24 }, timeout: 15_000 }).catch(() => {})
   const input = page.locator(XTERM_INPUT).last()

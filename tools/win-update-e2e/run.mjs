@@ -18,6 +18,7 @@ import {
   launchInstalledApp,
   ensureTerminal,
   dismissOverlays,
+  createTerminalTab,
   listTabIds,
   startMarker,
   readTerminalTextBestEffort,
