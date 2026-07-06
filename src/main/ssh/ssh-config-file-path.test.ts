@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { join } from 'node:path'
 import {
+  getSshConfigFileFlagArgs,
   getSshConfigFilePath,
   getSshConfigFilePathOverride,
   setSshConfigFilePathOverride
@@ -48,5 +49,24 @@ describe('ssh-config-file-path override', () => {
   it('expands a ~-prefixed override path', () => {
     setSshConfigFilePathOverride('~/work/ssh_config')
     expect(getSshConfigFilePath()).toBe(join(TEST_HOME, 'work', 'ssh_config'))
+  })
+})
+
+describe('getSshConfigFileFlagArgs', () => {
+  it('returns [] when no override is set', () => {
+    expect(getSshConfigFileFlagArgs()).toEqual([])
+  })
+
+  it('returns the -F fragment with the expanded path when overridden', () => {
+    setSshConfigFilePathOverride('~/work/ssh_config')
+    expect(getSshConfigFileFlagArgs()).toEqual(['-F', join(TEST_HOME, 'work', 'ssh_config')])
+  })
+
+  it('honors an explicitly passed override argument', () => {
+    expect(getSshConfigFileFlagArgs('/etc/ssh/custom_config')).toEqual([
+      '-F',
+      '/etc/ssh/custom_config'
+    ])
+    expect(getSshConfigFileFlagArgs(undefined)).toEqual([])
   })
 })

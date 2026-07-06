@@ -21,11 +21,10 @@ export function getSshConfigFilePathOverride(): string | undefined {
   return overridePath
 }
 
-/** Home-expanded override path, or undefined when there is no override. Shared
- *  by the seams that emit `-F` so `ssh -G`, system-ssh, and ProxyJump always
- *  resolve to the same path as getSshConfigFilePath() — enforced structurally,
- *  not by duplicating the branch in each caller. */
-export function resolveEffectiveSshConfigPath(override: string | undefined): string | undefined {
+/** Home-expanded override path, or undefined when there is no override. Internal
+ *  building block shared by getSshConfigFilePath and getSshConfigFileFlagArgs so
+ *  every `-F` seam resolves to the same path. */
+function resolveEffectiveSshConfigPath(override: string | undefined): string | undefined {
   return override ? resolveSshConfigHomePath(override) : undefined
 }
 
@@ -33,4 +32,12 @@ export function resolveEffectiveSshConfigPath(override: string | undefined): str
  *  join(homedir(), '.ssh', 'config'). */
 export function getSshConfigFilePath(): string {
   return resolveEffectiveSshConfigPath(overridePath) ?? join(homedir(), '.ssh', 'config')
+}
+
+/** The `-F <path>` argv fragment (or [] when unset). Single source for every
+ *  seam that splices `-F` into an ssh spawn (`ssh -G`, system-ssh, ProxyJump),
+ *  so they stay in lockstep if the flag behavior ever changes. */
+export function getSshConfigFileFlagArgs(override: string | undefined = overridePath): string[] {
+  const resolved = resolveEffectiveSshConfigPath(override)
+  return resolved ? ['-F', resolved] : []
 }

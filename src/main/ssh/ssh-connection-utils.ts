@@ -10,7 +10,7 @@ import {
   resolvePrivateKey,
   resolveUnencryptedExplicitPrivateKey
 } from './ssh-auth-resolution'
-import { getSshConfigFilePathOverride, resolveEffectiveSshConfigPath } from './ssh-config-file-path'
+import { getSshConfigFilePathOverride, getSshConfigFileFlagArgs } from './ssh-config-file-path'
 
 export { findDefaultKeyFile, resolveAgentSocket } from './ssh-auth-resolution'
 
@@ -232,11 +232,7 @@ export function buildProxyJumpSshArgs(
   jumpHost: string,
   overridePath = getSshConfigFilePathOverride()
 ): string[] {
-  const resolved = resolveEffectiveSshConfigPath(overridePath)
-  if (resolved) {
-    return ['-W', `${host}:${port}`, '-F', resolved, '--', jumpHost]
-  }
-  return ['-W', `${host}:${port}`, '--', jumpHost]
+  return ['-W', `${host}:${port}`, ...getSshConfigFileFlagArgs(overridePath), '--', jumpHost]
 }
 
 export function spawnProxyCommand(

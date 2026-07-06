@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process'
 import { resolveSshConfigHomePath } from './ssh-config-path-expansion'
-import { getSshConfigFilePathOverride, resolveEffectiveSshConfigPath } from './ssh-config-file-path'
+import { getSshConfigFilePathOverride, getSshConfigFileFlagArgs } from './ssh-config-file-path'
 
 export type SshResolvedConfig = {
   hostname: string
@@ -27,11 +27,7 @@ export function buildSshGArgs(
   host: string,
   overridePath = getSshConfigFilePathOverride()
 ): string[] {
-  const resolved = resolveEffectiveSshConfigPath(overridePath)
-  if (resolved) {
-    return ['-G', '-F', resolved, '--', host]
-  }
-  return ['-G', '--', host]
+  return ['-G', ...getSshConfigFileFlagArgs(overridePath), '--', host]
 }
 
 // Why: `ssh -G <host>` asks OpenSSH for the effective config, including
