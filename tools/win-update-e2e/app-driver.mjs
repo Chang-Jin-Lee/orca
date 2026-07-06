@@ -25,7 +25,10 @@ const NEW_TAB_BUTTON = { role: 'button', name: 'New tab' }
 const NEW_TERMINAL_ITEM = /New Terminal/i
 const NEW_WORKSPACE_BUTTON = { role: 'button', name: 'New workspace' }
 const SORTABLE_TAB = '[data-testid="sortable-tab"]'
-const TERMINAL_SURFACE = '[data-terminal-tab-id]'
+// Why: the layout mounts hidden duplicate panes; only the visible one is the
+// live terminal, so target `:visible` to avoid focusing/measuring a hidden copy.
+const TERMINAL_SURFACE_VISIBLE = '[data-terminal-tab-id]:visible'
+const XTERM_CONTAINER = '.xterm'
 const XTERM_INPUT = '.xterm-helper-textarea'
 
 /**
@@ -109,23 +112,33 @@ export async function captureFailureDiagnostics(page, dir, label) {
   return out
 }
 
-/** Wait until at least one terminal surface is mounted and interactive. */
+/** Wait until the visible terminal surface and its xterm container are mounted. */
 export async function waitForTerminalReady(page, timeoutMs = 60_000) {
-  await page.waitForSelector(TERMINAL_SURFACE, { timeout: timeoutMs })
-  await page.waitForSelector(XTERM_INPUT, { timeout: timeoutMs })
+  await page
+    .locator(TERMINAL_SURFACE_VISIBLE)
+    .first()
+    .waitFor({ state: 'visible', timeout: timeoutMs })
+  await page.locator(XTERM_CONTAINER).first().waitFor({ state: 'visible', timeout: timeoutMs })
 }
 
 /**
- * Get the app to an interactive terminal. Three cases, in order:
- *   1. A terminal surface is already mounted (post-update relaunch restoring a
- *      session) — just wait for it.
- *   2. A workspace exists (New tab control visible) but no terminal — open one.
- *   3. Fresh seeded profile with a project but no workspace — create a workspace
- *      from the seeded repo (drivable composer, not the native folder dialog),
- *      which lands on a worktree whose default tab is a terminal.
+ * Get the app to an interactive terminal.
+ *   - `allowCreate` true (first launch): if no terminal is visible, create a
+ *     workspace from the seeded repo (or a new tab if a workspace already
+ *     exists) — the drivable composer, not the native folder dialog.
+ *   - `allowCreate` false (post-update relaunch): the session should be
+ *     RESTORED, so only wait for the restored terminal — never create a second
+ *     workspace (which would mask a broken restore).
  */
-export async function ensureTerminal(page, timeoutMs = 60_000) {
-  if ((await page.locator(TERMINAL_SURFACE).count()) > 0) {
+export async function ensureTerminal(page, { allowCreate = true, timeoutMs = 60_000 } = {}) {
+  const visibleTerminal = page.locator(TERMINAL_SURFACE_VISIBLE).first()
+  if (await visibleTerminal.isVisible().catch(() => false)) {
+    await waitForTerminalReady(page, timeoutMs)
+    return
+  }
+  if (!allowCreate) {
+    // Wait for the restored terminal to appear; a timeout here is a real
+    // (asserted) failure of session restore, not a driving gap.
     await waitForTerminalReady(page, timeoutMs)
     return
   }
@@ -209,10 +222,17 @@ export async function listTabIds(page) {
     )
 }
 
-/** Focus the active terminal's xterm input textarea. */
+/**
+ * Focus the live terminal so keystrokes reach the shell. Clicking the visible
+ * xterm surface is what actually gives xterm keyboard focus — focusing the
+ * off-screen helper textarea alone does not, which is why typed input was being
+ * dropped. Click the pane, then focus the helper textarea as a belt-and-braces.
+ */
 export async function focusActiveTerminal(page) {
-  const input = page.locator(`${XTERM_INPUT}:visible`).last()
-  await input.focus()
+  const surface = page.locator(TERMINAL_SURFACE_VISIBLE).first()
+  await surface.click({ position: { x: 24, y: 24 }, timeout: 15_000 }).catch(() => {})
+  const input = page.locator(XTERM_INPUT).last()
+  await input.focus().catch(() => {})
   return input
 }
 

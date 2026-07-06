@@ -191,7 +191,7 @@ async function runProof(ctx, args) {
   ctx.session = session
   // A fresh profile has no terminal yet, so create a workspace + terminal, then
   // clear the post-creation overlays that would intercept typing.
-  await ensureTerminal(session.page)
+  await ensureTerminal(session.page, { allowCreate: true })
   await dismissOverlays(session.page)
   const tabIds = await listTabIds(session.page)
   log('sessions', `terminal ready; tab ids: ${tabIds.join(', ')}`)
@@ -236,7 +236,8 @@ async function runProof(ctx, args) {
   // --- Relaunch and gather post-update evidence ---
   session = await launchInstalledApp({ exePath: updated.exePath, userDataDir })
   ctx.session = session
-  await ensureTerminal(session.page)
+  // No create on relaunch: the session must be RESTORED, not freshly made.
+  await ensureTerminal(session.page, { allowCreate: false })
   await dismissOverlays(session.page)
 
   const evidence = await gatherEvidence({
