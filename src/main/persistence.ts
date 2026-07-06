@@ -1121,6 +1121,51 @@ function backfillLegacyAutomationContexts(
   }
 }
 
+// Why: automation run history is durable state — re-serialized (pretty-printed)
+// and re-hashed on every ~1s debounced save. Each run can carry a 256KB output
+// snapshot, so without a cap the file and the main-thread stringify/hash cost
+// grow without bound for any user with a recurring automation (worktreeMeta has
+// WORKTREE_META_GC_GRACE_MS for exactly this reason; run history had no analog).
+export const MAX_RETAINED_FINAL_AUTOMATION_RUNS_PER_AUTOMATION = 100
+
+// Why: only known terminal statuses are evictable. A pending/dispatching/
+// dispatched (or any future non-final) run is always retained so a late dispatch
+// result never fails updateAutomationRun's by-id lookup ("Automation run not
+// found"). Mirrors AutomationService.isFinalRunStatus, conservative by default.
+function isEvictableAutomationRunStatus(status: AutomationRun['status']): boolean {
+  return (
+    status === 'completed' ||
+    status === 'dispatch_failed' ||
+    status === 'skipped_precheck' ||
+    status === 'skipped_missed' ||
+    status === 'skipped_unavailable' ||
+    status === 'skipped_needs_interactive_auth'
+  )
+}
+
+export function pruneAutomationRunHistory(runs: AutomationRun[]): AutomationRun[] {
+  const retainedFinalByAutomation = new Map<string, number>()
+  const evictIds = new Set<string>()
+  // Walk newest-first (by createdAt) so the most recent final runs are retained.
+  const newestFirst = [...runs].sort((a, b) => b.createdAt - a.createdAt)
+  for (const run of newestFirst) {
+    if (!isEvictableAutomationRunStatus(run.status)) {
+      continue
+    }
+    const retained = retainedFinalByAutomation.get(run.automationId) ?? 0
+    if (retained < MAX_RETAINED_FINAL_AUTOMATION_RUNS_PER_AUTOMATION) {
+      retainedFinalByAutomation.set(run.automationId, retained + 1)
+      continue
+    }
+    evictIds.add(run.id)
+  }
+  if (evictIds.size === 0) {
+    return runs
+  }
+  // Preserve original ordering for the retained runs.
+  return runs.filter((run) => !evictIds.has(run.id))
+}
+
 type LegacySshTarget = SshTarget & {
   remoteWorkspaceSyncEnabled?: unknown
   remoteWorkspaceSyncGracePeriodSeconds?: unknown
@@ -4610,7 +4655,10 @@ export class Store {
       dispatchedAt: null,
       createdAt: now
     }
-    this.state.automationRuns = [...(this.state.automationRuns ?? []), run]
+    this.state.automationRuns = pruneAutomationRunHistory([
+      ...(this.state.automationRuns ?? []),
+      run
+    ])
     if (trigger === 'manual') {
       this.recordFeatureInteraction('automation-run')
     }
