@@ -17,9 +17,16 @@ afterEach(() => {
 const GIB = 1024 * 1024 * 1024
 
 describe('computeRendererHeapCeilingMb', () => {
-  it('leaves Chromium default (null) below 8 GB RAM to avoid OS memory pressure', () => {
+  it('leaves Chromium default (null) below the ~8 GB gate to avoid OS memory pressure', () => {
     expect(computeRendererHeapCeilingMb(4 * GIB)).toBeNull()
-    expect(computeRendererHeapCeilingMb(7.9 * GIB)).toBeNull()
+    expect(computeRendererHeapCeilingMb(6 * GIB)).toBeNull() // 6 GB reports ~5.7 GiB
+    expect(computeRendererHeapCeilingMb(7 * GIB)).toBeNull() // below the 7.5 GiB gate
+  })
+
+  it('includes 8 GB machines that report below 8 GiB (Linux MemTotal excludes reserved RAM)', () => {
+    // A real 8 GB Linux box reports ~7.7 GiB; it must still get the headroom.
+    expect(computeRendererHeapCeilingMb(7.7 * GIB)).toBe(3072)
+    expect(computeRendererHeapCeilingMb(7.5 * GIB)).toBe(3072)
   })
 
   it('raises the ceiling toward the 4 GB pointer-compression cage, floored and capped', () => {
@@ -36,6 +43,12 @@ describe('computeRendererHeapCeilingMb', () => {
 
   it('opts out (null) for default/off/none/0/negative overrides', () => {
     for (const value of ['default', 'off', 'none', '0', '-1']) {
+      expect(computeRendererHeapCeilingMb(16 * GIB, value)).toBeNull()
+    }
+  })
+
+  it('opts out (null) for a fractional override that would floor to 0 (never emits max-old-space-size=0)', () => {
+    for (const value of ['0.5', '0.9', '0.0001']) {
       expect(computeRendererHeapCeilingMb(16 * GIB, value)).toBeNull()
     }
   })

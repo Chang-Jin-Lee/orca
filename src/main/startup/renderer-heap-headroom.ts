@@ -11,9 +11,13 @@ const BYTES_PER_GIB = 1024 * 1024 * 1024
 // crash in the crash channel. Reclaim the unused headroom up to the 4 GB cage
 // on machines that have the RAM. Requests above 4096 are silently capped by the
 // pointer-compression cage, so 4096 is the real ceiling — we cannot go higher.
-// Machines below 8 GB keep Chromium's default: raising their ceiling would trade
-// a clean OOM for OS memory-pressure kills / swap thrash.
-const RENDERER_HEAP_MIN_TOTAL_GIB = 8
+// Machines below ~8 GB keep Chromium's default: raising their ceiling would
+// trade a clean OOM for OS memory-pressure kills / swap thrash.
+// Why 7.5 not 8: os.totalmem() on Linux reports MemTotal, which excludes
+// kernel/firmware-reserved RAM, so a real 8 GB machine reports ~7.7 GiB. Gating
+// at exactly 8 would wrongly exclude 8 GB Linux boxes (a crashing population)
+// while still cleanly excluding 6 GB machines (which report ~5.7 GiB).
+const RENDERER_HEAP_MIN_TOTAL_GIB = 7.5
 const RENDERER_HEAP_RAM_FRACTION = 0.4
 const RENDERER_HEAP_FLOOR_MB = 3072
 // V8 pointer-compression cage hard limit; --max-old-space-size above this is ignored.
@@ -43,7 +47,10 @@ function parseRendererHeapOverrideMb(value: string | undefined): HeapOverride {
   if (parsed <= 0) {
     return 'disable'
   }
-  return Math.floor(parsed)
+  // Why: a fractional value in (0,1) floors to 0, which would emit an invalid
+  // --max-old-space-size=0. Treat a floored-to-0 override as an opt-out too.
+  const flooredMb = Math.floor(parsed)
+  return flooredMb <= 0 ? 'disable' : flooredMb
 }
 
 /**
