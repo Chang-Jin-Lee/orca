@@ -114,6 +114,19 @@ Three cooperating layers, innermost first:
   event. E2e: `terminal-stuck-occlusion-recovery.spec.ts` (pins both the
   freeze repro and the keystroke recovery, plus the
   `hiddenDeliveryGatedVisiblePtyCount` field discriminator).
+- **One-paste freeze report** (`terminal-freeze-report.ts`, prod-installed
+  `await window.__orcaTerminalFreezeReport()`): a single DevTools command that
+  returns renderer state (visibilityState + stale override, pty:data listener
+  count, watchdog totals), main's snapshot with a per-pty delivery table
+  (sent/acked/pending, hidden vs visible-set membership, last send/ACK ages,
+  window focus flags, power suspend/resume ages, app version), and bounded
+  breadcrumb rings from BOTH processes (`pty-delivery-diagnostics.ts` shared
+  ring: 100 entries, same-kind coalescing) recording gate marks, visibility
+  trust changes, watchdog stalls/heals, restore markers, heal write-offs,
+  renderer lifecycle resets. Pty ids are redacted to their `@@` suffix —
+  daemon session ids embed worktree paths. Recording happens only on rare
+  transitions; the table/report is built only when read. This exists so a
+  field freeze report never needs a follow-up ask.
 - **Producer flow control** (protocol v19 `pausePty`/`resumePty`, 256KB pause /
   32KB resume watermarks, keyed off **pendingData only** — never renderer
   counters; kill switch `PRODUCER_FLOW_CONTROL_ENABLED`, ipc/pty.ts): when main's

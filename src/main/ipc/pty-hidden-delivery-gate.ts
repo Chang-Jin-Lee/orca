@@ -64,6 +64,12 @@ export function isHiddenRendererPty(id: string): boolean {
   return hiddenRendererPtys.has(id)
 }
 
+/** For freeze diagnostics only: hidden ptys must appear in the per-pty report
+ *  table even when the gate dropped every byte before any send/accounting. */
+export function getHiddenRendererPtyIds(): string[] {
+  return [...hiddenRendererPtys]
+}
+
 /** Renderer-side ref-counted interest, surfaced as boolean transitions. */
 export function setRendererPtyDeliveryInterest(id: string, interested: boolean): void {
   if (interested) {

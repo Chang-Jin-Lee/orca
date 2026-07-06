@@ -9,6 +9,7 @@ import {
   TERMINAL_INPUT_MAX_BYTES
 } from '../../shared/terminal-input'
 import { CLIPBOARD_TEXT_MEASURE_YIELD_CODE_UNITS } from '../../shared/clipboard-text'
+import { redactPtyIdForDiagnostics } from '../../shared/pty-delivery-diagnostics'
 import { FLOATING_TERMINAL_WORKTREE_ID } from '../../shared/constants'
 
 const isWindowsHost = process.platform === 'win32'
@@ -91,7 +92,11 @@ const {
 vi.mock('electron', () => ({
   app: {
     isPackaged: true,
-    getPath: getPathMock
+    getPath: getPathMock,
+    getVersion: () => '0.0.0-test'
+  },
+  powerMonitor: {
+    on: vi.fn()
   },
   nativeTheme: {
     shouldUseDarkColors: true
@@ -240,6 +245,9 @@ describe('registerPtyHandlers', () => {
   const handlers = new Map<string, (_event: unknown, args: unknown) => unknown>()
   const mainWindow = {
     isDestroyed: () => false,
+    isFocused: () => true,
+    isVisible: () => true,
+    isMinimized: () => false,
     webContents: {
       on: vi.fn(),
       send: vi.fn(),
@@ -7839,6 +7847,9 @@ describe('registerPtyHandlers', () => {
     let destroyed = false
     const destroyableWindow = {
       isDestroyed: () => destroyed,
+      isFocused: () => true,
+      isVisible: () => true,
+      isMinimized: () => false,
       webContents: { on: vi.fn(), send: vi.fn(), removeListener: vi.fn() }
     }
 
@@ -8461,6 +8472,49 @@ describe('registerPtyHandlers', () => {
           hiddenDeliveryGatedPtyCount: 0,
           hiddenDeliveryGatedVisiblePtyCount: 0
         })
+      } finally {
+        warnSpy.mockRestore()
+        vi.useRealTimers()
+      }
+    })
+
+    it('embeds one-paste freeze diagnostics: per-pty table and breadcrumb history', async () => {
+      vi.useFakeTimers()
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+      const daemon = installObservableDaemonTestProvider()
+      try {
+        registerPtyHandlers(mainWindow as never)
+        const result = (await handlers.get('pty:spawn')!(null, {
+          cols: 80,
+          rows: 24,
+          sessionId: 'daemon-session'
+        })) as { id: string }
+        const setHidden = getPtySetHiddenRendererPtyListener()
+        const setVisible = getPtySetRendererPtyVisibleListener()
+        setVisible(null, { id: result.id, visible: true })
+        setHidden(null, { id: result.id, hidden: true })
+        daemon.emitData(result.id, 'starved visible output')
+        vi.advanceTimersByTime(50)
+
+        const { diagnostics } = getPtyRendererDeliveryDebugSnapshot()
+        expect(diagnostics.appVersion).toBe('0.0.0-test')
+        expect(diagnostics.windowFocused).toBe(true)
+        expect(diagnostics.windowVisible).toBe(true)
+        const entry = diagnostics.perPty.find(
+          (candidate) => candidate.id === redactPtyIdForDiagnostics(result.id)
+        )
+        expect(entry).toMatchObject({
+          hidden: true,
+          visible: true,
+          inFlightChars: 0,
+          pendingChars: 0
+        })
+        // Why redaction is pinned here: daemon session ids embed worktree
+        // paths; the report must never carry the raw id.
+        expect(diagnostics.perPty.some((candidate) => candidate.id === result.id)).toBe(false)
+        const breadcrumbKinds = diagnostics.breadcrumbs.map((crumb) => crumb.kind)
+        expect(breadcrumbKinds).toContain('gate-mark')
+        expect(breadcrumbKinds).toContain('hidden-drop-visible')
       } finally {
         warnSpy.mockRestore()
         vi.useRealTimers()
@@ -9739,6 +9793,9 @@ describe('registerPtyHandlers', () => {
   it('removes the previous orphan-cleanup listener from its original webContents', () => {
     const firstWindow = {
       isDestroyed: () => false,
+      isFocused: () => true,
+      isVisible: () => true,
+      isMinimized: () => false,
       webContents: {
         on: vi.fn(),
         send: vi.fn(),
@@ -9747,6 +9804,9 @@ describe('registerPtyHandlers', () => {
     }
     const secondWindow = {
       isDestroyed: () => false,
+      isFocused: () => true,
+      isVisible: () => true,
+      isMinimized: () => false,
       webContents: {
         on: vi.fn(),
         send: vi.fn(),

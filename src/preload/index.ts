@@ -58,6 +58,7 @@ import type {
   PtyRendererDeliveryStateReport
 } from '../shared/pty-renderer-delivery-health'
 import type { TerminalViewAttributes } from '../shared/terminal-view-attributes'
+import type { PtyMainDeliveryDiagnostics } from '../shared/pty-delivery-diagnostics'
 import type {
   WarpThemeImportPreview,
   WarpThemeImportSource
@@ -934,6 +935,7 @@ const api = {
       hiddenDeliveryDroppedChars: number
       hiddenDeliveryDroppedChunks: number
       pendingDroppedChars: number
+      diagnostics: PtyMainDeliveryDiagnostics
     }> => ipcRenderer.invoke('pty:getRendererDeliveryDebugSnapshot'),
 
     resetRendererDeliveryDebug: (): Promise<void> =>

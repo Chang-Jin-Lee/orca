@@ -53,6 +53,8 @@ import {
   isDocumentVisibilityProvenStale,
   registerStaleDocumentVisibilityRecovery
 } from './stale-document-visibility'
+import { recordTerminalFreezeBreadcrumb } from './terminal-freeze-breadcrumbs'
+import { redactPtyIdForDiagnostics } from '../../../../shared/pty-delivery-diagnostics'
 import {
   nativeWindowsRewriteNeedsFollowupRenderRefresh,
   terminalOutputPrefersRenderRefresh,
@@ -4208,6 +4210,9 @@ export function connectPanePty(
     let unregisterModelRestoreNeeded: (() => void) | null = null
 
     function sendHiddenRendererPtyDelivery(ptyId: string, hidden: boolean): void {
+      recordTerminalFreezeBreadcrumb(hidden ? 'renderer-gate-mark' : 'renderer-gate-unmark', {
+        id: redactPtyIdForDiagnostics(ptyId)
+      })
       window.api.pty.setHiddenRendererPty?.(ptyId, hidden)
     }
 
@@ -4268,6 +4273,9 @@ export function connectPanePty(
       if (disposed) {
         return
       }
+      recordTerminalFreezeBreadcrumb('restore-marker', {
+        id: redactPtyIdForDiagnostics(transport.getPtyId() ?? '')
+      })
       // Why: dropped bytes invalidate every cross-chunk carry — a partial
       // OSC-9999 prefix spanning the gap would corrupt the next live chunk.
       transport.resetCrossChunkParserState?.()

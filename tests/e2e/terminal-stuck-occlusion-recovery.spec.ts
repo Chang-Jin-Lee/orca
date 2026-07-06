@@ -118,5 +118,30 @@ test.describe('terminal stuck-occlusion recovery', () => {
     await expect
       .poll(async () => getTerminalContent(orcaPage), { timeout: 15_000 })
       .toContain('live-after-256')
+
+    // The one-paste freeze report is prod-reachable and carries the episode's
+    // history: the stale-visibility latch and gate transitions must be in the
+    // renderer breadcrumbs, and main's per-pty table must be populated.
+    const report = await orcaPage.evaluate(() =>
+      (
+        window as Window & {
+          __orcaTerminalFreezeReport?: () => Promise<{
+            renderer: { breadcrumbs: { kind: string }[]; documentVisibilityProvenStale: boolean }
+            main: { diagnostics: { perPty: unknown[]; breadcrumbs: { kind: string }[] } }
+          }>
+        }
+      ).__orcaTerminalFreezeReport?.()
+    )
+    if (!report) {
+      throw new Error('freeze report global missing from prod-path renderer')
+    }
+    expect(report.renderer.documentVisibilityProvenStale).toBe(true)
+    const rendererKinds = report.renderer.breadcrumbs.map((crumb) => crumb.kind)
+    expect(rendererKinds).toContain('stale-visibility-latch')
+    expect(rendererKinds).toContain('renderer-gate-unmark')
+    expect(report.main.diagnostics.perPty.length).toBeGreaterThan(0)
+    const mainKinds = report.main.diagnostics.breadcrumbs.map((crumb) => crumb.kind)
+    expect(mainKinds).toContain('gate-mark')
+    expect(mainKinds).toContain('gate-unmark')
   })
 })

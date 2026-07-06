@@ -16,8 +16,10 @@
  */
 import { e2eConfig } from '@/lib/e2e-config'
 import type { PtyRendererDeliveryHealthReply } from '../../../../shared/pty-renderer-delivery-health'
+import { redactPtyIdForDiagnostics } from '../../../../shared/pty-delivery-diagnostics'
 import { deliverPulledPtyModelRestoreMarkers } from './pty-model-restore-channel'
 import { getProcessedPtyCharTotals } from './terminal-pty-ack-gate'
+import { recordTerminalFreezeBreadcrumb } from './terminal-freeze-breadcrumbs'
 
 const WATCHDOG_INTERVAL_MS = 15_000
 // Why 2 ticks: one silent interval can be a probe racing an in-transit chunk;
@@ -111,6 +113,11 @@ async function runWatchdogTick(): Promise<void> {
     return
   }
   stallStreakTicks += 1
+  recordTerminalFreezeBreadcrumb('watchdog-stall', {
+    stallStreakTicks,
+    inFlightTotalChars: health.inFlightTotalChars,
+    msSinceLastAck: health.msSinceLastAck
+  })
   if (stallStreakTicks < watchdogConfig.stallTicksToHeal) {
     return
   }
@@ -149,6 +156,11 @@ async function healDeadPushDelivery(
       }))
     )
   }
+  recordTerminalFreezeBreadcrumb('watchdog-heal', {
+    listenerCountBeforeReattach,
+    writtenOffPtyCount: writtenOff.length,
+    writtenOffChars: writtenOff.reduce((sum, entry) => sum + entry.writtenOffChars, 0)
+  })
   console.warn('[terminal] delivery watchdog healed dead push delivery', {
     listenerCountBeforeReattach,
     stalledInFlightChars: stalled.inFlightTotalChars,
@@ -198,6 +210,29 @@ export function stopTerminalDeliveryWatchdog(): void {
   if (watchdogTimer) {
     clearInterval(watchdogTimer)
     watchdogTimer = null
+  }
+}
+
+/** Prod-reachable state for the one-paste freeze report (ids redacted). */
+export function getTerminalDeliveryWatchdogDiagnostics(): {
+  running: boolean
+  receivedPtyDataEventCount: number
+  receivedCharsByPty: Record<string, number>
+  stallStreakTicks: number
+  healCount: number
+  msSinceLastHeal: number | null
+} {
+  const receivedCharsByPty: Record<string, number> = {}
+  for (const [id, chars] of receivedPtyCharTotals) {
+    receivedCharsByPty[redactPtyIdForDiagnostics(id)] = chars
+  }
+  return {
+    running: watchdogTimer !== null,
+    receivedPtyDataEventCount,
+    receivedCharsByPty,
+    stallStreakTicks,
+    healCount,
+    msSinceLastHeal: lastHealAtMs === null ? null : Date.now() - lastHealAtMs
   }
 }
 

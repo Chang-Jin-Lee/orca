@@ -45,6 +45,7 @@ import {
   ONBOARDING_FLOW_VERSION
 } from '../../../shared/constants'
 import { legacyBaseRefSearchResult } from '../../../shared/base-ref-search-result'
+import { EMPTY_PTY_MAIN_DELIVERY_DIAGNOSTICS } from '../../../shared/pty-delivery-diagnostics'
 import { createE2EConfig } from '../../../shared/e2e-config'
 import { relativePathInsideRoot } from '../../../shared/cross-platform-path'
 import { LOCAL_EXECUTION_HOST_ID, normalizeExecutionHostId } from '../../../shared/execution-host'
@@ -2610,7 +2611,8 @@ function createPtyApi(): NonNullable<Partial<PreloadApi>['pty']> {
         deliveryInterestPtyCount: 0,
         hiddenDeliveryDroppedChars: 0,
         hiddenDeliveryDroppedChunks: 0,
-        pendingDroppedChars: 0
+        pendingDroppedChars: 0,
+        diagnostics: EMPTY_PTY_MAIN_DELIVERY_DIAGNOSTICS
       }),
     resetRendererDeliveryDebug: () => Promise.resolve(),
     onData: () => noopUnsubscribe,

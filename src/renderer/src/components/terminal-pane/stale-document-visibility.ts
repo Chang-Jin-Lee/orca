@@ -8,6 +8,8 @@
 // gate stays latched for panes the user is looking at and main drops their
 // bytes indefinitely (field: 78MB dropped on 2 visible ptys, v1.4.124-rc.2.perf).
 
+import { recordTerminalFreezeBreadcrumb } from './terminal-freeze-breadcrumbs'
+
 type StaleVisibilityRecoveryListener = () => void
 
 const recoveryListeners = new Set<StaleVisibilityRecoveryListener>()
@@ -23,6 +25,9 @@ function onUserInteractionWithDocument(): void {
     return
   }
   visibilityProvenStale = true
+  recordTerminalFreezeBreadcrumb('stale-visibility-latch', {
+    recoveryListenerCount: recoveryListeners.size
+  })
   console.warn(
     '[terminal] user input arrived while document.visibilityState is hidden — treating occlusion state as stale and re-syncing terminal delivery',
     { recoveryListenerCount: recoveryListeners.size }
@@ -37,6 +42,10 @@ function onUserInteractionWithDocument(): void {
 }
 
 function onDocumentVisibilityChange(): void {
+  recordTerminalFreezeBreadcrumb('visibilitychange', {
+    state: document.visibilityState,
+    clearedStaleOverride: visibilityProvenStale
+  })
   // A genuine visibilitychange means the occlusion tracker is reporting
   // again — hand authority back to document.visibilityState.
   visibilityProvenStale = false

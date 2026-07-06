@@ -27,6 +27,8 @@ import {
   recordPtyDataReceived,
   startTerminalDeliveryWatchdog
 } from './terminal-delivery-watchdog'
+import { recordTerminalFreezeBreadcrumb } from './terminal-freeze-breadcrumbs'
+import { installTerminalFreezeReport } from './terminal-freeze-report'
 
 // ── Singleton PTY event dispatcher ───────────────────────────────────
 // One global IPC listener per channel, routes events to transports by
@@ -121,6 +123,9 @@ let pushListenerUnsubscribes: (() => void)[] = []
  *  detached this restores delivery outright; if the channel itself is dead
  *  it is a safe no-op (removeListener on a gone listener does nothing). */
 export function reattachPtyDispatcherPushListeners(): void {
+  recordTerminalFreezeBreadcrumb('push-listeners-reattach', {
+    staleListenerCount: pushListenerUnsubscribes.length
+  })
   const stale = pushListenerUnsubscribes
   pushListenerUnsubscribes = []
   for (const unsubscribe of stale) {
@@ -135,6 +140,7 @@ export function ensurePtyDispatcher(): void {
   }
   ptyDispatcherAttached = true
   exposeE2eTerminalPtyAckGate()
+  installTerminalFreezeReport()
   attachPtyPushListeners()
   startTerminalDeliveryWatchdog({
     reattachPushListeners: reattachPtyDispatcherPushListeners,

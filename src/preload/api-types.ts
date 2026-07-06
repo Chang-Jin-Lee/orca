@@ -183,6 +183,7 @@ import type {
   PtyRendererDeliveryStateReport
 } from '../shared/pty-renderer-delivery-health'
 import type { TerminalViewAttributes } from '../shared/terminal-view-attributes'
+import type { PtyMainDeliveryDiagnostics } from '../shared/pty-delivery-diagnostics'
 import type {
   WarpThemeImportPreview,
   WarpThemeImportSource
@@ -1237,6 +1238,7 @@ export type PreloadApi = {
       hiddenDeliveryDroppedChars: number
       hiddenDeliveryDroppedChunks: number
       pendingDroppedChars: number
+      diagnostics: PtyMainDeliveryDiagnostics
     }>
     resetRendererDeliveryDebug: () => Promise<void>
     onData: (

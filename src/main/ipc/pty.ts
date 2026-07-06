@@ -11,7 +11,8 @@ import {
   type IpcMainInvokeEvent,
   type WebContents,
   ipcMain,
-  app
+  app,
+  powerMonitor
 } from 'electron'
 export { getBashShellReadyRcfileContent } from '../providers/local-pty-shell-ready'
 import type { OrcaRuntimeService } from '../runtime/orca-runtime'
@@ -24,6 +25,13 @@ import type {
   PtyRendererDeliveryStateReport
 } from '../../shared/pty-renderer-delivery-health'
 import { extractHiddenStartupRendererQueryData } from '../../shared/terminal-reply-query-extraction'
+import {
+  type PtyMainDeliveryDiagnostics,
+  type PtyPerPtyDeliveryDiagnostics,
+  EMPTY_PTY_MAIN_DELIVERY_DIAGNOSTICS,
+  createPtyDeliveryBreadcrumbRing,
+  redactPtyIdForDiagnostics
+} from '../../shared/pty-delivery-diagnostics'
 import { recordCrashBreadcrumb } from '../crash-reporting/crash-breadcrumb-store'
 import type { SleepingAgentLaunchConfig } from '../../shared/agent-session-resume'
 import type { ProjectExecutionRuntimeResolution } from '../../shared/project-execution-runtime'
@@ -103,6 +111,7 @@ import { PtyProducerFlowController } from './pty-producer-flow-control'
 import {
   clearHiddenRendererPtyDeliveryState,
   getHiddenRendererPtyDeliveryDebug,
+  getHiddenRendererPtyIds,
   isHiddenPtyDeliveryGateEnabled,
   isHiddenRendererPty,
   markHiddenRendererPty,
@@ -1217,6 +1226,32 @@ export type PtyRendererDeliveryDebugSnapshot = {
   hiddenDeliveryDroppedChars: number
   hiddenDeliveryDroppedChunks: number
   pendingDroppedChars: number
+  /** One-paste freeze diagnostics: per-pty delivery table + event history. */
+  diagnostics: PtyMainDeliveryDiagnostics
+}
+
+// Why module scope: breadcrumb writers live both inside registerPtyHandlers
+// (gate marks, heals) and outside it (renderer lifecycle resets).
+const mainDeliveryBreadcrumbs = createPtyDeliveryBreadcrumbRing()
+let lastPowerSuspendAtMs: number | null = null
+let lastPowerResumeAtMs: number | null = null
+let powerSignalBreadcrumbsInstalled = false
+
+// Why: both field freeze variants correlate with display sleep; suspend/resume
+// timestamps in the report let us line breadcrumbs up against the wake.
+function installPowerSignalBreadcrumbs(): void {
+  if (powerSignalBreadcrumbsInstalled) {
+    return
+  }
+  powerSignalBreadcrumbsInstalled = true
+  powerMonitor.on('suspend', () => {
+    lastPowerSuspendAtMs = Date.now()
+    mainDeliveryBreadcrumbs.record('power-suspend')
+  })
+  powerMonitor.on('resume', () => {
+    lastPowerResumeAtMs = Date.now()
+    mainDeliveryBreadcrumbs.record('power-resume')
+  })
 }
 
 const EMPTY_PTY_RENDERER_DELIVERY_DEBUG_SNAPSHOT: PtyRendererDeliveryDebugSnapshot = {
@@ -1239,7 +1274,8 @@ const EMPTY_PTY_RENDERER_DELIVERY_DEBUG_SNAPSHOT: PtyRendererDeliveryDebugSnapsh
   deliveryInterestPtyCount: 0,
   hiddenDeliveryDroppedChars: 0,
   hiddenDeliveryDroppedChunks: 0,
-  pendingDroppedChars: 0
+  pendingDroppedChars: 0,
+  diagnostics: EMPTY_PTY_MAIN_DELIVERY_DIAGNOSTICS
 }
 
 let readPtyRendererDeliveryDebugSnapshot = (): PtyRendererDeliveryDebugSnapshot => ({
@@ -1264,6 +1300,9 @@ function clearDidFinishLoadHandler(): void {
 }
 
 function markRendererPtysHiddenForRendererLifecycleReset(): void {
+  // A reload/crash in the history is load-bearing context for any freeze
+  // report ("did the user already reload before capturing?").
+  mainDeliveryBreadcrumbs.record('renderer-lifecycle-reset')
   // Why: renderer-owned hints die with the page; keep known-visibility state so
   // surviving daemon/SSH PTYs fail closed until the new renderer reports again.
   activeRendererPtys.clear()
@@ -1477,7 +1516,12 @@ export function registerPtyHandlers(
   // make every lost ACK a permanent debt; monotonic sent/acked totals self-heal
   // as soon as any later ACK (or resync reply) reports the renderer's full
   // processed count.
-  type RendererPtyDeliveryAccounting = { sentChars: number; ackedChars: number }
+  type RendererPtyDeliveryAccounting = {
+    sentChars: number
+    ackedChars: number
+    lastSendAtMs: number
+    lastAckAtMs: number | null
+  }
   const rendererDeliveryAccountingByPty = new Map<string, RendererPtyDeliveryAccounting>()
   const trustedTerminalHandleEnv = new Set<string>()
   let flushTimer: ReturnType<typeof setTimeout> | null = null
@@ -1604,7 +1648,56 @@ export function registerPtyHandlers(
       ...hiddenDeliveryDebug,
       hiddenDeliveryGatedVisiblePtyCount,
       hiddenDeliveryGatedActivePtyCount,
-      pendingDroppedChars
+      pendingDroppedChars,
+      diagnostics: buildMainDeliveryDiagnostics()
+    }
+  }
+
+  const DELIVERY_DIAGNOSTICS_MAX_PTYS = 30
+
+  // Built only when the debug snapshot is actually read — never on the data
+  // path. Aggregate counters can't say WHICH pty is wedged or WHEN the state
+  // arose; this per-pty table + both-process breadcrumb history can.
+  function buildMainDeliveryDiagnostics(): PtyMainDeliveryDiagnostics {
+    const now = Date.now()
+    // Hidden/visible/active set members are included even with no accounting
+    // entry: a pty gated before its first byte is exactly the wedge case the
+    // table must surface.
+    const ids = new Set([
+      ...rendererDeliveryAccountingByPty.keys(),
+      ...pendingData.keys(),
+      ...getHiddenRendererPtyIds(),
+      ...visibleRendererPtys,
+      ...activeRendererPtys
+    ])
+    const perPty: PtyPerPtyDeliveryDiagnostics[] = []
+    for (const id of ids) {
+      const accounting = rendererDeliveryAccountingByPty.get(id)
+      perPty.push({
+        id: redactPtyIdForDiagnostics(id),
+        sentChars: accounting?.sentChars ?? 0,
+        ackedChars: accounting?.ackedChars ?? 0,
+        inFlightChars: accounting ? accounting.sentChars - accounting.ackedChars : 0,
+        pendingChars: pendingData.get(id)?.data.length ?? 0,
+        hidden: isHiddenRendererPty(id),
+        visible: visibleRendererPtys.has(id),
+        active: activeRendererPtys.has(id),
+        msSinceLastSend: accounting ? now - accounting.lastSendAtMs : null,
+        msSinceLastAck: accounting?.lastAckAtMs == null ? null : now - accounting.lastAckAtMs
+      })
+    }
+    perPty.sort((a, b) => b.inFlightChars + b.pendingChars - (a.inFlightChars + a.pendingChars))
+    const windowAlive = !mainWindow.isDestroyed()
+    return {
+      appVersion: app.getVersion(),
+      mainUptimeMs: Math.round(process.uptime() * 1000),
+      windowFocused: windowAlive ? mainWindow.isFocused() : null,
+      windowVisible: windowAlive ? mainWindow.isVisible() : null,
+      windowMinimized: windowAlive ? mainWindow.isMinimized() : null,
+      msSinceLastPowerSuspend: lastPowerSuspendAtMs === null ? null : now - lastPowerSuspendAtMs,
+      msSinceLastPowerResume: lastPowerResumeAtMs === null ? null : now - lastPowerResumeAtMs,
+      perPty: perPty.slice(0, DELIVERY_DIAGNOSTICS_MAX_PTYS),
+      breadcrumbs: mainDeliveryBreadcrumbs.snapshot()
     }
   }
 
@@ -1615,6 +1708,12 @@ export function registerPtyHandlers(
     if (!visibleRendererPtys.has(id) && !activeRendererPtys.has(id)) {
       return
     }
+    // Recorded before the warn rate limit: the ring coalesces repeats itself,
+    // and the contradiction must appear in the freeze report either way.
+    mainDeliveryBreadcrumbs.record('hidden-drop-visible', {
+      id: redactPtyIdForDiagnostics(id),
+      droppedChars
+    })
     const now = Date.now()
     if (now - lastHiddenDropContradictionWarnAtMs < 60_000) {
       return
@@ -1755,6 +1854,9 @@ export function registerPtyHandlers(
     )
     const acknowledged = nextAckedChars - accounting.ackedChars
     accounting.ackedChars = nextAckedChars
+    if (acknowledged > 0) {
+      accounting.lastAckAtMs = Date.now()
+    }
     rendererInFlightTotalChars = Math.max(0, rendererInFlightTotalChars - acknowledged)
     return acknowledged
   }
@@ -1853,6 +1955,10 @@ export function registerPtyHandlers(
     if (writtenOff.length > 0) {
       clearDeliveryResyncProbe()
       deliveryResyncUnansweredWarnLogged = false
+      mainDeliveryBreadcrumbs.record('delivery-heal-writeoff', {
+        writtenOffPtyCount: writtenOff.length,
+        writtenOffChars: writtenOff.reduce((sum, { writtenOffChars }) => sum + writtenOffChars, 0)
+      })
       console.warn('[pty] delivery heal: wrote off renderer-bound bytes lost in push channel', {
         rendererPtyDataListenerCount: report.rendererPtyDataListenerCount ?? null,
         msSinceLastAck: lastAckReceivedAtMs === null ? null : Date.now() - lastAckReceivedAtMs,
@@ -1868,8 +1974,14 @@ export function registerPtyHandlers(
     const accounting = rendererDeliveryAccountingByPty.get(id)
     if (accounting) {
       accounting.sentChars += charCount
+      accounting.lastSendAtMs = Date.now()
     } else {
-      rendererDeliveryAccountingByPty.set(id, { sentChars: charCount, ackedChars: 0 })
+      rendererDeliveryAccountingByPty.set(id, {
+        sentChars: charCount,
+        ackedChars: 0,
+        lastSendAtMs: Date.now(),
+        lastAckAtMs: null
+      })
     }
     rendererInFlightTotalChars += charCount
     recordPtyRendererDeliveryPressure()
@@ -3118,6 +3230,7 @@ export function registerPtyHandlers(
     return runtime.getTerminalSideEffectSnapshot(args.id)
   })
 
+  installPowerSignalBreadcrumbs()
   ipcMain.handle('pty:getRendererDeliveryDebugSnapshot', (): PtyRendererDeliveryDebugSnapshot => {
     return getPtyRendererDeliveryDebugSnapshot()
   })
@@ -4275,6 +4388,9 @@ export function registerPtyHandlers(
     if (typeof args.id !== 'string' || !args.id) {
       return
     }
+    mainDeliveryBreadcrumbs.record(args.hidden === true ? 'gate-mark' : 'gate-unmark', {
+      id: redactPtyIdForDiagnostics(args.id)
+    })
     if (args.hidden === true) {
       markHiddenRendererPty(args.id)
       // Why: bytes already queued for a newly hidden PTY are model-owned
