@@ -142,7 +142,7 @@ async function resolveOrchestrationTerminalHandle(
       // coordinator preambles.
       const live = await isLiveTerminalHandle(envHandle, client)
       if (!live) {
-        return await resolveImplicitOrchestrationSender(flags, cwd, client)
+        return await resolveStaleOrchestrationSender(client)
       }
     }
     return envHandle
@@ -154,26 +154,27 @@ async function resolveOrchestrationTerminalHandle(
 }
 
 async function resolveTaskCreatorTerminalHandle(
-  flags: Map<string, string | boolean>,
-  cwd: string,
   client: Parameters<CommandHandler>[0]['client']
 ): Promise<string | undefined> {
   const envHandle = process.env.ORCA_TERMINAL_HANDLE
   if (!envHandle || envHandle.length === 0) {
     return undefined
   }
-  const live = await isLiveTerminalHandle(envHandle, client)
+  let live: boolean
+  try {
+    live = await isLiveTerminalHandle(envHandle, client)
+  } catch (err) {
+    if (isOptionalTaskCreatorHandleError(err)) {
+      // Why: creator handles are best-effort lineage metadata; graph
+      // unavailability should not block task creation itself.
+      return undefined
+    }
+    throw err
+  }
   if (live) {
     return envHandle
   }
-  try {
-    return await resolveImplicitOrchestrationSender(flags, cwd, client)
-  } catch (err) {
-    if (getClientErrorCode(err) !== 'no_active_sender_terminal') {
-      throw err
-    }
-    return undefined
-  }
+  return await resolveOrchestrationPaneTerminalHandle(client, { optional: true })
 }
 
 async function isLiveTerminalHandle(
@@ -208,6 +209,75 @@ function isNoActiveTerminalError(err: unknown): boolean {
   return getClientErrorCode(err) === 'no_active_terminal'
 }
 
+function isOptionalTaskCreatorHandleError(err: unknown): boolean {
+  const code = getClientErrorCode(err)
+  return code === 'no_active_sender_terminal' || code === 'runtime_unavailable'
+}
+
+async function resolveOrchestrationPaneTerminalHandle(
+  client: Parameters<CommandHandler>[0]['client'],
+  options: { optional?: boolean } = {}
+): Promise<string | undefined> {
+  const paneKey = process.env.ORCA_PANE_KEY
+  if (!paneKey || paneKey.length === 0) {
+    return undefined
+  }
+  try {
+    // Why: pane key reminting preserves the caller identity; focus-based
+    // active-terminal fallback can point at a different pane.
+    const response = await client.call<{ terminal: { handle: string } }>('terminal.resolvePane', {
+      paneKey
+    })
+    return response.result.terminal.handle
+  } catch (err) {
+    if (
+      isPaneRemintUnavailableError(err) ||
+      (options.optional === true && isOptionalPaneRemintUnavailableError(err))
+    ) {
+      return undefined
+    }
+    throw err
+  }
+}
+
+function isPaneRemintUnavailableError(err: unknown): boolean {
+  const code = getClientErrorCode(err)
+  const message = getClientErrorMessage(err)
+  return (
+    code === 'terminal_not_found' ||
+    code === 'terminal_handle_stale' ||
+    code === 'terminal_gone' ||
+    message === 'terminal_not_found' ||
+    message === 'terminal_handle_stale' ||
+    message === 'terminal_gone'
+  )
+}
+
+function isOptionalPaneRemintUnavailableError(err: unknown): boolean {
+  return getClientErrorCode(err) === 'runtime_unavailable'
+}
+
+function getClientErrorMessage(err: unknown): string | undefined {
+  if (err instanceof Error) {
+    return err.message
+  }
+  if (!err || typeof err !== 'object') {
+    return undefined
+  }
+  const message = (err as { message?: unknown }).message
+  return typeof message === 'string' ? message : undefined
+}
+
+async function resolveStaleOrchestrationSender(
+  client: Parameters<CommandHandler>[0]['client']
+): Promise<string> {
+  const paneHandle = await resolveOrchestrationPaneTerminalHandle(client)
+  if (paneHandle) {
+    return paneHandle
+  }
+  throwNoActiveSenderTerminal()
+}
+
 async function resolveCoordinatorTerminalHandle(
   flags: Map<string, string | boolean>,
   cwd: string,
@@ -229,12 +299,16 @@ async function resolveImplicitOrchestrationSender(
     if (!isNoActiveTerminalError(err)) {
       throw err
     }
-    throw new RuntimeClientError(
-      'no_active_sender_terminal',
-      'Could not determine the sender terminal for this orchestration command. ' +
-        'Pass --from <terminal-handle> or run the command inside a live Orca terminal with ORCA_TERMINAL_HANDLE set.'
-    )
+    throwNoActiveSenderTerminal()
   }
+}
+
+function throwNoActiveSenderTerminal(): never {
+  throw new RuntimeClientError(
+    'no_active_sender_terminal',
+    'Could not determine the sender terminal for this orchestration command. ' +
+      'Pass --from <terminal-handle> or run the command inside a live Orca terminal with ORCA_TERMINAL_HANDLE set.'
+  )
 }
 
 function isDevCliInvocation(): boolean {
@@ -385,8 +459,8 @@ export const ORCHESTRATION_HANDLERS: Record<string, CommandHandler> = {
     })
   },
 
-  'orchestration task-create': async ({ flags, client, cwd, json }) => {
-    const callerTerminalHandle = await resolveTaskCreatorTerminalHandle(flags, cwd, client)
+  'orchestration task-create': async ({ flags, client, json }) => {
+    const callerTerminalHandle = await resolveTaskCreatorTerminalHandle(client)
     const result = await client.call<{ task: { id: string; status: string } }>(
       'orchestration.taskCreate',
       {
