@@ -45,9 +45,10 @@ Or directly: `node tools/win-update-e2e/run.mjs --from ... --to ... --expect ...
 | `--from <path>` / `--to <path>`               | Local `orca-windows-setup.exe` for base (N) / update (N+1)  |
 | `--from-release <tag>` / `--to-release <tag>` | Download the setup asset from a GitHub release tag via `gh` |
 | `--expect cold-restore \| survival`           | Assertion profile (required)                                |
+| `--install-dir <path>`                        | Isolated-install mode (see below) — install into `<path>`   |
 | `--asset-pattern <glob>`                      | gh asset glob (default `*windows-setup.exe`)                |
 | `--soak-seconds <n>`                          | Post-relaunch window-watch soak (default `180`)             |
-| `--keep-install`                              | Skip teardown/uninstall for debugging                       |
+| `--keep-install`                              | Skip teardown/uninstall for debugging (ignored in isolated) |
 
 ### Profiles
 
@@ -82,6 +83,65 @@ Uninstall behavior at teardown follows ownership:
   does **not** uninstall — removing a build the harness did not place would be
   wrong. It prints a prominent note that the machine now has the `--to` version
   and the prior build was not restored.
+
+## Isolated install mode (developer machines)
+
+On a clean CI/VM the harness installs into the default per-user location
+(`%LOCALAPPDATA%\Programs\Orca`). A developer's box already has a real Orca there,
+and the safety guards above would (correctly) refuse to run. **Isolated mode**
+(`--install-dir <path>`) lets the harness run on that box without disturbing the
+real install.
+
+**The /D mechanism.** electron-builder's NSIS honors the standard NSIS `/D=<path>`
+override for the install *directory* (`node_modules/app-builder-lib/templates/nsis/multiUser.nsh`).
+`/D` is special: it must be the **last** argument and **cannot be quoted**, so the
+path must be absolute and **spaces-free** (validated by `validateInstallDir`). The
+installer's kill-sweep only matches processes under its own `$INSTDIR`, so a
+separate directory never touches the real install's app or daemon processes.
+
+**Why registry/shortcut backup-restore exists.** `/D` relocates *files only*.
+Regardless of `/D`, the installer writes `InstallLocation` + the uninstall entry to
+the **same per-user HKCU keys** as the real install
+(`HKCU\Software\<APP_GUID>` and
+`HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\<key>`,
+`node_modules/app-builder-lib/templates/nsis/include/installer.nsh`) and rewrites the
+Start Menu / Desktop shortcuts. Left hijacked, the user's **next real update would
+install into the test directory**. So isolated mode, before installing:
+
+1. **Snapshots** the shared state (`registry-shortcut-backup.mjs`): `reg export`s
+   each existing key to `.reg` files, copies the Orca `*.lnk` shortcuts, and records
+   a manifest (which keys/shortcuts existed, the pre-run `InstallLocation`).
+2. Runs the full install → update → assert proof against the isolated directory.
+3. **Always restores** at teardown (a `try/finally` wraps everything after the
+   snapshot): `reg import`s keys that pre-existed, `reg delete`s keys the test
+   created, copies shortcuts back / deletes test-created ones, then **re-reads
+   `InstallLocation` and verifies** it matches the snapshot. On mismatch it prints a
+   loud block with the exact manual `reg import` command to recover. Isolated
+   teardown **always** uninstalls the test install (the harness owns the directory)
+   and removes the directory if empty — `--keep-install` is ignored.
+
+**Residual risk.** The backup/restore covers `InstallLocation`, the uninstall entry,
+and the Orca shortcuts — the state that steers a future update and the user-visible
+launchers. It does **not** attempt to snapshot auto-update state files under the real
+install's `userData` (the harness uses an isolated `userData` throughout, so it never
+writes there), and it cannot restore state if the machine loses power mid-teardown
+(re-run with a valid `--install-dir` to let restore complete, or run the printed
+`reg import` by hand). The `.reg` backups live under the run's temp dir until a
+successful teardown removes it.
+
+**Example.**
+
+```
+pnpm win-update-e2e \
+  --from-release v1.4.124-rc.9 --to-release v1.4.125-rc.1 \
+  --expect cold-restore --install-dir C:\OrcaE2E
+```
+
+Read-only, touches nothing — print what isolated mode would snapshot on this machine:
+
+```
+node tools/win-update-e2e/registry-shortcut-backup.mjs
+```
 
 ## What it does
 
@@ -131,6 +191,7 @@ powershell -File tools/win-update-e2e/window-enum.ps1
 | `cli-args.mjs`             | Argument parsing / validation                                                 |
 | `preflight.mjs`            | win32/elevation checks, pre-existing-app refusal, baseline snapshot           |
 | `installer-steps.mjs`      | Silent install/update/uninstall, exe discovery, gh download                   |
+| `registry-shortcut-backup.mjs` | Isolated mode: snapshot/restore the shared HKCU keys + Orca shortcuts     |
 | `app-driver.mjs`           | Playwright Electron launch + terminal driving (production-safe DOM selectors) |
 | `interactivity-probes.mjs` | Sentinel-file echo / heartbeat / Ctrl+C probes                                |
 | `daemon-processes.mjs`     | Daemon PID discovery (command-line marker + pid file), scoped                 |

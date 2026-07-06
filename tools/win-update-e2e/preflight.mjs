@@ -6,6 +6,7 @@
 // not start. Existing installs and detached daemons are warned about, not
 // treated as fatal (the update path is what exercises them).
 
+import path from 'node:path'
 import { assertWin32, isElevated } from './platform-guard.mjs'
 import { runCommandSync } from './powershell-runner.mjs'
 import { captureBaseline } from './window-watch.mjs'
@@ -15,14 +16,16 @@ import { findDaemonProcesses } from './daemon-processes.mjs'
 /**
  * Find running Orca APP processes (main window process), excluding daemons.
  * The daemon runs as Orca.exe too but always carries the daemon-entry.js marker
- * on its command line, so excluding that marker isolates the actual app.
+ * on its command line, so excluding that marker isolates the actual app. The
+ * ExecutablePath lets isolated mode decide whether a running app is under the
+ * test dir (fatal) or is the developer's real Orca elsewhere (informational).
  */
 export function findAppProcesses() {
   const command = [
     `$procs = @(Get-CimInstance Win32_Process -Filter "Name = 'Orca.exe'" -ErrorAction SilentlyContinue |`,
     `  Where-Object { -not ($_.CommandLine -match 'daemon-entry\\.js') })`,
     `$out = @($procs | ForEach-Object {`,
-    `  [pscustomobject]@{ pid = $_.ProcessId; commandLine = $_.CommandLine } })`,
+    `  [pscustomobject]@{ pid = $_.ProcessId; path = $_.ExecutablePath; commandLine = $_.CommandLine } })`,
     `ConvertTo-Json -InputObject @{ processes = $out } -Depth 4 -Compress`
   ].join('\n')
   const { stdout } = runCommandSync(command)
@@ -39,16 +42,35 @@ export function findAppProcesses() {
   }
 }
 
+/** True if `childPath` is equal to or inside `parentDir` (case-insensitive). */
+function isPathUnder(childPath, parentDir) {
+  const child = path
+    .resolve(childPath)
+    .replace(/[\\/]+$/, '')
+    .toLowerCase()
+  const parent = path
+    .resolve(parentDir)
+    .replace(/[\\/]+$/, '')
+    .toLowerCase()
+  return child === parent || child.startsWith(`${parent}\\`)
+}
+
 /**
  * Run preflight. Returns { baseline, warnings, existingInstall }. Throws if a
  * pre-existing Orca app is running (never kill a user's process) or if an Orca
  * install already exists and allowExistingInstall was not passed (the run would
  * overwrite a developer's real build). baselinePath receives the snapshot of
  * currently-visible top-level windows.
+ *
+ * In isolated mode (`installDir` set) both refusals become target-scoped: only a
+ * running app whose exe is UNDER installDir is fatal, and only an install already
+ * in installDir triggers the existing-install refusal. A real Orca running or
+ * installed elsewhere is untouched by isolated mode and is merely noted.
  */
-export function preflight({ baselinePath, allowExistingInstall = false }) {
+export function preflight({ baselinePath, allowExistingInstall = false, installDir = null }) {
   assertWin32('preflight')
   const warnings = []
+  const isolated = Boolean(installDir)
 
   if (isElevated()) {
     warnings.push(
@@ -58,7 +80,25 @@ export function preflight({ baselinePath, allowExistingInstall = false }) {
   }
 
   const appProcesses = findAppProcesses()
-  if (appProcesses.length > 0) {
+  if (isolated) {
+    const inTarget = appProcesses.filter((p) => p.path && isPathUnder(p.path, installDir))
+    if (inTarget.length > 0) {
+      const listing = inTarget.map((p) => `  pid ${p.pid}: ${p.path}`).join('\n')
+      throw new Error(
+        `Refusing to run: ${inTarget.length} Orca app process(es) are running from the ` +
+          `isolated target dir ${installDir} that this harness did not start. Close them ` +
+          `first (this harness never kills pre-existing user processes):\n${listing}`
+      )
+    }
+    const elsewhere = appProcesses.filter((p) => !(p.path && isPathUnder(p.path, installDir)))
+    if (elsewhere.length > 0) {
+      warnings.push(
+        `${elsewhere.length} Orca app process(es) are running from outside the isolated ` +
+          `target dir (pids: ${elsewhere.map((p) => p.pid).join(', ')}). Isolated mode never ` +
+          `touches them; proceeding.`
+      )
+    }
+  } else if (appProcesses.length > 0) {
     const listing = appProcesses.map((p) => `  pid ${p.pid}: ${p.commandLine}`).join('\n')
     throw new Error(
       `Refusing to run: ${appProcesses.length} Orca app process(es) are already ` +
@@ -67,21 +107,32 @@ export function preflight({ baselinePath, allowExistingInstall = false }) {
     )
   }
 
-  const existingInstall = locateInstalledExe()
+  // Scope the existing-install check to the target dir in isolated mode; an
+  // install at the default location is left untouched and does not count.
+  const existingInstall = isolated ? locateInstalledExe(installDir) : locateInstalledExe()
   if (existingInstall && !allowExistingInstall) {
     throw new Error(
-      `Refusing to run: an Orca install already exists at ${existingInstall}. ` +
-        `This run would silently OVERWRITE it with the --from/--to versions and ` +
-        `leave the --to version installed — destroying a real Orca install on a ` +
-        `developer machine. Pass --allow-existing-install to proceed anyway ` +
-        `(your prior build will NOT be restored), or uninstall Orca first. Clean ` +
-        `machines (CI/VM) never hit this.`
+      isolated
+        ? `Refusing to run: an install already exists in the isolated target dir ` +
+            `${existingInstall}. Pass --allow-existing-install to overwrite it (isolated mode ` +
+            `never touches the real install elsewhere), or point --install-dir at an empty dir.`
+        : `Refusing to run: an Orca install already exists at ${existingInstall}. ` +
+            `This run would silently OVERWRITE it with the --from/--to versions and ` +
+            `leave the --to version installed — destroying a real Orca install on a ` +
+            `developer machine. Pass --allow-existing-install to proceed anyway ` +
+            `(your prior build will NOT be restored), or uninstall Orca first. Clean ` +
+            `machines (CI/VM) never hit this.`
     )
   }
-  if (existingInstall) {
+  if (existingInstall && !isolated) {
     warnings.push(
       `--allow-existing-install set: the existing install at ${existingInstall} will be ` +
         `overwritten and the --to version left installed; teardown will NOT uninstall it.`
+    )
+  } else if (existingInstall) {
+    warnings.push(
+      `A prior harness install exists in the target dir ${existingInstall}; it will be ` +
+        `overwritten and cleaned up at teardown (isolated mode owns the test dir).`
     )
   }
 
