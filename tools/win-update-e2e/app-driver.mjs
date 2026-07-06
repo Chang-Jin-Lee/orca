@@ -17,6 +17,9 @@
 
 import { _electron as electron } from '@stablyai/playwright-test'
 import { execFileSync } from 'node:child_process'
+import { mkdirSync, writeFileSync } from 'node:fs'
+import path from 'node:path'
+import { seedCompletedOnboarding } from './onboarding-profile.mjs'
 
 const NEW_TAB_BUTTON = { role: 'button', name: 'New tab' }
 const NEW_TERMINAL_ITEM = /New Terminal/i
@@ -28,9 +31,13 @@ const XTERM_INPUT = '.xterm-helper-textarea'
  * Launch the installed Orca.exe. Pointing userDataDir at a harness-owned temp
  * dir isolates this run's daemon (its socket/token path becomes unique), so
  * daemon lookups never collide with other Orca installs/daemons on the box.
+ * Seeds a completed-onboarding profile first so the fullscreen onboarding
+ * overlay does not block the terminal UI on a fresh profile.
  */
 export async function launchInstalledApp({ exePath, userDataDir, extraEnv = {} }) {
   const { ELECTRON_RUN_AS_NODE: _drop, ...cleanEnv } = process.env
+  mkdirSync(userDataDir, { recursive: true })
+  seedCompletedOnboarding(userDataDir)
   const app = await electron.launch({
     executablePath: exePath,
     args: [],
@@ -47,10 +54,74 @@ export async function launchInstalledApp({ exePath, userDataDir, extraEnv = {} }
   return { app, page }
 }
 
+/**
+ * Best-effort diagnostics dump when driving fails: a screenshot, the visible
+ * body text, and whether the e2e store is exposed (it is not in production
+ * builds). Written under `dir` so CI can upload it and reveal the actual
+ * post-launch DOM state. Never throws.
+ */
+export async function captureFailureDiagnostics(page, dir, label) {
+  const out = {}
+  try {
+    mkdirSync(dir, { recursive: true })
+  } catch {
+    return out
+  }
+  try {
+    await page.screenshot({
+      path: path.join(dir, `${label}.png`),
+      fullPage: false,
+      timeout: 10_000
+    })
+    out.screenshot = `${label}.png`
+  } catch {
+    /* renderer may be unresponsive */
+  }
+  try {
+    const info = await page.evaluate(() => ({
+      hasStore: typeof window.__store,
+      title: document.title,
+      url: location.href,
+      bodyText: (document.body?.innerText ?? '').slice(0, 4000),
+      testIds: Array.from(document.querySelectorAll('[data-testid]'))
+        .map((el) => el.getAttribute('data-testid'))
+        .filter((v, i, a) => v && a.indexOf(v) === i)
+        .slice(0, 80),
+      buttons: Array.from(document.querySelectorAll('button,[role="button"]'))
+        .map((el) => (el.getAttribute('aria-label') || el.textContent || '').trim())
+        .filter((v, i, a) => v && a.indexOf(v) === i)
+        .slice(0, 60)
+    }))
+    writeFileSync(path.join(dir, `${label}.json`), JSON.stringify(info, null, 2))
+    out.info = info
+  } catch {
+    /* renderer may be unresponsive */
+  }
+  return out
+}
+
 /** Wait until at least one terminal surface is mounted and interactive. */
 export async function waitForTerminalReady(page, timeoutMs = 60_000) {
   await page.waitForSelector(TERMINAL_SURFACE, { timeout: timeoutMs })
   await page.waitForSelector(XTERM_INPUT, { timeout: timeoutMs })
+}
+
+/**
+ * Get the app to an interactive terminal from a freshly-launched (onboarding-
+ * seeded) profile. If a terminal surface is already mounted, just wait for it;
+ * otherwise wait for the app shell to be interactive (the New tab control is
+ * visible, which also confirms the onboarding overlay is gone) and create one.
+ */
+export async function ensureTerminal(page, timeoutMs = 60_000) {
+  if ((await page.locator(TERMINAL_SURFACE).count()) > 0) {
+    await waitForTerminalReady(page, timeoutMs)
+    return
+  }
+  await page
+    .getByRole(NEW_TAB_BUTTON.role, { name: NEW_TAB_BUTTON.name })
+    .first()
+    .waitFor({ state: 'visible', timeout: timeoutMs })
+  await createTerminalTab(page)
 }
 
 /** Create a new terminal tab via the New tab menu. Returns the count after. */

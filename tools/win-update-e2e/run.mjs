@@ -16,12 +16,13 @@ import { resolveInstaller, silentInstall, silentUninstall } from './installer-st
 import { backupInstallState, restoreInstallState } from './registry-shortcut-backup.mjs'
 import {
   launchInstalledApp,
-  waitForTerminalReady,
+  ensureTerminal,
   createTerminalTab,
   listTabIds,
   startMarker,
   readTerminalTextBestEffort,
-  closeApp
+  closeApp,
+  captureFailureDiagnostics
 } from './app-driver.mjs'
 import { readDaemonPidFiles, findDaemonProcesses, isPidAlive } from './daemon-processes.mjs'
 import { startWatch } from './window-watch.mjs'
@@ -107,37 +108,46 @@ async function main() {
     created
   }
 
-  // Isolated mode ALWAYS restores registry/shortcuts and tears down the test
-  // install, whatever happens in the proof body. Non-isolated flow is unchanged:
-  // teardown runs after a successful body only (a thrown body surfaces as FATAL).
+  // Both paths ALWAYS tear down (close the app, kill the marker/watch, uninstall)
+  // and, in isolated mode, restore registry/shortcuts — whatever happens in the
+  // proof body. A driving failure captures diagnostics first, then surfaces as a
+  // FATAL. Teardown in a finally is what keeps a driving hang from pinning the
+  // Node process alive until the CI job timeout.
   const ctx = { session: null }
-  if (isolated) {
-    let passed = false
-    try {
-      passed = await runProof(ctx, runArgs)
-    } finally {
-      await isolatedTeardown({
-        app: ctx.session?.app,
-        created,
-        userDataDir,
-        installDir,
-        manifest,
-        runDir
-      })
+  const diagDir = process.env.ORCA_E2E_DIAG_DIR || path.join(runDir, 'diag')
+  let passed = false
+  try {
+    passed = await runProof(ctx, runArgs)
+  } catch (err) {
+    console.error(`[win-update-e2e] FATAL: ${err.stack || err.message}`)
+    if (ctx.session?.page) {
+      const diag = await captureFailureDiagnostics(ctx.session.page, diagDir, 'driving-failure')
+      log('diag', `captured -> ${diagDir} (store=${diag.info?.hasStore ?? 'n/a'})`)
+      if (diag.info?.bodyText) {
+        log('diag', `visible text: ${diag.info.bodyText.replace(/\s+/g, ' ').slice(0, 300)}`)
+      }
     }
-    return passed ? 0 : 1
+    passed = false
+  } finally {
+    await (isolated
+      ? isolatedTeardown({
+          app: ctx.session?.app,
+          created,
+          userDataDir,
+          installDir,
+          manifest,
+          runDir
+        })
+      : teardown({
+          app: ctx.session?.app,
+          created,
+          userDataDir,
+          keepInstall: opts.keepInstall,
+          hadPreexistingInstall,
+          installedExePath: ctx.installedExePath ?? null,
+          runDir
+        }))
   }
-
-  const passed = await runProof(ctx, runArgs)
-  await teardown({
-    app: ctx.session?.app,
-    created,
-    userDataDir,
-    keepInstall: opts.keepInstall,
-    hadPreexistingInstall,
-    installedExePath: ctx.installedExePath ?? null,
-    runDir
-  })
   return passed ? 0 : 1
 }
 
@@ -172,7 +182,9 @@ async function runProof(ctx, args) {
   // --- Base version: launch, create sessions, start marker, record daemon ---
   let session = await launchInstalledApp({ exePath: base.exePath, userDataDir })
   ctx.session = session
-  await waitForTerminalReady(session.page)
+  // A fresh profile has no terminal yet, so create/ensure one rather than
+  // waiting for a pre-existing surface.
+  await ensureTerminal(session.page)
   await createTerminalTab(session.page)
   const tabIds = await listTabIds(session.page)
   log('sessions', `tab ids: ${tabIds.join(', ')}`)
@@ -217,7 +229,7 @@ async function runProof(ctx, args) {
   // --- Relaunch and gather post-update evidence ---
   session = await launchInstalledApp({ exePath: updated.exePath, userDataDir })
   ctx.session = session
-  await waitForTerminalReady(session.page)
+  await ensureTerminal(session.page)
 
   const evidence = await gatherEvidence({
     profile: opts.expect,
@@ -525,10 +537,13 @@ function delay(ms) {
 if (process.argv[1] && path.resolve(process.argv[1]) === import.meta.filename) {
   main()
     .then((code) => {
-      process.exitCode = code
+      // Why: force-exit. A launched Electron app or the window-watch child can
+      // keep libuv handles open; without this the process lingers to the CI job
+      // timeout instead of exiting when the run is logically done.
+      process.exit(code)
     })
     .catch((err) => {
       console.error('[win-update-e2e] FATAL:', err.stack || err.message)
-      process.exitCode = 1
+      process.exit(1)
     })
 }

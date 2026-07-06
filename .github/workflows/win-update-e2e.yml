@@ -116,6 +116,10 @@ jobs:
       - name: Run update-survival harness
         id: harness
         shell: pwsh
+        env:
+          # Why: on a driving failure the harness dumps a screenshot + DOM state
+          # here so the actual post-onboarding UI is visible in the artifacts.
+          ORCA_E2E_DIAG_DIR: artifacts/diag
         run: |
           $log = "artifacts/harness-output.log"
           node tools/win-update-e2e/run.mjs `
@@ -130,6 +134,9 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: win-update-e2e-output
-          path: artifacts/harness-output.log
+          # Why: log + diagnostics only, never the multi-hundred-MB installers.
+          path: |
+            artifacts/harness-output.log
+            artifacts/diag/**
           retention-days: 7
           if-no-files-found: warn
