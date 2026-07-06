@@ -21,11 +21,16 @@ export function getSshConfigFilePathOverride(): string | undefined {
   return overridePath
 }
 
-/** Effective, home-expanded path. Returns the override (via
- *  resolveSshConfigHomePath) when set, else join(homedir(), '.ssh', 'config'). */
+/** Home-expanded override path, or undefined when there is no override. Shared
+ *  by the seams that emit `-F` so `ssh -G`, system-ssh, and ProxyJump always
+ *  resolve to the same path as getSshConfigFilePath() — enforced structurally,
+ *  not by duplicating the branch in each caller. */
+export function resolveEffectiveSshConfigPath(override: string | undefined): string | undefined {
+  return override ? resolveSshConfigHomePath(override) : undefined
+}
+
+/** Effective, home-expanded path. Returns the override when set, else
+ *  join(homedir(), '.ssh', 'config'). */
 export function getSshConfigFilePath(): string {
-  if (overridePath) {
-    return resolveSshConfigHomePath(overridePath)
-  }
-  return join(homedir(), '.ssh', 'config')
+  return resolveEffectiveSshConfigPath(overridePath) ?? join(homedir(), '.ssh', 'config')
 }

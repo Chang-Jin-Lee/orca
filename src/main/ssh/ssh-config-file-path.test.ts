@@ -6,7 +6,10 @@ import {
   setSshConfigFilePathOverride
 } from './ssh-config-file-path'
 
-vi.mock('os', () => ({
+// Why: the module under test (and resolveSshConfigHomePath) import from
+// 'node:os'; mock the exact specifier so interception doesn't rely on Vitest
+// normalizing 'os' ↔ 'node:os'.
+vi.mock('node:os', () => ({
   homedir: () => '/home/testuser'
 }))
 

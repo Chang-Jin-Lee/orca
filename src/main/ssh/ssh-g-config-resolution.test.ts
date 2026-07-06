@@ -3,7 +3,9 @@ import { join } from 'node:path'
 import { buildSshGArgs } from './ssh-g-config-resolution'
 import { setSshConfigFilePathOverride } from './ssh-config-file-path'
 
-vi.mock('os', () => ({
+// Why: resolveSshConfigHomePath imports from 'node:os'; mock the exact specifier
+// so ~-expansion assertions don't rely on Vitest normalizing 'os' ↔ 'node:os'.
+vi.mock('node:os', () => ({
   homedir: () => '/home/testuser'
 }))
 

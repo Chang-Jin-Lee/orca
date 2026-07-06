@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process'
 import { resolveSshConfigHomePath } from './ssh-config-path-expansion'
-import { getSshConfigFilePathOverride } from './ssh-config-file-path'
+import { getSshConfigFilePathOverride, resolveEffectiveSshConfigPath } from './ssh-config-file-path'
 
 export type SshResolvedConfig = {
   hostname: string
@@ -27,8 +27,9 @@ export function buildSshGArgs(
   host: string,
   overridePath = getSshConfigFilePathOverride()
 ): string[] {
-  if (overridePath) {
-    return ['-G', '-F', resolveSshConfigHomePath(overridePath), '--', host]
+  const resolved = resolveEffectiveSshConfigPath(overridePath)
+  if (resolved) {
+    return ['-G', '-F', resolved, '--', host]
   }
   return ['-G', '--', host]
 }
