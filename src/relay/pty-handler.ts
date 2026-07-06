@@ -15,6 +15,7 @@ import {
 import { getRelayShellLaunchConfig } from './pty-shell-launch'
 import { DEFAULT_SSH_RELAY_GRACE_PERIOD_SECONDS } from '../shared/ssh-types'
 import { shouldUseShellReadyStartupDelivery } from '../shared/codex-startup-delivery'
+import { buildStartupCommandSubmission } from '../shared/startup-command-submission'
 import { resolveSetupAgentSequenceLaunchCommand } from '../shared/setup-agent-sequencing'
 import {
   createShellReadyScanState,
@@ -323,8 +324,14 @@ export class PtyHandler {
       }
     }
     const submit = process.platform === 'win32' ? '\r' : '\n'
-    const endsWithSubmit = startup.command.endsWith('\r') || startup.command.endsWith('\n')
-    const payload = endsWithSubmit ? startup.command : `${startup.command}${submit}`
+    // Why: a multiline startup prompt is pasted literally via bracketed paste
+    // only when the Orca shell-ready wrapper is active (waitForShellReady) —
+    // that is the bash/zsh overlay that arms bracketed-paste mode. Other remote
+    // shells keep the raw submit path so the ESC[200~ markers are not echoed.
+    const payload = buildStartupCommandSubmission(startup.command, {
+      submit,
+      bracketedPasteSafe: startup.waitForShellReady
+    })
     managed.startupCommand = undefined
     managed.pty.write(payload)
   }
