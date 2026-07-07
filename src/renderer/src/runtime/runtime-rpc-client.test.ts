@@ -369,6 +369,70 @@ describe('runtime RPC client routing', () => {
     ])
   })
 
+  it('re-probes when a status success clears a still-pending compatibility probe', async () => {
+    // Reconnect race: the offline probe stays queued on the dropped connection
+    // (pending, not yet failed) while a fresh status publish reports the host
+    // reachable. The clear must drop that doomed pending probe so the next
+    // reuse-flagged call starts a fresh probe instead of coalescing onto it.
+    let rejectFirstStatus!: (error: Error) => void
+    let statusCalls = 0
+    runtimeEnvironmentCall.mockImplementation(({ method }: { method: string }) => {
+      if (method === 'status.get') {
+        statusCalls += 1
+        if (statusCalls === 1) {
+          return new Promise((_, reject) => {
+            rejectFirstStatus = reject
+          })
+        }
+        return Promise.resolve({
+          id: 'status',
+          ok: true,
+          result: {
+            runtimeId: 'remote-runtime',
+            graphStatus: 'ready',
+            runtimeProtocolVersion: RUNTIME_PROTOCOL_VERSION,
+            minCompatibleRuntimeClientVersion: MIN_COMPATIBLE_RUNTIME_CLIENT_VERSION
+          },
+          _meta: { runtimeId: 'remote-runtime' }
+        })
+      }
+      return Promise.resolve({
+        id: method,
+        ok: true,
+        result: { ok: true },
+        _meta: { runtimeId: 'remote-runtime' }
+      })
+    })
+    const target = { kind: 'environment', environmentId: 'env-reconnect' } as const
+
+    const pendingResult = callRuntimeRpc(target, 'repo.list', undefined, {
+      reuseRecentCompatibilityFailure: true
+    }).then(
+      () => 'resolved',
+      (error) => `rejected:${error.message}`
+    )
+    // Let the first status.get register its in-flight cache entry.
+    await Promise.resolve()
+
+    clearRecentRuntimeCompatibilityFailure('env-reconnect')
+
+    const secondCall = callRuntimeRpc(target, 'worktree.detectedList', undefined, {
+      reuseRecentCompatibilityFailure: true
+    })
+    await Promise.resolve()
+    // The doomed pending probe rejects; it must not fail the fresh re-probe.
+    rejectFirstStatus(new Error('stale connection closed'))
+
+    await expect(secondCall).resolves.toEqual({ ok: true })
+    await expect(pendingResult).resolves.toBe('rejected:stale connection closed')
+
+    expect(runtimeEnvironmentCall.mock.calls.map((call) => call[0].method)).toEqual([
+      'status.get',
+      'status.get',
+      'worktree.detectedList'
+    ])
+  })
+
   it('checks advertised runtime capabilities after protocol compatibility', async () => {
     runtimeEnvironmentCall.mockResolvedValue({
       id: 'status',
