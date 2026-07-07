@@ -2,7 +2,10 @@ import type { StateCreator } from 'zustand'
 import type { AppState } from '../types'
 import type { PublicKnownRuntimeEnvironment } from '../../../../shared/runtime-environments'
 import type { RuntimeStatus } from '../../../../shared/runtime-types'
-import { unwrapRuntimeRpcResult } from '@/runtime/runtime-rpc-client'
+import {
+  clearRecentRuntimeCompatibilityFailure,
+  unwrapRuntimeRpcResult
+} from '@/runtime/runtime-rpc-client'
 
 /** Live status for one saved runtime environment, as last observed by the
  * renderer. `status === null` records a probe that failed or timed out so the
@@ -103,6 +106,11 @@ export const createRuntimeStatusSlice: StateCreator<AppState, [], [], RuntimeSta
         timeoutMs
       })
       const status = unwrapRuntimeRpcResult<RuntimeStatus>(response)
+      // Why: the online-set/reachable-set transitions this probe feeds are the
+      // one-shot triggers for background catalog/worktree refetches. Those
+      // refetches reuse recent compatibility failures, so drop a stale failure
+      // now that the runtime demonstrably answers.
+      clearRecentRuntimeCompatibilityFailure(environmentId)
       get().setRuntimeEnvironmentStatus(environmentId, { status, checkedAt: Date.now() })
       return true
     } catch {

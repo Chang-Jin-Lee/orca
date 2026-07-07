@@ -2,6 +2,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { create } from 'zustand'
 import type { RuntimeStatus } from '../../../../shared/runtime-types'
 import { createCompatibleRuntimeStatusResponse } from '../../runtime/runtime-compatibility-test-fixture'
+import {
+  callRuntimeRpc,
+  clearRuntimeCompatibilityCacheForTests
+} from '../../runtime/runtime-rpc-client'
 import { createRuntimeStatusSlice, type RuntimeStatusSlice } from './runtime-status'
 
 function createSliceStore() {
@@ -160,6 +164,46 @@ describe('runtime-status slice', () => {
     expect(store.getState().runtimeStatusByEnvironmentId.get('env-a')?.status?.runtimeId).toBe(
       'runtime-a'
     )
+  })
+
+  it('drops a recent compatibility failure once a status refresh succeeds', async () => {
+    clearRuntimeCompatibilityCacheForTests()
+    let offline = true
+    const call = vi.fn().mockImplementation(({ method }: { method: string }) => {
+      if (offline || method === 'status.get') {
+        return Promise.resolve(
+          offline
+            ? {
+                id: 'status',
+                ok: false,
+                error: { code: 'runtime_unavailable', message: 'offline' },
+                _meta: { runtimeId: 'runtime-a' }
+              }
+            : createCompatibleRuntimeStatusResponse('runtime-a')
+        )
+      }
+      return Promise.resolve({ id: method, ok: true, result: { ok: true }, _meta: {} })
+    })
+    const getStatus = vi.fn().mockResolvedValue(createCompatibleRuntimeStatusResponse('runtime-a'))
+    vi.stubGlobal('window', { api: { runtimeEnvironments: { getStatus, call } } })
+    const store = createSliceStore()
+    const target = { kind: 'environment', environmentId: 'env-a' } as const
+
+    await expect(
+      callRuntimeRpc(target, 'repo.list', undefined, { reuseRecentCompatibilityFailure: true })
+    ).rejects.toThrow('offline')
+    // Reuse-flagged callers stay pinned to the recent failure until recovery.
+    await expect(
+      callRuntimeRpc(target, 'repo.list', undefined, { reuseRecentCompatibilityFailure: true })
+    ).rejects.toThrow('offline')
+
+    offline = false
+    await store.getState().refreshRuntimeEnvironmentStatus('env-a')
+
+    await expect(
+      callRuntimeRpc(target, 'repo.list', undefined, { reuseRecentCompatibilityFailure: true })
+    ).resolves.toEqual({ ok: true })
+    clearRuntimeCompatibilityCacheForTests()
   })
 
   it('records null and returns false when a runtime refresh fails', async () => {

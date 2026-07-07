@@ -171,6 +171,21 @@ function rememberRuntimeEnvironmentCompatibility(
   }
 }
 
+// Why: a live status.get answer proves a cached "offline" compatibility
+// failure is stale. Drop only failure entries so reachability-triggered
+// refreshes re-probe instead of reusing the failure for the rest of its TTL,
+// while proven-compatible successes stay cached.
+export function clearRecentRuntimeCompatibilityFailure(environmentId: string): void {
+  const trimmed = environmentId.trim()
+  if (!trimmed) {
+    return
+  }
+  const cached = runtimeCompatibilityChecks.get(trimmed)
+  if (cached && cached.failedAt !== null) {
+    runtimeCompatibilityChecks.delete(trimmed)
+  }
+}
+
 export function clearRuntimeCompatibilityCache(environmentId?: string | null): void {
   const trimmed = environmentId?.trim()
   if (trimmed) {
