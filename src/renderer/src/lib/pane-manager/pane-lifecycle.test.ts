@@ -423,8 +423,10 @@ describe('openTerminal — addon and provider wiring', () => {
   function createOpenTerminalHarness(): {
     pane: ManagedPaneInternal
     events: string[]
+    getRegisteredJoinHandler: () => ((text: string) => [number, number][]) | null
   } {
     const events: string[] = []
+    let registeredJoinHandler: ((text: string) => [number, number][]) | null = null
 
     const fitAddon = {
       fit: vi.fn()
@@ -494,8 +496,9 @@ describe('openTerminal — addon and provider wiring', () => {
       write: vi.fn(() => {
         events.push('write')
       }),
-      registerCharacterJoiner: vi.fn(() => {
+      registerCharacterJoiner: vi.fn((handler: (text: string) => [number, number][]) => {
         events.push('registerCharacterJoiner')
+        registeredJoinHandler = handler
         return 3
       }),
       deregisterCharacterJoiner: vi.fn((joinerId: number) => {
@@ -533,7 +536,7 @@ describe('openTerminal — addon and provider wiring', () => {
       debugLabel: null
     }
 
-    return { pane, events }
+    return { pane, events, getRegisteredJoinHandler: () => registeredJoinHandler }
   }
 
   // Why: CJK / emoji / ZWJ widths get baked into the buffer at the active
@@ -579,5 +582,24 @@ describe('openTerminal — addon and provider wiring', () => {
 
     expect(events).toContain('deregisterCharacterJoiner:3')
     expect(pane.arabicShapingJoinerCleanup).toBeNull()
+  })
+
+  // Why: the DOM renderer misrenders joined spans (per-character
+  // letter-spacing blowout), so the joiner must only join while this pane's
+  // WebGL addon is live — locked here against the real openTerminal wiring.
+  it('joins RTL runs only while the pane has a live WebGL addon', () => {
+    const { pane, getRegisteredJoinHandler } = createOpenTerminalHarness()
+
+    openTerminal(pane)
+    const handler = getRegisteredJoinHandler()!
+
+    expect(pane.webglAddon).toBeNull()
+    expect(handler('مرحبا')).toEqual([])
+
+    pane.webglAddon = {} as never
+    expect(handler('مرحبا')).toEqual([[0, 5]])
+
+    pane.webglAddon = null
+    expect(handler('مرحبا')).toEqual([])
   })
 })

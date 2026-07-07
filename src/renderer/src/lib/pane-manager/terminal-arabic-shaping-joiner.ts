@@ -46,12 +46,23 @@ function isRunNeutralCharCode(charCode: number): boolean {
 }
 
 // ZWNJ/ZWJ shape within a word (mandatory in Persian/Kurdish orthography) and
-// RLM asserts RTL context — breaking the run on them would split one word into
-// two joined chunks laid out in swapped visual order. Transparent: allowed
-// inside a run without extending or counting toward it. LRM (U+200E) is strong
-// LTR and intentionally still breaks the run.
+// RLM/ALM assert RTL context — breaking the run on them would split one word
+// into two joined chunks laid out in swapped visual order. Transparent: never
+// opens, closes, extends, or counts toward a run. LRM (U+200E) is strong LTR
+// and intentionally still breaks the run.
 function isRtlRunTransparentCodePoint(codePoint: number): boolean {
-  return codePoint === 0x200c || codePoint === 0x200d || codePoint === 0x200f
+  return (
+    codePoint === 0x200c || codePoint === 0x200d || codePoint === 0x200f || codePoint === 0x061c
+  )
+}
+
+// Why: a combining mark renders inside its base's cell, so a run opened at a
+// mark starts mid-cell — xterm rounds that to an empty joined cell range and
+// the WebGL renderer then draws an empty glyph over the next character. Marks
+// may extend and count only after a spacing RTL letter opened the run.
+const COMBINING_MARK = /\p{Mn}/u
+function canOpenRtlRun(codePoint: number): boolean {
+  return !COMBINING_MARK.test(String.fromCodePoint(codePoint))
 }
 
 /**
@@ -108,13 +119,17 @@ export function findRtlJoinRanges(text: string): [number, number][] {
         codeUnitLength = 2
       }
     }
-    if (isStrongRtlCodePoint(codePoint)) {
-      if (runStart === -1) {
-        runStart = i
+    if (isRtlRunTransparentCodePoint(codePoint)) {
+      // Run-transparent format controls: skip without opening or closing.
+    } else if (isStrongRtlCodePoint(codePoint)) {
+      if (runStart !== -1 || canOpenRtlRun(codePoint)) {
+        if (runStart === -1) {
+          runStart = i
+        }
+        runEnd = i + codeUnitLength
+        runRtlCount++
       }
-      runEnd = i + codeUnitLength
-      runRtlCount++
-    } else if (runStart !== -1 && !isRtlRunTransparentCodePoint(codePoint)) {
+    } else if (runStart !== -1) {
       // Non-RTL above the floor (box drawing, CJK, emoji, …) breaks the run
       // so TUI borders and East Asian text keep per-cell rendering.
       closeRun()

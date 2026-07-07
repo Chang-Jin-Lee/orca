@@ -155,6 +155,28 @@ describe('findRtlJoinRanges', () => {
       [6, 9]
     ])
   })
+
+  it('treats ALM as transparent like RLM', () => {
+    const ALM = '\u061c'
+    expect(findRtlJoinRanges(`${ALM}${ALM}`)).toEqual([])
+    // An isolated letter stays isolated even with a leading direction mark.
+    expect(findRtlJoinRanges(`${ALM}م`)).toEqual([])
+    expect(findRtlJoinRanges(`مرحبا${ALM}`)).toEqual([[0, 5]])
+    const text = `مرحبا${ALM}بكم`
+    expect(findRtlJoinRanges(text)).toEqual([[0, text.length]])
+  })
+
+  it('does not open a run at orphan combining marks after an LTR base', () => {
+    // Marks render inside their base's cell; a run opened mid-cell maps to an
+    // empty joined cell range that blanks the following glyph in WebGL.
+    expect(findRtlJoinRanges('a\u064b\u0651b')).toEqual([])
+    expect(findRtlJoinRanges('x\u05b0\u05b1y')).toEqual([])
+  })
+
+  it('lets combining marks extend a run opened by a spacing RTL letter', () => {
+    const text = 'منَّ هنا'
+    expect(findRtlJoinRanges(text)).toEqual([[0, text.length]])
+  })
 })
 
 describe('registerArabicShapingJoiner', () => {
