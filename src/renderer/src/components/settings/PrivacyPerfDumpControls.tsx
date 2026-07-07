@@ -25,8 +25,8 @@ export function PrivacyPerfDumpControls({
       title={
         status && !status.perfDumpEnabled
           ? translate(
-              'auto.components.settings.PrivacyPerfDumpControls.a90900c24d',
-              'Performance debug dumps are disabled.'
+              'auto.components.settings.PrivacyPerfDumpControls.7c31a80d92',
+              'Performance reports are disabled.'
             )
           : undefined
       }
@@ -38,8 +38,8 @@ export function PrivacyPerfDumpControls({
         <Activity className="size-3.5" />
       )}
       {translate(
-        'auto.components.settings.PrivacyPerfDumpControls.18f7cad8ee',
-        'Capture performance dump'
+        'auto.components.settings.PrivacyPerfDumpControls.4b6e08d217',
+        'Capture performance report'
       )}
     </Button>
   )
@@ -48,27 +48,21 @@ export function PrivacyPerfDumpControls({
 export function getPerfDumpDescription(stage: PerfDumpStage): string {
   if (stage === 'metrics') {
     return translate(
-      'auto.components.settings.PrivacyPerfDumpControls.ed819b5b0a',
-      'Collecting renderer metrics…'
+      'auto.components.settings.PrivacyPerfDumpControls.2a90ef73c4',
+      'Collecting app metrics…'
     )
   }
-  if (stage === 'trace') {
+  if (stage === 'profile') {
     return translate(
-      'auto.components.settings.PrivacyPerfDumpControls.7f6c7cc90f',
-      'Recording activity trace (10s)…'
-    )
-  }
-  if (stage === 'heap') {
-    return translate(
-      'auto.components.settings.PrivacyPerfDumpControls.20f8c48f16',
-      'Capturing memory snapshot…'
+      'auto.components.settings.PrivacyPerfDumpControls.8de51c30b5',
+      'Profiling CPU activity (10s)…'
     )
   }
   if (stage === 'compressing') {
     return translate('auto.components.settings.PrivacyPerfDumpControls.05d8e75876', 'Compressing…')
   }
   return translate(
-    'auto.components.settings.PrivacyPerfDumpControls.581d264c8c',
-    'Records about 10 seconds of app activity and a memory snapshot of the interface. May include terminal text, file paths, and page titles; saved to your computer only — nothing is uploaded.'
+    'auto.components.settings.PrivacyPerfDumpControls.6dc19f4ab3',
+    'Records about 10 seconds of CPU activity from the interface and background process, plus app metrics. Contains Orca function names and workspace folder names — no terminal text; saved to your computer only, nothing is uploaded.'
   )
 }

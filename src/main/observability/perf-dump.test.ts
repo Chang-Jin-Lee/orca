@@ -1,27 +1,37 @@
 import { mkdtempSync, rmSync } from 'node:fs'
-import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises'
+import { mkdir, readdir, readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { gunzipSync } from 'node:zlib'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { showMessageBoxMock, startRecordingMock, stopRecordingMock, getPathMock } = vi.hoisted(
-  () => ({
-    showMessageBoxMock: vi.fn(),
-    startRecordingMock: vi.fn(),
-    stopRecordingMock: vi.fn(),
-    getPathMock: vi.fn()
-  })
-)
+const { showMessageBoxMock, getPathMock, inspectorPostMock } = vi.hoisted(() => ({
+  showMessageBoxMock: vi.fn(),
+  getPathMock: vi.fn(),
+  inspectorPostMock: vi.fn()
+}))
 
 vi.mock('electron', () => ({
   app: { getPath: getPathMock, getVersion: () => '1.2.3-test' },
-  dialog: { showMessageBox: showMessageBoxMock },
-  contentTracing: { startRecording: startRecordingMock, stopRecording: stopRecordingMock }
+  dialog: { showMessageBox: showMessageBoxMock }
 }))
 
-// Why: the trace stage waits 10 s in production; tests must not.
+// Why: the profile stage waits 10 s in production; tests must not.
 vi.mock('node:timers/promises', () => ({ setTimeout: async () => {} }))
+
+vi.mock('node:inspector', () => ({
+  Session: class {
+    connect(): void {}
+    disconnect(): void {}
+    post(
+      method: string,
+      params: object | undefined,
+      callback: (error: Error | null, result?: unknown) => void
+    ): void {
+      inspectorPostMock(method, params, callback)
+    }
+  }
+}))
 
 vi.mock('./renderer-perf', () => ({
   collectRendererPerfMetrics: vi.fn(async () => ({
@@ -40,14 +50,56 @@ import { captureRendererPerfDump } from './perf-dump'
 let tempRoot: string
 let downloadsDir: string
 
-function makeRenderer(overrides: Record<string, unknown> = {}): unknown {
+type RendererDebuggerMock = {
+  isAttached: ReturnType<typeof vi.fn>
+  attach: ReturnType<typeof vi.fn>
+  detach: ReturnType<typeof vi.fn>
+  sendCommand: ReturnType<typeof vi.fn>
+}
+
+function makeRendererDebugger(
+  overrides: Partial<Record<string, unknown>> = {}
+): RendererDebuggerMock {
+  let attached = false
   return {
-    isDestroyed: () => false,
-    takeHeapSnapshot: vi.fn(async (filePath: string) => {
-      await writeFile(filePath, '{"snapshot":true}', 'utf8')
+    isAttached: vi.fn(() => attached),
+    attach: vi.fn(() => {
+      attached = true
     }),
+    detach: vi.fn(() => {
+      attached = false
+    }),
+    sendCommand: vi.fn(async (method: string) =>
+      method === 'Profiler.stop' ? { profile: { nodes: [], samples: [1] } } : undefined
+    ),
     ...overrides
   }
+}
+
+function makeRenderer(dbg: RendererDebuggerMock = makeRendererDebugger()): unknown {
+  return {
+    isDestroyed: () => false,
+    debugger: dbg
+  }
+}
+
+function stubInspectorPost(
+  impl: (method: string) => unknown = (method) =>
+    method === 'Profiler.stop' ? { profile: { nodes: [], samples: [2] } } : undefined
+): void {
+  inspectorPostMock.mockImplementation(
+    (
+      method: string,
+      _params: object | undefined,
+      callback: (error: Error | null, result?: unknown) => void
+    ) => {
+      try {
+        callback(null, impl(method))
+      } catch (error) {
+        callback(error as Error)
+      }
+    }
+  )
 }
 
 function readTarEntries(archive: Buffer): Map<string, string> {
@@ -78,11 +130,7 @@ describe('captureRendererPerfDump', () => {
       name === 'downloads' ? downloadsDir : join(tempRoot, name)
     )
     showMessageBoxMock.mockResolvedValue({ response: 0 })
-    startRecordingMock.mockResolvedValue(undefined)
-    stopRecordingMock.mockImplementation(async (filePath: string) => {
-      await writeFile(filePath, '{"traceEvents":[]}', 'utf8')
-      return filePath
-    })
+    stubInspectorPost()
   })
 
   afterEach(() => {
@@ -90,7 +138,7 @@ describe('captureRendererPerfDump', () => {
     vi.clearAllMocks()
   })
 
-  it('produces a tar.gz containing metadata, metrics, trace, and heap snapshot', async () => {
+  it('produces a tar.gz containing metadata, metrics, and both CPU profiles', async () => {
     const result = await captureRendererPerfDump({
       getRendererWebContents: () => makeRenderer() as never
     })
@@ -98,26 +146,48 @@ describe('captureRendererPerfDump', () => {
     expect(result).not.toHaveProperty('canceled')
     const { filePath, bytes } = result as { filePath: string; bytes: number }
     expect(bytes).toBeGreaterThan(0)
-    const names = [...readTarEntries(await readFile(filePath)).keys()]
-    expect(names).toEqual([
+    const entries = readTarEntries(await readFile(filePath))
+    expect([...entries.keys()]).toEqual([
       'metadata.json',
       'renderer-perf-metrics.json',
-      'trace.json',
-      'renderer-heap.heapsnapshot'
+      'renderer.cpuprofile',
+      'main.cpuprofile'
     ])
+    expect(JSON.parse(entries.get('renderer.cpuprofile')!)).toEqual({ nodes: [], samples: [1] })
+    expect(JSON.parse(entries.get('main.cpuprofile')!)).toEqual({ nodes: [], samples: [2] })
     // Temp capture directory is removed after packaging.
     expect(await readdir(join(tempRoot, 'temp', 'orca-perf-dumps'))).toEqual([])
   })
 
-  it('returns canceled without touching tracing when the consent dialog is declined', async () => {
+  it('sets the documented sampling interval and detaches the debugger afterwards', async () => {
+    const dbg = makeRendererDebugger()
+    await captureRendererPerfDump({
+      getRendererWebContents: () => makeRenderer(dbg) as never
+    })
+
+    expect(dbg.sendCommand).toHaveBeenCalledWith('Profiler.setSamplingInterval', {
+      interval: 1000
+    })
+    expect(dbg.sendCommand).toHaveBeenCalledWith('Profiler.disable')
+    expect(dbg.detach).toHaveBeenCalledTimes(1)
+    expect(inspectorPostMock).toHaveBeenCalledWith(
+      'Profiler.setSamplingInterval',
+      { interval: 1000 },
+      expect.any(Function)
+    )
+  })
+
+  it('returns canceled without touching the profilers when consent is declined', async () => {
     showMessageBoxMock.mockResolvedValue({ response: 1 })
+    const dbg = makeRendererDebugger()
 
     const result = await captureRendererPerfDump({
-      getRendererWebContents: () => makeRenderer() as never
+      getRendererWebContents: () => makeRenderer(dbg) as never
     })
 
     expect(result).toEqual({ canceled: true })
-    expect(startRecordingMock).not.toHaveBeenCalled()
+    expect(dbg.sendCommand).not.toHaveBeenCalled()
+    expect(inspectorPostMock).not.toHaveBeenCalled()
   })
 
   it('coalesces concurrent captures onto one consent dialog and one capture', async () => {
@@ -128,20 +198,27 @@ describe('captureRendererPerfDump', () => {
     ])
 
     expect(showMessageBoxMock).toHaveBeenCalledTimes(1)
-    expect(startRecordingMock).toHaveBeenCalledTimes(1)
     expect(first).toEqual(second)
   })
 
-  it('still produces a dump with failure notes when trace and heap capture fail', async () => {
-    startRecordingMock.mockRejectedValue(new Error('tracing busy'))
-    const renderer = makeRenderer({
-      takeHeapSnapshot: vi.fn(async () => {
-        throw new Error('snapshot failed')
+  it('still produces a report with failure notes when both profilers fail', async () => {
+    const dbg = makeRendererDebugger({
+      sendCommand: vi.fn(async (method: string) => {
+        if (method === 'Profiler.start') {
+          throw new Error('renderer profiler busy')
+        }
+        return undefined
       })
+    })
+    stubInspectorPost((method) => {
+      if (method === 'Profiler.enable') {
+        throw new Error('inspector unavailable')
+      }
+      return undefined
     })
 
     const result = await captureRendererPerfDump({
-      getRendererWebContents: () => renderer as never
+      getRendererWebContents: () => makeRenderer(dbg) as never
     })
 
     const { filePath } = result as { filePath: string }
@@ -150,10 +227,53 @@ describe('captureRendererPerfDump', () => {
     const metadata = JSON.parse(entries.get('metadata.json')!) as {
       artifacts: Record<string, { status: string; reason?: string }>
     }
-    expect(metadata.artifacts.trace.status).toBe('failed')
-    expect(metadata.artifacts.trace.reason).toContain('tracing busy')
-    expect(metadata.artifacts.heap.status).toBe('failed')
-    expect(metadata.artifacts.heap.reason).toContain('snapshot failed')
+    expect(metadata.artifacts.renderer_profile.status).toBe('failed')
+    expect(metadata.artifacts.renderer_profile.reason).toContain('renderer profiler busy')
+    expect(metadata.artifacts.main_profile.status).toBe('failed')
+    expect(metadata.artifacts.main_profile.reason).toContain('inspector unavailable')
+  })
+
+  it('keeps the main profile when the renderer profile fails', async () => {
+    const dbg = makeRendererDebugger({
+      sendCommand: vi.fn(async (method: string) => {
+        if (method === 'Profiler.stop') {
+          throw new Error('renderer gone')
+        }
+        return undefined
+      })
+    })
+
+    const result = await captureRendererPerfDump({
+      getRendererWebContents: () => makeRenderer(dbg) as never
+    })
+
+    const { filePath } = result as { filePath: string }
+    const entries = readTarEntries(await readFile(filePath))
+    expect([...entries.keys()]).toEqual([
+      'metadata.json',
+      'renderer-perf-metrics.json',
+      'main.cpuprofile'
+    ])
+    const metadata = JSON.parse(entries.get('metadata.json')!) as {
+      artifacts: Record<string, { status: string }>
+    }
+    expect(metadata.artifacts.renderer_profile.status).toBe('failed')
+    expect(metadata.artifacts.main_profile.status).toBe('included')
+  })
+
+  it('omits the renderer profile when no renderer is available', async () => {
+    const result = await captureRendererPerfDump({
+      getRendererWebContents: () => null
+    })
+
+    const { filePath } = result as { filePath: string }
+    const entries = readTarEntries(await readFile(filePath))
+    expect([...entries.keys()]).toContain('main.cpuprofile')
+    const metadata = JSON.parse(entries.get('metadata.json')!) as {
+      artifacts: Record<string, { status: string; reason?: string }>
+    }
+    expect(metadata.artifacts.renderer_profile.status).toBe('omitted')
+    expect(metadata.artifacts.renderer_profile.reason).toBe('renderer unavailable')
   })
 
   it('reports progress stages in order', async () => {
@@ -162,6 +282,6 @@ describe('captureRendererPerfDump', () => {
       getRendererWebContents: () => makeRenderer() as never,
       onProgress: (stage) => stages.push(stage)
     })
-    expect(stages).toEqual(['metrics', 'trace', 'heap', 'compressing'])
+    expect(stages).toEqual(['metrics', 'profile', 'compressing'])
   })
 })

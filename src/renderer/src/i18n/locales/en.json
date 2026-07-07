@@ -5775,9 +5775,9 @@
           "49fc6c80e8": "Diagnostics sent",
           "db3228e01a": "Review file opened",
           "a2b3505c77": "Review file created",
-          "c4cd74809e": "Performance dump saved",
-          "f73f536350": "Could not capture performance dump",
-          "4c7eb24bdd": "Capture performance debug dump"
+          "1e6f70a2d4": "Performance report saved",
+          "9b2ce80f13": "Could not capture performance report",
+          "5d1a9cc0e7": "Capture performance report"
         },
         "PrivacyPane": {
           "36e0e2e63b": "environment variable. Unset it and restart to re-enable.",
@@ -8768,13 +8768,12 @@
           "toggleLabel": "Toggle per-workspace environments"
         },
         "PrivacyPerfDumpControls": {
-          "a90900c24d": "Performance debug dumps are disabled.",
-          "18f7cad8ee": "Capture performance dump",
-          "ed819b5b0a": "Collecting renderer metrics…",
-          "7f6c7cc90f": "Recording activity trace (10s)…",
-          "20f8c48f16": "Capturing memory snapshot…",
           "05d8e75876": "Compressing…",
-          "581d264c8c": "Records about 10 seconds of app activity and a memory snapshot of the interface. May include terminal text, file paths, and page titles; saved to your computer only — nothing is uploaded."
+          "7c31a80d92": "Performance reports are disabled.",
+          "4b6e08d217": "Capture performance report",
+          "2a90ef73c4": "Collecting app metrics…",
+          "8de51c30b5": "Profiling CPU activity (10s)…",
+          "6dc19f4ab3": "Records about 10 seconds of CPU activity from the interface and background process, plus app metrics. Contains Orca function names and workspace folder names — no terminal text; saved to your computer only, nothing is uploaded."
         },
         "SourceControlActionRepoOverrideNote": {
           "agent": "Agent",
@@ -12398,9 +12397,9 @@
         "perfDump": {
           "e6735719a0": "Capture",
           "8d1d1d5725": "Cancel",
-          "71ec14a301": "Capture performance debug dump?",
-          "6d969f0773": "This saves a local performance debug dump for support.",
-          "2551f622fd": "Orca will record about 10 seconds of app activity and capture a memory snapshot of the interface. The dump may include terminal text, file paths, and page titles. It is saved to your computer only; nothing is uploaded."
+          "3f8be4a51c": "Capture performance report?",
+          "9c27d41e88": "This saves a local performance report for support.",
+          "b52ce7d316": "Orca will record about 10 seconds of CPU activity from its interface and background process, plus app metrics. The report contains timing data, Orca function names and source paths, and workspace folder names — not terminal text or file contents. It is saved to your computer only; nothing is uploaded."
         }
       }
     }

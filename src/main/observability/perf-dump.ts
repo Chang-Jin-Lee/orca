@@ -1,15 +1,17 @@
-import { app, contentTracing, dialog, type WebContents } from 'electron'
+import { app, dialog, type WebContents } from 'electron'
 import { randomUUID } from 'node:crypto'
 import { mkdir, rm, stat, writeFile } from 'node:fs/promises'
+import { Session } from 'node:inspector'
 import { arch, platform, release } from 'node:os'
 import { join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
+import { acquireElectronDebugger } from '../browser/electron-debugger-lease'
 import { collectRendererPerfMetrics } from './renderer-perf'
 import { createTarGzipArchive, type TarArchiveEntry } from './tar-archive'
 import { resolveDiagnosticOrcaChannel } from './diagnostic-upload-endpoint'
 import { translateMain } from '../i18n/main-i18n'
 
-export type PerfDumpProgressStage = 'metrics' | 'trace' | 'heap' | 'compressing'
+export type PerfDumpProgressStage = 'metrics' | 'profile' | 'compressing'
 
 export type CapturePerfDumpResult =
   | { readonly canceled: true }
@@ -27,19 +29,15 @@ type ArtifactStatus = {
   readonly reason?: string
 }
 
-const TRACE_DURATION_MS = 10_000
-const HEAP_SNAPSHOT_TIMEOUT_MS = 120_000
+const PROFILE_DURATION_MS = 10_000
+// 1000 µs is the DevTools default; it keeps a 10 s profile in the low
+// single-digit MB so the report stays attachable/sendable.
+const PROFILE_SAMPLING_INTERVAL_US = 1000
+// Why: Profiler.stop on a wedged process can stall past the capture window;
+// a bounded wait turns that into a failure note instead of a hung capture.
+const PROFILER_STOP_TIMEOUT_MS = 30_000
 const MAX_TAR_ENTRY_BYTES = 0o77777777777
-const TRACE_CATEGORIES = [
-  'devtools.timeline',
-  'disabled-by-default-devtools.timeline',
-  'disabled-by-default-devtools.timeline.frame',
-  'disabled-by-default-v8.cpu_profiler',
-  'toplevel',
-  'v8.execute',
-  'blink.user_timing',
-  'latencyInfo'
-] as const
+const ARTIFACT_ORDER = ['renderer-perf-metrics.json', 'renderer.cpuprofile', 'main.cpuprofile']
 
 let inFlightCapture: Promise<CapturePerfDumpResult> | null = null
 
@@ -73,16 +71,16 @@ async function confirmPerfDumpCapture(): Promise<boolean> {
     defaultId: 1,
     cancelId: 1,
     title: translateMain(
-      'auto.main.observability.perfDump.71ec14a301',
-      'Capture performance debug dump?'
+      'auto.main.observability.perfDump.3f8be4a51c',
+      'Capture performance report?'
     ),
     message: translateMain(
-      'auto.main.observability.perfDump.6d969f0773',
-      'This saves a local performance debug dump for support.'
+      'auto.main.observability.perfDump.9c27d41e88',
+      'This saves a local performance report for support.'
     ),
     detail: translateMain(
-      'auto.main.observability.perfDump.2551f622fd',
-      'Orca will record about 10 seconds of app activity and capture a memory snapshot of the interface. The dump may include terminal text, file paths, and page titles. It is saved to your computer only; nothing is uploaded.'
+      'auto.main.observability.perfDump.b52ce7d316',
+      'Orca will record about 10 seconds of CPU activity from its interface and background process, plus app metrics. The report contains timing data, Orca function names and source paths, and workspace folder names — not terminal text or file contents. It is saved to your computer only; nothing is uploaded.'
     )
   })
   return result.response === 0
@@ -105,13 +103,18 @@ async function captureRendererPerfDumpInternal({
     onProgress?.('metrics')
     await captureMetricsArtifact(captureDir, getRendererWebContents, artifacts, entries)
 
-    onProgress?.('trace')
-    await captureTraceArtifact(captureDir, artifacts, entries)
-
-    onProgress?.('heap')
-    await captureHeapArtifact(captureDir, getRendererWebContents, artifacts, entries)
+    onProgress?.('profile')
+    // Why: both profiles share one 10 s window so the report describes a
+    // single incident rather than two disjoint time slices.
+    await Promise.all([
+      captureRendererProfileArtifact(captureDir, getRendererWebContents, artifacts, entries),
+      captureMainProfileArtifact(captureDir, artifacts, entries)
+    ])
 
     onProgress?.('compressing')
+    // Why: the concurrent profile captures finish in either order; pin the
+    // archive layout so reports are deterministic.
+    entries.sort((a, b) => ARTIFACT_ORDER.indexOf(a.name) - ARTIFACT_ORDER.indexOf(b.name))
     // Why: filter before writing metadata so oversized-artifact skip notes
     // land inside the archived metadata.json.
     const packableEntries = await filterPackableEntries(entries, artifacts)
@@ -121,7 +124,7 @@ async function captureRendererPerfDumpInternal({
       metadataPath,
       `${JSON.stringify(
         {
-          schema_version: 1,
+          schema_version: 2,
           capture_id: captureId,
           app_version: app.getVersion(),
           platform: platform(),
@@ -150,23 +153,7 @@ async function captureRendererPerfDumpInternal({
     }
     throw error
   } finally {
-    await cleanupCaptureDir(captureDir)
-  }
-}
-
-async function cleanupCaptureDir(captureDir: string): Promise<void> {
-  try {
-    await rm(captureDir, { recursive: true, force: true })
-  } catch {
-    // Why: on Windows a timed-out heap snapshot can still hold files in the
-    // capture dir; retry once after it settles instead of failing the dump.
-    void heapSnapshotInFlight?.then(async () => {
-      try {
-        await rm(captureDir, { recursive: true, force: true })
-      } catch {
-        /* best effort */
-      }
-    })
+    await rm(captureDir, { recursive: true, force: true }).catch(() => {})
   }
 }
 
@@ -196,73 +183,110 @@ async function captureMetricsArtifact(
   }
 }
 
-async function captureTraceArtifact(
-  captureDir: string,
-  artifacts: Record<string, ArtifactStatus>,
-  entries: TarArchiveEntry[]
-): Promise<void> {
-  const fileName = 'trace.json'
-  const tracePath = join(captureDir, fileName)
-  let started = false
-  try {
-    await contentTracing.startRecording({
-      recording_mode: 'record-until-full',
-      included_categories: [...TRACE_CATEGORIES]
-    })
-    started = true
-    await delay(TRACE_DURATION_MS)
-    const returnedTracePath = await contentTracing.stopRecording(tracePath)
-    const artifactPath = returnedTracePath || tracePath
-    const info = await stat(artifactPath)
-    artifacts.trace = { status: 'included', fileName, bytes: info.size }
-    entries.push({ name: fileName, filePath: artifactPath })
-  } catch (error) {
-    if (started) {
-      try {
-        await contentTracing.stopRecording()
-      } catch {
-        /* best effort */
-      }
-    }
-    artifacts.trace = { status: 'failed', reason: formatReason(error) }
-  }
-}
-
-let heapSnapshotInFlight: Promise<void> | null = null
-
-async function captureHeapArtifact(
+async function captureRendererProfileArtifact(
   captureDir: string,
   getRendererWebContents: () => WebContents | null,
   artifacts: Record<string, ArtifactStatus>,
   entries: TarArchiveEntry[]
 ): Promise<void> {
-  const fileName = 'renderer-heap.heapsnapshot'
+  const fileName = 'renderer.cpuprofile'
   const filePath = join(captureDir, fileName)
   const renderer = getRendererWebContents()
   if (!renderer || renderer.isDestroyed()) {
-    artifacts.heap = { status: 'omitted', reason: 'renderer unavailable' }
+    artifacts.renderer_profile = { status: 'omitted', reason: 'renderer unavailable' }
     return
   }
-  // Why: a timed-out takeHeapSnapshot keeps running in the renderer; starting
-  // a second one on top of it would stack heap-serialization pauses.
-  if (heapSnapshotInFlight) {
-    artifacts.heap = { status: 'omitted', reason: 'previous heap snapshot still running' }
-    return
-  }
+  let lease: { release: () => void } | null = null
   try {
-    const snapshot = renderer.takeHeapSnapshot(filePath)
-    heapSnapshotInFlight = snapshot
-      .catch(() => {})
-      .then(() => {
-        heapSnapshotInFlight = null
-      })
-    await withTimeout(snapshot, HEAP_SNAPSHOT_TIMEOUT_MS)
+    lease = acquireElectronDebugger(renderer)
+    const dbg = renderer.debugger
+    await dbg.sendCommand('Profiler.enable')
+    await dbg.sendCommand('Profiler.setSamplingInterval', {
+      interval: PROFILE_SAMPLING_INTERVAL_US
+    })
+    await dbg.sendCommand('Profiler.start')
+    await delay(PROFILE_DURATION_MS)
+    const stop = dbg.sendCommand('Profiler.stop')
+    // Why: if the bounded wait below gives up first, a late rejection from
+    // the loser must not surface as an unhandled rejection.
+    stop.catch(() => {})
+    const result = (await withTimeout(stop, PROFILER_STOP_TIMEOUT_MS)) as { profile?: unknown }
+    if (!result || typeof result !== 'object' || !result.profile) {
+      throw new Error('profiler returned no profile')
+    }
+    await writeFile(filePath, JSON.stringify(result.profile), { encoding: 'utf8', mode: 0o600 })
     const info = await stat(filePath)
-    artifacts.heap = { status: 'included', fileName, bytes: info.size }
+    artifacts.renderer_profile = { status: 'included', fileName, bytes: info.size }
     entries.push({ name: fileName, filePath })
   } catch (error) {
-    artifacts.heap = { status: 'failed', reason: formatReason(error) }
+    artifacts.renderer_profile = { status: 'failed', reason: formatReason(error) }
+  } finally {
+    if (!renderer.isDestroyed()) {
+      try {
+        await renderer.debugger.sendCommand('Profiler.disable')
+      } catch {
+        /* best effort */
+      }
+    }
+    lease?.release()
   }
+}
+
+async function captureMainProfileArtifact(
+  captureDir: string,
+  artifacts: Record<string, ArtifactStatus>,
+  entries: TarArchiveEntry[]
+): Promise<void> {
+  const fileName = 'main.cpuprofile'
+  const filePath = join(captureDir, fileName)
+  // Why: the renderer profiler can't see main-process stalls (the frozen
+  // loading-screen class); an in-process inspector session captures them.
+  const session = new Session()
+  let connected = false
+  try {
+    session.connect()
+    connected = true
+    await postToInspector(session, 'Profiler.enable')
+    await postToInspector(session, 'Profiler.setSamplingInterval', {
+      interval: PROFILE_SAMPLING_INTERVAL_US
+    })
+    await postToInspector(session, 'Profiler.start')
+    await delay(PROFILE_DURATION_MS)
+    const stop = postToInspector(session, 'Profiler.stop')
+    // Why: if the bounded wait below gives up first, a late rejection from
+    // the loser must not surface as an unhandled rejection.
+    stop.catch(() => {})
+    const result = (await withTimeout(stop, PROFILER_STOP_TIMEOUT_MS)) as { profile?: unknown }
+    if (!result || typeof result !== 'object' || !result.profile) {
+      throw new Error('profiler returned no profile')
+    }
+    await writeFile(filePath, JSON.stringify(result.profile), { encoding: 'utf8', mode: 0o600 })
+    const info = await stat(filePath)
+    artifacts.main_profile = { status: 'included', fileName, bytes: info.size }
+    entries.push({ name: fileName, filePath })
+  } catch (error) {
+    artifacts.main_profile = { status: 'failed', reason: formatReason(error) }
+  } finally {
+    if (connected) {
+      try {
+        session.disconnect()
+      } catch {
+        /* best effort */
+      }
+    }
+  }
+}
+
+function postToInspector(session: Session, method: string, params?: object): Promise<unknown> {
+  return new Promise((resolve, reject) => {
+    session.post(method, params, (error: Error | null, result?: unknown) => {
+      if (error) {
+        reject(error)
+      } else {
+        resolve(result)
+      }
+    })
+  })
 }
 
 async function filterPackableEntries(
@@ -290,7 +314,7 @@ async function chooseOutputPath(): Promise<string> {
   const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\..+$/, '').replace('T', '-')
   for (let index = 0; index < 100; index += 1) {
     const suffix = index === 0 ? '' : `-${index + 1}`
-    const candidate = join(downloads, `orca-perf-dump-${stamp}${suffix}.tar.gz`)
+    const candidate = join(downloads, `orca-performance-report-${stamp}${suffix}.tar.gz`)
     try {
       await stat(candidate)
     } catch {

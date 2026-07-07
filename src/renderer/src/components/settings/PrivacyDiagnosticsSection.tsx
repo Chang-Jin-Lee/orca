@@ -259,8 +259,8 @@ export function PrivacyDiagnosticsSection(): React.JSX.Element {
       // report it (global toast + reveal) even if Settings unmounted.
       toast.success(
         translate(
-          'auto.components.settings.PrivacyDiagnosticsSection.c4cd74809e',
-          'Performance dump saved'
+          'auto.components.settings.PrivacyDiagnosticsSection.1e6f70a2d4',
+          'Performance report saved'
         )
       )
       void window.api.shell.openInFileManager(result.filePath)
@@ -270,8 +270,8 @@ export function PrivacyDiagnosticsSection(): React.JSX.Element {
           getDiagnosticsErrorMessage(
             error,
             translate(
-              'auto.components.settings.PrivacyDiagnosticsSection.f73f536350',
-              'Could not capture performance dump'
+              'auto.components.settings.PrivacyDiagnosticsSection.9b2ce80f13',
+              'Could not capture performance report'
             )
           )
         )
@@ -324,8 +324,8 @@ export function PrivacyDiagnosticsSection(): React.JSX.Element {
         <PrivacyDiagnosticsRow
           icon={<Gauge className="size-4" />}
           title={translate(
-            'auto.components.settings.PrivacyDiagnosticsSection.4c7eb24bdd',
-            'Capture performance debug dump'
+            'auto.components.settings.PrivacyDiagnosticsSection.5d1a9cc0e7',
+            'Capture performance report'
           )}
           description={getPerfDumpDescription(capturingPerfDump ? perfDumpStage : null)}
         >

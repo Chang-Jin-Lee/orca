@@ -5738,9 +5738,9 @@
           "49fc6c80e8": "Diagnósticos enviados",
           "db3228e01a": "Archivo de revisión abierto",
           "a2b3505c77": "Archivo de revisión creado",
-          "c4cd74809e": "Volcado de rendimiento guardado",
-          "f73f536350": "No se pudo capturar el volcado de rendimiento",
-          "4c7eb24bdd": "Capturar volcado de depuración de rendimiento"
+          "1e6f70a2d4": "Informe de rendimiento guardado",
+          "9b2ce80f13": "No se pudo capturar el informe de rendimiento",
+          "5d1a9cc0e7": "Capturar informe de rendimiento"
         },
         "PrivacyPane": {
           "36e0e2e63b": "variable de entorno. Quítala y reinicia para volver a habilitarla.",
@@ -8768,13 +8768,12 @@
           "toggleLabel": "Activar o desactivar entornos por espacio de trabajo"
         },
         "PrivacyPerfDumpControls": {
-          "a90900c24d": "Los volcados de depuración de rendimiento están desactivados.",
-          "18f7cad8ee": "Capturar volcado de rendimiento",
-          "ed819b5b0a": "Recopilando métricas del renderizador…",
-          "7f6c7cc90f": "Grabando traza de actividad (10 s)…",
-          "20f8c48f16": "Capturando instantánea de memoria…",
           "05d8e75876": "Comprimiendo…",
-          "581d264c8c": "Graba unos 10 segundos de actividad de la aplicación y una instantánea de memoria de la interfaz. Puede incluir texto del terminal, rutas de archivos y títulos de páginas; se guarda solo en tu equipo — no se sube nada."
+          "7c31a80d92": "Los informes de rendimiento están desactivados.",
+          "4b6e08d217": "Capturar informe de rendimiento",
+          "2a90ef73c4": "Recopilando métricas de la aplicación…",
+          "8de51c30b5": "Perfilando la actividad de CPU (10 s)…",
+          "6dc19f4ab3": "Graba unos 10 segundos de actividad de CPU de la interfaz y del proceso en segundo plano, además de métricas de la aplicación. Contiene nombres de funciones de Orca y nombres de carpetas de tus espacios de trabajo — sin texto del terminal; se guarda solo en tu equipo, no se sube nada."
         },
         "SourceControlActionRepoOverrideNote": {
           "agent": "Agente",
@@ -12398,9 +12397,9 @@
         "perfDump": {
           "e6735719a0": "Capturar",
           "8d1d1d5725": "Cancelar",
-          "71ec14a301": "¿Capturar volcado de depuración de rendimiento?",
-          "6d969f0773": "Esto guarda un volcado local de depuración de rendimiento para soporte.",
-          "2551f622fd": "Orca grabará unos 10 segundos de actividad de la aplicación y capturará una instantánea de memoria de la interfaz. El volcado puede incluir texto del terminal, rutas de archivos y títulos de páginas. Se guarda solo en tu equipo; no se sube nada."
+          "3f8be4a51c": "¿Capturar informe de rendimiento?",
+          "9c27d41e88": "Guarda un informe de rendimiento local para soporte.",
+          "b52ce7d316": "Orca grabará unos 10 segundos de actividad de CPU de su interfaz y su proceso en segundo plano, además de métricas de la aplicación. El informe contiene datos de tiempos, nombres de funciones y rutas de código de Orca, y nombres de carpetas de tus espacios de trabajo — no incluye texto del terminal ni el contenido de tus archivos. Se guarda solo en tu equipo; no se sube nada."
         }
       }
     }

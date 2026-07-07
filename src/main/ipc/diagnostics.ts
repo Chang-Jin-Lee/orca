@@ -7,7 +7,7 @@
 //   diagnostics:discardBundlePreview — delete a retained, unuploaded payload.
 //   diagnostics:uploadBundle         — POST the main-retained payload.
 //   diagnostics:deleteBundle         — delete an uploaded bundle by ticket ID.
-//   diagnostics:capturePerfDump      — local renderer perf trace + heap dump.
+//   diagnostics:capturePerfDump      — local CPU-profile performance report.
 //
 // Same threat model as the product-telemetry IPC (`ipc/telemetry.ts`):
 // renderer can pass anything over the wire, type-narrow here. Everything
@@ -268,7 +268,7 @@ export function registerDiagnosticsHandlers(): void {
   ipcMain.handle('diagnostics:capturePerfDump', async (event): Promise<unknown> => {
     const status = getDiagnosticsStatus()
     if (!status.perfDumpEnabled) {
-      throw new Error('performance debug dumps are disabled')
+      throw new Error('performance reports are disabled')
     }
     const sender = event.sender
     return captureRendererPerfDump({

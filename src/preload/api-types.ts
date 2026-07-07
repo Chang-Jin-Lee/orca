@@ -661,7 +661,7 @@ export type DiagnosticsUploadPayload =
       readonly canceled: true
     }
 export type PerfDumpProgressPayload = {
-  readonly stage: 'metrics' | 'trace' | 'heap' | 'compressing'
+  readonly stage: 'metrics' | 'profile' | 'compressing'
 }
 export type PerfDumpCapturePayload =
   | {
