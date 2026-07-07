@@ -2223,6 +2223,9 @@ function createWebUiApi(): NonNullable<Partial<PreloadApi>['ui']> {
     onCloseTerminal: () => noopUnsubscribe,
     onSleepWorktree: () => noopUnsubscribe,
     onTerminalZoom: () => noopUnsubscribe,
+    // Why: a paired web client has no OS sleep signal; occlusion-driven
+    // visibilitychange already covers its wake recovery.
+    onSystemResumed: () => noopUnsubscribe,
     onFileDrop: () => noopUnsubscribe,
     syncTrafficLights: () => {},
     setMarkdownEditorFocused: () => {},

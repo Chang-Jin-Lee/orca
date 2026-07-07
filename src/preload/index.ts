@@ -3454,6 +3454,11 @@ const api = {
       ipcRenderer.on('terminal:zoom', listener)
       return () => ipcRenderer.removeListener('terminal:zoom', listener)
     },
+    onSystemResumed: (callback: () => void): (() => void) => {
+      const listener = (_event: Electron.IpcRendererEvent) => callback()
+      ipcRenderer.on('system:resumed', listener)
+      return () => ipcRenderer.removeListener('system:resumed', listener)
+    },
     readClipboardText: (options?: ReadClipboardTextOptions): Promise<string> =>
       ipcRenderer.invoke('clipboard:readText', options),
     readSelectionClipboardText: (options?: ReadClipboardTextOptions): Promise<string> =>

@@ -151,6 +151,7 @@ import { AutomationService } from './automations/service'
 import { createHeadlessAutomationOutputSnapshotBuffer } from './automations/headless-dispatch'
 import { buildHeadlessAutomationWorktreeCreateArgs } from './automations/headless-workspace-create'
 import { AgentAwakeService } from './agent-awake-service'
+import { registerSystemResumeBroadcast } from './system-resume-broadcast'
 import {
   getCrashBreadcrumbSnapshot,
   recordCoalescedCrashBreadcrumb,
@@ -212,6 +213,7 @@ let starNag: StarNagService | null = null
 let agentAwakeService: AgentAwakeService | null = null
 let crashReports: CrashReportStore | null = null
 let unsubscribeAgentAwakeStatusChanges: (() => void) | null = null
+let unsubscribeSystemResumeBroadcast: (() => void) | null = null
 let watcherShutdownPromise: Promise<void> | null = null
 let watcherShutdownDone = false
 let automations: AutomationService | null = null
@@ -1653,6 +1655,7 @@ app.whenReady().then(async () => {
   // Why: browser sessions are used by desktop webviews and runtime profile
   // commands, so initialize them at app startup instead of a renderer IPC path.
   initializeBrowserSessionsForApp()
+  unsubscribeSystemResumeBroadcast = registerSystemResumeBroadcast()
   agentAwakeService = new AgentAwakeService()
   agentAwakeService.setEnabled(store.getSettings().keepComputerAwakeWhileAgentsRun)
   // Why: disk-hydrated status rows are UI continuity only. The service starts
@@ -2170,6 +2173,8 @@ app.whenReady().then(async () => {
 
 app.on('before-quit', () => {
   isQuitting = true
+  unsubscribeSystemResumeBroadcast?.()
+  unsubscribeSystemResumeBroadcast = null
   unsubscribeAgentAwakeStatusChanges?.()
   unsubscribeAgentAwakeStatusChanges = null
   agentAwakeService?.dispose()
