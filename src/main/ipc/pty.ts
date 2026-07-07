@@ -83,7 +83,6 @@ import {
 } from '../../shared/stable-pane-id'
 import { isValidTerminalTabId } from '../../shared/terminal-tab-id'
 import { resolveTerminalStartupCwdForWorkspace } from '../../shared/terminal-startup-cwd'
-import { localTerminalCwdCanonicalizer } from '../pty/terminal-cwd-realpath'
 import {
   clearMigrationUnsupportedPty,
   clearMigrationUnsupportedPtysForPaneKey
@@ -2043,19 +2042,15 @@ export function registerPtyHandlers(
     assertFolderWorkspacePathUsable(status)
   }
 
-  const resolveGuardedPtySpawnCwd = (
+  const resolvePtySpawnStartupCwd = (
     worktreeId: string | undefined,
-    cwd: string | undefined,
-    connectionId?: string | null
+    cwd: string | undefined
   ): string | undefined =>
     resolveTerminalStartupCwdForWorkspace({
       workspaceId: worktreeId,
       requestedCwd: cwd,
       resolveFolderWorkspacePath: (folderWorkspaceId) =>
-        store?.getFolderWorkspace(folderWorkspaceId)?.folderPath,
-      // Why: realpath only makes sense on the local filesystem; SSH worktree
-      // paths live on the remote host.
-      canonicalizePath: localTerminalCwdCanonicalizer(connectionId)
+        store?.getFolderWorkspace(folderWorkspaceId)?.folderPath
     })
 
   // Why: the runtime controller must route through getProviderForPty() so that
@@ -2068,7 +2063,7 @@ export function registerPtyHandlers(
         await startupPromise
       }
       await assertFolderWorkspacePtyPathUsable(args.worktreeId)
-      const cwd = resolveGuardedPtySpawnCwd(args.worktreeId, args.cwd, args.connectionId)
+      const cwd = resolvePtySpawnStartupCwd(args.worktreeId, args.cwd)
       const provider = getProvider(args.connectionId)
       const isClaudeLaunch = !args.connectionId && isClaudeLaunchCommand(args.command)
       if (isClaudeLaunch && isClaudeAuthSwitchInProgress()) {
@@ -2690,7 +2685,7 @@ export function registerPtyHandlers(
         await startupPromise
       }
       await assertFolderWorkspacePtyPathUsable(args.worktreeId)
-      const cwd = resolveGuardedPtySpawnCwd(args.worktreeId, args.cwd, args.connectionId)
+      const cwd = resolvePtySpawnStartupCwd(args.worktreeId, args.cwd)
       spawnTiming.mark('preflight')
       const provider = getProvider(args.connectionId)
       const isClaudeLaunch = !args.connectionId && isClaudeLaunchCommand(args.command)
