@@ -905,16 +905,28 @@ async function listDetectedWorktreesForRepo(
 function detectedWorktreeRefreshKey(
   settings: AppState['settings'],
   repoId: string,
-  options: { executionHostId: ExecutionHostId; requireAuthoritative?: boolean }
+  options: {
+    executionHostId: ExecutionHostId
+    requireAuthoritative?: boolean
+    reuseRecentCompatibilityFailure?: boolean
+  }
 ): string {
   const target = getActiveRuntimeTarget(settings)
   const targetKey = target.kind === 'local' ? 'local' : `runtime:${target.environmentId}`
-  return [
+  const parts = [
     repoId,
     options.executionHostId,
     targetKey,
     options.requireAuthoritative === true ? 'authoritative' : 'best-effort'
-  ].join('\n')
+  ]
+  // Why: only remote targets run a compat preflight, so a foreground (reuse:false)
+  // refresh must not coalesce onto a background reuse:true scan that reused a
+  // stale failure — it must re-probe. Local targets have no preflight; keep them
+  // coalesced so a foreground/background collision stays one git scan.
+  if (target.kind === 'environment') {
+    parts.push(options.reuseRecentCompatibilityFailure === true ? 'reuse-failure' : 'reprobe')
+  }
+  return parts.join('\n')
 }
 
 async function listDetectedWorktreesForRepoCoalesced(

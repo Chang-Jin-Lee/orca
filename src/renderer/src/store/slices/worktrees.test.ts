@@ -5854,6 +5854,61 @@ describe('fetchAllWorktrees hydration-time purge (design §4.4)', () => {
     expect(mockApi.worktrees.listDetected).not.toHaveBeenCalled()
   })
 
+  it('does not coalesce a foreground re-probe onto a background reuse:true scan for a remote repo', async () => {
+    // Why: the reuse flag is part of the coalescing key for remote targets, so a
+    // foreground fetchWorktrees (reuse:false) must run its own compat-preflighted
+    // scan instead of sharing a background reuse:true scan that may have reused a
+    // stale failure — the foreground caller must always re-probe.
+    const store = createTestStore()
+    const remote = makeWorktree({ id: 'repo1::/remote/wt', repoId: 'repo1', path: '/remote/wt' })
+    store.setState({
+      settings: { activeRuntimeEnvironmentId: 'env-1' } as never,
+      hasHydratedWorktreePurge: true,
+      repos: [
+        {
+          id: 'repo1',
+          path: '/r1',
+          displayName: 'R1',
+          badgeColor: '#000',
+          addedAt: 0,
+          executionHostId: 'runtime:env-1'
+        }
+      ]
+    } as Partial<AppState>)
+
+    let scanStartedCount = 0
+    const scanReleases: (() => void)[] = []
+    runtimeEnvironmentCall.mockImplementation(({ method }: RuntimeEnvironmentCallRequest) => {
+      if (method === 'worktree.detectedList') {
+        scanStartedCount += 1
+        return new Promise((resolve) => {
+          scanReleases.push(() =>
+            resolve({
+              id: 'rpc',
+              ok: true,
+              result: makeDetectedResult('repo1', [remote]),
+              _meta: { runtimeId: 'runtime-remote' }
+            })
+          )
+        })
+      }
+      return Promise.resolve({ id: method, ok: true, result: {}, _meta: {} })
+    })
+
+    const background = store.getState().fetchAllWorktrees()
+    const foreground = store.getState().fetchWorktrees('repo1')
+    // Flush microtasks so both compat preflights settle and both scans block.
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(scanStartedCount).toBe(2)
+
+    scanReleases.forEach((release) => release())
+    await Promise.all([background, foreground])
+    expect(store.getState().worktreesByRepo.repo1?.map((worktree) => worktree.id)).toEqual([
+      remote.id
+    ])
+  })
+
   it('preserves floating workspace state while purging a real stale worktree', async () => {
     const store = createTestStore()
     const wtA = makeWorktree({ id: 'repoA::/a/wt1', repoId: 'repoA', path: '/a/wt1' })
