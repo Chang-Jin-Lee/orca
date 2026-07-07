@@ -298,15 +298,27 @@ async function gatherEvidence(args) {
       heartbeatFile,
       heartbeatBefore
     )
-    const echoObserved = await probeEcho(page, runDir, 'echo-post')
+    // Sample marker survival BEFORE interrupting it: the pre-update shell must be
+    // measured while its heartbeat loop still runs, not after
+    // probeCtrlCInterruptsMarker deliberately breaks that loop.
+    const markerAliveAfter = isMarkerAlive(runDir)
+    log(
+      'marker',
+      `pid=${readIntFile(path.join(runDir, 'marker.pid'))} aliveAfterUpdate=${markerAliveAfter}`
+    )
+    // Interrupt the foreground loop first so the shell returns to a prompt; only
+    // then can a freshly-typed command execute. Typing while the infinite
+    // heartbeat loop owns the shell never runs, regardless of input health — so
+    // the echo probe is meaningful only after the interrupt.
     const ctrlCInterrupted = await probeCtrlCInterruptsMarker(page, runDir, heartbeatFile)
+    const echoObserved = await probeEcho(page, runDir, 'echo-post')
     return {
       preDaemonPid: preDaemon.pid,
       preDaemonAliveAfter,
       postDaemonPid: postDaemon.pid,
       postDaemonAlive: postDaemon.pid != null && isPidAlive(postDaemon.pid),
       postDaemon,
-      markerAliveAfter: isMarkerAlive(runDir),
+      markerAliveAfter,
       heartbeatAdvancedAfterUpdate,
       echoObserved,
       ctrlCInterrupted
