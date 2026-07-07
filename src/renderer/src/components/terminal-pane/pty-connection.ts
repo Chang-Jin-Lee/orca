@@ -88,6 +88,7 @@ import { makePaneKey, parseLegacyNumericPaneKey } from '../../../../shared/stabl
 import { createTerminalCommandLifecycle } from './terminal-command-lifecycle'
 import { createPaneForegroundAgentTracker } from './pane-foreground-agent-tracker'
 import { parseAppSshPtyId } from '../../../../shared/ssh-pty-id'
+import { resolveSshPaneConnectGate } from './ssh-pane-connect-gate'
 import { dispatchTerminalCommandFinishedEvent } from '@/hooks/terminal-command-finished-event'
 import { e2eConfig } from '@/lib/e2e-config'
 import {
@@ -5193,6 +5194,13 @@ export function connectPanePty(
       }
       observeStartupDraftPasteReadiness(data)
       resetHiddenOutputRestoreIfPtyChanged()
+      if (meta?.droppedBacklog === true) {
+        // Why: main trimmed this pty's unsent backlog (the renderer was
+        // background-throttled/frozen and stopped ACKing). Rebuild the dropped
+        // span from the main headless snapshot — same recovery the renderer's
+        // own 2 MB scheduler overflow uses. No-op cost when already visible+synced.
+        markHiddenOutputRestoreNeeded()
+      }
       respondToTerminalPixelSizeQueries(data)
       observeTerminalBracketedPasteModeOutput(pane.terminal, data)
       for (const link of observeTerminalGitHubPRLink(data)) {
@@ -5463,13 +5471,23 @@ export function connectPanePty(
         deps.restoredLeafId && deps.restoredPtyIdByLeafId
           ? (deps.restoredPtyIdByLeafId[deps.restoredLeafId] ?? null)
           : null
-      const pendingSessionId =
-        restoredLeafSessionId ?? storeState.deferredSshSessionIdsByTabId[deps.tabId]
-      const isDeferredTarget = storeState.deferredSshReconnectTargets.includes(connectionId)
+      const gate = resolveSshPaneConnectGate({
+        connectionId,
+        sshStatus: storeState.sshConnectionStates.get(connectionId)?.status,
+        isDeferredTarget: storeState.deferredSshReconnectTargets.includes(connectionId),
+        restoredLeafSessionId,
+        deferredTabSessionId: storeState.deferredSshSessionIdsByTabId[deps.tabId],
+        tabPtyId: storeState.tabsByWorktree[deps.worktreeId]?.find((t) => t.id === deps.tabId)
+          ?.ptyId,
+        hasLeafSessionMap: Boolean(
+          deps.restoredPtyIdByLeafId && Object.keys(deps.restoredPtyIdByLeafId).length > 0
+        )
+      })
+      const pendingSessionId = gate.pendingSessionId
       console.warn(
-        `[pty-connection] SSH tab=${deps.tabId} connectionId=${connectionId} pendingSessionId=${pendingSessionId} isDeferredTarget=${isDeferredTarget}`
+        `[pty-connection] SSH tab=${deps.tabId} connectionId=${connectionId} pendingSessionId=${pendingSessionId} sshConnected=${gate.sshConnected}`
       )
-      if (pendingSessionId || isDeferredTarget) {
+      if (gate.enterDeferredFlow) {
         void (async () => {
           // Why: if the target requires a passphrase/password and no credential
           // is cached yet, auto-firing ssh.connect would surprise the user —
