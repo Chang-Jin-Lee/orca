@@ -68,12 +68,19 @@ export const createRuntimeStatusSlice: StateCreator<AppState, [], [], RuntimeSta
     get().retainRuntimeDetectedAgents?.(environments.map((environment) => environment.id))
   },
 
-  setRuntimeEnvironmentStatus: (environmentId, status) =>
+  setRuntimeEnvironmentStatus: (environmentId, status) => {
+    // Why: a non-null status proves the runtime just answered, so drop any stale
+    // "offline" compat failure before this online transition fires the
+    // reuse-flagged background refetches — a recovered host must re-probe.
+    if (status.status !== null) {
+      clearRecentRuntimeCompatibilityFailure(environmentId)
+    }
     set((s) => {
       const next = new Map(s.runtimeStatusByEnvironmentId)
       next.set(environmentId, status)
       return { runtimeStatusByEnvironmentId: next }
-    }),
+    })
+  },
 
   clearRuntimeEnvironmentStatus: (environmentId) =>
     set((s) => {
@@ -106,11 +113,8 @@ export const createRuntimeStatusSlice: StateCreator<AppState, [], [], RuntimeSta
         timeoutMs
       })
       const status = unwrapRuntimeRpcResult<RuntimeStatus>(response)
-      // Why: the online-set/reachable-set transitions this probe feeds are the
-      // one-shot triggers for background catalog/worktree refetches. Those
-      // refetches reuse recent compatibility failures, so drop a stale failure
-      // now that the runtime demonstrably answers.
-      clearRecentRuntimeCompatibilityFailure(environmentId)
+      // setRuntimeEnvironmentStatus drops any stale compat failure on a non-null
+      // (reachable) status, so a recovered host's reuse-flagged refetches re-probe.
       get().setRuntimeEnvironmentStatus(environmentId, { status, checkedAt: Date.now() })
       return true
     } catch {
