@@ -7469,7 +7469,15 @@
             "defaultProjectRuntime": "默认项目运行时",
             "defaultProjectRuntimeDescription": "选择本地 Windows 项目继承的运行时。",
             "d2d2d929c0": "Rich Markdown Spellcheck",
-            "4497e2e2bb": "在编辑富 Markdown 时显示浏览器拼写下划线和建议。"
+            "4497e2e2bb": "在编辑富 Markdown 时显示浏览器拼写下划线和建议。",
+            "86dc23cb35": "Experimental Editor Input",
+            "be7ff2a967": "Power editor typing with the Chromium EditContext API. Leave this off if typing ever stops working in the editor; the classic input path is more reliable.",
+            "7bf4b9e46d": "editcontext",
+            "713c107d7b": "input",
+            "7fe71eb34c": "typing",
+            "0b6c2fd17b": "ime",
+            "47246d06a5": "keyboard",
+            "f1eb2a2473": "experimental"
           }
         },
         "git": {

@@ -81,6 +81,30 @@ export const getGeneralEditorSearchEntries = createLocalizedCatalog(() => [
   },
   {
     title: translate(
+      'auto.components.settings.general.search.86dc23cb35',
+      'Experimental Editor Input'
+    ),
+    description: translate(
+      'auto.components.settings.general.search.be7ff2a967',
+      'Power editor typing with the Chromium EditContext API. Leave this off if typing ever stops working in the editor; the classic input path is more reliable.'
+    ),
+    keywords: [
+      ...translateSearchKeyword(
+        'auto.components.settings.general.search.7bf4b9e46d',
+        'editcontext'
+      ),
+      ...translateSearchKeyword('auto.components.settings.general.search.713c107d7b', 'input'),
+      ...translateSearchKeyword('auto.components.settings.general.search.7fe71eb34c', 'typing'),
+      ...translateSearchKeyword('auto.components.settings.general.search.0b6c2fd17b', 'ime'),
+      ...translateSearchKeyword('auto.components.settings.general.search.47246d06a5', 'keyboard'),
+      ...translateSearchKeyword(
+        'auto.components.settings.general.search.f1eb2a2473',
+        'experimental'
+      )
+    ]
+  },
+  {
+    title: translate(
       'auto.components.settings.general.search.d2d2d929c0',
       'Rich Markdown Spellcheck'
     ),
