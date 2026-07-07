@@ -170,10 +170,26 @@ export function FloatingTerminalPanel({
   onOpenChange,
   tourInteractionSnapshot
 }: FloatingTerminalPanelProps): React.JSX.Element | null {
-  const tabsByWorktree = useAppStore((s) => s.tabsByWorktree)
-  const browserTabsByWorktree = useAppStore((s) => s.browserTabsByWorktree)
-  const groupsByWorktree = useAppStore((s) => s.groupsByWorktree)
-  const unifiedTabsByWorktree = useAppStore((s) => s.unifiedTabsByWorktree)
+  // Why: these per-worktree maps get a new top-level identity whenever ANY
+  // worktree's tabs change (updateTabTitle re-spreads them on every real
+  // background-terminal title change), but the panel only ever reads the floating
+  // worktree's entry. Subscribe to that key directly so the panel — which stays
+  // mounted while closed once it owns tabs — does not re-render its hidden subtree
+  // on unrelated background churn. The store preserves each worktree's array
+  // identity, so these stay referentially stable when the floating entry is
+  // unchanged.
+  const tabs = useAppStore(
+    (s) => s.tabsByWorktree[FLOATING_TERMINAL_WORKTREE_ID] ?? EMPTY_TERMINAL_TABS
+  )
+  const browserTabs = useAppStore(
+    (s) => s.browserTabsByWorktree[FLOATING_TERMINAL_WORKTREE_ID] ?? EMPTY_BROWSER_TABS
+  )
+  const groups = useAppStore(
+    (s) => s.groupsByWorktree[FLOATING_TERMINAL_WORKTREE_ID] ?? EMPTY_GROUPS
+  )
+  const unifiedTabs = useAppStore(
+    (s) => s.unifiedTabsByWorktree[FLOATING_TERMINAL_WORKTREE_ID] ?? EMPTY_UNIFIED_TABS
+  )
   const openFiles = useAppStore((s) => s.openFiles)
   const expandedPaneByTabId = useAppStore((s) => s.expandedPaneByTabId)
   const createTab = useAppStore((s) => s.createTab)
@@ -243,10 +259,6 @@ export function FloatingTerminalPanel({
     moved: boolean
   } | null>(null)
 
-  const tabs = tabsByWorktree[FLOATING_TERMINAL_WORKTREE_ID] ?? EMPTY_TERMINAL_TABS
-  const browserTabs = browserTabsByWorktree[FLOATING_TERMINAL_WORKTREE_ID] ?? EMPTY_BROWSER_TABS
-  const groups = groupsByWorktree[FLOATING_TERMINAL_WORKTREE_ID] ?? EMPTY_GROUPS
-  const unifiedTabs = unifiedTabsByWorktree[FLOATING_TERMINAL_WORKTREE_ID] ?? EMPTY_UNIFIED_TABS
   const floatingFiles = useMemo(
     () => openFiles.filter((file) => file.worktreeId === FLOATING_TERMINAL_WORKTREE_ID),
     [openFiles]

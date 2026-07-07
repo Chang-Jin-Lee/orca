@@ -104,6 +104,38 @@ describe('runtimePaneTitle → sortEpoch', () => {
     expect(store.getState().sortEpoch).toBe(sortEpoch)
   })
 
+  it("preserves other worktrees' tab-array identity when one worktree's title changes", () => {
+    // Why: per-worktree subscribers (e.g. FloatingTerminalPanel) read only their
+    // own tabsByWorktree entry. A real title change in a background worktree must
+    // give the top-level map a new identity (so the changed worktree updates)
+    // WITHOUT touching untouched worktrees' array identity, or every narrow
+    // subscriber would re-render on background title floods.
+    const store = createTestStore()
+    seedStore(store, {
+      worktreesByRepo: {
+        repo1: [
+          makeWorktree({ id: 'wt-fg', repoId: 'repo1', path: '/path/wt-fg' }),
+          makeWorktree({ id: 'wt-bg', repoId: 'repo1', path: '/path/wt-bg' })
+        ]
+      },
+      tabsByWorktree: {
+        'wt-fg': [makeTab({ id: 'tab-fg', worktreeId: 'wt-fg', title: 'Foreground' })],
+        'wt-bg': [makeTab({ id: 'tab-bg', worktreeId: 'wt-bg', title: 'Terminal 1' })]
+      }
+    })
+    const tabsByWorktreeBefore = store.getState().tabsByWorktree
+    const fgTabsBefore = store.getState().tabsByWorktree['wt-fg']
+
+    store.getState().updateTabTitle('tab-bg', 'Codex ready')
+
+    const tabsByWorktreeAfter = store.getState().tabsByWorktree
+    expect(tabsByWorktreeAfter).not.toBe(tabsByWorktreeBefore)
+    expect(tabsByWorktreeAfter['wt-bg']?.[0]?.title).toBe('Codex ready')
+    // The untouched worktree keeps its array reference, so a narrow subscriber to
+    // it does not re-render on the background title change.
+    expect(tabsByWorktreeAfter['wt-fg']).toBe(fgTabsBefore)
+  })
+
   it.each([
     ['Claude Code', '⠂ Claude Code', '⠐ Claude Code'],
     [
