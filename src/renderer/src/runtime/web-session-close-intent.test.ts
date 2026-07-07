@@ -1,5 +1,8 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import {
+  MAX_WEB_SESSION_CLOSE_INTENT_WORKTREES,
+  clearWebSessionCloseIntentsForWorktree,
+  getWebSessionCloseIntentCountsForTests,
   isWebSessionCloseIntentPending,
   reconcileWebSessionCloseIntents,
   recordWebSessionCloseIntent,
@@ -31,6 +34,34 @@ describe('web session close intent', () => {
     expect(isWebSessionCloseIntentPending(WT, 'host-tab-1', 1000 + 11_000)).toBe(false)
   })
 
+  it('prunes expired worktree intents when recording a newer intent', () => {
+    recordWebSessionCloseIntent('old-worktree', 'host-tab-old', 1000)
+
+    recordWebSessionCloseIntent(WT, 'host-tab-1', 11_001)
+
+    expect(getWebSessionCloseIntentCountsForTests()).toEqual({ worktrees: 1, tabs: 1 })
+    expect(isWebSessionCloseIntentPending('old-worktree', 'host-tab-old', 11_001)).toBe(false)
+    expect(isWebSessionCloseIntentPending(WT, 'host-tab-1', 11_001)).toBe(true)
+  })
+
+  it('bounds worktree intents while retaining recently reused worktrees', () => {
+    recordWebSessionCloseIntent('keep', 'host-tab-keep', 1000)
+    for (let i = 0; i < MAX_WEB_SESSION_CLOSE_INTENT_WORKTREES - 1; i += 1) {
+      recordWebSessionCloseIntent(`worktree-${i}`, 'host-tab', 1000)
+    }
+
+    expect(isWebSessionCloseIntentPending('keep', 'host-tab-keep', 1000)).toBe(true)
+
+    recordWebSessionCloseIntent('worktree-new', 'host-tab-new', 1000)
+
+    expect(getWebSessionCloseIntentCountsForTests()).toEqual({
+      worktrees: MAX_WEB_SESSION_CLOSE_INTENT_WORKTREES,
+      tabs: MAX_WEB_SESSION_CLOSE_INTENT_WORKTREES
+    })
+    expect(isWebSessionCloseIntentPending('worktree-0', 'host-tab', 1000)).toBe(false)
+    expect(isWebSessionCloseIntentPending('keep', 'host-tab-keep', 1000)).toBe(true)
+  })
+
   it('scopes intents per worktree', () => {
     recordWebSessionCloseIntent(WT, 'host-tab-1', 1000)
     expect(isWebSessionCloseIntentPending('other::/wt', 'host-tab-1', 1000)).toBe(false)
@@ -39,5 +70,15 @@ describe('web session close intent', () => {
   it('ignores empty ids', () => {
     recordWebSessionCloseIntent(WT, '   ', 1000)
     expect(isWebSessionCloseIntentPending(WT, '', 1000)).toBe(false)
+  })
+
+  it('clears one worktree without touching another', () => {
+    recordWebSessionCloseIntent(WT, 'host-tab-1', 1000)
+    recordWebSessionCloseIntent('repo::/other', 'host-tab-2', 1000)
+
+    clearWebSessionCloseIntentsForWorktree(WT)
+
+    expect(isWebSessionCloseIntentPending(WT, 'host-tab-1', 1000)).toBe(false)
+    expect(isWebSessionCloseIntentPending('repo::/other', 'host-tab-2', 1000)).toBe(true)
   })
 })

@@ -13,11 +13,50 @@
 // rejected RPC) from pinning a stale order forever.
 
 const REORDER_INTENT_TTL_MS = 10_000
+export const MAX_WEB_SESSION_REORDER_INTENT_WORKTREES = 256
 
 type ReorderIntent = { order: string[]; recordedAt: number }
 
 // worktreeId -> (groupId -> intent)
 const pendingReorderByWorktree = new Map<string, Map<string, ReorderIntent>>()
+
+function deleteEmptyReorderIntentWorktree(
+  worktreeId: string,
+  byGroup: Map<string, ReorderIntent>
+): void {
+  if (byGroup.size === 0) {
+    pendingReorderByWorktree.delete(worktreeId)
+  }
+}
+
+function refreshReorderIntentWorktree(
+  worktreeId: string,
+  byGroup: Map<string, ReorderIntent>
+): void {
+  pendingReorderByWorktree.delete(worktreeId)
+  pendingReorderByWorktree.set(worktreeId, byGroup)
+}
+
+function pruneExpiredWebSessionReorderIntents(now: number): void {
+  for (const [worktreeId, byGroup] of pendingReorderByWorktree) {
+    for (const [groupId, intent] of byGroup) {
+      if (now - intent.recordedAt > REORDER_INTENT_TTL_MS) {
+        byGroup.delete(groupId)
+      }
+    }
+    deleteEmptyReorderIntentWorktree(worktreeId, byGroup)
+  }
+}
+
+function trimWebSessionReorderIntentWorktrees(): void {
+  while (pendingReorderByWorktree.size > MAX_WEB_SESSION_REORDER_INTENT_WORKTREES) {
+    const oldestWorktreeId = pendingReorderByWorktree.keys().next().value
+    if (oldestWorktreeId === undefined) {
+      break
+    }
+    pendingReorderByWorktree.delete(oldestWorktreeId)
+  }
+}
 
 function sameMembership(a: readonly string[], b: readonly string[]): boolean {
   if (a.length !== b.length) {
@@ -40,12 +79,16 @@ export function recordWebSessionReorderIntent(
   if (!worktreeId || !groupId || order.length === 0) {
     return
   }
+  // Why: reorder intents already expire; prune all worktrees on new writes so
+  // removed worktrees that never reconcile again do not retain stale orders.
+  pruneExpiredWebSessionReorderIntents(now)
   let byGroup = pendingReorderByWorktree.get(worktreeId)
   if (!byGroup) {
     byGroup = new Map()
-    pendingReorderByWorktree.set(worktreeId, byGroup)
   }
+  refreshReorderIntentWorktree(worktreeId, byGroup)
   byGroup.set(groupId, { order: [...order], recordedAt: now })
+  trimWebSessionReorderIntentWorktrees()
 }
 
 /**
@@ -62,15 +105,16 @@ export function resolveWebSessionReorderedOrder(
   now: number
 ): string[] {
   const byGroup = pendingReorderByWorktree.get(worktreeId)
-  const intent = byGroup?.get(groupId)
+  if (!byGroup) {
+    return hostOrder
+  }
+  const intent = byGroup.get(groupId)
   if (!intent) {
     return hostOrder
   }
   const clear = (): void => {
-    byGroup!.delete(groupId)
-    if (byGroup!.size === 0) {
-      pendingReorderByWorktree.delete(worktreeId)
-    }
+    byGroup.delete(groupId)
+    deleteEmptyReorderIntentWorktree(worktreeId, byGroup)
   }
   if (now - intent.recordedAt > REORDER_INTENT_TTL_MS) {
     clear()
@@ -87,6 +131,7 @@ export function resolveWebSessionReorderedOrder(
     clear()
     return hostOrder
   }
+  refreshReorderIntentWorktree(worktreeId, byGroup)
   return [...intent.order]
 }
 
@@ -96,4 +141,12 @@ export function clearWebSessionReorderIntentsForWorktree(worktreeId: string): vo
 
 export function resetWebSessionReorderIntentForTests(): void {
   pendingReorderByWorktree.clear()
+}
+
+export function getWebSessionReorderIntentCountsForTests(): { worktrees: number; groups: number } {
+  let groups = 0
+  for (const byGroup of pendingReorderByWorktree.values()) {
+    groups += byGroup.size
+  }
+  return { worktrees: pendingReorderByWorktree.size, groups }
 }

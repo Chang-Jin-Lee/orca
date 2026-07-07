@@ -53,6 +53,7 @@ import { resolveTerminalLayoutRoot } from './remote-terminal-layout-resolution'
 import { toRuntimeWorktreeSelector } from './runtime-worktree-selector'
 import { clearWebSessionFocusIntent, peekWebSessionFocusIntent } from './web-session-focus-intent'
 import {
+  clearWebSessionCloseIntentsForWorktree,
   isWebSessionCloseIntentPending,
   reconcileWebSessionCloseIntents
 } from './web-session-close-intent'
@@ -314,6 +315,8 @@ function clearWebSessionTabsTrackingForWorktree(environmentId: string, worktreeI
   latestSessionTabsSnapshotByWorktree.delete(key)
   lastHostTerminalTabCountByWorktree.delete(key)
   clearWebRuntimeWakeTerminalRespawnForWorktree(worktreeId)
+  clearWebSessionFocusIntent(worktreeId)
+  clearWebSessionCloseIntentsForWorktree(worktreeId)
   clearWebSessionReorderIntentsForWorktree(worktreeId)
   const keyPrefix = `${environmentId}:${worktreeId}:`
   for (const key of hostSessionTabIdByLocalKey.keys()) {
@@ -1655,7 +1658,7 @@ export function applyWebSessionTabsSnapshot(
   // An unsolicited server-active (e.g. an agent "thinking" echo) must not steal
   // focus — that's the #5435 contract. Intent matches by the host active tab id
   // (terminal session id, or browserPageId for browser tabs); consume it once.
-  const focusIntentHostTabId = peekWebSessionFocusIntent(worktreeId)
+  const focusIntentHostTabId = peekWebSessionFocusIntent(worktreeId, now)
   const honorSnapshotActiveFocus =
     focusIntentHostTabId !== null &&
     snapshot.activeTabId !== null &&

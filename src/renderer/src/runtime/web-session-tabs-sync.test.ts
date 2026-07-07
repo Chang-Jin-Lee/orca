@@ -7,16 +7,19 @@ import { makePaneKey } from '../../../shared/stable-pane-id'
 import { toWebTerminalSurfaceTabId } from '../../../shared/terminal-surface-id'
 import { FLOATING_TERMINAL_WORKTREE_ID } from '../../../shared/constants'
 import {
+  peekWebSessionFocusIntent,
   recordWebSessionFocusIntent,
   resetWebSessionFocusIntentForTests
 } from './web-session-focus-intent'
 import {
+  isWebSessionCloseIntentPending,
   recordWebSessionCloseIntent,
   resetWebSessionCloseIntentForTests
 } from './web-session-close-intent'
 import {
   recordWebSessionReorderIntent,
-  resetWebSessionReorderIntentForTests
+  resetWebSessionReorderIntentForTests,
+  resolveWebSessionReorderedOrder
 } from './web-session-reorder-intent'
 import type { BrowserPage, BrowserWorkspace, Tab, TerminalTab } from '../../../shared/types'
 import type { OpenFile } from '../store/slices/editor'
@@ -582,6 +585,9 @@ describe('applyWebSessionTabsSnapshot', () => {
       freshness: 1,
       hostMappings: 1
     })
+    recordWebSessionFocusIntent(WT, 'host-browser-page', NOW)
+    recordWebSessionCloseIntent(WT, 'host-browser-unified', NOW)
+    recordWebSessionReorderIntent(WT, 'host-group-1', ['tab-b', 'tab-a'], NOW)
 
     applyFreshWebSessionTabsSnapshot(
       afterHostSnapshot,
@@ -603,6 +609,11 @@ describe('applyWebSessionTabsSnapshot', () => {
       freshness: 0,
       hostMappings: 0
     })
+    expect(peekWebSessionFocusIntent(WT, NOW + 1)).toBeNull()
+    expect(isWebSessionCloseIntentPending(WT, 'host-browser-unified', NOW + 1)).toBe(false)
+    expect(
+      resolveWebSessionReorderedOrder(WT, 'host-group-1', ['tab-a', 'tab-b'], NOW + 1)
+    ).toEqual(['tab-a', 'tab-b'])
   })
 
   it('clears web session tracking maps for one runtime environment on teardown', () => {
