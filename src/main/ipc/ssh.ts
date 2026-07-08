@@ -469,7 +469,8 @@ function registerPowerMonitorReconnect(): void {
   }
   const onResume = (): void => {
     for (const [targetId, session] of activeSessions) {
-      const conn = connectionManager?.getConnection(targetId)
+      const manager = connectionManager
+      const conn = manager?.getConnection(targetId)
       if (!conn) {
         continue
       }
@@ -480,8 +481,14 @@ function registerPowerMonitorReconnect(): void {
         if (await isRelayLinkAliveAfterResume(session)) {
           return
         }
+        // Why: the probe can take ~10s. If the user disconnected or the
+        // session/connection was replaced meanwhile, reconnecting would
+        // resurrect a connection that was intentionally torn down.
+        if (activeSessions.get(targetId) !== session || manager?.getConnection(targetId) !== conn) {
+          return
+        }
         try {
-          await connectionManager?.reconnect(targetId)
+          await manager?.reconnect(targetId)
         } catch (err) {
           console.warn(
             `[ssh] Failed to reconnect ${targetId} after system resume: ${

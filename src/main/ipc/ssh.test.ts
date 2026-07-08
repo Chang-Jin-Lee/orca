@@ -1468,6 +1468,41 @@ describe('SSH IPC handlers', () => {
     expect(mockConnectionManager.reconnect).not.toHaveBeenCalled()
   })
 
+  it('does not reconnect after resume when the target was disconnected during the probe', async () => {
+    const target: SshTarget = {
+      id: 'ssh-1',
+      label: 'Server',
+      host: 'example.com',
+      port: 22,
+      username: 'deploy'
+    }
+    const conn = {}
+    mockSshStore.getTarget.mockReturnValue(target)
+    mockConnectionManager.connect.mockResolvedValue(conn)
+    mockConnectionManager.getConnection.mockReturnValue(conn)
+    mockConnectionManager.getState.mockReturnValue({
+      targetId: 'ssh-1',
+      status: 'connected',
+      error: null,
+      reconnectAttempt: 0
+    })
+    mockMux.probeLiveness.mockResolvedValue(false)
+
+    await handlers.get('ssh:connect')!(null, { targetId: 'ssh-1' })
+
+    const resumeListener = powerMonitorOnMock.mock.calls.find(([event]) => event === 'resume')?.[1]
+    expect(resumeListener).toBeTypeOf('function')
+
+    resumeListener()
+    // Why: the probe window is seconds long; a user disconnect during it must
+    // win — reconnecting afterwards would resurrect the torn-down target.
+    mockConnectionManager.getConnection.mockReturnValue(undefined)
+
+    await vi.waitFor(() => expect(mockMux.probeLiveness).toHaveBeenCalledTimes(2))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(mockConnectionManager.reconnect).not.toHaveBeenCalled()
+  })
+
   it('extends active relay grace while the system is suspending', async () => {
     const target: SshTarget = {
       id: 'ssh-1',
