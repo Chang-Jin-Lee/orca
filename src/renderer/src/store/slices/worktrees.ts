@@ -3144,7 +3144,8 @@ export const createWorktreeSlice: StateCreator<AppState, [], [], WorktreeSlice> 
     })
   },
 
-  removeWorktree: async (worktreeId, force) => {
+  removeWorktree: async (worktreeId, force, options) => {
+    const forgetLocalOnly = options?.mode === 'forget-local'
     set((s) => ({
       deleteStateByWorktreeId: {
         ...s.deleteStateByWorktreeId,
@@ -3157,22 +3158,30 @@ export const createWorktreeSlice: StateCreator<AppState, [], [], WorktreeSlice> 
     }))
 
     try {
-      const repoIdForTrust = getRepoIdFromWorktreeId(worktreeId)
-      const trustDecision = await ensureHooksConfirmed(get(), repoIdForTrust, 'archive')
-      const skipArchive = trustDecision === 'skip'
+      // Why: forget-local touches no remote, so there is no archive hook to run
+      // and no need to prompt for hook trust.
+      const skipArchive = forgetLocalOnly
+        ? true
+        : (await ensureHooksConfirmed(get(), getRepoIdFromWorktreeId(worktreeId), 'archive')) ===
+          'skip'
 
       const worktreeBeforeRemoval = get()
         .allWorktrees()
         .find((entry) => entry.id === worktreeId)
+      // Why: forget-local always clears Orca's own records via the local IPC
+      // handler regardless of the workspace's execution host — the whole point
+      // is that the remote (SSH relay / runtime) is gone or unreachable.
       const target = getActiveRuntimeTarget(settingsForWorktreeOwner(get(), worktreeId))
-      const removalResult = await (target.kind === 'local'
-        ? window.api.worktrees.remove({ worktreeId, force, skipArchive })
-        : callRuntimeRpc<RemoveWorktreeResult>(
-            target,
-            'worktree.rm',
-            { worktree: toRuntimeWorktreeSelector(worktreeId), force, runHooks: !skipArchive },
-            { timeoutMs: 60_000 }
-          ))
+      const removalResult = await (forgetLocalOnly
+        ? window.api.worktrees.forgetLocal({ worktreeId })
+        : target.kind === 'local'
+          ? window.api.worktrees.remove({ worktreeId, force, skipArchive })
+          : callRuntimeRpc<RemoveWorktreeResult>(
+              target,
+              'worktree.rm',
+              { worktree: toRuntimeWorktreeSelector(worktreeId), force, runHooks: !skipArchive },
+              { timeoutMs: 60_000 }
+            ))
 
       const worktreeDisplayName = worktreeBeforeRemoval?.displayName?.trim()
       if (worktreeDisplayName) {

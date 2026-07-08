@@ -1,6 +1,6 @@
 /* eslint-disable max-lines */
 import type { ExecutionHostId } from './execution-host'
-import type { SshRemotePtyLease, SshTarget } from './ssh-types'
+import type { RemovedSshTargetTombstone, SshRemotePtyLease, SshTarget } from './ssh-types'
 import type { Automation, AutomationExecutionTargetType, AutomationRun } from './automations-types'
 import type { WorkspaceSource } from './workspace-source'
 import type { GitHubProjectSettings } from './github-project-types'
@@ -3515,6 +3515,9 @@ export type PersistedState = {
    *  matching ~/.ssh/config host on the next sync so a deleted host does not
    *  reappear. Cleared for an alias when the user re-adds it or re-adopts config. */
   deletedSshConfigAliases: string[]
+  /** Identity records for removed SSH targets. Lets a re-added host re-adopt
+   *  workspaces that were orphaned on the old target id. Pruned by age/count. */
+  removedSshTargetTombstones?: RemovedSshTargetTombstone[]
   sshRemotePtyLeases: SshRemotePtyLease[]
   /** Daemon session ids of live local Claude launches. Seeds the Claude
    *  live-PTY gate on startup so an early OAuth refresh cannot rotate the

@@ -82,6 +82,7 @@ import { MOBILE_PAIRING_USERDATA_FILES } from './runtime/mobile-pairing-files'
 import { hardenExistingSecureFile } from '../shared/secure-file'
 import {
   LEGACY_DEFAULT_SSH_RELAY_GRACE_PERIOD_SECONDS,
+  type RemovedSshTargetTombstone,
   type SshRemotePtyLease,
   type SshTarget
 } from '../shared/ssh-types'
@@ -108,6 +109,7 @@ import {
   normalizeExecutionHostOrder,
   normalizeExecutionHostId,
   normalizeVisibleExecutionHostIds,
+  toSshExecutionHostId,
   type ExecutionHostId
 } from '../shared/execution-host'
 import { toRelaySshPtyId } from './providers/ssh-pty-id'
@@ -2181,6 +2183,10 @@ function remapAcknowledgedAgentPaneKeys(
 // handful of Claude sessions a daemon can realistically keep alive.
 const MAX_CLAUDE_LIVE_PTY_SESSION_IDS = 200
 
+// Why: bound the removed-SSH-target history so remove/re-add churn can't grow
+// the state file without limit. Re-adoption only needs recent removals.
+const MAX_REMOVED_SSH_TARGET_TOMBSTONES = 50
+
 function normalizeClaudeLivePtySessionIds(value: unknown): string[] {
   if (!Array.isArray(value)) {
     return []
@@ -4172,30 +4178,84 @@ export class Store {
     // Why: presets are repo-scoped, so removing the repo means the presets
     // can never be referenced again — drop them with the parent.
     delete this.state.sparsePresetsByRepo[id]
-    // Clean up worktree meta for this repo
+    this.pruneWorktreeStateForRepo(id, null)
+    this.scheduleSave()
+  }
+
+  // Why: the same repo id can exist on more than one execution host (local, an
+  // SSH target, a re-added SSH target). Forgetting one host's copy must remove
+  // only that host's repo row and worktree metadata — never the local or
+  // another host's records that happen to share the id.
+  removeProjectForHost(id: string, hostId: ExecutionHostId): void {
+    this.state.repos = this.state.repos.filter(
+      (r) => !(r.id === id && getRepoExecutionHostId(r) === hostId)
+    )
+    const idStillPresent = this.state.repos.some((r) => r.id === id)
+    // Why: presets are repo-id-scoped (not host-scoped); only drop them once the
+    // last host's copy of this repo is gone, or a surviving host loses its presets.
+    if (!idStillPresent) {
+      delete this.state.sparsePresetsByRepo[id]
+    }
+    this.syncProjectHostSetupCompatibilityState()
+    // Why: if the id survives on another host, prune only this host's worktree
+    // metas; otherwise prune everything for the id (matches removeProject).
+    this.pruneWorktreeStateForRepo(id, idStillPresent ? hostId : null)
+    this.scheduleSave()
+  }
+
+  // Clean up worktree meta, lineage, and workspace lineage for a repo id.
+  // When hostId is null, prune all of the repo's entries; when a hostId is
+  // given, prune only entries whose meta.hostId resolves to that host (a
+  // missing hostId is treated as local).
+  private pruneWorktreeStateForRepo(id: string, hostId: ExecutionHostId | null): void {
     const prefix = `${id}::`
+    // Why: snapshot host membership up front. Lineage pruning below checks the
+    // meta.hostId of worktree keys that may already have been deleted from
+    // worktreeMeta in the first loop, so reading hostId live would misclassify
+    // an SSH worktree as local once its meta is gone.
+    const hostMembership = new Map<string, boolean>()
+    const belongsToHost = (key: string): boolean => {
+      if (!key.startsWith(prefix)) {
+        return false
+      }
+      if (hostId === null) {
+        return true
+      }
+      const cached = hostMembership.get(key)
+      if (cached !== undefined) {
+        return cached
+      }
+      // Why default to local: worktree metas created on/after host-ownership
+      // stamping carry hostId. A metas without it predates that and is treated as
+      // local, so a host-scoped (non-local) prune conservatively leaves it — it
+      // may leak a stale entry for a legacy SSH worktree sharing a repo id with a
+      // local repo, but it never deletes the wrong host's live meta.
+      const metaHostId = this.state.worktreeMeta[key]?.hostId ?? LOCAL_EXECUTION_HOST_ID
+      const result = metaHostId === hostId
+      hostMembership.set(key, result)
+      return result
+    }
     for (const key of Object.keys(this.state.worktreeMeta)) {
-      if (key.startsWith(prefix)) {
+      if (belongsToHost(key)) {
         delete this.state.worktreeMeta[key]
       }
     }
     for (const [childId, lineage] of Object.entries(this.state.worktreeLineageById)) {
-      if (childId.startsWith(prefix) || lineage.parentWorktreeId.startsWith(prefix)) {
+      if (belongsToHost(childId) || belongsToHost(lineage.parentWorktreeId)) {
         delete this.state.worktreeLineageById[childId]
       }
     }
     for (const [childKey, lineage] of Object.entries(this.state.workspaceLineageByChildKey)) {
       const childScope = parseWorkspaceKey(childKey)
       const parentScope = parseWorkspaceKey(lineage.parentWorkspaceKey)
-      if (childScope?.type === 'worktree' && childScope.worktreeId.startsWith(prefix)) {
+      if (childScope?.type === 'worktree' && belongsToHost(childScope.worktreeId)) {
         delete this.state.workspaceLineageByChildKey[childKey as WorkspaceKey]
         continue
       }
-      if (parentScope?.type === 'worktree' && parentScope.worktreeId.startsWith(prefix)) {
+      if (parentScope?.type === 'worktree' && belongsToHost(parentScope.worktreeId)) {
         delete this.state.workspaceLineageByChildKey[childKey as WorkspaceKey]
       }
     }
-    this.scheduleSave()
   }
 
   updateRepo(
@@ -6004,6 +6064,82 @@ export class Store {
       this.state.deletedSshConfigAliases = []
       this.scheduleSave()
     }
+  }
+
+  getRemovedSshTargetTombstones(): RemovedSshTargetTombstone[] {
+    return [...(this.state.removedSshTargetTombstones ?? [])]
+  }
+
+  addRemovedSshTargetTombstone(tombstone: RemovedSshTargetTombstone): void {
+    const existing = this.state.removedSshTargetTombstones ?? []
+    // Why: dedupe by oldTargetId so a remove/re-remove of the same id can't
+    // stack duplicate tombstones. Newest wins.
+    const filtered = existing.filter((t) => t.oldTargetId !== tombstone.oldTargetId)
+    // Cap the history so pathological churn can't grow the state file unbounded.
+    this.state.removedSshTargetTombstones = [...filtered, tombstone].slice(
+      -MAX_REMOVED_SSH_TARGET_TOMBSTONES
+    )
+    this.scheduleSave()
+  }
+
+  removeRemovedSshTargetTombstone(oldTargetId: string): void {
+    const existing = this.state.removedSshTargetTombstones
+    if (!existing?.some((t) => t.oldTargetId === oldTargetId)) {
+      return
+    }
+    this.state.removedSshTargetTombstones = existing.filter((t) => t.oldTargetId !== oldTargetId)
+    this.scheduleSave()
+  }
+
+  /**
+   * Re-point every repo and worktree meta pinned to a removed SSH target id
+   * onto a re-added target's id, so orphaned workspaces reattach to the live
+   * host instead of remaining un-removable ghosts. Returns the number of repos
+   * re-pointed (0 when nothing referenced the old id).
+   */
+  reassignSshTargetId(oldTargetId: string, newTargetId: string): number {
+    if (oldTargetId === newTargetId) {
+      return 0
+    }
+    const oldHostId = toSshExecutionHostId(oldTargetId)
+    const newHostId = toSshExecutionHostId(newTargetId)
+    let repoCount = 0
+    for (const repo of this.state.repos) {
+      const matchesConnection = repo.connectionId === oldTargetId
+      const matchesHost = repo.executionHostId === oldHostId
+      if (!matchesConnection && !matchesHost) {
+        continue
+      }
+      if (matchesConnection) {
+        repo.connectionId = newTargetId
+      }
+      // Why: only rewrite executionHostId when it was actually set to the old
+      // SSH host. SSH repos created via addRemoteRepoFromPath leave it unset and
+      // derive the host from connectionId, so we must not stamp a value where
+      // there wasn't one.
+      if (matchesHost) {
+        repo.executionHostId = newHostId
+      }
+      repoCount++
+    }
+    // Re-point worktree metas whose hostId pointed at the old SSH host.
+    let metaChanged = false
+    for (const meta of Object.values(this.state.worktreeMeta)) {
+      if (meta.hostId === oldHostId) {
+        meta.hostId = newHostId
+        metaChanged = true
+      }
+    }
+    // Why: repo-row rewrites can affect host-setup compatibility, but meta-only
+    // rewrites cannot — keep that sync under the repo gate. Persist whenever
+    // either repos OR metas changed, so meta-only re-points aren't lost on quit.
+    if (repoCount > 0) {
+      this.syncProjectHostSetupCompatibilityState()
+    }
+    if (repoCount > 0 || metaChanged) {
+      this.scheduleSave()
+    }
+    return repoCount
   }
 
   // ── SSH Remote PTY Leases ──────────────────────────────────────────

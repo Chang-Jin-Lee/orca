@@ -9,6 +9,7 @@ import { scheduleRuntimeGraphSync } from '@/runtime/sync-runtime-graph'
 import { useAppStore } from '@/store'
 import { getWorktreeMapFromState } from '@/store/selectors'
 import { parseWorkspaceKey } from '../../../../shared/workspace-scope'
+import { isRuntimeOwnedSshTargetId } from '../../../../shared/execution-host'
 import { createTerminalZeroDimensionsMessage } from '../../../../shared/terminal-zero-dimensions-diagnostic'
 import { parseTerminalOscColorQuery } from '../../../../shared/terminal-osc-color-reply'
 import { isTerminalQueryReply } from '../../../../shared/terminal-query-reply'
@@ -5546,6 +5547,21 @@ export function connectPanePty(
     // because the SSH provider isn't registered until after connect succeeds.
     if (connectionId) {
       const storeState = useAppStore.getState()
+      // Why: the SSH target was removed entirely (a ghost workspace). Reattaching
+      // can only fail with "SSH target not found", which surfaces a red "file an
+      // issue" banner for what is an expected user action. Skip reattach — the
+      // terminal overlay already shows a "host removed" state with a remove
+      // action. Runtime-owned targets aren't user-managed, so they're exempt.
+      // A target map that exists but omits this id means the target was removed.
+      // (Guard the map's presence for minimal test stubs that omit it; an absent
+      // map is "not hydrated", not "target gone".)
+      if (
+        !isRuntimeOwnedSshTargetId(connectionId) &&
+        storeState.sshTargetLabels instanceof Map &&
+        !storeState.sshTargetLabels.has(connectionId)
+      ) {
+        return
+      }
       const restoredLeafSessionId =
         deps.restoredLeafId && deps.restoredPtyIdByLeafId
           ? (deps.restoredPtyIdByLeafId[deps.restoredLeafId] ?? null)
