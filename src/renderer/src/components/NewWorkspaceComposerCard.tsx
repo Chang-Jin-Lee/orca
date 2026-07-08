@@ -15,6 +15,7 @@ import {
   FolderPlus,
   LoaderCircle,
   PlugZap,
+  Plus,
   Settings2,
   Server
 } from 'lucide-react'
@@ -228,6 +229,8 @@ type WorkspaceRunTargetComboboxProps = {
   recipes: EphemeralVmRecipeOption[]
   recipeValue: string | null
   onRecipeChange?: (recipeId: string | null) => void
+  onAddRemoteServer?: () => void
+  onAddSshHost?: () => void
 }
 
 function WorkspaceRunTargetCombobox({
@@ -236,10 +239,13 @@ function WorkspaceRunTargetCombobox({
   onHostChange,
   recipes,
   recipeValue,
-  onRecipeChange
+  onRecipeChange,
+  onAddRemoteServer,
+  onAddSshHost
 }: WorkspaceRunTargetComboboxProps): React.JSX.Element {
   const [open, setOpen] = React.useState(false)
   const [vmRecipesOpen, setVmRecipesOpen] = React.useState(false)
+  const [hostActionsOpen, setHostActionsOpen] = React.useState(false)
   const readyHostOptions = React.useMemo(
     () =>
       hostOptions.filter(
@@ -283,6 +289,18 @@ function WorkspaceRunTargetCombobox({
     },
     [onRecipeChange, recipes]
   )
+
+  const handleAddSshHost = React.useCallback((): void => {
+    setHostActionsOpen(false)
+    setOpen(false)
+    onAddSshHost?.()
+  }, [onAddSshHost])
+
+  const handleAddRemoteServer = React.useCallback((): void => {
+    setHostActionsOpen(false)
+    setOpen(false)
+    onAddRemoteServer?.()
+  }, [onAddRemoteServer])
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -443,6 +461,78 @@ function WorkspaceRunTargetCombobox({
                 </PopoverContent>
               </Popover>
             ) : null}
+            <Popover open={hostActionsOpen} onOpenChange={setHostActionsOpen}>
+              <PopoverTrigger asChild>
+                <CommandItem
+                  value="add-host"
+                  onSelect={() => setHostActionsOpen(true)}
+                  className="items-center gap-2 px-3 py-2"
+                >
+                  <Check className="size-4 opacity-0" />
+                  <Plus className="size-3.5 shrink-0 text-muted-foreground" />
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-sm">
+                      {translate('auto.components.NewWorkspaceComposerCard.addHost', 'Add host')}
+                    </div>
+                    <div className="mt-0.5 truncate text-[11px] text-muted-foreground">
+                      {translate(
+                        'auto.components.NewWorkspaceComposerCard.addHostHint',
+                        'Register another machine or Orca server'
+                      )}
+                    </div>
+                  </div>
+                  <ChevronRight className="size-3.5 shrink-0 text-muted-foreground" />
+                </CommandItem>
+              </PopoverTrigger>
+              <PopoverContent side="right" align="start" sideOffset={6} className="w-72 p-0">
+                <Command>
+                  <CommandList>
+                    <CommandItem
+                      value="add-ssh-host"
+                      onSelect={handleAddSshHost}
+                      className="items-center gap-2 px-3 py-2"
+                    >
+                      <Server className="size-3.5 shrink-0 text-muted-foreground" />
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate text-sm">
+                          {translate(
+                            'auto.components.NewWorkspaceComposerCard.addSshHost',
+                            'Add SSH host'
+                          )}
+                        </div>
+                        <div className="mt-0.5 truncate text-[11px] text-muted-foreground">
+                          {translate(
+                            'auto.components.NewWorkspaceComposerCard.addSshHostHint',
+                            'Use an existing machine over SSH'
+                          )}
+                        </div>
+                      </div>
+                    </CommandItem>
+                    <CommandItem
+                      value="add-remote-orca-server"
+                      onSelect={handleAddRemoteServer}
+                      className="items-center gap-2 px-3 py-2"
+                    >
+                      <Cloud className="size-3.5 shrink-0 text-muted-foreground" />
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate text-sm">
+                          {translate(
+                            'auto.components.NewWorkspaceComposerCard.addRemoteOrcaServer',
+                            'Add Remote Orca Server'
+                          )}
+                        </div>
+                        <div className="mt-0.5 truncate text-[11px] text-muted-foreground">
+                          {translate(
+                            'auto.components.NewWorkspaceComposerCard.addRemoteOrcaServerHint',
+                            'Pair another Orca runtime'
+                          )}
+                        </div>
+                      </div>
+                    </CommandItem>
+                  </CommandList>
+                </Command>
+              </PopoverContent>
+            </Popover>
           </CommandList>
         </Command>
       </PopoverContent>
@@ -655,7 +745,10 @@ export default function NewWorkspaceComposerCard({
   useTranslation()
   const { isFileDragOver, dragHandlers } = useComposerFileDragOver()
   const openModal = useAppStore((s) => s.openModal)
+  const closeModal = useAppStore((s) => s.closeModal)
   const activeModal = useAppStore((s) => s.activeModal)
+  const openSettingsPage = useAppStore((s) => s.openSettingsPage)
+  const openSettingsTarget = useAppStore((s) => s.openSettingsTarget)
   const defaultTuiAgent = useAppStore((s) => s.settings?.defaultTuiAgent ?? null)
   const disabledTuiAgents = useAppStore((s) => s.settings?.disabledTuiAgents ?? [])
   const updateSettings = useAppStore((s) => s.updateSettings)
@@ -763,6 +856,26 @@ export default function NewWorkspaceComposerCard({
   const handleAddRepo = React.useCallback((): void => {
     openModal('add-repo')
   }, [openModal])
+  const openHostSettingsTarget = React.useCallback(
+    (target: 'add-remote-orca-server' | 'add-ssh-host'): void => {
+      // Why: the composer can be modal; close it before deep-linking to the
+      // existing host-management forms in Settings.
+      closeModal()
+      openSettingsPage()
+      openSettingsTarget({
+        pane: target === 'add-ssh-host' ? 'ssh' : 'servers',
+        repoId: null,
+        intent: target
+      })
+    },
+    [closeModal, openSettingsPage, openSettingsTarget]
+  )
+  const handleAddSshHost = React.useCallback((): void => {
+    openHostSettingsTarget('add-ssh-host')
+  }, [openHostSettingsTarget])
+  const handleAddRemoteServer = React.useCallback((): void => {
+    openHostSettingsTarget('add-remote-orca-server')
+  }, [openHostSettingsTarget])
   const handleNotePaste = React.useCallback((event: React.ClipboardEvent<HTMLTextAreaElement>) => {
     const text = event.clipboardData.getData('text/plain')
     const byteLengthMeasurement = measureTextControlPasteByteLength(text, {
@@ -805,12 +918,12 @@ export default function NewWorkspaceComposerCard({
     () => projectHostSetupOptions.filter((option) => option.kind === 'needs-setup'),
     [projectHostSetupOptions]
   )
-  // Why: one ready host plus another host that needs setup should be discoverable, while
-  // the single-ready-only case remains compact.
+  // Why: the picker now also hosts the Add host handoff; even a single ready
+  // host needs this affordance for users who have not registered the target yet.
   const shouldShowRunTargetPicker =
-    readyProjectHostSetupOptions.length > 1 ||
+    readyProjectHostSetupOptions.length > 0 ||
     ephemeralVmRecipes.length > 0 ||
-    (readyProjectHostSetupOptions.length > 0 && needsSetupProjectHostSetupOptions.length > 0)
+    needsSetupProjectHostSetupOptions.length > 0
   const handleProjectHostSetupChange = React.useCallback(
     (setupId: string): void => {
       onProjectHostSetupChange?.(setupId)
@@ -916,6 +1029,8 @@ export default function NewWorkspaceComposerCard({
                 recipes={ephemeralVmRecipes}
                 recipeValue={selectedEphemeralVmRecipeId}
                 onRecipeChange={onEphemeralVmRecipeChange}
+                onAddSshHost={handleAddSshHost}
+                onAddRemoteServer={handleAddRemoteServer}
               />
               {ephemeralVmRecipeError ? (
                 <p className="whitespace-pre-line text-[11px] text-destructive">

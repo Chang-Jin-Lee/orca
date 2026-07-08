@@ -17,11 +17,14 @@ import { resolveSshHostRemoval } from '../sidebar/ssh-host-remove-resolution'
 import { getAllWorktreesFromState } from '@/store/selectors'
 import { toSshExecutionHostId } from '../../../../shared/execution-host'
 import { translate } from '@/i18n/i18n'
+import { useSshAddTargetIntent } from './use-ssh-add-target-intent'
 export { getSshPaneSearchEntries } from './ssh-search'
 
-type SshPaneProps = Record<string, never>
+type SshPaneProps = {
+  addTargetIntentSignal?: number
+}
 
-export function SshPane(_props: SshPaneProps): React.JSX.Element {
+export function SshPane({ addTargetIntentSignal }: SshPaneProps): React.JSX.Element {
   const [targets, setTargets] = useState<SshTarget[]>([])
   // Why: connection states are already hydrated and kept up-to-date by the
   // global store (via useIpcEvents.ts). Reading from the store avoids
@@ -83,6 +86,15 @@ export function SshPane(_props: SshPaneProps): React.JSX.Element {
     })()
     return () => abortController.abort()
   }, [loadTargets])
+
+  const openAddTargetForm = useCallback((): void => {
+    // Why: composer deep-links should land on the existing add form, not just
+    // the host management pane.
+    setEditingId(null)
+    setForm(EMPTY_FORM)
+    setShowForm(true)
+  }, [])
+  useSshAddTargetIntent(addTargetIntentSignal, openAddTargetForm)
 
   const handleSave = async (): Promise<void> => {
     const savePayload = buildSshTargetSavePayload(form)
@@ -347,16 +359,7 @@ export function SshPane(_props: SshPaneProps): React.JSX.Element {
             {translate('auto.components.settings.SshPane.51d7dba44d', 'Import')}
           </Button>
           {!showForm ? (
-            <Button
-              variant="outline"
-              size="xs"
-              onClick={() => {
-                setEditingId(null)
-                setForm(EMPTY_FORM)
-                setShowForm(true)
-              }}
-              className="gap-1.5"
-            >
+            <Button variant="outline" size="xs" onClick={openAddTargetForm} className="gap-1.5">
               <Plus className="size-3" />
               {translate('auto.components.settings.SshPane.639ceb3698', 'Add Target')}
             </Button>

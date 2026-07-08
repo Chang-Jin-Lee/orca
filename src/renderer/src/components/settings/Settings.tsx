@@ -329,6 +329,8 @@ function Settings(): React.JSX.Element {
   )
   const [pendingNavRequestTick, setPendingNavRequestTick] = useState(0)
   const [quickCommandAddIntentSignal, setQuickCommandAddIntentSignal] = useState(0)
+  const [sshHostAddIntentSignal, setSshHostAddIntentSignal] = useState(0)
+  const [remoteServerAddIntentSignal, setRemoteServerAddIntentSignal] = useState(0)
   const [hasUnsavedCommitPromptChanges, setHasUnsavedCommitPromptChanges] = useState(false)
   const [hasUnsavedBranchPromptChanges, setHasUnsavedBranchPromptChanges] = useState(false)
   const [sourceControlAiPromptDiscardSignal, setSourceControlAiPromptDiscardSignal] = useState(0)
@@ -620,6 +622,10 @@ function Settings(): React.JSX.Element {
     pendingScrollTargetRef.current = settingsNavigationTarget.sectionId ?? paneSectionId
     if (settingsNavigationTarget.intent === 'add-quick-command') {
       setQuickCommandAddIntentSignal((signal) => signal + 1)
+    } else if (settingsNavigationTarget.intent === 'add-ssh-host') {
+      setSshHostAddIntentSignal((signal) => signal + 1)
+    } else if (settingsNavigationTarget.intent === 'add-remote-orca-server') {
+      setRemoteServerAddIntentSignal((signal) => signal + 1)
     }
     setMountedSectionIds((previous) => {
       if (previous.has(paneSectionId)) {
@@ -1523,6 +1529,7 @@ function Settings(): React.JSX.Element {
                       switchRuntimeEnvironment={switchRuntimeEnvironment}
                       canGeneratePairingUrl={!isWebClient}
                       allowLocalRuntime={!isWebClient}
+                      addServerIntentSignal={remoteServerAddIntentSignal}
                     />
                   ) : null}
                 </SettingsSection>
@@ -1537,7 +1544,9 @@ function Settings(): React.JSX.Element {
                     )}
                     searchEntries={getSectionSearchEntries('ssh')}
                   >
-                    {isSectionMounted('ssh') ? <SshPane /> : null}
+                    {isSectionMounted('ssh') ? (
+                      <SshPane addTargetIntentSignal={sshHostAddIntentSignal} />
+                    ) : null}
                   </SettingsSection>
                 ) : null}
 

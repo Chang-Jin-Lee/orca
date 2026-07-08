@@ -8,11 +8,21 @@ import NewWorkspaceComposerCard from './NewWorkspaceComposerCard'
 import type { NewWorkspaceProjectOption } from '@/lib/new-workspace-project-options'
 import type { ProjectHostSetupOption } from '@/lib/project-host-setup-options'
 
+const storeMocks = vi.hoisted(() => ({
+  closeModal: vi.fn(),
+  openModal: vi.fn(),
+  openSettingsPage: vi.fn(),
+  openSettingsTarget: vi.fn()
+}))
+
 vi.mock('@/store', () => ({
   useAppStore: (selector: (state: unknown) => unknown) =>
     selector({
-      openModal: vi.fn(),
-      activeModal: null,
+      closeModal: storeMocks.closeModal,
+      openModal: storeMocks.openModal,
+      openSettingsPage: storeMocks.openSettingsPage,
+      openSettingsTarget: storeMocks.openSettingsTarget,
+      activeModal: 'none',
       settings: { defaultTuiAgent: null, disabledTuiAgents: [] },
       updateSettings: vi.fn()
     })
@@ -236,6 +246,7 @@ describe('NewWorkspaceComposerCard folder task source mode', () => {
     act(() => current?.root.unmount())
     current?.container.remove()
     current = null
+    vi.clearAllMocks()
   })
 
   it('passes folder child repos into the create-from field without a source trigger', () => {
@@ -471,14 +482,15 @@ describe('NewWorkspaceComposerCard folder task source mode', () => {
     ).toBe(true)
   })
 
-  it('hides the run target picker when only one setup is ready', () => {
+  it('shows the run target picker for one ready setup so hosts can be added', () => {
     current = renderCard({
       projectHostSetupOptions: [localReadyHostOption],
       selectedProjectHostSetupId: 'setup-local'
     })
 
-    expect(current.container.textContent).not.toContain('Run on')
-    expect(current.container.querySelector<HTMLButtonElement>('button[role="combobox"]')).toBeNull()
+    expect(current.container.textContent).toContain('Run on')
+    openRunTargetPicker(current.container)
+    expect(findRunTargetItem('Add host')).toBeTruthy()
   })
 
   it('does not select setup-needed run target rows', () => {
@@ -495,6 +507,44 @@ describe('NewWorkspaceComposerCard folder task source mode', () => {
     act(() => devboxItem?.click())
 
     expect(hostChanges).toEqual([])
+  })
+
+  it('opens the SSH host add form from the run target picker', () => {
+    current = renderCard({
+      projectHostSetupOptions: [localReadyHostOption, devboxNeedsSetupHostOption],
+      selectedProjectHostSetupId: 'setup-local'
+    })
+
+    openRunTargetPicker(current.container)
+    act(() => findRunTargetItem('Add host')?.click())
+    act(() => findRunTargetItem('Add SSH host')?.click())
+
+    expect(storeMocks.closeModal).toHaveBeenCalled()
+    expect(storeMocks.openSettingsPage).toHaveBeenCalled()
+    expect(storeMocks.openSettingsTarget).toHaveBeenCalledWith({
+      pane: 'ssh',
+      repoId: null,
+      intent: 'add-ssh-host'
+    })
+  })
+
+  it('opens the remote Orca server add form from the run target picker', () => {
+    current = renderCard({
+      projectHostSetupOptions: [localReadyHostOption, devboxNeedsSetupHostOption],
+      selectedProjectHostSetupId: 'setup-local'
+    })
+
+    openRunTargetPicker(current.container)
+    act(() => findRunTargetItem('Add host')?.click())
+    act(() => findRunTargetItem('Add Remote Orca Server')?.click())
+
+    expect(storeMocks.closeModal).toHaveBeenCalled()
+    expect(storeMocks.openSettingsPage).toHaveBeenCalled()
+    expect(storeMocks.openSettingsTarget).toHaveBeenCalledWith({
+      pane: 'servers',
+      repoId: null,
+      intent: 'add-remote-orca-server'
+    })
   })
 
   it('shows VM recipes inside the run target picker', () => {
