@@ -16,6 +16,7 @@ import type { GlobalSettings } from '../../../shared/types'
 import { sendAgentDraftPasteContent } from './agent-draft-paste-content'
 import { agentDeliversDraftViaNativePrefill } from './agent-native-draft-prefill'
 import { waitForAgentDraftInputReady } from './agent-draft-readiness'
+import { watchForPromptEcho } from './prompt-echo-wait'
 import { isExpectedAgentProcess } from '../../../shared/agent-process-recognition'
 export {
   AGENT_DRAFT_PASTE_CHUNK_MAX_BYTES,
@@ -43,6 +44,11 @@ export function sanitizeBracketedPasteContent(content: string): string {
 // or (2) the launch fails outright. The hard timeout caps the wait so a
 // stuck launch doesn't pin a Promise forever.
 const READINESS_TIMEOUT_MS = 8000
+// Why: a live composer repaints the pasted text within one frame; the window
+// only needs to absorb remote-PTY round-trips and slow first paints.
+const ECHO_VERIFY_TIMEOUT_MS = 3000
+
+export type PasteDeliveryTimeoutReason = 'readiness-timeout' | 'echo-timeout'
 
 export function getSettingsForAgentTabRuntimeOwner(
   tabId: string
@@ -80,10 +86,20 @@ export async function pasteDraftWhenAgentReady(args: {
   agent?: TuiAgent
   submit?: boolean
   forcePaste?: boolean
+  verifyEchoBeforeSubmit?: boolean
   timeoutMs?: number
-  onTimeout?: () => void
+  onTimeout?: (reason?: PasteDeliveryTimeoutReason) => void
 }): Promise<boolean> {
-  const { tabId, content, agent, submit, forcePaste, timeoutMs, onTimeout } = args
+  const {
+    tabId,
+    content,
+    agent,
+    submit,
+    forcePaste,
+    verifyEchoBeforeSubmit,
+    timeoutMs,
+    onTimeout
+  } = args
 
   const agentConfig = agent ? TUI_AGENT_CONFIG[agent] : null
 
@@ -100,7 +116,7 @@ export async function pasteDraftWhenAgentReady(args: {
   const readySignal = agentConfig?.draftPasteReadySignal ?? 'render-quiet-after-bracketed-paste'
   const ptyId = await waitForPtyId(tabId, budget)
   if (!ptyId) {
-    onTimeout?.()
+    onTimeout?.('readiness-timeout')
     return false
   }
 
@@ -115,7 +131,30 @@ export async function pasteDraftWhenAgentReady(args: {
       ? await waitForAgentReady(tabId, agentConfig.expectedProcess, { timeoutMs: 1000 })
       : { ready: false }
     if (!fallbackReady.ready) {
-      onTimeout?.()
+      onTimeout?.('readiness-timeout')
+      return false
+    }
+  }
+
+  if (submit === true && verifyEchoBeforeSubmit === true) {
+    // Why: readiness heuristics can fire on trust/update/login screens that
+    // silently swallow pastes (issue #7466). Require the pasted content to
+    // visibly render before committing the submit Enter — an unverified Enter
+    // could otherwise answer whatever screen actually has focus.
+    const watch = watchForPromptEcho(ptyId, content, ECHO_VERIFY_TIMEOUT_MS, settings)
+    const pasted = await sendBracketedPasteToAgent({ settings, ptyId, content, submit: false })
+    if (!pasted) {
+      watch.cancel()
+      return false
+    }
+    if (!(await watch.result)) {
+      onTimeout?.('echo-timeout')
+      return false
+    }
+    await new Promise<void>((resolve) => window.setTimeout(resolve, POST_PASTE_SUBMIT_DELAY_MS))
+    try {
+      return await sendRuntimePtyInputVerified(settings, ptyId, '\r')
+    } catch {
       return false
     }
   }

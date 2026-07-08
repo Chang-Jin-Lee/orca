@@ -50,9 +50,24 @@ describe('deliverLaunchPromptToAgentTab', () => {
       content: 'Fix failing checks',
       submit: true,
       forcePaste: true,
+      verifyEchoBeforeSubmit: true,
       timeoutMs: undefined,
       onTimeout: undefined
     })
+  })
+
+  it('does not require echo verification for unsubmitted drafts', async () => {
+    await deliverLaunchPromptToAgentTab({
+      tabId: 'draft-tab',
+      agent: 'codex',
+      content: 'Draft notes',
+      submit: false,
+      forcePaste: true
+    })
+
+    expect(mocks.pasteDraftWhenAgentReady).toHaveBeenCalledWith(
+      expect.objectContaining({ submit: false, verifyEchoBeforeSubmit: false })
+    )
   })
 
   it('does not seed for drafts, unsupported agents, or empty content', async () => {

@@ -1,5 +1,6 @@
 import { agentDeliversDraftViaNativePrefill } from '@/lib/agent-native-draft-prefill'
 import { pasteDraftWhenAgentReady } from '@/lib/agent-paste-draft'
+import type { PasteDeliveryTimeoutReason } from '@/lib/agent-paste-draft'
 import { isNativeChatSupportedAgent } from '@/lib/native-chat-supported-agent'
 import { useAppStore } from '@/store'
 import type { TuiAgent } from '../../../shared/types'
@@ -11,7 +12,7 @@ export function deliverLaunchPromptToAgentTab(args: {
   submit: boolean
   forcePaste: boolean
   timeoutMs?: number
-  onTimeout?: () => void
+  onTimeout?: (reason?: PasteDeliveryTimeoutReason) => void
 }): Promise<boolean> {
   const { tabId, agent, content, submit, forcePaste, timeoutMs, onTimeout } = args
   const shouldSeed =
@@ -37,6 +38,9 @@ export function deliverLaunchPromptToAgentTab(args: {
     agent,
     submit,
     forcePaste,
+    // Why: launch prompts drive irreversible side effects (comment resolution,
+    // dialog dismissal), so their submit must be echo-verified (issue #7466).
+    verifyEchoBeforeSubmit: submit,
     timeoutMs,
     onTimeout
   }).then((delivered) => {

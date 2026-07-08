@@ -679,6 +679,35 @@ describe('launchAgentInNewTab', () => {
     expect(mockToastMessage).toHaveBeenCalledWith(
       "Your prompt wasn't sent — paste it once the agent is ready."
     )
+    expect(mockTrack).toHaveBeenCalledWith(
+      'agent_error',
+      expect.objectContaining({ error_class: 'paste_readiness_timeout' })
+    )
+  })
+
+  it('classifies a swallowed paste (echo timeout) separately in telemetry', async () => {
+    mockPasteDraftWhenAgentReady.mockImplementation(({ onTimeout }) => {
+      onTimeout?.('echo-timeout')
+      return Promise.resolve(false)
+    })
+    store.tabsByWorktree = { 'wt-1': [{ id: 'tab-1', ptyId: 'pty-1' } as never] }
+    const { launchAgentInNewTab } = await import('./launch-agent-in-new-tab')
+
+    const result = launchAgentInNewTab({
+      agent: 'command-code',
+      worktreeId: 'wt-1',
+      prompt: 'large generated prompt',
+      promptDelivery: 'submit-after-ready'
+    })
+
+    await expect(result?.promptDeliveryResult).resolves.toEqual({
+      delivered: false,
+      failureNotified: true
+    })
+    expect(mockTrack).toHaveBeenCalledWith(
+      'agent_error',
+      expect.objectContaining({ error_class: 'paste_echo_timeout' })
+    )
   })
 
   it('marks a cancelled submit-after-ready launch notified when the user closed the tab', async () => {
