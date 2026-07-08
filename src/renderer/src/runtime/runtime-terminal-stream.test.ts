@@ -4,6 +4,7 @@ import {
   decodeTerminalStreamFrame,
   decodeTerminalStreamJson,
   encodeTerminalStreamFrame,
+  encodeTerminalStreamJson,
   encodeTerminalStreamText
 } from '../../../shared/terminal-stream-protocol'
 import {
@@ -115,6 +116,81 @@ describe('remote runtime terminal data subscriptions', () => {
     dispose()
     expect(unsubscribe).toHaveBeenCalled()
     expect(_getRemoteRuntimeTerminalMultiplexerCountForTest()).toBe(0)
+  })
+
+  async function currentStreamId(): Promise<number> {
+    await vi.waitFor(() => expect(sendBinary).toHaveBeenCalled())
+    const subscribeFrame = decodeTerminalStreamFrame(sendBinary.mock.calls[0][0])
+    return decodeTerminalStreamJson<{ streamId: number }>(subscribeFrame!.payload)!.streamId
+  }
+
+  function deliverInitialSnapshot(streamId: number, text: string): void {
+    callbacks?.onBinary?.(
+      encodeTerminalStreamFrame({
+        opcode: TerminalStreamOpcode.SnapshotStart,
+        streamId,
+        seq: 0,
+        payload: encodeTerminalStreamJson({ cols: 80, rows: 24 })
+      })
+    )
+    callbacks?.onBinary?.(
+      encodeTerminalStreamFrame({
+        opcode: TerminalStreamOpcode.SnapshotChunk,
+        streamId,
+        seq: 0,
+        payload: encodeTerminalStreamText(text)
+      })
+    )
+    callbacks?.onBinary?.(
+      encodeTerminalStreamFrame({
+        opcode: TerminalStreamOpcode.SnapshotEnd,
+        streamId,
+        seq: 0,
+        payload: new Uint8Array(0)
+      })
+    )
+  }
+
+  function deliverOutput(streamId: number, text: string): void {
+    callbacks?.onBinary?.(
+      encodeTerminalStreamFrame({
+        opcode: TerminalStreamOpcode.Output,
+        streamId,
+        seq: 1,
+        payload: encodeTerminalStreamText(text)
+      })
+    )
+  }
+
+  it('replays the initial buffer snapshot to the watcher by default', async () => {
+    const watcher = vi.fn()
+    await subscribeToRuntimeTerminalData(
+      { activeRuntimeEnvironmentId: 'env-fallback' },
+      'remote:env-1@@terminal-1',
+      'watcher-1',
+      watcher
+    )
+    deliverInitialSnapshot(await currentStreamId(), 'PRE-PASTE SCREEN')
+
+    expect(watcher.mock.calls.map((call) => call[0])).toContain('PRE-PASTE SCREEN')
+  })
+
+  it('omits the initial snapshot from the watcher when includeSnapshot is false', async () => {
+    const watcher = vi.fn()
+    await subscribeToRuntimeTerminalData(
+      { activeRuntimeEnvironmentId: 'env-fallback' },
+      'remote:env-1@@terminal-1',
+      'watcher-1',
+      watcher,
+      { includeSnapshot: false }
+    )
+    const streamId = await currentStreamId()
+    deliverInitialSnapshot(streamId, 'PRE-PASTE SCREEN')
+    // Live output rendered after the subscription still reaches the watcher.
+    deliverOutput(streamId, 'live')
+
+    expect(watcher).not.toHaveBeenCalledWith('PRE-PASTE SCREEN')
+    expect(watcher).toHaveBeenCalledWith('live')
   })
 
   it('keeps the shared terminal multiplexer until the last watcher closes', async () => {

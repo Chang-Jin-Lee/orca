@@ -52,11 +52,16 @@ export function watchForPromptEcho(
     }
 
     if (isRemoteRuntimePtyId(ptyId)) {
+      // Why: skip the initial buffer snapshot — it is the pre-paste screen and
+      // could match the sample (or a stale paste placeholder) before the echo,
+      // falsely verifying delivery onto a swallow screen (#7466). Only output
+      // rendered after we subscribe counts, matching the local sidecar.
       void subscribeToRuntimeTerminalData(
         settings,
         ptyId,
         `desktop:prompt-echo:${ptyId}`,
-        observeData
+        observeData,
+        { includeSnapshot: false }
       )
         .then((remoteUnsubscribe) => {
           if (settled) {

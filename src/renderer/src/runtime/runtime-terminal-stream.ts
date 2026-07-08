@@ -56,7 +56,8 @@ export async function subscribeToRuntimeTerminalData(
   settings: Pick<GlobalSettings, 'activeRuntimeEnvironmentId'> | null | undefined,
   ptyId: string,
   clientId: string,
-  watcher: (data: string) => void
+  watcher: (data: string) => void,
+  options?: { includeSnapshot?: boolean }
 ): Promise<() => void> {
   const terminal = getRemoteRuntimeTerminalHandle(ptyId)
   const ownerEnvironmentId = getRemoteRuntimePtyEnvironmentId(ptyId)
@@ -67,12 +68,17 @@ export async function subscribeToRuntimeTerminalData(
     return () => {}
   }
 
+  // Why: the initial buffer snapshot is the screen state from *before* this
+  // subscription attached. Consumers that must only judge freshly-rendered
+  // output (prompt-echo verification) opt out so a pre-paste screen can't be
+  // mistaken for the paste echoing back (#7466); the default replays it.
+  const includeSnapshot = options?.includeSnapshot ?? true
   const stream = await getRemoteRuntimeTerminalMultiplexer(target.environmentId).subscribeTerminal({
     terminal,
     client: { id: clientId, type: 'desktop' },
     callbacks: {
       onData: (data) => watcher(data),
-      onSnapshot: watcher
+      onSnapshot: includeSnapshot ? watcher : () => {}
     }
   })
 
