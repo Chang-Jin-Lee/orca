@@ -103,4 +103,13 @@ describe('createPromptEchoScanner', () => {
     const scanner = createPromptEchoScanner('fix ci')
     expect(scanner.observe('\x1b[11;3Hfix\x1b[11;7Hci')).toBe(true)
   })
+
+  it('verifies a non-Latin-script prompt instead of failing open on any render', () => {
+    // #7466: Cyrillic folds to letters (not away), so it matches on its render
+    // and correctly withholds the submit on a swallow screen.
+    const swallowed = createPromptEchoScanner('Разреши конфликты слияния')
+    expect(swallowed.observe(CODEX_TRUST_SWALLOW_REDRAW)).toBe(false)
+    const rendered = createPromptEchoScanner('Разреши конфликты слияния')
+    expect(rendered.observe('\x1b[11;3HРазреши\x1b[11;15Hконфликты\x1b[11;25Hслияния')).toBe(true)
+  })
 })

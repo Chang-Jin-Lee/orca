@@ -107,6 +107,15 @@ describe('watchForPromptEcho', () => {
       )
       const watch = watchForPromptEcho('remote-pty', PROMPT, 10_000, {})
       await flushMicrotasks()
+      // The echo watch must opt out of the pre-paste buffer snapshot (#7466),
+      // or a swallow screen already on the terminal could falsely verify.
+      expect(mocks.subscribeToRuntimeTerminalData).toHaveBeenCalledWith(
+        expect.anything(),
+        'remote-pty',
+        expect.any(String),
+        expect.any(Function),
+        { includeSnapshot: false }
+      )
       remoteObserver?.(ECHO)
       await expect(watch.result).resolves.toBe(true)
       expect(remoteUnsubscribe).toHaveBeenCalledTimes(1)

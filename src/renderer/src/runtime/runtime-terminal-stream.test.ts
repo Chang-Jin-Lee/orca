@@ -189,8 +189,10 @@ describe('remote runtime terminal data subscriptions', () => {
     // Live output rendered after the subscription still reaches the watcher.
     deliverOutput(streamId, 'live')
 
-    expect(watcher).not.toHaveBeenCalledWith('PRE-PASTE SCREEN')
-    expect(watcher).toHaveBeenCalledWith('live')
+    // onSnapshot passes a second meta arg, so match on the first arg only —
+    // a bare not.toHaveBeenCalledWith(...) would vacuously pass either way.
+    expect(watcher.mock.calls.map((call) => call[0])).not.toContain('PRE-PASTE SCREEN')
+    expect(watcher.mock.calls.map((call) => call[0])).toContain('live')
   })
 
   it('keeps the shared terminal multiplexer until the last watcher closes', async () => {

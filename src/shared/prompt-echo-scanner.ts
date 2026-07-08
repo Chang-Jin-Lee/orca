@@ -7,9 +7,12 @@
 /**
  * Fold terminal output down to comparable text:
  *   - strip OSC (title/hyperlink) and CSI/charset escape sequences
- *   - drop every non-alphanumeric character (TUIs repaint with cursor moves
- *     instead of literal spaces, wrap lines at pane width, and draw box
- *     borders through the text, so only the letters/digits survive intact)
+ *   - drop every non-letter/non-number character (TUIs repaint with cursor
+ *     moves instead of literal spaces, wrap lines at pane width, and draw box
+ *     borders through the text, so only the letters/digits survive intact).
+ *     Uses the Unicode letter/number classes rather than ASCII so non-Latin
+ *     prompts (Cyrillic, CJK, Arabic, ...) still fold to matchable content
+ *     instead of vanishing to nothing.
  *   - lowercase for case-stable matching
  */
 export function foldTerminalTextForEchoMatch(raw: string): string {
@@ -23,16 +26,7 @@ export function foldTerminalTextForEchoMatch(raw: string): string {
     .replace(/\x1b[()#][0-9A-Za-z]/g, '')
     .replace(/\x1b[@-_]/g, '')
   /* oxlint-enable no-control-regex */
-  let folded = ''
-  for (const ch of withoutEscapes.toLowerCase()) {
-    const code = ch.codePointAt(0) ?? 0
-    const isDigit = code >= 48 && code <= 57
-    const isLower = code >= 97 && code <= 122
-    if (isDigit || isLower) {
-      folded += ch
-    }
-  }
-  return folded
+  return withoutEscapes.toLowerCase().replace(/[^\p{L}\p{N}]/gu, '')
 }
 
 // Why: large pastes never render verbatim — codex collapses to
