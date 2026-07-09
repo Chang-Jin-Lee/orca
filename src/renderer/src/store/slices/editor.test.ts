@@ -17,6 +17,7 @@ import type {
   GitStatusEntry,
   Tab
 } from '../../../../shared/types'
+import { isSyncPushStageError } from '@/lib/source-control-remote-error'
 
 const { toastErrorMock } = vi.hoisted(() => ({
   toastErrorMock: vi.fn()
@@ -1459,6 +1460,64 @@ describe('createEditorSlice markdown view state', () => {
       })
     ])
   })
+
+  it('drops markdown visibility for a preview replaced by a diff', () => {
+    const store = createEditorStore()
+
+    store.getState().openFile(
+      {
+        filePath: '/repo/docs/README.md',
+        relativePath: 'docs/README.md',
+        worktreeId: 'wt-1',
+        language: 'markdown',
+        mode: 'edit'
+      },
+      { preview: true }
+    )
+    store.getState().setMarkdownFrontmatterVisible('/repo/docs/README.md', true)
+    store.getState().setMarkdownTableOfContentsVisible('/repo/docs/README.md', true)
+
+    store.getState().openDiff('wt-1', '/repo/docs/guide.md', 'docs/guide.md', 'markdown', false, {
+      preview: true
+    })
+
+    expect(store.getState().markdownFrontmatterVisible).toEqual({})
+    expect(store.getState().markdownTableOfContentsVisible).toEqual({})
+  })
+
+  it('keeps markdown visibility when another preview still references a replaced source', () => {
+    const store = createEditorStore()
+
+    store.getState().openFile(
+      {
+        filePath: '/repo/docs/README.md',
+        relativePath: 'docs/README.md',
+        worktreeId: 'wt-1',
+        language: 'markdown',
+        mode: 'edit'
+      },
+      { preview: true }
+    )
+    store.getState().openMarkdownPreview({
+      filePath: '/repo/docs/README.md',
+      relativePath: 'docs/README.md',
+      worktreeId: 'wt-1',
+      language: 'markdown'
+    })
+    store.getState().setMarkdownFrontmatterVisible('/repo/docs/README.md', true)
+    store.getState().setMarkdownTableOfContentsVisible('/repo/docs/README.md', true)
+
+    store.getState().openDiff('wt-1', '/repo/docs/guide.md', 'docs/guide.md', 'markdown', false, {
+      preview: true
+    })
+
+    expect(store.getState().markdownFrontmatterVisible).toEqual({
+      '/repo/docs/README.md': true
+    })
+    expect(store.getState().markdownTableOfContentsVisible).toEqual({
+      '/repo/docs/README.md': true
+    })
+  })
 })
 
 describe('createEditorSlice editor view mode', () => {
@@ -1625,6 +1684,79 @@ describe('createEditorSlice markdown frontmatter visibility (#4468)', () => {
     store.getState().closeAllFiles()
 
     expect(store.getState().markdownFrontmatterVisible).toEqual({})
+  })
+})
+
+describe('createEditorSlice markdown table of contents visibility', () => {
+  it('stores visible=true as an explicit entry keyed by fileId', () => {
+    const store = createEditorStore()
+
+    store.getState().setMarkdownTableOfContentsVisible('/repo/notes.md', true)
+
+    expect(store.getState().markdownTableOfContentsVisible).toEqual({ '/repo/notes.md': true })
+  })
+
+  it('deletes the entry when visibility resets to hidden', () => {
+    const store = createEditorStore()
+    store.getState().setMarkdownTableOfContentsVisible('/repo/notes.md', true)
+
+    store.getState().setMarkdownTableOfContentsVisible('/repo/notes.md', false)
+
+    expect(store.getState().markdownTableOfContentsVisible).toEqual({})
+  })
+
+  it('drops the visibility flag when replacing a preview tab', () => {
+    const store = createEditorStore()
+    store.getState().openFile(
+      {
+        filePath: '/repo/notes.md',
+        relativePath: 'notes.md',
+        worktreeId: 'wt-1',
+        language: 'markdown',
+        mode: 'edit'
+      },
+      { preview: true }
+    )
+    store.getState().setMarkdownTableOfContentsVisible('/repo/notes.md', true)
+
+    store.getState().openFile(
+      {
+        filePath: '/repo/guide.md',
+        relativePath: 'guide.md',
+        worktreeId: 'wt-1',
+        language: 'markdown',
+        mode: 'edit'
+      },
+      { preview: true }
+    )
+
+    expect(store.getState().markdownTableOfContentsVisible).toEqual({})
+  })
+
+  it('keeps the visibility flag while a preview tab still references the source file', () => {
+    const store = createEditorStore()
+    store.getState().openFile({
+      filePath: '/repo/notes.md',
+      relativePath: 'notes.md',
+      worktreeId: 'wt-1',
+      language: 'markdown',
+      mode: 'edit'
+    })
+    store.getState().openMarkdownPreview({
+      filePath: '/repo/notes.md',
+      relativePath: 'notes.md',
+      worktreeId: 'wt-1',
+      language: 'markdown'
+    })
+    store.getState().setMarkdownTableOfContentsVisible('/repo/notes.md', true)
+
+    store.getState().closeFile('/repo/notes.md')
+
+    expect(store.getState().markdownTableOfContentsVisible).toEqual({ '/repo/notes.md': true })
+
+    store.getState().closeFile('markdown-preview::/repo/notes.md')
+
+    expect(store.getState().markdownTableOfContentsVisible).toEqual({})
   })
 })
 
@@ -3367,6 +3499,20 @@ describe('createEditorSlice remote branch actions', () => {
     expect(store.getState().isRemoteOperationActive).toBe(false)
   })
 
+  it('maps pre-push hook failures to hook-specific guidance instead of remote access', async () => {
+    const store = createEditorStore()
+    const pushError = new Error(
+      "git push failed: Command failed: git push origin main\nerror: failed to push some refs to 'origin'\nhusky - pre-push hook exited with code 1\neslint found 2 errors"
+    )
+    gitPushMock.mockRejectedValueOnce(pushError)
+
+    await expect(store.getState().pushBranch('wt-1', '/repo', false)).rejects.toThrow(
+      pushError.message
+    )
+
+    expect(toastErrorMock).toHaveBeenCalledWith('Push blocked — lint failed during push.')
+  })
+
   it('uses a fallback message for generic push errors', async () => {
     const store = createEditorStore()
     const pushError = new Error('network timeout')
@@ -3639,6 +3785,52 @@ describe('createEditorSlice remote branch actions', () => {
     expect(toastErrorMock).toHaveBeenCalledWith(
       'Sync failed — remote moved while syncing. Try again.'
     )
+  })
+
+  it('marks syncBranch inner push hook failures as sync push-stage failures', async () => {
+    const store = createEditorStore()
+    const pushError = new Error(
+      "git push failed: Command failed: git push origin feature\nerror: failed to push some refs to 'origin'\nhusky - pre-push hook exited with code 1"
+    )
+    gitPushMock.mockRejectedValueOnce(pushError)
+
+    let thrown: unknown
+    try {
+      await store.getState().syncBranch('wt-1', '/repo')
+    } catch (error) {
+      thrown = error
+    }
+
+    expect(thrown).toBe(pushError)
+    expect(isSyncPushStageError(thrown)).toBe(true)
+    expect(toastErrorMock).toHaveBeenCalledTimes(1)
+    expect(toastErrorMock).toHaveBeenCalledWith('Sync blocked — pre-push hook failed.')
+  })
+
+  it('does not classify syncBranch fetch-stage hook-looking failures as push blocked', async () => {
+    const store = createEditorStore()
+    gitFetchMock.mockRejectedValueOnce(
+      new Error('fetch failed before push\npre-push hook docs mention eslint')
+    )
+
+    await expect(store.getState().syncBranch('wt-1', '/repo')).rejects.toThrow()
+
+    expect(toastErrorMock).toHaveBeenCalledTimes(1)
+    expect(toastErrorMock).toHaveBeenCalledWith('Sync failed. Check your connection and try again.')
+    expect(gitPushMock).not.toHaveBeenCalled()
+  })
+
+  it('does not classify syncBranch upstream-status hook-looking failures as push blocked', async () => {
+    const store = createEditorStore()
+    gitUpstreamStatusMock.mockRejectedValueOnce(
+      new Error('upstream status failed before push\npre-push hook docs mention eslint')
+    )
+
+    await expect(store.getState().syncBranch('wt-1', '/repo')).rejects.toThrow()
+
+    expect(toastErrorMock).toHaveBeenCalledTimes(1)
+    expect(toastErrorMock).toHaveBeenCalledWith('Sync failed. Check your connection and try again.')
+    expect(gitPushMock).not.toHaveBeenCalled()
   })
 
   it('surfaces the pull-blocked toast when syncBranch pull stage fails', async () => {

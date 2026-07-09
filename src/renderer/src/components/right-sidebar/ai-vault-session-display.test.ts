@@ -9,6 +9,7 @@ import {
 
 const baseSession: AiVaultSession = {
   id: 'codex:1',
+  executionHostId: 'local',
   agent: 'codex',
   sessionId: 'session-1',
   title: 'Fix the flaky golden tests',
@@ -28,6 +29,8 @@ const baseSession: AiVaultSession = {
     { role: 'assistant', text: 'I updated the fixture ordering', timestamp: null },
     { role: 'system', text: 'hidden runtime bookkeeping', timestamp: null }
   ],
+  queuedMessageCount: 0,
+  subagentTranscriptCount: 0,
   resumeCommand: "cd '/Users/ada/repo/app' && codex resume 'session-1'"
 }
 

@@ -55,6 +55,13 @@ export type CodexTrustEntry = {
   matcher?: string
   /** Optional statusMessage field. */
   statusMessage?: string
+  /** Verbatim hash to write instead of computing one. Used when carrying a
+   *  Codex-written approval across files, so trust survives even if Codex's
+   *  hash algorithm drifts from computeTrustedHash. Never fed into hashing. */
+  trustedHash?: string
+  /** Explicit enabled state to write. When absent, a pre-existing
+   *  `enabled = false` on the target block is preserved. */
+  enabled?: boolean
 }
 
 export type CodexHookTrustState = {
@@ -100,10 +107,37 @@ function canonicalize(value: unknown): unknown {
   return value
 }
 
+// Why: reproduces matcher_pattern_for_event (codex-rs
+// hooks/src/events/common.rs). Codex ignores matchers on
+// UserPromptSubmit/Stop and drops them from the hook identity BEFORE
+// hashing, so a hooks.json entry carrying `"matcher": ""` on those
+// events must hash the same as one without it. Including it computes a
+// hash Codex never writes: system trust then looks stale, and
+// removeStaleRuntimeHookTrustEntries deletes the entry Codex wrote on
+// every launch — an endless re-trust prompt for those two events.
+function matcherPatternForEvent(
+  eventLabel: CodexEventLabel,
+  matcher: string | undefined
+): string | undefined {
+  switch (eventLabel) {
+    case 'user_prompt_submit':
+    case 'stop':
+      return undefined
+    case 'pre_tool_use':
+    case 'permission_request':
+    case 'post_tool_use':
+    case 'pre_compact':
+    case 'post_compact':
+    case 'session_start':
+      return matcher
+  }
+}
+
 // Why: reproduces command_hook_hash. NormalizedHookIdentity has `group:
 // MatcherGroup` flattened in, so the wire shape is { event_name, matcher?,
 // hooks: [<normalized handler>] }. `matcher` is omitted (not null) when
-// absent — Rust's Option<String>=None drops through the TOML→JSON path.
+// absent — Rust's Option<String>=None drops through the TOML→JSON path —
+// and normalized per event first (see matcherPatternForEvent).
 // Handler is normalized to timeout=600 (or explicit, min 1) and async=false.
 export function computeTrustedHash(entry: CodexTrustEntry): string {
   const handler: Record<string, unknown> = {
@@ -119,8 +153,9 @@ export function computeTrustedHash(entry: CodexTrustEntry): string {
     event_name: entry.eventLabel,
     hooks: [handler]
   }
-  if (entry.matcher !== undefined) {
-    identity.matcher = entry.matcher
+  const matcher = matcherPatternForEvent(entry.eventLabel, entry.matcher)
+  if (matcher !== undefined) {
+    identity.matcher = matcher
   }
   const serialized = JSON.stringify(canonicalize(identity))
   return `sha256:${createHash('sha256').update(serialized).digest('hex')}`
@@ -280,7 +315,8 @@ export function upsertHookTrustEntriesInContent(
     updated = upsertTrustBlocks(
       updated,
       getTrustKeyWriteVariants(computeTrustKey(entry)),
-      computeTrustedHash(entry)
+      entry.trustedHash ?? computeTrustedHash(entry),
+      entry.enabled
     )
   }
   return updated
@@ -392,7 +428,12 @@ export function escapeTomlString(value: string): string {
     .replaceAll('\t', '\\t')
 }
 
-function upsertTrustBlocks(content: string, keys: readonly string[], hash: string): string {
+function upsertTrustBlocks(
+  content: string,
+  keys: readonly string[],
+  hash: string,
+  explicitEnabled?: boolean
+): string {
   const ranges = keys
     .flatMap((key) => findTrustBlockRanges(content, key))
     .filter(
@@ -403,7 +444,7 @@ function upsertTrustBlocks(content: string, keys: readonly string[], hash: strin
     )
     .sort((a, b) => a.start - b.start)
   if (ranges.length === 0) {
-    const block = buildTrustBlocks(keys, hash, true)
+    const block = buildTrustBlocks(keys, hash, explicitEnabled ?? true)
     if (content.length === 0) {
       return `${block}\n`
     }
@@ -418,13 +459,17 @@ function upsertTrustBlocks(content: string, keys: readonly string[], hash: strin
   // silently re-enabled by the next auto-install on app start.
   // If duplicate blocks already exist, treat any disabled copy as authoritative
   // while collapsing the malformed TOML back to one table.
-  const enabled = !ranges.some((range) => {
-    const existingBlock = content.slice(range.headerLineEnd, range.end)
-    const enabledMatch = /^[ \t]*enabled[ \t]*=[ \t]*(true|false)[ \t\r]*(?:#.*)?$/m.exec(
-      existingBlock
-    )
-    return enabledMatch?.[1] === 'false'
-  })
+  // An explicit enabled state (write-back promotion of an in-Orca /hooks
+  // toggle) overrides that preservation: it IS the user's latest decision.
+  const enabled =
+    explicitEnabled ??
+    !ranges.some((range) => {
+      const existingBlock = content.slice(range.headerLineEnd, range.end)
+      const enabledMatch = /^[ \t]*enabled[ \t]*=[ \t]*(true|false)[ \t\r]*(?:#.*)?$/m.exec(
+        existingBlock
+      )
+      return enabledMatch?.[1] === 'false'
+    })
   const block = buildTrustBlocks(keys, hash, enabled)
   let cursor = 0
   let deduped = ''

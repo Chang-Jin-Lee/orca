@@ -64,6 +64,7 @@ import { onOnboardingReopened } from './components/onboarding/show-onboarding-ev
 import { shouldShowOnboarding } from './components/onboarding/should-show-onboarding'
 import { MarkdownTemplatePicker } from './components/editor/MarkdownTemplatePicker'
 import { FloatingTerminalToggleButton } from './components/floating-terminal/FloatingTerminalToggleButton'
+import { OrcaProfileSwitcher } from './components/orca-profiles/OrcaProfileSwitcher'
 import {
   TOGGLE_FLOATING_TERMINAL_EVENT,
   requestFloatingTerminalOpenMaximized
@@ -112,10 +113,11 @@ import {
 } from './lib/workspace-session'
 import { createSessionWriteSubscriber } from './lib/session-write-subscriber'
 import {
-  fetchWorkspaceSessionFromHosts,
+  fetchWorkspaceSessionWithRuntimeHostOwners,
   patchWorkspaceSessionByHost,
   persistWorkspaceSessionByHostSync
 } from './lib/workspace-session-host-persistence'
+import { collectFolderWorkspaceKeysFromSession } from './lib/workspace-session-hydration-keys'
 import {
   getStartupErrorFallbackUI,
   hydratePersistedUIAfterStartupRead
@@ -158,6 +160,7 @@ import {
   type KeybindingContext,
   type PhysicalModifierToken
 } from '../../shared/keybindings'
+import { toRuntimeExecutionHostId, type ExecutionHostId } from '../../shared/execution-host'
 import {
   ModifierDoubleTapDetector,
   toModifierDoubleTapEvent
@@ -179,6 +182,17 @@ const hasCustomTitleBar = shouldRenderDesktopWindowChrome({
   platform: shortcutPlatform,
   isWebClient: isPairedWebClientWindow()
 })
+
+async function listRuntimeSessionHostIdsForStartup(): Promise<ExecutionHostId[]> {
+  try {
+    return (await window.api.runtimeEnvironments.list()).map((environment) =>
+      toRuntimeExecutionHostId(environment.id)
+    )
+  } catch (err) {
+    console.warn('Failed to list runtime session hosts for startup:', err)
+    return []
+  }
+}
 
 function getKeybindingContext(target: EventTarget | null): KeybindingContext {
   return target instanceof HTMLElement && target.classList.contains('xterm-helper-textarea')
@@ -405,6 +419,7 @@ function App(): React.JSX.Element {
       fetchFolderWorkspacesForAllHosts: s.fetchFolderWorkspacesForAllHosts,
       fetchAllWorktrees: s.fetchAllWorktrees,
       fetchWorktreeLineage: s.fetchWorktreeLineage,
+      fetchOrcaProfiles: s.fetchOrcaProfiles,
       fetchSettings: s.fetchSettings,
       fetchKeybindings: s.fetchKeybindings,
       initGitHubCache: s.initGitHubCache,
@@ -851,24 +866,35 @@ function App(): React.JSX.Element {
       const startupStartedAt = performance.now()
       logRendererStartupDiagnostic('startup-chain-start')
       try {
+        // Why: profile state only feeds the switcher and the add-project
+        // advisory — nothing in the hydration chain reads it synchronously,
+        // so it must not add a serial IPC round-trip before fetchSettings.
+        void actions.fetchOrcaProfiles()
         // Why: repo/worktree hydration routes through settings.activeRuntimeEnvironmentId.
         // Load settings first so a persisted remote runtime does not boot against
         // the local filesystem and then hydrate stale local workspace state.
         await timeRendererStartupStep('fetch-settings', () => actions.fetchSettings())
-        // Why: load local + every configured runtime environment (not just the
-        // active one) so a cold start that restored a remote workspace doesn't
-        // hide local repos. The sidebar "All hosts" scope then shows them all.
-        await timeRendererStartupStep('fetch-repos', () => actions.fetchReposForAllHosts())
-        await timeRendererStartupStep('fetch-project-groups', () =>
-          actions.fetchProjectGroupsForAllHosts()
+        // Why: keybindings + onboarding are main-side reads with no dependency
+        // on the catalog/session steps below, so start them now and await them
+        // at their original positions — the round-trips overlap the local
+        // catalog scans instead of queuing after them. Browser session profiles
+        // are deliberately NOT started early: on a remote runtime they route
+        // through a runtime RPC that may not be connected this early, and a
+        // failed fetch clears the profile list. The floating .catch marks the
+        // rejection handled if an earlier awaited step throws first; each await
+        // still rethrows its own failure.
+        const keybindingsPromise = timeRendererStartupStep('fetch-keybindings', () =>
+          actions.fetchKeybindings()
         )
-        await timeRendererStartupStep('fetch-folder-workspaces', () =>
-          actions.fetchFolderWorkspacesForAllHosts()
+        keybindingsPromise.catch(() => {})
+        const onboardingPromise = timeRendererStartupStep('onboarding-get', () =>
+          window.api.onboarding.get()
         )
-        await timeRendererStartupStep('fetch-worktrees', () => actions.fetchAllWorktrees())
-        await timeRendererStartupStep('fetch-worktree-lineage', () =>
-          actions.fetchWorktreeLineage()
-        )
+        onboardingPromise.catch(() => {})
+        // Why: hydrate persisted UI immediately after ui.get() so first paint
+        // reflects saved view settings before the catalog scans below. ui.get()
+        // is awaited (not overlapped) because the hydrate must land before the
+        // local-first catalog/session steps run.
         const persistedUI = await timeRendererStartupStep('ui-get', () => window.api.ui.get())
         uiHydrated = timeRendererStartupSyncStep('hydrate-persisted-ui', () =>
           hydratePersistedUIAfterStartupRead({
@@ -877,20 +903,49 @@ function App(): React.JSX.Element {
             hydratePersistedUI: actions.hydratePersistedUI
           })
         )
-        // Why: runtime-owned worktree slices live in per-host partitions.
-        // Repos were fetched above, so the known runtime hosts are derivable
-        // here; merge their slices into the unified session the hydrators
-        // expect. An unreadable host partition is skipped (fail-soft).
-        const session = await timeRendererStartupStep('session-get', () =>
-          fetchWorkspaceSessionFromHosts(window.api.session, useAppStore.getState().repos)
+        const startupRuntimeHostIds = await timeRendererStartupStep(
+          'list-runtime-session-hosts',
+          listRuntimeSessionHostIdsForStartup
         )
-        await timeRendererStartupStep('fetch-keybindings', () => actions.fetchKeybindings())
+        // Why: first paint needs local data and persisted view settings, but
+        // saved remote runtimes can spend the full connect timeout. Load only
+        // the local catalog here; remotes refresh after hydration below.
+        await timeRendererStartupStep('fetch-repos-local', () =>
+          actions.fetchReposForAllHosts({ remoteHosts: 'skip' })
+        )
+        await timeRendererStartupStep('fetch-project-groups-local', () =>
+          actions.fetchProjectGroupsForAllHosts({ remoteHosts: 'skip' })
+        )
+        await timeRendererStartupStep('fetch-folder-workspaces-local', () =>
+          actions.fetchFolderWorkspacesForAllHosts({ remoteHosts: 'skip' })
+        )
+        await timeRendererStartupStep('fetch-worktrees', () =>
+          actions.fetchAllWorktrees({ hydrationPurge: 'defer' })
+        )
+        // Why: runtime-owned worktree slices live in per-host partitions.
+        // Remote catalogs now load after first paint, so include saved runtime
+        // host ids from local settings to restore their persisted session slices
+        // without waiting on network reachability. Unreadable partitions skip.
+        const sessionRead = await timeRendererStartupStep('session-get', () =>
+          fetchWorkspaceSessionWithRuntimeHostOwners(
+            window.api.session,
+            useAppStore.getState().repos,
+            startupRuntimeHostIds
+          )
+        )
+        await keybindingsPromise
         if (!cancelled) {
+          const sessionHydrationOptions = {
+            additionalValidWorkspaceKeys: collectFolderWorkspaceKeysFromSession(sessionRead.session)
+          }
           timeRendererStartupSyncStep('hydrate-session-stores', () => {
-            actions.hydrateWorkspaceSession(session)
-            actions.hydrateTabsSession(session)
-            actions.hydrateEditorSession(session)
-            actions.hydrateBrowserSession(session)
+            actions.hydrateWorkspaceSession(sessionRead.session, {
+              ...sessionHydrationOptions,
+              runtimeHostIdByWorkspaceSessionKey: sessionRead.runtimeHostIdByWorkspaceSessionKey
+            })
+            actions.hydrateTabsSession(sessionRead.session, sessionHydrationOptions)
+            actions.hydrateEditorSession(sessionRead.session, sessionHydrationOptions)
+            actions.hydrateBrowserSession(sessionRead.session, sessionHydrationOptions)
           })
           // Why: prune lastVisitedAtByWorktreeId entries whose worktrees
           // no longer exist. Must run AFTER hydration — before this point,
@@ -907,9 +962,7 @@ function App(): React.JSX.Element {
           await timeRendererStartupStep('fetch-browser-session-profiles', () =>
             actions.fetchBrowserSessionProfiles()
           )
-          const onboardingState = await timeRendererStartupStep('onboarding-get', () =>
-            window.api.onboarding.get()
-          )
+          const onboardingState = await onboardingPromise
           if (!cancelled) {
             setOnboarding(onboardingState)
             setOnboardingLoaded(true)
@@ -920,7 +973,7 @@ function App(): React.JSX.Element {
           // tabs through pty.attach on the relay. Passphrase-protected targets
           // are deferred to tab focus to avoid stacking credential dialogs at
           // startup before the user has context.
-          const connectionIds = session.activeConnectionIdsAtShutdown ?? []
+          const connectionIds = sessionRead.session.activeConnectionIdsAtShutdown ?? []
           if (connectionIds.length > 0) {
             try {
               const SSH_RECONNECT_TIMEOUT_MS = 15_000
@@ -1032,6 +1085,23 @@ function App(): React.JSX.Element {
           logRendererStartupDiagnostic('startup-hydration-done', {
             durationMs: Math.round(performance.now() - startupStartedAt)
           })
+          void (async () => {
+            try {
+              await timeRendererStartupStep('remote-catalog-refresh', async () => {
+                await actions.fetchReposForAllHosts()
+                await actions.fetchProjectGroupsForAllHosts()
+                await actions.fetchFolderWorkspacesForAllHosts()
+              })
+              if (!cancelled) {
+                await timeRendererStartupStep('remote-worktree-refresh', async () => {
+                  await actions.fetchAllWorktrees()
+                  await actions.fetchWorktreeLineage()
+                })
+              }
+            } catch (err) {
+              console.warn('Remote startup catalog refresh failed:', err)
+            }
+          })()
         }
       } catch (error) {
         // Why (issue #1158): previously this catch called hydrateWorkspaceSession
@@ -1430,6 +1500,8 @@ function App(): React.JSX.Element {
   // Why: suppress right sidebar controls on full-page navigation surfaces
   // since those surfaces intentionally own the full content area.
   const showRightSidebarControls = !creationLayoutActive && canShowRightSidebarForView(activeView)
+  const showProfileSwitcherInSidebarFooter = showSidebar && sidebarOpen
+  const showProfileSwitcherInTopRight = !showProfileSwitcherInSidebarFooter
 
   const handleToggleExpand = (): void => {
     if (!effectiveActiveTabId) {
@@ -2071,6 +2143,7 @@ function App(): React.JSX.Element {
           </TooltipContent>
         </Tooltip>
       )}
+      {showProfileSwitcherInTopRight ? <OrcaProfileSwitcher /> : null}
       {/* Why: when the right sidebar is open, its own header renders
       an identical close button — hide this copy so only one is
       visible at a time. */}
@@ -2080,6 +2153,25 @@ function App(): React.JSX.Element {
       {hasCustomTitleBar && <div className="window-controls-titlebar-spacer" />}
     </>
   )
+  const workspaceProfileSwitcher =
+    showProfileSwitcherInTopRight &&
+    workspaceChromeActive &&
+    leftTitlebarChromeLayout.shouldMount &&
+    !stackedSidebarOpen ? (
+      <div
+        className="absolute top-0 z-10 flex h-[36px] items-center"
+        style={
+          {
+            right: showRightSidebarControls
+              ? 'calc(var(--window-controls-width) + 42px)'
+              : 'var(--window-controls-width)',
+            WebkitAppRegion: 'no-drag'
+          } as React.CSSProperties
+        }
+      >
+        <OrcaProfileSwitcher />
+      </div>
+    ) : null
 
   return (
     <div
@@ -2257,6 +2349,7 @@ function App(): React.JSX.Element {
                             {rightSidebarToggle}
                           </div>
                         )}
+                        {workspaceProfileSwitcher}
                         <div className="flex flex-1 min-w-0 min-h-0 flex-col">
                           {shouldMountTerminalWorkbench ? (
                             <div

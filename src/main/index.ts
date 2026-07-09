@@ -14,6 +14,7 @@ import {
   getCanonicalUserDataPath,
   migrateMobilePairingDataToCanonicalUserDataPath
 } from './persistence'
+import { ensureActiveOrcaProfile, initOrcaProfilePaths } from './orca-profiles/profile-index-store'
 import { applyAppIcon } from './app-icon'
 import { StatsCollector, initStatsPath } from './stats/collector'
 import { ClaudeUsageStore, initClaudeUsagePath } from './claude-usage/store'
@@ -27,7 +28,8 @@ import { registerCoreHandlers } from './ipc/register-core-handlers'
 import { initObservability, shutdownObservability } from './observability'
 import { startSpan } from './observability/tracer'
 import { registerMobileHandlers } from './ipc/mobile'
-import { initTelemetry, shutdownTelemetry, trackAppOpenedOnce } from './telemetry/client'
+import { initTelemetry, shutdownTelemetry, trackAppOpenedOnce, track } from './telemetry/client'
+import { classifyError } from './telemetry/classify-error'
 import { runManagedHookInstallers } from './agent-hooks/install-telemetry'
 import {
   isAgentStatusHooksEnabled,
@@ -62,6 +64,7 @@ import {
   patchPackagedProcessPath,
   shouldInstallManagedHooks
 } from './startup/configure-process'
+import { enableRendererHeapHeadroom } from './startup/renderer-heap-headroom'
 import { ensureVirtualDisplayForHeadlessServe } from './startup/ensure-virtual-display'
 import {
   readActiveGpuFallbackMarker,
@@ -91,16 +94,26 @@ import {
   shouldBypassSingleInstanceLock
 } from './startup/single-instance-lock'
 import { startEventLoopStallProbe } from './startup/event-loop-stall-probe'
-import { isStartupDiagnosticsEnabled, logStartupDiagnostic } from './startup/startup-diagnostics'
+import { startMainThreadChurnProbe } from './diagnostics/main-thread-churn-probe'
+import {
+  isStartupDiagnosticsEnabled,
+  logStartupDiagnostic,
+  logStartupMilestone
+} from './startup/startup-diagnostics'
 import { ensureWindowsUserDataAclGrant } from './startup/windows-user-data-acl'
 import { shouldQuitWhenAllWindowsClosed } from './startup/window-all-closed-quit-policy'
 import { RateLimitService } from './rate-limits/service'
+import { readMiniMaxSessionCookie } from './minimax/minimax-cookie-store'
 import { getInitialClaudeRateLimitTarget } from './rate-limits/claude-rate-limit-target'
 import { getInitialCodexRateLimitTarget } from './rate-limits/codex-rate-limit-target'
-import { attachMainWindowServices } from './window/attach-main-window-services'
+import {
+  attachMainWindowServices,
+  ensureAutoUpdaterConfigured
+} from './window/attach-main-window-services'
 import { createMainWindow, loadMainWindow } from './window/createMainWindow'
-import { createSystemTray, destroySystemTray } from './tray/system-tray'
+import { createSystemTray, destroySystemTray, setTrayAttention } from './tray/system-tray'
 import { focusExistingMainWindow } from './window/focus-existing-window'
+import { notifyMainWindowBecameVisible } from './window/main-window-visibility'
 import { CodexAccountService } from './codex-accounts/service'
 import { CodexRuntimeHomeService } from './codex-accounts/runtime-home-service'
 import {
@@ -111,6 +124,10 @@ import { normalizeClaudeRuntimeSelection } from './claude-accounts/runtime-selec
 import { codexHookService } from './codex/hook-service'
 import { ClaudeAccountService } from './claude-accounts/service'
 import { ClaudeRuntimeAuthService } from './claude-accounts/runtime-auth-service'
+import {
+  attachClaudeLivePtyPersistence,
+  seedLiveClaudePtysFromPersistence
+} from './claude-accounts/live-pty-gate'
 import { StarNagService } from './star-nag/service'
 import { agentHookServer } from './agent-hooks/server'
 import { maybeAutoRenameBranchOnFirstWork } from './agent-hooks/first-work-branch-rename'
@@ -137,6 +154,7 @@ import { AutomationService } from './automations/service'
 import { createHeadlessAutomationOutputSnapshotBuffer } from './automations/headless-dispatch'
 import { buildHeadlessAutomationWorktreeCreateArgs } from './automations/headless-workspace-create'
 import { AgentAwakeService } from './agent-awake-service'
+import { registerSystemResumeBroadcast } from './system-resume-broadcast'
 import {
   getCrashBreadcrumbSnapshot,
   recordCoalescedCrashBreadcrumb,
@@ -171,6 +189,7 @@ import { applyElectronProxySettings } from './network/proxy-settings'
 import { preserveAgentAuthBeforeRestart } from './agent-auth-restart-preservation'
 import { CliInstaller } from './cli/cli-installer'
 import { installLinuxBareOrcaDispatcher } from './cli/linux-bare-orca-dispatcher'
+import { selfHealRuntimeEnvironmentFocus } from './runtime-environment-focus-self-heal'
 
 let mainWindow: BrowserWindow | null = null
 /** Whether a manual app.quit() (Cmd+Q, etc.) is in progress. Shared with the
@@ -197,11 +216,16 @@ let starNag: StarNagService | null = null
 let agentAwakeService: AgentAwakeService | null = null
 let crashReports: CrashReportStore | null = null
 let unsubscribeAgentAwakeStatusChanges: (() => void) | null = null
+let unsubscribeSystemResumeBroadcast: (() => void) | null = null
 let watcherShutdownPromise: Promise<void> | null = null
 let watcherShutdownDone = false
 let automations: AutomationService | null = null
 let keybindings: KeybindingService | null = null
-let expectedRendererReload: { webContentsId: number; until: number } | null = null
+// Why: a reload/teardown intent set for one renderer must not leak to a later load.
+// The recovery reload re-fires did-finish-load, so its flag lets the local-PTY orphan
+// sweep spare live sessions across that one reload (#5787).
+const expectedRendererReload = createWebContentsTimedFlag()
+const recoveryReloadInFlight = createWebContentsTimedFlag()
 let firstWindowStartupServicesReady: Promise<void> = Promise.resolve()
 // Why: GPU child crashes clustered right after launch indicate a broken driver;
 // track them so Orca can move this build onto software rendering.
@@ -397,6 +421,11 @@ if (app.isPackaged && process.platform !== 'win32') {
 }
 configureDevUserDataPath(is.dev)
 configureOrcaUserDataPathEnv()
+
+// Why: just past createMainWindow's win32 10s ready-to-show reveal fallback,
+// so a window revealed on that path still gets its tray icon.
+const TRAY_CREATE_FALLBACK_MS = 12_000
+
 const startupDiagnosticsEnabled = isStartupDiagnosticsEnabled()
 if (startupDiagnosticsEnabled) {
   logStartupDiagnostic('before-single-instance-lock', {
@@ -409,14 +438,9 @@ if (startupDiagnosticsEnabled) {
   })
   startEventLoopStallProbe()
 }
-
-// Why: startup benchmarking needs in-process timestamps — harness-side stderr
-// arrival times include pipe buffering jitter. `t` is ms since process start.
-function logStartupMilestone(event: string, details: Record<string, unknown> = {}): void {
-  if (startupDiagnosticsEnabled) {
-    logStartupDiagnostic(event, { t: Math.round(performance.now()), ...details })
-  }
-}
+// Self-gated on ORCA_MAIN_THREAD_DIAGNOSTICS; unlike the startup probe it
+// runs for the whole session to catch steady-state churn (issue #7576).
+startMainThreadChurnProbe()
 
 function focusExistingWindow(): void {
   focusExistingMainWindow({
@@ -427,30 +451,66 @@ function focusExistingWindow(): void {
   })
 }
 
+// Why: a webContents-scoped flag that auto-expires so an intent set for one renderer
+// can't leak to a later load. `consume` clears on a positive match for one-shot
+// signals (the recovery reload fires exactly one did-finish-load).
+function createWebContentsTimedFlag(defaultDurationMs = 10_000): {
+  mark: (webContentsId: number, durationMs?: number) => void
+  clear: (webContentsId?: number) => void
+  matches: (webContentsId: number, options?: { consume?: boolean }) => boolean
+} {
+  let state: { webContentsId: number; until: number } | null = null
+  return {
+    mark(webContentsId, durationMs = defaultDurationMs) {
+      state = { webContentsId, until: Date.now() + durationMs }
+    },
+    clear(webContentsId) {
+      if (webContentsId === undefined || state?.webContentsId === webContentsId) {
+        state = null
+      }
+    },
+    matches(webContentsId, options) {
+      if (!state || Date.now() > state.until) {
+        state = null
+        return false
+      }
+      if (state.webContentsId !== webContentsId) {
+        return false
+      }
+      if (options?.consume) {
+        state = null
+      }
+      return true
+    }
+  }
+}
+
 function markExpectedRendererReload(webContentsId: number, durationMs = 10_000): void {
-  expectedRendererReload = { webContentsId, until: Date.now() + durationMs }
+  expectedRendererReload.mark(webContentsId, durationMs)
 }
 
 function clearExpectedRendererReload(webContentsId?: number): void {
-  if (webContentsId === undefined || expectedRendererReload?.webContentsId === webContentsId) {
-    expectedRendererReload = null
-  }
+  expectedRendererReload.clear(webContentsId)
 }
 
 function getExpectedTeardownScope(webContentsId?: number): ExpectedTeardownScope {
   if (isQuitting || isQuittingForUpdate()) {
     return 'app-shutdown'
   }
-  if (!expectedRendererReload) {
+  if (webContentsId === undefined) {
     return 'none'
   }
-  if (Date.now() > expectedRendererReload.until) {
-    expectedRendererReload = null
-    return 'none'
-  }
-  return webContentsId !== undefined && expectedRendererReload.webContentsId === webContentsId
-    ? 'renderer-reload'
-    : 'none'
+  return expectedRendererReload.matches(webContentsId) ? 'renderer-reload' : 'none'
+}
+
+function markRecoveryReloadInFlight(webContentsId: number, durationMs = 10_000): void {
+  recoveryReloadInFlight.mark(webContentsId, durationMs)
+}
+
+function isRecoveryReloadInFlight(webContentsId: number): boolean {
+  // Why: consume on read — the recovery reload fires exactly one did-finish-load,
+  // so a later genuine reload still sweeps orphaned local PTYs.
+  return recoveryReloadInFlight.matches(webContentsId, { consume: true })
 }
 
 function recordAgentStateCrashBreadcrumb(agentType: string, state: string): void {
@@ -523,6 +583,7 @@ if (hasSingleInstanceLock) {
   // orca-dev in dev mode) but before app.setName('Orca') inside whenReady
   // (which would change the resolved path on case-sensitive filesystems).
   initDataPath()
+  initOrcaProfilePaths()
   // Why: same timing constraint as initDataPath — capture the userData path
   // before app.setName changes it. See persistence.ts:20-28.
   initStatsPath()
@@ -535,6 +596,7 @@ if (hasSingleInstanceLock) {
     platform: process.platform
   })
   configureElectronNetworkCompatibility()
+  enableRendererHeapHeadroom()
   maybeApplyGpuFallbackForThisLaunch()
   if (!gpuFallbackActiveThisLaunch) {
     enableMainProcessGpuFeatures()
@@ -585,7 +647,16 @@ function startDesktopFirstWindowStartupServices(): Promise<void> {
       logStartupMilestone('startup-service-done', { service: 'agent-hook-server' })
     },
     onDaemonError: (error) => {
-      console.error('[daemon] Failed to start daemon PTY provider, falling back to local:', error)
+      // Why: daemon startup failure silently dropped terminals onto the local
+      // provider (killed on quit, no persistence) — the v1.4.129-rc.1 outage was
+      // invisible in the field. Log loudly (error.message carries the captured
+      // daemon stderr tail from the fork) and emit a low-cardinality telemetry
+      // signal so a fleet-wide daemon failure is observable without a bug report.
+      const reason = error instanceof Error ? error.message : String(error)
+      console.error(
+        `[daemon] STARTUP FAILED — falling back to local PTYs; terminals will not persist across quit. Reason: ${reason}`
+      )
+      track('daemon_start_failed', classifyError(error))
     },
     onAgentHookServerError: (error) => {
       // Why: Claude/Codex/Gemini/OpenCode/Cursor hook callbacks are sidebar
@@ -777,13 +848,55 @@ function openMainWindow(): BrowserWindow {
         markExpectedRendererReload(webContentsId)
       }
       recordCrashBreadcrumb('manual_reload_requested', { ignoreCache })
+    },
+    // Why: the in-place recovery reload re-fires did-finish-load; flag it so the
+    // local-PTY orphan sweep is skipped for that one reload (#5787).
+    onBeforeRecoveryReload: (webContentsId) => {
+      markRecoveryReloadInFlight(webContentsId)
+      recordCrashBreadcrumb('renderer_recovery_reload')
     }
   })
   recordCrashBreadcrumb('main_window_created')
   logStartupMilestone('window-created')
+  // Why: new Tray() is a synchronous Shell_NotifyIcon call that can block for
+  // seconds while explorer.exe's notification area is busy (part of issue
+  // #7225's pre-paint stall), so create it after first paint. The timer
+  // fallback covers windows revealed without ready-to-show ever firing
+  // (createMainWindow's win32 10s reveal fallback) — those can still be
+  // hidden to the tray on close, so the icon must exist by then.
+  let trayCreated = false
+  const createSystemTrayDeferred = (): void => {
+    if (trayCreated || window.isDestroyed() || isQuitting || !store) {
+      return
+    }
+    trayCreated = true
+    // Why: Windows-only system tray. createSystemTray is idempotent and a
+    // no-op off win32, so calling it on each window open keeps exactly one
+    // live icon.
+    createSystemTray({
+      appIcon: store.getSettings().appIcon,
+      onOpen: showMainWindowFromTray,
+      onQuit: () => {
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          // Why: a real quit can still surface renderer save/discard prompts;
+          // the window must be visible if a hidden-to-tray session vetoes
+          // shutdown.
+          showMainWindowFromTray()
+        }
+        // Why: set the quit latch before app.quit() so the window 'close'
+        // handler proceeds to teardown instead of re-hiding to the tray.
+        isQuitting = true
+        app.quit()
+      }
+    })
+    logStartupMilestone('tray-created')
+  }
   window.once('ready-to-show', () => {
     logStartupMilestone('ready-to-show')
+    setImmediate(createSystemTrayDeferred)
   })
+  const trayCreateFallback = setTimeout(createSystemTrayDeferred, TRAY_CREATE_FALLBACK_MS)
+  trayCreateFallback.unref?.()
 
   // Why: telemetry-plan.md§First-launch experience anchors default-on
   // `app_opened` to the first main-window load. Existing users in the
@@ -849,6 +962,9 @@ function openMainWindow(): BrowserWindow {
         }
         recordCrashBreadcrumb('renderer_reload_requested', { ignoreCache })
       },
+      // Why: let the PTY layer skip its orphan sweep on the one recovery reload
+      // that re-fires did-finish-load, so live local sessions survive it (#5787).
+      isRecoveryReloadInFlight,
       onBeforeUpdateQuit: () =>
         preserveAgentAuthBeforeRestart({ codexRuntimeHome, claudeRuntimeAuth, store })
     }
@@ -879,27 +995,19 @@ function openMainWindow(): BrowserWindow {
     stopAllSyntheticTitleSpinners()
   })
   mainWindow = window
-  // Why: Windows-only system tray. createSystemTray is idempotent and a no-op
-  // off win32, so calling it on each window open keeps exactly one live icon.
-  createSystemTray({
-    appIcon: store.getSettings().appIcon,
-    onOpen: showMainWindowFromTray,
-    onQuit: () => {
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        // Why: a real quit can still surface renderer save/discard prompts; the
-        // window must be visible if a hidden-to-tray session vetoes shutdown.
-        showMainWindowFromTray()
-      }
-      // Why: set the quit latch before app.quit() so the window 'close' handler
-      // proceeds to teardown instead of re-hiding the window to the tray.
-      isQuitting = true
-      app.quit()
-    }
-  })
   window.on('show', resumeSyntheticTitleSpinnerTimer)
   window.on('restore', resumeSyntheticTitleSpinnerTimer)
   window.on('hide', stopSyntheticTitleSpinnerTimer)
   window.on('minimize', stopSyntheticTitleSpinnerTimer)
+  // Why: visibility-gated main-process pollers (SSH port scanner) park while
+  // hidden and rely on this signal to resume; re-wired per window because
+  // macOS dock re-activation recreates the BrowserWindow.
+  window.on('show', notifyMainWindowBecameVisible)
+  window.on('restore', notifyMainWindowBecameVisible)
+  // Why: showing/restoring the window means the user is back, so clear the
+  // tray attention dot set while it was minimized/hidden (see notifications.ts).
+  window.on('show', () => setTrayAttention(false))
+  window.on('restore', () => setTrayAttention(false))
   agentHookServer.setListener(
     ({
       paneKey,
@@ -1540,8 +1648,22 @@ app.whenReady().then(async () => {
   electronApp.setAppUserModelId(devInstanceIdentity.appUserModelId)
   app.setName(devInstanceIdentity.name)
 
-  store = new Store()
+  const activeOrcaProfile = ensureActiveOrcaProfile()
+  store = new Store({ dataFile: activeOrcaProfile.dataFile })
   logStartupMilestone('store-loaded')
+  // Why: must run before ClaudeRuntimeAuthService's constructor sync — a Claude
+  // CLI that survived the restart inside the daemon still holds the current
+  // single-use refresh token, and an unguarded early refresh would rotate it
+  // out from under that process (it then shows "Not logged in" mid-session).
+  attachClaudeLivePtyPersistence(store)
+  const persistedClaudePtyIds = store.getClaudeLivePtySessionIds()
+  seedLiveClaudePtysFromPersistence(persistedClaudePtyIds)
+  if (persistedClaudePtyIds.length > 0) {
+    console.log(
+      `[claude-live-pty] Seeded ${persistedClaudePtyIds.length} persisted Claude session id(s) into the refresh gate`
+    )
+  }
+  selfHealRuntimeEnvironmentFocus({ store, userDataPath: app.getPath('userData') })
   applyAppIcon(store.getSettings().appIcon)
   if (shouldSuppressDevEducation({ isDev: is.dev })) {
     suppressDevEducationForStore(store)
@@ -1555,7 +1677,11 @@ app.whenReady().then(async () => {
   }
   // Why: browser sessions are used by desktop webviews and runtime profile
   // commands, so initialize them at app startup instead of a renderer IPC path.
-  initializeBrowserSessionsForApp()
+  initializeBrowserSessionsForApp({
+    orcaProfileId: activeOrcaProfile.profile.id,
+    profileDirectory: activeOrcaProfile.profileDirectory
+  })
+  unsubscribeSystemResumeBroadcast = registerSystemResumeBroadcast()
   agentAwakeService = new AgentAwakeService()
   agentAwakeService.setEnabled(store.getSettings().keepComputerAwakeWhileAgentsRun)
   // Why: disk-hydrated status rows are UI continuity only. The service starts
@@ -1611,7 +1737,16 @@ app.whenReady().then(async () => {
       workspaceIdOverride: settings.opencodeWorkspaceId
     }
   })
+  rateLimits.setMiniMaxConfigResolver(() => {
+    const settings = store!.getSettings()
+    return {
+      sessionCookie: readMiniMaxSessionCookie() ?? '',
+      groupId: settings.minimaxGroupId,
+      models: settings.minimaxUsageModels
+    }
+  })
   rateLimits.setGeminiCliOAuthEnabledResolver(() => store!.getSettings().geminiCliOAuthEnabled)
+  rateLimits.setNetworkProxySettingsResolver(() => store!.getSettings())
   keybindings = new KeybindingService({
     homePath: app.getPath('home'),
     getLegacyOverrides: () => store!.getSettings().keybindings
@@ -1821,7 +1956,12 @@ app.whenReady().then(async () => {
   logStartupMilestone('i18n-ready')
 
   registerAppMenu({
-    onCheckForUpdates: (options) => checkForUpdatesFromMenu(options),
+    onCheckForUpdates: (options) => {
+      // Why: the menu is clickable before first paint; a manual check must
+      // run against a configured updater (see attach-main-window-services).
+      ensureAutoUpdaterConfigured()
+      return checkForUpdatesFromMenu(options)
+    },
     onBeforeReload: ({ ignoreCache, webContentsId }) => {
       if (mainWindow?.webContents.id === webContentsId) {
         markExpectedRendererReload(webContentsId)
@@ -2015,6 +2155,8 @@ app.whenReady().then(async () => {
         )
       }
     }
+    // Why: headless serve never opens a renderer, so arm scheduled automation dispatch here.
+    automations.start()
     await printServeReady(serveOptions)
     return
   }
@@ -2057,6 +2199,8 @@ app.whenReady().then(async () => {
 
 app.on('before-quit', () => {
   isQuitting = true
+  unsubscribeSystemResumeBroadcast?.()
+  unsubscribeSystemResumeBroadcast = null
   unsubscribeAgentAwakeStatusChanges?.()
   unsubscribeAgentAwakeStatusChanges = null
   agentAwakeService?.dispose()

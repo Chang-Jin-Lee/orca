@@ -123,10 +123,6 @@ vi.mock('electron', () => ({
   }
 }))
 
-vi.mock('./git/repo', () => ({
-  getGitUsername: vi.fn().mockReturnValue('testuser')
-}))
-
 vi.mock('./telemetry/client', () => ({
   track: trackMock
 }))
@@ -339,6 +335,31 @@ describe('Store', () => {
   it('returns empty repos when no data file exists', async () => {
     const store = await createStore()
     expect(store.getRepos()).toEqual([])
+  }, 15_000)
+
+  it('loads state from an explicit profile data file path', async () => {
+    const profileDataDirectory = join(testState.dir, 'profiles', 'local-default')
+    const profileDataFile = join(profileDataDirectory, 'orca-data.json')
+    mkdirSync(profileDataDirectory, { recursive: true })
+    writeDataFile({
+      schemaVersion: 1,
+      repos: [makeRepo({ id: 'legacy-root-repo', path: '/legacy' })]
+    })
+    writeFileSync(
+      profileDataFile,
+      JSON.stringify({
+        schemaVersion: 1,
+        repos: [makeRepo({ id: 'profile-repo', path: '/profile' })]
+      }),
+      'utf-8'
+    )
+
+    vi.resetModules()
+    const { Store, initDataPath } = await import('./persistence')
+    initDataPath()
+    const store = new Store({ dataFile: profileDataFile })
+
+    expect(store.getRepos().map((repo) => repo.id)).toEqual(['profile-repo'])
   }, 15_000)
 
   it('backfills project host setup compatibility records from legacy repos on load', async () => {
@@ -1004,7 +1025,9 @@ describe('Store', () => {
   // ── 2. Load from existing valid file ─────────────────────────────────
 
   it('reads repos from an existing data file', async () => {
-    const repo = makeRepo()
+    // Why: hydration must serve the persisted username without spawning
+    // git/gh (issue #7225); resolution happens in background enrichment.
+    const repo = makeRepo({ gitUsername: 'testuser' })
     writeDataFile({
       schemaVersion: 1,
       repos: [repo],
@@ -2855,7 +2878,24 @@ describe('Store', () => {
     const fetched = store.getRepo('r1')
     expect(fetched).toBeDefined()
     expect(fetched!.displayName).toBe('test')
-    expect(fetched!.gitUsername).toBe('testuser')
+    // No username has been resolved yet — hydration must not probe git/gh.
+    expect(fetched!.gitUsername).toBe('')
+  })
+
+  it('setResolvedRepoGitUsername persists the enriched username for hydration', async () => {
+    const store = await createStore()
+    store.addRepo(makeRepo())
+    expect(store.getRepo('r1')!.gitUsername).toBe('')
+
+    expect(store.setResolvedRepoGitUsername('r1', 'testuser')).toBe(true)
+    expect(store.getRepo('r1')!.gitUsername).toBe('testuser')
+    // Unchanged value reports no change so callers can skip renderer notify.
+    expect(store.setResolvedRepoGitUsername('r1', 'testuser')).toBe(false)
+    expect(store.setResolvedRepoGitUsername('missing', 'x')).toBe(false)
+
+    store.flush()
+    const persisted = readDataFile() as PersistedState
+    expect(persisted.repos[0].gitUsername).toBe('testuser')
   })
 
   it('deleteProjectGroup ungroups repos from the deleted group subtree', async () => {
@@ -2973,6 +3013,16 @@ describe('Store', () => {
     expect(updated?.projectGroupOrder).toBe(1)
   })
 
+  it('updates repo execution host identity', async () => {
+    const store = await createStore()
+    store.addRepo(makeRepo({ id: 'r1' }))
+
+    const updated = store.updateRepo('r1', { executionHostId: 'runtime:env-1' })
+
+    expect(updated?.executionHostId).toBe('runtime:env-1')
+    expect(store.getRepo('r1')?.executionHostId).toBe('runtime:env-1')
+  })
+
   it('getRepo returns undefined for nonexistent id', async () => {
     const store = await createStore()
     expect(store.getRepo('nonexistent')).toBeUndefined()
@@ -3041,6 +3091,270 @@ describe('Store', () => {
     expect(store.getWorktreeLineage('r1::/path/child')).toBeUndefined()
     expect(store.getWorktreeLineage('r2::/other-child')).toBeUndefined()
     expect(store.getWorktreeLineage('r2::/other')).toBeDefined()
+  })
+
+  // ── 6b. removeProjectForHost is host-scoped ───────────────────────────
+
+  it('removeProjectForHost removes only the target host row for a shared repo id', async () => {
+    const store = await createStore()
+    // Same repo id on both local and an SSH host.
+    store.addRepo(makeRepo({ id: 'shared', path: '/local/repo' }))
+    store.addRepo(
+      makeRepo({
+        id: 'shared',
+        path: '/remote/repo',
+        connectionId: 'ssh-old',
+        executionHostId: 'ssh:ssh-old'
+      })
+    )
+    store.setWorktreeMeta('shared::/local/repo/wt', { displayName: 'local-wt', hostId: 'local' })
+    store.setWorktreeMeta('shared::/remote/repo/wt', {
+      displayName: 'remote-wt',
+      hostId: 'ssh:ssh-old'
+    })
+
+    store.removeProjectForHost('shared', 'ssh:ssh-old')
+
+    const remaining = store.getRepos().filter((r) => r.id === 'shared')
+    expect(remaining).toHaveLength(1)
+    expect(remaining[0].path).toBe('/local/repo')
+    // Local worktree meta survives; the SSH host's meta is pruned.
+    expect(store.getWorktreeMeta('shared::/local/repo/wt')).toBeDefined()
+    expect(store.getWorktreeMeta('shared::/remote/repo/wt')).toBeUndefined()
+  })
+
+  it('removeProjectForHost prunes the SSH host meta (tagged hostId) for a shared id', async () => {
+    const store = await createStore()
+    store.addRepo(makeRepo({ id: 'shared', path: '/local/repo' }))
+    store.addRepo(
+      makeRepo({
+        id: 'shared',
+        path: '/remote/repo',
+        connectionId: 'ssh-old',
+        executionHostId: 'ssh:ssh-old'
+      })
+    )
+    // SSH worktree meta correctly carries hostId (the normal, stamped case).
+    store.setWorktreeMeta('shared::/remote/repo/wt', {
+      displayName: 'remote-wt',
+      hostId: 'ssh:ssh-old'
+    })
+    // A hostId-less meta under the same id is treated as local and left behind
+    // (conservative: never deletes the wrong host's meta).
+    store.setWorktreeMeta('shared::/local/repo/wt', { displayName: 'local-wt' })
+
+    store.removeProjectForHost('shared', 'ssh:ssh-old')
+
+    expect(store.getWorktreeMeta('shared::/remote/repo/wt')).toBeUndefined()
+    expect(store.getWorktreeMeta('shared::/local/repo/wt')).toBeDefined()
+  })
+
+  it('removeProjectForHost prunes everything when the id exists on no other host', async () => {
+    const store = await createStore()
+    store.addRepo(makeRepo({ id: 'only', connectionId: 'ssh-x', executionHostId: 'ssh:ssh-x' }))
+    store.setWorktreeMeta('only::/repo/wt', { displayName: 'wt', hostId: 'ssh:ssh-x' })
+
+    store.removeProjectForHost('only', 'ssh:ssh-x')
+
+    expect(store.getRepo('only')).toBeUndefined()
+    expect(store.getWorktreeMeta('only::/repo/wt')).toBeUndefined()
+  })
+
+  // ── 6c. reassignSshTargetId re-adopts orphaned workspaces ─────────────
+
+  it('reassignSshTargetId re-points repos and worktree metas onto the new id', async () => {
+    const store = await createStore()
+    store.addRepo(makeRepo({ id: 'r1', connectionId: 'ssh-old', executionHostId: 'ssh:ssh-old' }))
+    store.setWorktreeMeta('r1::/repo/wt', { displayName: 'wt', hostId: 'ssh:ssh-old' })
+
+    const count = store.reassignSshTargetId('ssh-old', 'ssh-new')
+
+    expect(count).toBe(1)
+    const repo = store.getRepo('r1')!
+    expect(repo.connectionId).toBe('ssh-new')
+    expect(repo.executionHostId).toBe('ssh:ssh-new')
+    expect(store.getWorktreeMeta('r1::/repo/wt')!.hostId).toBe('ssh:ssh-new')
+  })
+
+  it('reassignSshTargetId leaves repos on other hosts untouched', async () => {
+    const store = await createStore()
+    store.addRepo(makeRepo({ id: 'local-repo', path: '/local' }))
+    store.addRepo(
+      makeRepo({
+        id: 'ssh-repo',
+        path: '/remote',
+        connectionId: 'ssh-old',
+        executionHostId: 'ssh:ssh-old'
+      })
+    )
+
+    const count = store.reassignSshTargetId('ssh-old', 'ssh-new')
+
+    expect(count).toBe(1)
+    expect(store.getRepo('local-repo')!.connectionId).toBeUndefined()
+    expect(store.getRepo('ssh-repo')!.connectionId).toBe('ssh-new')
+  })
+
+  it('reassignSshTargetId re-points a repo that only carries connectionId (no executionHostId)', async () => {
+    const store = await createStore()
+    // SSH repos created via addRemoteRepoFromPath leave executionHostId unset.
+    store.addRepo(makeRepo({ id: 'r1', connectionId: 'ssh-old' }))
+
+    const count = store.reassignSshTargetId('ssh-old', 'ssh-new')
+
+    expect(count).toBe(1)
+    const repo = store.getRepo('r1')!
+    expect(repo.connectionId).toBe('ssh-new')
+    // Must not stamp an executionHostId where there wasn't one.
+    expect(repo.executionHostId).toBeUndefined()
+  })
+
+  it('reassignSshTargetId persists a worktree-meta-only re-point (no matching repo)', async () => {
+    const store = await createStore()
+    // A meta on the old SSH host with no corresponding repo row — the re-point
+    // must still be saved, not left in memory only.
+    store.setWorktreeMeta('r1::/remote/wt', { displayName: 'wt', hostId: 'ssh:ssh-old' })
+
+    const count = store.reassignSshTargetId('ssh-old', 'ssh-new')
+    expect(count).toBe(0) // no repo matched
+    store.flush()
+
+    const reloaded = await createStore()
+    expect(reloaded.getWorktreeMeta('r1::/remote/wt')?.hostId).toBe('ssh:ssh-new')
+  })
+
+  it('reassignSshTargetId migrates session pty ids, reconnect list, leases, and host scope', async () => {
+    const store = await createStore()
+    store.addRepo(makeRepo({ id: 'r1', connectionId: 'ssh-old', executionHostId: 'ssh:ssh-old' }))
+    store.setWorkspaceSession({
+      activeRepoId: 'r1',
+      activeWorktreeId: 'r1::/wt',
+      activeTabId: 'tab1',
+      tabsByWorktree: {
+        'r1::/wt': [makeTerminalTab({ id: 'tab1', ptyId: 'ssh:ssh-old@@pty-2' })]
+      },
+      terminalLayoutsByTabId: {},
+      remoteSessionIdsByTabId: { tab1: 'ssh:ssh-old@@pty-2' },
+      activeConnectionIdsAtShutdown: ['ssh-old']
+    })
+    store.upsertSshRemotePtyLease({ targetId: 'ssh-old', ptyId: 'pty-2', state: 'detached' })
+    store.updateUI({
+      workspaceHostScope: 'ssh:ssh-old',
+      visibleWorkspaceHostIds: ['local', 'ssh:ssh-old'],
+      workspaceHostOrder: ['ssh:ssh-old', 'local']
+    })
+
+    store.reassignSshTargetId('ssh-old', 'ssh-new')
+    store.flush()
+
+    const reloaded = await createStore()
+    const session = reloaded.getWorkspaceSession()
+    expect(session.tabsByWorktree['r1::/wt'][0].ptyId).toBe('ssh:ssh-new@@pty-2')
+    expect(session.remoteSessionIdsByTabId).toEqual({ tab1: 'ssh:ssh-new@@pty-2' })
+    expect(session.activeConnectionIdsAtShutdown).toEqual(['ssh-new'])
+    expect(reloaded.getSshRemotePtyLeases('ssh-new')).toHaveLength(1)
+    expect(reloaded.getSshRemotePtyLeases('ssh-old')).toHaveLength(0)
+    const ui = reloaded.getUI()
+    expect(ui.workspaceHostScope).toBe('ssh:ssh-new')
+    expect(ui.visibleWorkspaceHostIds).toEqual(['local', 'ssh:ssh-new'])
+    expect(ui.workspaceHostOrder).toEqual(['ssh:ssh-new', 'local'])
+  })
+
+  it('reassignSshTargetId re-keys a session partition stored under the old ssh host id', async () => {
+    const store = await createStore()
+    store.setWorkspaceSession(
+      {
+        activeRepoId: null,
+        activeWorktreeId: null,
+        activeTabId: null,
+        tabsByWorktree: {
+          'r1::/wt': [makeTerminalTab({ id: 'tab1', ptyId: 'ssh:ssh-old@@pty-9' })]
+        },
+        terminalLayoutsByTabId: {}
+      },
+      'ssh:ssh-old'
+    )
+
+    store.reassignSshTargetId('ssh-old', 'ssh-new')
+    store.flush()
+
+    const reloaded = await createStore()
+    // Old-key partition is gone; the re-keyed one carries migrated pty ids.
+    expect(reloaded.getWorkspaceSession('ssh:ssh-old').tabsByWorktree).toEqual({})
+    expect(reloaded.getWorkspaceSession('ssh:ssh-new').tabsByWorktree['r1::/wt'][0].ptyId).toBe(
+      'ssh:ssh-new@@pty-9'
+    )
+  })
+
+  it('reassignSshTargetId keeps the live partition when both host keys exist', async () => {
+    const store = await createStore()
+    const baseSession = {
+      activeRepoId: null,
+      activeWorktreeId: null,
+      activeTabId: null,
+      terminalLayoutsByTabId: {}
+    }
+    store.setWorkspaceSession(
+      { ...baseSession, tabsByWorktree: { 'r1::/dead': [] } },
+      'ssh:ssh-old'
+    )
+    store.setWorkspaceSession(
+      { ...baseSession, tabsByWorktree: { 'r1::/live': [] } },
+      'ssh:ssh-new'
+    )
+
+    store.reassignSshTargetId('ssh-old', 'ssh-new')
+
+    expect(store.getWorkspaceSession('ssh:ssh-old').tabsByWorktree).toEqual({})
+    expect(store.getWorkspaceSession('ssh:ssh-new').tabsByWorktree).toEqual({ 'r1::/live': [] })
+  })
+
+  it('reassignSshTargetId re-points an independent provisioned host setup', async () => {
+    const store = await createStore()
+    store.addRepo({
+      ...makeRepo({ id: 'r1', displayName: 'Cloud Project' }),
+      upstream: { owner: 'stablyai', repo: 'cloud-project' }
+    })
+    store.createProjectHostSetup({
+      projectId: 'github:stablyai/cloud-project',
+      hostId: 'ssh:ssh-old',
+      setupId: 'cloud-project::ssh-old',
+      setupMethod: 'provisioned'
+    })
+
+    // Meta-only re-adoption (no repo pinned to the old id) must still migrate
+    // the provisioned setup, or new worktrees would be born on a dead host id.
+    store.reassignSshTargetId('ssh-old', 'ssh-new')
+
+    const setups = store.getProjectHostSetups()
+    const provisioned = setups.find((entry) => entry.id === 'cloud-project::ssh-old')
+    expect(provisioned?.hostId).toBe('ssh:ssh-new')
+  })
+
+  it('reassignSshTargetId drops a stale setup when the new host already has one', async () => {
+    const store = await createStore()
+    store.addRepo({
+      ...makeRepo({ id: 'r1', displayName: 'Cloud Project' }),
+      upstream: { owner: 'stablyai', repo: 'cloud-project' }
+    })
+    store.createProjectHostSetup({
+      projectId: 'github:stablyai/cloud-project',
+      hostId: 'ssh:ssh-old',
+      setupId: 'setup-old',
+      setupMethod: 'provisioned'
+    })
+    store.createProjectHostSetup({
+      projectId: 'github:stablyai/cloud-project',
+      hostId: 'ssh:ssh-new',
+      setupId: 'setup-new',
+      setupMethod: 'provisioned'
+    })
+
+    store.reassignSshTargetId('ssh-old', 'ssh-new')
+
+    const setups = store.getProjectHostSetups()
+    expect(setups.find((entry) => entry.id === 'setup-old')).toBeUndefined()
+    expect(setups.find((entry) => entry.id === 'setup-new')?.hostId).toBe('ssh:ssh-new')
   })
 
   // ── 7. updateRepo ──────────────────────────────────────────────────
@@ -4720,6 +5034,33 @@ describe('Store', () => {
     expect(restarted.getGitHubCache().pr['o/r#7']).toEqual({ fetchedAt: 7 })
   })
 
+  it('keeps GitHub cache sidecars scoped to explicit profile data files', async () => {
+    const profileADir = join(testState.dir, 'profiles', 'a')
+    const profileBDir = join(testState.dir, 'profiles', 'b')
+    const profileADataFile = join(profileADir, 'orca-data.json')
+    const profileBDataFile = join(profileBDir, 'orca-data.json')
+    mkdirSync(profileADir, { recursive: true })
+    mkdirSync(profileBDir, { recursive: true })
+
+    vi.resetModules()
+    const { Store, initDataPath } = await import('./persistence')
+    initDataPath()
+    const profileAStore = new Store({ dataFile: profileADataFile })
+    profileAStore.setGitHubCache({ pr: { 'o/r#a': { fetchedAt: 10 } as never }, issue: {} })
+    profileAStore.flush()
+
+    const profileBStore = new Store({ dataFile: profileBDataFile })
+    expect(profileBStore.getGitHubCache().pr['o/r#a']).toBeUndefined()
+    profileBStore.setGitHubCache({ pr: { 'o/r#b': { fetchedAt: 20 } as never }, issue: {} })
+    profileBStore.flush()
+
+    const restartedProfileA = new Store({ dataFile: profileADataFile })
+    const restartedProfileB = new Store({ dataFile: profileBDataFile })
+    expect(restartedProfileA.getGitHubCache().pr['o/r#a']).toEqual({ fetchedAt: 10 })
+    expect(restartedProfileA.getGitHubCache().pr['o/r#b']).toBeUndefined()
+    expect(restartedProfileB.getGitHubCache().pr['o/r#b']).toEqual({ fetchedAt: 20 })
+  })
+
   it('keeps a legacy in-file cache as the seed and strips it from disk', async () => {
     writeDataFile({ githubCache: { pr: { legacy: { fetchedAt: 1 } }, issue: {} } })
 
@@ -6089,6 +6430,49 @@ describe('Store', () => {
     })
     const ref = session.terminalLayoutsByTabId['remote-tab'].scrollbackRefsByLeafId?.[TEST_LEAF_2]
     expect(ref ? store.readTerminalScrollbackSnapshot(ref) : null).toBe('remote-scrollback')
+  })
+
+  it('stores terminal scrollback snapshots beside explicit profile data files', async () => {
+    const profileDataDirectory = join(testState.dir, 'profiles', 'local-default')
+    const profileDataFile = join(profileDataDirectory, 'orca-data.json')
+    mkdirSync(profileDataDirectory, { recursive: true })
+
+    vi.resetModules()
+    const { Store, initDataPath } = await import('./persistence')
+    initDataPath()
+    const store = new Store({ dataFile: profileDataFile })
+    store.addRepo(makeRepo({ id: 'remote-repo', connectionId: 'ssh-target-1' }))
+    const session = makeSessionWithTerminalBuffers()
+    store.setWorkspaceSession({
+      ...session,
+      tabsByWorktree: { 'remote-repo::/remote': session.tabsByWorktree['remote-repo::/remote'] },
+      terminalLayoutsByTabId: { 'remote-tab': session.terminalLayoutsByTabId['remote-tab'] }
+    })
+
+    const ref =
+      store.getWorkspaceSession().terminalLayoutsByTabId['remote-tab'].scrollbackRefsByLeafId?.[
+        TEST_LEAF_2
+      ]
+    expect(ref).toEqual(expect.stringMatching(/^v1-[0-9a-f]{32}$/))
+    expect(existsSync(join(profileDataDirectory, 'terminal-scrollback', `${ref}.bin`))).toBe(true)
+    expect(existsSync(join(testState.dir, 'terminal-scrollback', `${ref}.bin`))).toBe(false)
+  })
+
+  it('reads legacy terminal scrollback snapshots for explicit profile data files', async () => {
+    const profileDataDirectory = join(testState.dir, 'profiles', 'local-default')
+    const profileDataFile = join(profileDataDirectory, 'orca-data.json')
+    const ref = 'v1-11111111111111111111111111111111'
+    const legacySnapshotDir = join(testState.dir, 'terminal-scrollback')
+    mkdirSync(profileDataDirectory, { recursive: true })
+    mkdirSync(legacySnapshotDir, { recursive: true })
+    writeFileSync(join(legacySnapshotDir, `${ref}.bin`), 'legacy-scrollback', 'utf-8')
+
+    vi.resetModules()
+    const { Store, initDataPath } = await import('./persistence')
+    initDataPath()
+    const store = new Store({ dataFile: profileDataFile })
+
+    expect(store.readTerminalScrollbackSnapshot(ref)).toBe('legacy-scrollback')
   })
 
   it('caps oversized browser history when setting workspace session', async () => {
@@ -8429,6 +8813,69 @@ describe('Store', () => {
 
     expect(store.getWorkspaceLineage(folderLineage.childWorkspaceKey)).toBeUndefined()
     expect(store.getWorkspaceLineage(unrelatedLineage.childWorkspaceKey)).toEqual(unrelatedLineage)
+  })
+
+  // ── Live Claude PTY session ids (STA-1246) ─────────────────────────
+
+  describe('claudeLivePtySessionIds', () => {
+    it('persists added ids across reloads and removes them durably', async () => {
+      const store = await createStore()
+
+      store.addClaudeLivePtySessionId('claude-session-1')
+      store.addClaudeLivePtySessionId('claude-session-2')
+      store.addClaudeLivePtySessionId('claude-session-1')
+
+      expect(store.getClaudeLivePtySessionIds()).toEqual(['claude-session-1', 'claude-session-2'])
+
+      const reloaded = await createStore()
+      expect(reloaded.getClaudeLivePtySessionIds()).toEqual([
+        'claude-session-1',
+        'claude-session-2'
+      ])
+
+      reloaded.removeClaudeLivePtySessionId('claude-session-1')
+      reloaded.flush()
+
+      const reloadedAgain = await createStore()
+      expect(reloadedAgain.getClaudeLivePtySessionIds()).toEqual(['claude-session-2'])
+    })
+
+    it('drops malformed persisted entries on load', async () => {
+      writeDataFile({
+        schemaVersion: 1,
+        claudeLivePtySessionIds: ['valid-id', '', 42, null, 'valid-id', 'x'.repeat(513)]
+      })
+
+      const store = await createStore()
+
+      expect(store.getClaudeLivePtySessionIds()).toEqual(['valid-id'])
+    })
+
+    it('keeps the newest ids when an oversized persisted list is loaded', async () => {
+      writeDataFile({
+        schemaVersion: 1,
+        claudeLivePtySessionIds: Array.from({ length: 205 }, (_, index) => `claude-${index}`)
+      })
+
+      const store = await createStore()
+
+      const ids = store.getClaudeLivePtySessionIds()
+      expect(ids).toHaveLength(200)
+      expect(ids[0]).toBe('claude-5')
+      expect(ids[199]).toBe('claude-204')
+    })
+
+    it('caps the persisted id list', async () => {
+      const store = await createStore()
+      for (let index = 0; index < 205; index += 1) {
+        store.addClaudeLivePtySessionId(`claude-session-${index}`)
+      }
+
+      const ids = store.getClaudeLivePtySessionIds()
+      expect(ids).toHaveLength(200)
+      expect(ids[0]).toBe('claude-session-5')
+      expect(ids[199]).toBe('claude-session-204')
+    })
   })
 
   // ── Rolling backups (issue #1158) ──────────────────────────────────

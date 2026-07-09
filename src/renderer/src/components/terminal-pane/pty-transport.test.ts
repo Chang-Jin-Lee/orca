@@ -137,6 +137,65 @@ describe('createIpcPtyTransport', () => {
     expect(onReplayData).toHaveBeenCalledWith('new replay')
   })
 
+  it('keeps the live handler when detach() runs after a newer transport attached to the same PTY', async () => {
+    // Why: pane->tab detach and split-group moves rehome the React subtree, so
+    // the NEW TerminalPane can attach to the same ptyId BEFORE the old pane's
+    // unmount detach() runs. An unconditional unregister deletes the live
+    // handler and the pane freezes with the PTY still alive (frozen-pane bug).
+    const { createIpcPtyTransport } = await import('./pty-transport')
+    const receivedByNewPane = vi.fn()
+    const replayedToNewPane = vi.fn()
+    const exitSeenByNewPane = vi.fn()
+    const receivedByOldPane = vi.fn()
+
+    const oldPane = createIpcPtyTransport({})
+    await oldPane.connect({ url: '', callbacks: { onData: receivedByOldPane } })
+
+    const newPane = createIpcPtyTransport({})
+    newPane.attach?.({
+      existingPtyId: 'pty-1',
+      callbacks: {
+        onData: receivedByNewPane,
+        onReplayData: replayedToNewPane,
+        onExit: exitSeenByNewPane
+      }
+    })
+    oldPane.detach?.()
+
+    onData?.({ id: 'pty-1', data: 'live output' })
+    onReplay?.({ id: 'pty-1', data: 'replay output' })
+
+    expect(receivedByNewPane).toHaveBeenCalledWith('live output')
+    expect(replayedToNewPane).toHaveBeenCalledWith('replay output')
+    expect(receivedByOldPane).not.toHaveBeenCalled()
+
+    onExit?.({ id: 'pty-1', code: 0 })
+    expect(exitSeenByNewPane).toHaveBeenCalledWith(0)
+  })
+
+  it('buffers data across a normal detach-then-attach gap and drains it to the next pane', async () => {
+    const { createIpcPtyTransport } = await import('./pty-transport')
+    const receivedByNewPane = vi.fn()
+
+    const oldPane = createIpcPtyTransport({})
+    await oldPane.connect({ url: '', callbacks: { onData: vi.fn() } })
+    oldPane.detach?.()
+
+    onData?.({ id: 'pty-1', data: 'buffered while detached' })
+    expect(receivedByNewPane).not.toHaveBeenCalled()
+
+    const newPane = createIpcPtyTransport({})
+    newPane.attach?.({
+      existingPtyId: 'pty-1',
+      callbacks: { onData: receivedByNewPane }
+    })
+
+    expect(receivedByNewPane).toHaveBeenCalledWith('buffered while detached')
+
+    onData?.({ id: 'pty-1', data: 'live after reattach' })
+    expect(receivedByNewPane).toHaveBeenCalledWith('live after reattach')
+  })
+
   it('exposes the connection identity captured at transport creation', async () => {
     const { createIpcPtyTransport } = await import('./pty-transport')
 
@@ -161,6 +220,56 @@ describe('createIpcPtyTransport', () => {
       shellOverride: 'wsl.exe'
     })
     expect(sshTransport.getLocalSessionMetadata?.()).toBeNull()
+  })
+
+  it('sends the missing-cwd fallback flag only for local IPC spawns', async () => {
+    const { createIpcPtyTransport } = await import('./pty-transport')
+    const spawn = window.api.pty.spawn as unknown as ReturnType<typeof vi.fn>
+
+    const transport = createIpcPtyTransport({ cwdFallback: 'worktree' })
+    await transport.connect({ url: '', callbacks: {} })
+
+    expect(spawn).toHaveBeenCalledWith(expect.objectContaining({ cwdFallback: 'worktree' }))
+    transport.disconnect()
+  })
+
+  it('omits the missing-cwd fallback flag when the IPC transport is SSH-tagged', async () => {
+    const { createIpcPtyTransport } = await import('./pty-transport')
+    const spawn = window.api.pty.spawn as unknown as ReturnType<typeof vi.fn>
+
+    const transport = createIpcPtyTransport({ connectionId: 'ssh-1', cwdFallback: 'worktree' })
+    await transport.connect({ url: '', callbacks: {} })
+
+    expect(spawn).toHaveBeenCalledWith(expect.not.objectContaining({ cwdFallback: 'worktree' }))
+    transport.disconnect()
+  })
+
+  it('omits the missing-cwd fallback flag for session reattach spawns', async () => {
+    const { createIpcPtyTransport } = await import('./pty-transport')
+    const spawn = window.api.pty.spawn as unknown as ReturnType<typeof vi.fn>
+
+    const transport = createIpcPtyTransport({ cwdFallback: 'worktree' })
+    await transport.connect({ url: '', callbacks: {}, sessionId: 'session-1' })
+
+    expect(spawn).toHaveBeenCalledWith(expect.not.objectContaining({ cwdFallback: 'worktree' }))
+    transport.disconnect()
+  })
+
+  it('returns startup cwd fallback metadata to the connection layer', async () => {
+    const { createIpcPtyTransport } = await import('./pty-transport')
+    const spawn = window.api.pty.spawn as unknown as ReturnType<typeof vi.fn>
+    spawn.mockResolvedValueOnce({
+      id: 'pty-1',
+      startupCwdFallback: { kind: 'worktree', cwd: '/repo/app' }
+    })
+
+    const transport = createIpcPtyTransport({ cwdFallback: 'worktree' })
+
+    await expect(transport.connect({ url: '', callbacks: {} })).resolves.toEqual({
+      id: 'pty-1',
+      startupCwdFallback: { kind: 'worktree', cwd: '/repo/app' }
+    })
+    transport.disconnect()
   })
 
   it('defers title side effects until after terminal data is delivered', async () => {
@@ -1026,6 +1135,51 @@ describe('createIpcPtyTransport', () => {
     })
   })
 
+  it('threads the daemon pendingEscapeTailAnsi through the reattach connect result (#7329)', async () => {
+    // Why: the local daemon ships the mid-escape tail on the spawn/reattach
+    // result; dropping it here silently regressed the local half of #7329
+    // (the consumer test injects at the transport boundary, so only this
+    // asserts the IPC threading).
+    const { createIpcPtyTransport } = await import('./pty-transport')
+    const spawnMock = vi.fn().mockResolvedValue({
+      id: 'pty-reattach-tail',
+      isReattach: true,
+      snapshot: 'snapshot data',
+      snapshotCols: 80,
+      snapshotRows: 24,
+      pendingEscapeTailAnsi: '\x1b[3'
+    })
+
+    ;(globalThis as { window: typeof window }).window = {
+      ...originalWindow,
+      api: {
+        ...originalWindow?.api,
+        pty: {
+          ...originalWindow?.api?.pty,
+          spawn: spawnMock,
+          write: vi.fn(),
+          resize: vi.fn(),
+          kill: vi.fn(),
+          onData: vi.fn(() => () => {}),
+          onReplay: vi.fn(() => () => {}),
+          onExit: vi.fn(() => () => {})
+        }
+      }
+    } as unknown as typeof window
+
+    const transport = createIpcPtyTransport()
+    const result = await transport.connect({
+      url: '',
+      sessionId: 'pty-reattach-tail',
+      callbacks: {}
+    })
+
+    expect(result).toMatchObject({
+      id: 'pty-reattach-tail',
+      pendingEscapeTailAnsi: '\x1b[3'
+    })
+  })
+
   it('kills a PTY that finishes spawning after the transport was destroyed', async () => {
     const { createIpcPtyTransport } = await import('./pty-transport')
     const spawnControls: { resolve: ((value: { id: string }) => void) | null } = { resolve: null }
@@ -1322,6 +1476,50 @@ describe('createIpcPtyTransport', () => {
     })
 
     expect(onError).not.toHaveBeenCalled()
+  })
+
+  it('recovers a stale cross-connection SSH reattach as expired instead of a red error toast', async () => {
+    // Why: a restored SSH pty id embeds the connection it was created under. If
+    // the pane reattaches under a different connection the main-side router
+    // rejects with "belongs to SSH connection" — that session is unreachable, so
+    // we drop it (sessionExpired) and spawn fresh rather than surfacing a crash.
+    const { createIpcPtyTransport } = await import('./pty-transport')
+    const spawnMock = vi
+      .fn()
+      .mockRejectedValue(
+        new Error(
+          'PTY ssh:ssh-1779863656395-57g1q1@@pty-3 belongs to SSH connection "ssh-1779863656395-57g1q1"'
+        )
+      )
+    ;(globalThis as { window: typeof window }).window = {
+      ...originalWindow,
+      api: {
+        ...originalWindow?.api,
+        pty: {
+          ...originalWindow?.api?.pty,
+          spawn: spawnMock,
+          write: vi.fn(),
+          resize: vi.fn(),
+          kill: vi.fn(),
+          onData: vi.fn(() => () => {}),
+          onReplay: vi.fn(() => () => {}),
+          onExit: vi.fn(() => () => {})
+        }
+      }
+    } as unknown as typeof window
+
+    const onError = vi.fn()
+    const result = await createIpcPtyTransport({ connectionId: 'ssh-other' }).connect({
+      url: '',
+      sessionId: 'ssh:ssh-1779863656395-57g1q1@@pty-3',
+      callbacks: { onError }
+    })
+
+    expect(onError).not.toHaveBeenCalled()
+    expect(result).toEqual({
+      id: 'ssh:ssh-1779863656395-57g1q1@@pty-3',
+      sessionExpired: true
+    })
   })
 
   it('surfaces terminal session state save failures without the Electron IPC wrapper', async () => {

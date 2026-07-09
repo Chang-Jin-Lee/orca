@@ -31,7 +31,9 @@ import { createOpenCodeUsageSlice } from './opencode-usage'
 import { createBrowserSlice } from './browser'
 import { createRateLimitSlice } from './rate-limits'
 import { createSshSlice } from './ssh'
+import { createRuntimeEnvironmentSshSlice } from './runtime-environment-ssh'
 import { createAgentStatusSlice } from './agent-status'
+import { createPaneForegroundAgentSlice } from './pane-foreground-agent'
 import { createDiffCommentsSlice } from './diffComments'
 import { createDetectedAgentsSlice } from './detected-agents'
 import { createWorktreeNavHistorySlice } from './worktree-nav-history'
@@ -42,6 +44,8 @@ import { createPullRequestGenerationSlice } from './pull-request-generation'
 import { createCommitMessageGenerationSlice } from './commit-message-generation'
 import { createPinnedTabCloseConfirmSlice } from './pinned-tab-close-confirm'
 import { createRecentlyClosedTabsSlice } from './recently-closed-tabs'
+import { createOrcaProfilesSlice } from './orca-profiles'
+import { createNewIssueDraftSlice } from './new-issue-draft'
 import { translate } from '@/i18n/i18n'
 
 export const TEST_REPO = {
@@ -77,7 +81,9 @@ export function createTestStore() {
     ...createBrowserSlice(...a),
     ...createRateLimitSlice(...a),
     ...createSshSlice(...a),
+    ...createRuntimeEnvironmentSshSlice(...a),
     ...createAgentStatusSlice(...a),
+    ...createPaneForegroundAgentSlice(...a),
     ...createDiffCommentsSlice(...a),
     ...createDetectedAgentsSlice(...a),
     ...createWorktreeNavHistorySlice(...a),
@@ -87,7 +93,9 @@ export function createTestStore() {
     ...createPullRequestGenerationSlice(...a),
     ...createCommitMessageGenerationSlice(...a),
     ...createPinnedTabCloseConfirmSlice(...a),
-    ...createRecentlyClosedTabsSlice(...a)
+    ...createRecentlyClosedTabsSlice(...a),
+    ...createOrcaProfilesSlice(...a),
+    ...createNewIssueDraftSlice(...a)
   }))
 }
 
