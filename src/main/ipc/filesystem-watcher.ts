@@ -500,13 +500,12 @@ async function doInstallLocalWatcher(
   }
 
   try {
-    // Why: WSL paths use one snapshot subprocess inside the Linux distro so
-    // `wsl --shutdown` can kill it; native Windows paths use @parcel/watcher.
+    // Why: WSL paths are watched inside Linux so native kernel events remain
+    // reliable; native host paths use the platform watcher process.
     root = isWslPath(worktreePath)
       ? await createWslWatcher(rootKey, worktreePath, {
           ignoreDirs: WATCHER_IGNORE_DIRS,
-          scheduleBatchFlush,
-          watchedRoots
+          scheduleBatchFlush
         })
       : await createWatcher(rootKey, rootKey)
   } catch {
