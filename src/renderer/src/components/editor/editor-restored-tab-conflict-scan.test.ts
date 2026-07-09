@@ -250,6 +250,43 @@ describe('attachRestoredTabConflictScan', () => {
     }
   })
 
+  it('caps concurrent verification reads and drains the queue without dropping tabs', async () => {
+    // Why: a restored session with many dirty tabs must not fire one disk
+    // read per tab at once — on SSH/remote runtimes that competes with
+    // connection recovery. The cap is 3; the rest queue and all complete.
+    const pendingReads: ((value: { content: string; isBinary: boolean }) => void)[] = []
+    mocks.readRuntimeFileContent.mockImplementation(
+      () =>
+        new Promise<{ content: string; isBinary: boolean }>((resolve) => {
+          pendingReads.push(resolve)
+        })
+    )
+    const store = createEditorStore()
+    for (let i = 0; i < 6; i++) {
+      openRestoredDirtyTab(store, `/repo/file-${i}.ts`, 'original baseline')
+    }
+
+    const detach = attachRestoredTabConflictScan(store)
+    try {
+      expect(mocks.readRuntimeFileContent).toHaveBeenCalledTimes(3)
+
+      pendingReads.shift()!({ content: 'original baseline', isBinary: false })
+      await vi.advanceTimersByTimeAsync(10)
+      expect(mocks.readRuntimeFileContent).toHaveBeenCalledTimes(4)
+
+      while (pendingReads.length > 0) {
+        pendingReads.shift()!({ content: 'original baseline', isBinary: false })
+        await vi.advanceTimersByTimeAsync(10)
+      }
+      expect(mocks.readRuntimeFileContent).toHaveBeenCalledTimes(6)
+      for (const file of store.getState().openFiles) {
+        expect(file.pendingDiskBaselineVerification).toBeUndefined()
+      }
+    } finally {
+      detach()
+    }
+  })
+
   it('does not mark a tab that was saved while the read was in flight', async () => {
     let resolveRead: (value: { content: string; isBinary: boolean }) => void = () => {}
     mocks.readRuntimeFileContent.mockReturnValue(
