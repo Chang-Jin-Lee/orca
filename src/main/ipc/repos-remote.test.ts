@@ -103,7 +103,14 @@ vi.mock('../git/repo', async () => {
 
 vi.mock('../git/runner', () => ({
   gitExecFileAsync: vi.fn(),
-  gitSpawn: gitSpawnMock
+  gitSpawn: gitSpawnMock,
+  // Mirrors the real guard's credential-prompt markers so the clone regression
+  // test (#7652) can assert Git Credential Manager's OAuth popup is disabled.
+  nonInteractiveGitEnv: (env: NodeJS.ProcessEnv = process.env) => ({
+    ...env,
+    GIT_TERMINAL_PROMPT: '0',
+    GCM_INTERACTIVE: 'never'
+  })
 }))
 
 vi.mock('../git/worktree', () => ({
@@ -2065,6 +2072,28 @@ describe('repos:add + repos:clone', () => {
       expect.objectContaining({ cwd: destination })
     )
     expect(result).toHaveProperty('path', join(destination, 'orca'))
+  })
+
+  it('clones with the non-interactive credential guard so Git Credential Manager cannot pop its OAuth window (#7652)', async () => {
+    const destination = await createTempRoot()
+
+    await handlers.get('repos:clone')!(null, {
+      url: 'https://example.com/orca.git',
+      destination
+    })
+
+    // Without this env, a clone that needs GitHub auth makes Git Credential
+    // Manager pop its "Connect to GitHub" OAuth window on Windows and loop it
+    // when the network cannot complete the flow.
+    expect(gitSpawnMock).toHaveBeenCalledWith(
+      ['clone', '--progress', '--', 'https://example.com/orca.git', join(destination, 'orca')],
+      expect.objectContaining({
+        env: expect.objectContaining({
+          GIT_TERMINAL_PROMPT: '0',
+          GCM_INTERACTIVE: 'never'
+        })
+      })
+    )
   })
 
   it('treats cloneAbort with no active clone as a no-op', async () => {

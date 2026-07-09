@@ -41,7 +41,7 @@ import {
   AGENT_PROMPT_SUBMIT_DELAY_MS,
   buildAgentPromptPasteBytes
 } from '../../shared/agent-prompt-injection'
-import { gitExecFileAsync, wslAwareSpawn } from '../git/runner'
+import { gitExecFileAsync, wslAwareSpawn, nonInteractiveGitEnv } from '../git/runner'
 import {
   cleanupClaimedCloneTarget,
   claimCloneTarget,
@@ -10666,6 +10666,12 @@ export class OrcaRuntimeService {
       try {
         proc = wslAwareSpawn('git', ['clone', '--progress', '--', trimmedUrl, clonePath], {
           cwd: trimmedDestination,
+          // Why: without the non-interactive guard, a clone that needs GitHub
+          // auth makes Git Credential Manager pop its "Connect to GitHub" OAuth
+          // window on Windows; in a network-restricted env the browser/device
+          // flow can never complete and git's credential retry re-pops it
+          // (issue #7652). Fail fast with a clear error instead.
+          env: nonInteractiveGitEnv(),
           stdio: ['ignore', 'ignore', 'pipe']
         })
       } catch (err) {

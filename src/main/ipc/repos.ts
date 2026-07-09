@@ -42,7 +42,7 @@ import { isTuiAgent } from '../../shared/tui-agent-config'
 import { invalidateAuthorizedRootsCache } from './filesystem-auth'
 import type { ChildProcess } from 'node:child_process'
 import { access, mkdir, readdir, rm } from 'node:fs/promises'
-import { gitExecFileAsync, gitSpawn } from '../git/runner'
+import { gitExecFileAsync, gitSpawn, nonInteractiveGitEnv } from '../git/runner'
 import { isAbsolute, join, posix } from 'node:path'
 import {
   cleanupClaimedCloneTarget,
@@ -2253,6 +2253,13 @@ export function registerRepoHandlers(mainWindow: BrowserWindow, store: Store): v
           try {
             proc = gitSpawn(['clone', '--progress', '--', args.url, clonePath], {
               cwd: args.destination,
+              // Why: without the non-interactive guard, a clone that needs
+              // GitHub auth makes Git Credential Manager pop its "Connect to
+              // GitHub" OAuth window on Windows; in a network-restricted env the
+              // browser/device flow can never complete and git's credential
+              // retry re-pops it (issue #7652). Fail fast with a clear error and
+              // let Orca's non-intrusive GitHub state stand instead.
+              env: nonInteractiveGitEnv(),
               stdio: ['ignore', 'ignore', 'pipe']
             })
           } catch (err) {
