@@ -9803,7 +9803,13 @@
             "sessionRole": "세션",
             "jumpToOriginalPane": "원래 창으로 이동",
             "worktree": "작업 트리",
-            "jumpToWorktree": "작업 트리로 이동"
+            "jumpToWorktree": "작업 트리로 이동",
+            "conversationNotSaved": "대화가 저장되지 않음",
+            "recoverableEmptyDetail": "이 세션에는 저장된 대화가 없지만 복구 가능한 항목이 {{value0}}개 남아 있습니다.",
+            "recoverableEmptyOpenLogHint": "로그를 열어 복구하세요.",
+            "emptyConversationDetail": "이 세션에는 저장된 대화가 없어 재개할 수 없습니다.",
+            "queuedMessages": "대기 중인 메시지 {{value0}}개",
+            "subagentTranscripts": "서브에이전트 대화 기록 {{value0}}개"
           },
           "AiVaultSessionRow": {
             "resumeAgentSession": "{{value0}} 세션 재개",
@@ -9829,7 +9835,8 @@
             "systemRole": "시스템",
             "sessionRole": "세션",
             "jumpToOriginalPane": "원래 창으로 이동",
-            "jumpToWorktree": "작업 트리로 이동"
+            "jumpToWorktree": "작업 트리로 이동",
+            "recoverableBadge": "저장 안 됨"
           },
           "FileExplorerNameFilter": {
             "26fb73c6e3": "파일 찾기",

@@ -9803,7 +9803,13 @@
             "sessionRole": "Sesión",
             "jumpToOriginalPane": "Saltar al panel original",
             "worktree": "Worktree",
-            "jumpToWorktree": "Saltar al worktree"
+            "jumpToWorktree": "Saltar al worktree",
+            "conversationNotSaved": "Conversación no guardada",
+            "recoverableEmptyDetail": "Esta sesión no tiene conversación guardada, pero quedan {{value0}} elemento(s) recuperable(s).",
+            "recoverableEmptyOpenLogHint": "Abre el registro para recuperarlos.",
+            "emptyConversationDetail": "Esta sesión no tiene conversación guardada y no se puede reanudar.",
+            "queuedMessages": "{{value0}} mensaje(s) en cola",
+            "subagentTranscripts": "{{value0}} transcripción(es) de subagente"
           },
           "AiVaultSessionRow": {
             "resumeAgentSession": "Reanudar sesión de {{value0}}",
@@ -9829,7 +9835,8 @@
             "systemRole": "Sistema",
             "sessionRole": "Sesión",
             "jumpToOriginalPane": "Saltar al panel original",
-            "jumpToWorktree": "Saltar al worktree"
+            "jumpToWorktree": "Saltar al worktree",
+            "recoverableBadge": "No guardada"
           },
           "FileExplorerNameFilter": {
             "26fb73c6e3": "Buscar archivos",

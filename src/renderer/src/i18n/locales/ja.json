@@ -9803,7 +9803,13 @@
             "sessionRole": "セッション",
             "jumpToOriginalPane": "元のペインにジャンプ",
             "worktree": "ワークツリー",
-            "jumpToWorktree": "ワークツリーにジャンプ"
+            "jumpToWorktree": "ワークツリーにジャンプ",
+            "conversationNotSaved": "会話が保存されていません",
+            "recoverableEmptyDetail": "このセッションには保存された会話がありませんが、{{value0}} 件の復元可能な項目が残っています。",
+            "recoverableEmptyOpenLogHint": "ログを開いて復元できます。",
+            "emptyConversationDetail": "このセッションには保存された会話がなく、再開できません。",
+            "queuedMessages": "キュー内のメッセージ {{value0}} 件",
+            "subagentTranscripts": "サブエージェントの履歴 {{value0}} 件"
           },
           "AiVaultSessionRow": {
             "resumeAgentSession": "{{value0}} セッションを再開",
@@ -9829,7 +9835,8 @@
             "systemRole": "システム",
             "sessionRole": "セッション",
             "jumpToOriginalPane": "元のペインにジャンプ",
-            "jumpToWorktree": "ワークツリーにジャンプ"
+            "jumpToWorktree": "ワークツリーにジャンプ",
+            "recoverableBadge": "未保存"
           },
           "FileExplorerNameFilter": {
             "26fb73c6e3": "ファイルを検索",

@@ -9803,7 +9803,13 @@
             "sessionRole": "会话",
             "jumpToOriginalPane": "跳转到原始窗格",
             "worktree": "工作树",
-            "jumpToWorktree": "跳转到工作树"
+            "jumpToWorktree": "跳转到工作树",
+            "conversationNotSaved": "对话未保存",
+            "recoverableEmptyDetail": "此会话没有已保存的对话，但仍有 {{value0}} 个可恢复项。",
+            "recoverableEmptyOpenLogHint": "打开日志以恢复它们。",
+            "emptyConversationDetail": "此会话没有已保存的对话，无法恢复。",
+            "queuedMessages": "{{value0}} 条排队消息",
+            "subagentTranscripts": "{{value0}} 个子代理记录"
           },
           "AiVaultSessionRow": {
             "resumeAgentSession": "恢复 {{value0}} 会话",
@@ -9829,7 +9835,8 @@
             "systemRole": "系统",
             "sessionRole": "会话",
             "jumpToOriginalPane": "跳转到原始窗格",
-            "jumpToWorktree": "跳转到工作树"
+            "jumpToWorktree": "跳转到工作树",
+            "recoverableBadge": "未保存"
           },
           "FileExplorerNameFilter": {
             "26fb73c6e3": "查找文件",
