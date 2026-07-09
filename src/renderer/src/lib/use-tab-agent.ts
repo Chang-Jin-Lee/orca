@@ -12,6 +12,7 @@ import {
 } from './tab-agent'
 import { resolveExplicitTerminalTitleAgentType } from '../../../shared/terminal-title-agent-type'
 import { resolveCompatibleAgentTypeForOwner } from '../../../shared/agent-title-owner'
+import { resolvePaneAgentOwner } from '../../../shared/pane-agent-owner'
 import type { TerminalTab, TuiAgent } from '../../../shared/types'
 
 // A shell name, or the tab's neutral default title — where Orca's
@@ -83,24 +84,18 @@ export function resolveTabAgentFromSignals(args: {
   launchAgent?: TuiAgent
 }): TuiAgent | null {
   const launchAgent = args.launchAgent ?? null
-  // Why: a mirrored or restored OMP pane can lose its host-owned launchAgent
-  // (web-session-tabs-sync drops launchAgent once the host stops publishing it)
-  // while OMP keeps emitting Pi-compatible wrapper title frames. With no owner
-  // to anchor them, those frames repaint the tab as Pi and flap against the
-  // pane's OMP hook identity every time a hook row appears and clears. Fall back
-  // to a durable pane identity — the live hook, then the last completed hook,
-  // then the hibernated session record — so the Pi-compatible owner survives
-  // launchAgent loss. Live/recent hooks rank above the session record so a real
-  // Pi pane stays Pi and a stale record can't hijack it. This mirrors the owner
-  // fallback the mirrored-tab title already uses (web-session-tabs-sync).
-  const piCompatibleOwner: TuiAgent | null =
-    launchAgent ??
-    args.hookAgent ??
-    args.siblingHookAgent ??
-    args.focusedCompletedHookAgent ??
-    args.siblingCompletedHookAgent ??
-    args.sleepingSessionAgent ??
-    null
+  // Why: normalize Pi-compatible wrapper frames against the authoritative pane
+  // owner, not just launchAgent. A mirrored or restored pane drops the
+  // host-owned launchAgent, so without the durable hook/session fallback a `⠋ Pi`
+  // frame repaints an OMP pane as Pi and flaps against its hook identity.
+  const piCompatibleOwner = resolvePaneAgentOwner({
+    launchAgent,
+    hookAgent: args.hookAgent,
+    siblingHookAgent: args.siblingHookAgent,
+    completedHookAgent: args.focusedCompletedHookAgent,
+    siblingCompletedHookAgent: args.siblingCompletedHookAgent,
+    sleepingSessionAgent: args.sleepingSessionAgent
+  }) as TuiAgent | null
   const explicitTitleAgent = resolveSignalAgentForLaunchOwner(
     resolveExplicitTerminalTitleAgentType(args.title),
     piCompatibleOwner
