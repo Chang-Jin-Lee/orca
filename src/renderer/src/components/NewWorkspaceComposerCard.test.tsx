@@ -676,6 +676,26 @@ describe('NewWorkspaceComposerCard folder task source mode', () => {
     expect(apiMocks.sshConnect).toHaveBeenCalledWith({ targetId: 'bastion' })
   })
 
+  it('stops the connecting indicator when the connect fails', async () => {
+    // A failed connect must clear the spinner and restore the Connect button so the user
+    // can retry — the row can't stay stuck on "Connecting" after the error.
+    apiMocks.sshConnect.mockRejectedValue(new Error('connection refused'))
+    current = renderCard({
+      projectHostSetupOptions: [localReadyHostOption, disconnectedDevboxNeedsSetupHostOption],
+      selectedProjectHostSetupId: 'setup-local'
+    })
+
+    openRunTargetPicker(current.container)
+    await act(async () => {
+      findConnectButton('Devbox')?.click()
+    })
+
+    const devboxButton = findConnectButton('Devbox')
+    expect(devboxButton?.disabled).toBe(false)
+    expect(devboxButton?.textContent).toContain('Connect')
+    expect(devboxButton?.textContent).not.toContain('Connecting')
+  })
+
   it('opens the SSH host add dialog over the composer without leaving for Settings', () => {
     current = renderCard({
       projectHostSetupOptions: [localReadyHostOption, devboxNeedsSetupHostOption],

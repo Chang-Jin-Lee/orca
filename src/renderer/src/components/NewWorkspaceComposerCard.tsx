@@ -293,7 +293,6 @@ function WorkspaceRunTargetCombobox({
   const [connectingHostIds, setConnectingHostIds] = React.useState<ReadonlySet<string>>(
     () => new Set()
   )
-  const mountedRef = React.useRef(true)
   const readyHostOptions = React.useMemo(
     () =>
       hostOptions.filter(
@@ -320,12 +319,6 @@ function WorkspaceRunTargetCombobox({
     'auto.components.NewWorkspaceComposerCard.ephemeralVm',
     'Per-Workspace Environment'
   )
-
-  React.useEffect(() => {
-    return () => {
-      mountedRef.current = false
-    }
-  }, [])
 
   const handleHostSelect = React.useCallback(
     (setupId: string): void => {
@@ -360,16 +353,18 @@ function WorkspaceRunTargetCombobox({
       try {
         await onConnectHost(option)
       } finally {
-        if (mountedRef.current) {
-          setConnectingHostIds((current) => {
-            if (!current.has(option.hostId)) {
-              return current
-            }
-            const next = new Set(current)
-            next.delete(option.hostId)
-            return next
-          })
-        }
+        // Why: always clear the in-flight id when the connect settles (success, failure, or
+        // timeout) so the row's spinner stops. No mounted-guard — a stale setState on an
+        // unmounted component is a harmless no-op in React 18, and the guard's ref was the
+        // source of a StrictMode bug that left the spinner stuck.
+        setConnectingHostIds((current) => {
+          if (!current.has(option.hostId)) {
+            return current
+          }
+          const next = new Set(current)
+          next.delete(option.hostId)
+          return next
+        })
       }
     },
     [connectingHostIds, onConnectHost]
