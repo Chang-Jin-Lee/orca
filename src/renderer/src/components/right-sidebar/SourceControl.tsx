@@ -2429,7 +2429,6 @@ function SourceControlInner(): React.JSX.Element {
         | 'rebase',
       options?: {
         target?: SourceControlOperationTarget
-        remoteStatus?: GitUpstreamStatus
         baseRef?: string | null
       }
     ): Promise<boolean> => {
@@ -2461,18 +2460,17 @@ function SourceControlInner(): React.JSX.Element {
           return true
         }
         if (kind === 'push') {
-          const forceWithLease = shouldForcePushWithLeaseForUpstream(
-            options?.remoteStatus ?? remoteStatus
-          )
+          // Why: kind 'push' must stay a regular push. Force-with-lease is only
+          // for kind 'force_push' (and callers that choose it). Auto-upgrading
+          // here made the always-enabled dropdown Push row silently force-push
+          // while its tooltip claimed a normal push might merely fail.
           await pushBranch(
             target.worktreeId,
             target.worktreePath,
             false,
             target.connectionId,
             target.pushTarget,
-            forceWithLease
-              ? { forceWithLease: true, runtimeTargetSettings: target.settings }
-              : { runtimeTargetSettings: target.settings }
+            { runtimeTargetSettings: target.settings }
           )
           return true
         }
@@ -2581,7 +2579,6 @@ function SourceControlInner(): React.JSX.Element {
       pushBranch,
       rebaseFromBase,
       refreshActiveGitStatusAfterMutation,
-      remoteStatus,
       syncBranch,
       worktreePath
     ]
@@ -2695,9 +2692,20 @@ function SourceControlInner(): React.JSX.Element {
       if (!ok) {
         return
       }
+      // Why: "Commit & Force Push" still invokes remoteKind 'push' from the
+      // dropdown kind map. Route to force_push when the upstream shape requires
+      // lease force so compound commit does not silently fall back to a regular
+      // push after we stopped auto-upgrading kind 'push'.
+      if (
+        remoteKind === 'push' &&
+        shouldForcePushWithLeaseForUpstream(remoteStatusForActions ?? remoteStatus)
+      ) {
+        await runRemoteAction('force_push')
+        return
+      }
       await runRemoteAction(remoteKind)
     },
-    [handleCommit, runRemoteAction]
+    [handleCommit, remoteStatus, remoteStatusForActions, runRemoteAction]
   )
 
   const handlePullRequestCreated = useCallback(
@@ -3951,7 +3959,6 @@ function SourceControlInner(): React.JSX.Element {
       })
       const remoteOk = await runRemoteAction(remoteStep, {
         target: operationTarget,
-        remoteStatus: latestUpstreamStatus,
         baseRef: token.baseRef
       })
       if (abortIfStale()) {
@@ -4642,8 +4649,17 @@ function SourceControlInner(): React.JSX.Element {
       case 'stage':
         void handleStageAllPrimary()
         return
-      case 'commit':
       case 'push':
+        // Why: primary labels "Force Push" while keeping kind 'push'. Invoke the
+        // explicit force path when lease force is required so regular push stays
+        // non-force for the dropdown.
+        handleActionInvoke(
+          shouldForcePushWithLeaseForUpstream(remoteStatusForActions ?? remoteStatus)
+            ? 'force_push'
+            : 'push'
+        )
+        return
+      case 'commit':
       case 'pull':
       case 'sync':
       case 'publish':
@@ -4653,7 +4669,14 @@ function SourceControlInner(): React.JSX.Element {
       case 'create_pr_intent':
         void runCreatePrIntent()
     }
-  }, [handleActionInvoke, handleStageAllPrimary, primaryAction.kind, runCreatePrIntent])
+  }, [
+    handleActionInvoke,
+    handleStageAllPrimary,
+    primaryAction.kind,
+    remoteStatus,
+    remoteStatusForActions,
+    runCreatePrIntent
+  ])
 
   const handleCreatePrHeaderClick = useCallback((): void => {
     if (!createPrHeaderAction || createPrHeaderAction.disabled) {
