@@ -38,6 +38,7 @@ const {
   spawnerInstances,
   ensureRunningOverrides,
   adapterInstances,
+  defaultListSessionsSessions,
   getLocalPtyProviderMock,
   localFallbackProvider,
   setLocalPtyProviderMock,
@@ -103,6 +104,9 @@ const {
   // Same for DaemonPtyAdapter. The test asserts the replacement adapter is a
   // fresh instance whose respawn closure targets the *original* spawner.
   const adapterInstances: MockAdapter[] = []
+  // Why: adapters are constructed inside initDaemonPtyProvider, so tests that
+  // need listSessions to report live sessions set this before calling init.
+  const defaultListSessionsSessions: { sessionId: string }[] = []
 
   const localFallbackProvider = {
     routesFreshSpawnsToLocalProvider: undefined,
@@ -154,6 +158,7 @@ const {
     spawnerInstances,
     ensureRunningOverrides,
     adapterInstances,
+    defaultListSessionsSessions,
     getLocalPtyProviderMock,
     localFallbackProvider,
     setLocalPtyProviderMock,
@@ -303,7 +308,7 @@ vi.mock('./daemon-pty-adapter', () => ({
         this.callOrder.push('fanoutSyntheticExits')
       })
       this.listProcesses = vi.fn(async () => [])
-      this.listSessions = vi.fn(async () => [])
+      this.listSessions = vi.fn(async () => [...defaultListSessionsSessions])
       this.shutdown = vi.fn(async () => {})
       this.dispose = vi.fn()
       this.disconnectOnly = vi.fn(async () => {})
@@ -326,6 +331,7 @@ async function importFresh() {
   spawnerInstances.length = 0
   ensureRunningOverrides.length = 0
   adapterInstances.length = 0
+  defaultListSessionsSessions.length = 0
   getLocalPtyProviderMock.mockClear()
   localFallbackProvider.spawn.mockClear()
   localFallbackProvider.write.mockClear()
@@ -395,6 +401,28 @@ describe('daemon-init: runRestartDaemon (7-step sequence)', () => {
     expect(rebindLocalProviderListenersMock.mock.invocationCallOrder[0]).toBeGreaterThan(
       setLocalPtyProviderMock.mock.invocationCallOrder[0]
     )
+  })
+
+  it('prunes seeded Claude live-PTY ids against daemon sessions after init', async () => {
+    const mod = await importFresh()
+    // Why: live-pty-gate is intentionally unmocked — import from the same fresh
+    // module registry so the module-level gate state matches daemon-init's.
+    const gate = await import('../claude-accounts/live-pty-gate')
+    defaultListSessionsSessions.push({ sessionId: 'claude-alive' })
+    gate.seedLiveClaudePtysFromPersistence(['claude-alive', 'claude-dead'])
+    try {
+      await mod.initDaemonPtyProvider()
+
+      expect(gate.hasLiveClaudePtys()).toBe(true)
+
+      gate.markClaudePtyExited('claude-alive')
+      // Why: proves 'claude-dead' was released by the daemon reconcile — the
+      // surviving session was the only id still holding the gate.
+      expect(gate.hasLiveClaudePtys()).toBe(false)
+    } finally {
+      gate.markClaudePtyExited('claude-alive')
+      gate.markClaudePtyExited('claude-dead')
+    }
   })
 
   it('does not install a late daemon provider after startup fallback aborts the init attempt', async () => {
@@ -968,7 +996,14 @@ describe('daemon-init: runRestartDaemon (7-step sequence)', () => {
     )
     expect(forkMock).toHaveBeenCalledWith(
       FAKE_DAEMON_ENTRY_PATH,
-      ['--socket', '/fake/socket', '--token', '/fake/token'],
+      expect.arrayContaining([
+        '--socket',
+        '/fake/socket',
+        '--token',
+        '/fake/token',
+        '--log-file',
+        join(FAKE_USER_DATA_PATH, 'logs', 'daemon.log')
+      ]),
       expect.objectContaining({ cwd: '/fake/userData', detached: true })
     )
   })
@@ -1094,7 +1129,14 @@ describe('daemon-init: runRestartDaemon (7-step sequence)', () => {
     )
     expect(forkMock).toHaveBeenCalledWith(
       FAKE_DAEMON_ENTRY_PATH,
-      ['--socket', '/fake/socket', '--token', '/fake/token'],
+      expect.arrayContaining([
+        '--socket',
+        '/fake/socket',
+        '--token',
+        '/fake/token',
+        '--log-file',
+        join(FAKE_USER_DATA_PATH, 'logs', 'daemon.log')
+      ]),
       expect.objectContaining({ cwd: '/fake/userData', detached: true })
     )
   })
@@ -1211,7 +1253,14 @@ describe('daemon-init: runRestartDaemon (7-step sequence)', () => {
 
     expect(forkMock).toHaveBeenCalledWith(
       FAKE_DAEMON_ENTRY_PATH,
-      ['--socket', '/fake/socket', '--token', '/fake/token'],
+      expect.arrayContaining([
+        '--socket',
+        '/fake/socket',
+        '--token',
+        '/fake/token',
+        '--log-file',
+        join(FAKE_USER_DATA_PATH, 'logs', 'daemon.log')
+      ]),
       expect.objectContaining({ detached: true })
     )
   })
@@ -1314,6 +1363,123 @@ describe('daemon-init: runRestartDaemon (7-step sequence)', () => {
     expect(handlers.exit).toHaveLength(0)
     expect(child.disconnect).not.toHaveBeenCalled()
     expect(child.unref).not.toHaveBeenCalled()
+  })
+
+  it('captures daemon startup stderr into the failure error', async () => {
+    const mod = await importFresh()
+    checkDaemonHealthMock.mockResolvedValue('unreachable')
+    await mod.initDaemonPtyProvider()
+
+    const launcher = spawnerInstances[0].launcher as (
+      socketPath: string,
+      tokenPath: string
+    ) => Promise<{ shutdown(): Promise<void> }>
+    const handlers: Record<string, ((arg?: unknown) => void)[]> = {
+      message: [],
+      error: [],
+      exit: []
+    }
+    const stderrDataCbs: ((chunk: Buffer) => void)[] = []
+    const stderrDestroy = vi.fn()
+    const stderr = {
+      on(event: string, cb: (chunk: Buffer) => void) {
+        if (event === 'data') {
+          stderrDataCbs.push(cb)
+        }
+        return this
+      },
+      off(event: string, cb: (chunk: Buffer) => void) {
+        if (event === 'data') {
+          const idx = stderrDataCbs.indexOf(cb)
+          if (idx !== -1) {
+            stderrDataCbs.splice(idx, 1)
+          }
+        }
+        return this
+      },
+      destroy: stderrDestroy
+    }
+    const child = {
+      pid: 4321,
+      stderr,
+      on(event: string, cb: (arg?: unknown) => void) {
+        handlers[event]?.push(cb)
+        if (event === 'exit') {
+          // Why: deliver the stderr tail before the exit so the failure path
+          // sees the captured crash reason, mirroring a module-load crash.
+          queueMicrotask(() => {
+            for (const dataCb of stderrDataCbs.slice()) {
+              dataCb(Buffer.from("Error: Cannot find module 'electron'\n"))
+            }
+            cb(1)
+          })
+        }
+        return this
+      },
+      off: vi.fn((event: string, cb: (arg?: unknown) => void) => {
+        handlers[event] = handlers[event]?.filter((handler) => handler !== cb) ?? []
+        return child
+      }),
+      disconnect: vi.fn(),
+      unref: vi.fn()
+    }
+    forkMock.mockReturnValueOnce(child)
+
+    const error = await launcher('/fake/socket', '/fake/token').catch((err: Error) => err)
+
+    expect(error).toBeInstanceOf(Error)
+    expect((error as Error).message).toMatch(/Cannot find module 'electron'/)
+    expect((error as Error).message).toMatch(/Daemon stderr \(tail\)/)
+    // Why: the piped stderr must be released so the detached daemon does not
+    // keep the parent event loop alive after the failure.
+    expect(stderrDestroy).toHaveBeenCalled()
+  })
+
+  it('destroys the daemon stderr pipe once the daemon signals ready', async () => {
+    const mod = await importFresh()
+    checkDaemonHealthMock.mockResolvedValue('unreachable')
+    await mod.initDaemonPtyProvider()
+
+    const launcher = spawnerInstances[0].launcher as (
+      socketPath: string,
+      tokenPath: string
+    ) => Promise<{ shutdown(): Promise<void> }>
+    const handlers: Record<string, ((arg?: unknown) => void)[]> = {
+      message: [],
+      error: [],
+      exit: []
+    }
+    const stderrOff = vi.fn()
+    const stderrDestroy = vi.fn()
+    const stderr = {
+      on() {
+        return this
+      },
+      off: stderrOff,
+      destroy: stderrDestroy
+    }
+    const child = {
+      pid: 12345,
+      stderr,
+      on(event: string, cb: (arg?: unknown) => void) {
+        handlers[event]?.push(cb)
+        if (event === 'message') {
+          queueMicrotask(() => cb({ type: 'ready' }))
+        }
+        return this
+      },
+      off: vi.fn(() => child),
+      disconnect: vi.fn(),
+      unref: vi.fn()
+    }
+    forkMock.mockReturnValueOnce(child)
+
+    await launcher('/fake/socket', '/fake/token')
+
+    expect(stderrOff).toHaveBeenCalledWith('data', expect.any(Function))
+    expect(stderrDestroy).toHaveBeenCalledOnce()
+    expect(child.disconnect).toHaveBeenCalledOnce()
+    expect(child.unref).toHaveBeenCalledOnce()
   })
 
   it('preserves a health-check-failing daemon when it owns live sessions', async () => {
@@ -1471,7 +1637,14 @@ describe('daemon-init: runRestartDaemon (7-step sequence)', () => {
     )
     expect(forkMock).toHaveBeenCalledWith(
       FAKE_DAEMON_ENTRY_PATH,
-      ['--socket', '/fake/socket', '--token', '/fake/token'],
+      expect.arrayContaining([
+        '--socket',
+        '/fake/socket',
+        '--token',
+        '/fake/token',
+        '--log-file',
+        join(FAKE_USER_DATA_PATH, 'logs', 'daemon.log')
+      ]),
       expect.objectContaining({ detached: true })
     )
   })
@@ -1556,7 +1729,14 @@ describe('daemon-init: runRestartDaemon (7-step sequence)', () => {
     )
     expect(forkMock).toHaveBeenCalledWith(
       FAKE_DAEMON_ENTRY_PATH,
-      ['--socket', '/fake/socket', '--token', '/fake/token'],
+      expect.arrayContaining([
+        '--socket',
+        '/fake/socket',
+        '--token',
+        '/fake/token',
+        '--log-file',
+        join(FAKE_USER_DATA_PATH, 'logs', 'daemon.log')
+      ]),
       expect.objectContaining({ detached: true })
     )
   })

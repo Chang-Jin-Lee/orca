@@ -11,15 +11,27 @@ import {
   resolveSiblingTabAgent
 } from './tab-agent'
 import { resolveExplicitTerminalTitleAgentType } from '../../../shared/terminal-title-agent-type'
+import { resolveCompatibleAgentTypeForOwner } from '../../../shared/agent-title-owner'
 import type { TerminalTab, TuiAgent } from '../../../shared/types'
-
-export { resolveExplicitTerminalTitleAgentType as resolveTabAgentFromTitle } from '../../../shared/terminal-title-agent-type'
 
 // A shell name, or the tab's neutral default title — where Orca's
 // inferred-interrupt reset parks it. Blank titles are no evidence either way.
 function titleShowsNoAgent(title: string, defaultTitle?: string): boolean {
   const trimmed = title.trim()
   return trimmed.length > 0 && (isShellProcess(trimmed) || trimmed === defaultTitle?.trim())
+}
+
+/**
+ * Resolves wrapper-compatible signal identity against the launch owner.
+ */
+function resolveSignalAgentForLaunchOwner(
+  signalAgent: TuiAgent | null | undefined,
+  launchAgent: TuiAgent | null
+): TuiAgent | null {
+  if (!signalAgent) {
+    return null
+  }
+  return (resolveCompatibleAgentTypeForOwner(signalAgent, launchAgent) ?? signalAgent) as TuiAgent
 }
 
 /**
@@ -67,14 +79,17 @@ export function resolveTabAgentFromSignals(args: {
   siblingCompletedHookAgent?: TuiAgent | null
   processAgent?: TuiAgent | null
   processShellForeground?: boolean
+  sleepingSessionAgent?: TuiAgent | null
   launchAgent?: TuiAgent
 }): TuiAgent | null {
   const launchAgent = args.launchAgent ?? null
-  const explicitTitleAgent = resolveExplicitTerminalTitleAgentType(args.title)
-  // Why: when a pane is reused for a different agent, its launchAgent goes stale.
-  // A live title that explicitly names a *different* agent, once the pane has
-  // shown any activity, overrides that stale launch identity so the tab icon
-  // tracks what is actually running (codex launch reused for claude, etc.).
+  const explicitTitleAgent = resolveSignalAgentForLaunchOwner(
+    resolveExplicitTerminalTitleAgentType(args.title),
+    launchAgent
+  )
+  // Why: explicit titles can override stale launches after activity, but
+  // Pi-compatible wrapper signals first resolve through the launch owner so
+  // OMP-created sessions do not repaint as Pi.
   // Why: OSC 133;D proved this local pane's foreground is back at the shell,
   // so any title-derived identity is stale by definition — a TUI that died
   // with a stuck title must not keep painting the tab through the title layer.
@@ -98,30 +113,46 @@ export function resolveTabAgentFromSignals(args: {
   const completedHookAgent =
     !args.isRemote && (noAgentTitle || processProvesShell) && hasCompletedHook
       ? null
-      : (args.focusedCompletedHookAgent ?? args.siblingCompletedHookAgent ?? null)
-  const focusedHookAgent = args.hookAgent ?? null
-  const fallbackHookAgent = args.siblingHookAgent ?? completedHookAgent ?? null
+      : resolveSignalAgentForLaunchOwner(
+          args.focusedCompletedHookAgent ?? args.siblingCompletedHookAgent,
+          launchAgent
+        )
+  const focusedHookAgent = resolveSignalAgentForLaunchOwner(args.hookAgent, launchAgent)
+  const siblingHookAgent = resolveSignalAgentForLaunchOwner(args.siblingHookAgent, launchAgent)
+  const fallbackHookAgent = siblingHookAgent ?? completedHookAgent
   const launchedAgentExited = resolveLaunchedAgentExitEvidence({
     title: args.title,
     defaultTitle: args.defaultTitle,
     isRemote: args.isRemote,
     hasObservedAgentSignal: args.hasObservedAgentSignal,
     hookAgent: focusedHookAgent,
-    siblingHookAgent: args.siblingHookAgent,
+    siblingHookAgent,
     hasCompletedHook,
     processAgent: args.processAgent,
     processShellForeground: args.processShellForeground
   })
   const activeLaunchAgent = launchedAgentExited ? null : launchAgent
   const processAgent = args.processAgent ?? null
+  const sleepingSessionAgent = args.sleepingSessionAgent ?? null
   // Why: titleAgent ranks ahead of launch/fallback hooks because, once the
   // pane has shown activity, a live explicit title is the freshest identity
   // signal — it beats a launchAgent gone stale through pane reuse. Before any
   // activity, titleAgent is null while launchAgent exists, so launch bootstrap
   // still wins the startup window. Process identity (the recognized foreground
   // process) is ground truth below hooks — it covers agents that emit neither
-  // hooks nor titles.
-  return focusedHookAgent ?? processAgent ?? titleAgent ?? activeLaunchAgent ?? fallbackHookAgent
+  // hooks nor titles. sleepingSessionAgent ranks above launch bootstrap: a
+  // hibernated pane's captured session identity is pane-scoped proof that the
+  // launch identity went stale (a codex launch later reused for claude), and it
+  // is the only live signal while the pane is asleep (its PTY, hooks, and
+  // process are all gone).
+  return (
+    focusedHookAgent ??
+    processAgent ??
+    titleAgent ??
+    sleepingSessionAgent ??
+    activeLaunchAgent ??
+    fallbackHookAgent
+  )
 }
 
 /**
@@ -137,10 +168,15 @@ export function resolveTabAgentFromSignals(args: {
  *    command boundaries (local panes only); covers agents that emit neither
  *    hooks nor titles, and its shell-foreground mark is title-independent
  *    exit evidence.
- * 3. launchAgent — what Orca launched here; instant bootstrap before hooks
+ * 3. Sleeping session identity — a hibernated pane's captured session record
+ *    (agent + provider session). Ranks below title but above launchAgent
+ *    because it is pane-scoped proof of reuse: a codex launch later reused for
+ *    claude leaves a claude sleeping record, and while the pane is asleep this
+ *    is the only live identity signal (its PTY, hooks, and process are gone).
+ * 4. launchAgent — what Orca launched here; instant bootstrap before hooks
  *    arrive, cleared once hook/process/title evidence shows the launched
  *    agent exited.
- * 4. Title — legacy/unknown-session fallback, and the live override when a pane
+ * 5. Title — legacy/unknown-session fallback, and the live override when a pane
  *    is reused: once the pane has shown activity, a title that explicitly names
  *    a different agent than launchAgent wins over that stale launch identity.
  *    Otherwise it is ignored while launchAgent exists, and generic spinner-only
@@ -180,6 +216,12 @@ export function useTabAgent(tab: TerminalTab): TuiAgent | null {
     focusedPaneKey
       ? Boolean(s.paneForegroundAgentByPaneKey[focusedPaneKey]?.shellForeground)
       : false
+  )
+  // Why: a hibernated pane's persisted session record is pane-scoped evidence of
+  // which agent actually ran here — the freshest identity once the PTY, hook,
+  // and process signals are all gone, and proof a stale launchAgent was reused.
+  const sleepingSessionAgent = useAppStore((s) =>
+    focusedPaneKey ? (s.sleepingAgentSessionsByPaneKey[focusedPaneKey]?.agent ?? null) : null
   )
 
   // The focused pane's PTY (single-pane tabs have exactly one leaf). Only used
@@ -301,6 +343,7 @@ export function useTabAgent(tab: TerminalTab): TuiAgent | null {
     siblingCompletedHookAgent,
     processAgent,
     processShellForeground,
+    sleepingSessionAgent,
     launchAgent: tab.launchAgent
   })
 }

@@ -1,5 +1,3 @@
-/* eslint-disable max-lines -- Why: this test file owns the diff-comments
-slice's persistence, runtime routing, rollback, and compatibility behavior. */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { create } from 'zustand'
 import type { AppState } from '../types'
@@ -130,6 +128,7 @@ import { createOpenCodeUsageSlice } from './opencode-usage'
 import { createBrowserSlice } from './browser'
 import { createRateLimitSlice } from './rate-limits'
 import { createSshSlice } from './ssh'
+import { createRuntimeEnvironmentSshSlice } from './runtime-environment-ssh'
 import { createAgentStatusSlice } from './agent-status'
 import { createPaneForegroundAgentSlice } from './pane-foreground-agent'
 import { createDiffCommentsSlice } from './diffComments'
@@ -142,6 +141,7 @@ import { createPullRequestGenerationSlice } from './pull-request-generation'
 import { createCommitMessageGenerationSlice } from './commit-message-generation'
 import { createPinnedTabCloseConfirmSlice } from './pinned-tab-close-confirm'
 import { createOrcaProfilesSlice } from './orca-profiles'
+import { createNewIssueDraftSlice } from './new-issue-draft'
 
 function createTestStore() {
   return create<AppState>()((...a) => ({
@@ -168,6 +168,7 @@ function createTestStore() {
     ...createBrowserSlice(...a),
     ...createRateLimitSlice(...a),
     ...createSshSlice(...a),
+    ...createRuntimeEnvironmentSshSlice(...a),
     ...createAgentStatusSlice(...a),
     ...createPaneForegroundAgentSlice(...a),
     ...createDiffCommentsSlice(...a),
@@ -179,7 +180,8 @@ function createTestStore() {
     ...createPullRequestGenerationSlice(...a),
     ...createCommitMessageGenerationSlice(...a),
     ...createPinnedTabCloseConfirmSlice(...a),
-    ...createOrcaProfilesSlice(...a)
+    ...createOrcaProfilesSlice(...a),
+    ...createNewIssueDraftSlice(...a)
   }))
 }
 

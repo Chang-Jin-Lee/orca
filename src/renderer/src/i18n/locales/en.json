@@ -25,6 +25,7 @@
         "geminiToggleDescription": "Show Gemini token and cost usage for the active workspace.",
         "opencodeGoToggleDescription": "Show OpenCode Go token and cost usage for the active workspace.",
         "kimiToggleDescription": "Show Kimi subscription usage for the active workspace.",
+        "minimaxToggleDescription": "Show MiniMax subscription usage for the active workspace.",
         "sshToggleDescription": "Show configured SSH and remote Orca hosts when any are available.",
         "resourceUsageToggleDescription": "Show the Resource Manager. Click it for CPU, memory, sessions, daemon controls, and workspace disk scans.",
         "portsToggleDescription": "Show live workspace ports. Click it for workspace-scoped ports and external listeners."
@@ -135,6 +136,9 @@
         "3affe7de3a": "Paste a pairing URL from an Orca server that this browser can reach.",
         "e3bcd082ac": "Connect to Orca",
         "mobileScopeRejected": "This QR code grants limited (mobile) access. To use the full web app, open the browser access link from Settings → Runtime Environments → Share this Orca server → New Link."
+      },
+      "webPreloadApi": {
+        "aiVaultUnavailableForHost": "Agent Session History is not available for this execution host."
       },
       "web": {
         "preload": {
@@ -561,6 +565,13 @@
       },
       "ephemeralVmWorkspaceTarget": {
         "projectRootRegistrationFailed": "Failed to register the recipe-created project root on the runtime."
+      },
+      "blocked": {
+        "notification": {
+          "fallback": {
+            "de50bef680": "macOS is blocking Orca notifications"
+          }
+        }
       }
     },
     "hooks": {
@@ -2581,7 +2592,10 @@
             "connectFailed": "SSH connection failed",
             "title": "SSH connection required",
             "connectingButton": "Connecting...",
-            "connectButton": "Connect"
+            "connectButton": "Connect",
+            "removedTitle": "SSH host removed",
+            "removedBody": "The SSH host for this workspace was removed, so it can no longer connect. Remove the workspace to clear it — remote files are left untouched.",
+            "removeWorkspaceButton": "Remove workspace"
           }
         }
       },
@@ -2607,8 +2621,8 @@
             "localWorkspacesOnly": "Resume from history is only available in local workspaces.",
             "openLocalWorkspace": "Open a local workspace before resuming a session.",
             "sessionQueued": "Session queued",
-            "runtimeWorkspacesUnsupported": "Resume from history is not available in runtime-hosted workspaces.",
-            "openSupportedWorkspace": "Open a local or SSH workspace before resuming a session.",
+            "openSupportedWorkspace": "Open a workspace before resuming a session.",
+            "sessionHostMismatchUnsupported": "This session belongs to a different host. Drop it onto a workspace on the same host.",
             "localSessionSshWorkspaceUnsupported": "This session's history is stored on this machine, so it can't resume in an SSH workspace. Drop it onto a local workspace instead."
           },
           "TabGroupDropOverlay": {
@@ -2789,6 +2803,9 @@
           "EditorFileTabCloseButton": {
             "4655cf570e": "Close tab",
             "a768f428f1": "Close tab"
+          },
+          "TerminalTabSplitMenuSection": {
+            "splitTerminal": "Split terminal"
           }
         }
       },
@@ -2954,7 +2971,9 @@
             "972a1ff497": "Reset Codex limits?",
             "6d1042aa6f": "This uses one Codex rate-limit reset credit for the active account and resets any eligible usage windows immediately.",
             "f077f586db": "Don't ask again",
-            "c0e972d726": "Cancel"
+            "c0e972d726": "Cancel",
+            "06741a2f3d": "Open MiniMax usage details",
+            "3bbf140864": "MiniMax Usage"
           },
           "StatusBarUsageEmptyCta": {
             "828c764a79": "Connect an account",
@@ -3731,7 +3750,8 @@
           "d36883e046": "Cancel",
           "8c097ef04e": "from Orca. It is still on your disk.",
           "e62415c3d0": "This only removes",
-          "b79b39d865": "Remove Project"
+          "b79b39d865": "Remove Project",
+          "fromOrcaSsh": "from Orca. Its files stay on {{value0}} — re-add that SSH host to recover it."
         },
         "ScrollToCurrentWorkspaceToolbarButton": {
           "23989bb663": "Reveal active workspace"
@@ -4360,7 +4380,16 @@
           "5e6f7a8b9c": "This removes the saved SSH host and its credentials from this computer. Remote files are not deleted.",
           "6f7a8b9c0d": "Cancel",
           "7a8b9c0d1e": "Open settings",
-          "8b9c0d1e2f": "Remove host"
+          "8b9c0d1e2f": "Remove host",
+          "workspacesFailed": "Could not remove {{count}} of this host’s workspaces. The host was kept so you can retry.",
+          "oneWorkspace": "1 workspace",
+          "manyWorkspaces": "{{count}} workspaces",
+          "hostHasWorkspacesDefault": "Removes {{value0}} and its credentials from this computer. Its {{value1}} stay in Orca — remote files are not touched.",
+          "alsoDeleteRemote": "Also delete these {{value0}} on {{value1}}",
+          "alsoForgetLocal": "Also remove these {{value0}} from Orca",
+          "advanced": "Advanced",
+          "alsoDeleteRemoteHint": "Permanently deletes the remote Git worktrees and their branches. Cannot be undone.",
+          "alsoForgetLocalHint": "Clears them from Orca only. Remote files, worktrees, and branches are left untouched."
         },
         "HostRenameDialog": {
           "1a2b3c4d5e": "Rename host",
@@ -4526,6 +4555,16 @@
           "sshImportFailed": "Failed to import SSH config.",
           "importing": "Importing...",
           "importSshConfig": "Import ~/.ssh/config"
+        },
+        "ForgetSshWorkspaceDialog": {
+          "reconnectFailed": "Reconnection failed",
+          "forgetBody": "Removes this workspace from Orca only. Files, the Git worktree, and branches on {{host}} are left untouched.",
+          "title": "Delete “{{name}}”?",
+          "disconnectedBody": "The SSH host for this workspace is not connected. Reconnect to delete it on the remote too, or remove it from Orca only.",
+          "ghostBody": "{{host}} is no longer a saved SSH host, so this workspace is no longer connected to a live host. It can only be removed from Orca — files and branches on the remote are left untouched.",
+          "cancel": "Cancel",
+          "forget": "Remove from Orca",
+          "reconnectAndDelete": "Reconnect & Delete"
         }
       },
       "shared": {
@@ -4588,6 +4627,7 @@
           "ae3b21eb6c": "opencode.ai/workspace/wrk_…/go",
           "51c9104e13": "Find this in the URL after logging into opencode.ai (e.g.",
           "b398b834c9": "Clear",
+          "316ca4e610": "Forget cookie",
           "a122332371": "wrk_… (leave blank for automatic lookup)",
           "dbdb0b0bd8": "Workspace ID override",
           "d70a5287a4": "Optional workspace ID override if the automatic lookup fails.",
@@ -4653,7 +4693,47 @@
           "75ca9b718e": "Codex reported that the active account needs a fresh sign-in. Re-authenticate it before starting new Codex sessions.",
           "b11078a9c2": "wsl",
           "350b2a1aa7": "Use your current",
-          "e05d0ff737": "Use your current {{value0}} Claude login."
+          "e05d0ff737": "Use your current {{value0}} Claude login.",
+          "2f24f244a4": "MiniMax cookie is required.",
+          "8e6f0cb1d8": "MiniMax cookie was not saved.",
+          "8d61637a77": "MiniMax cookie saved.",
+          "b43e761fe5": "MiniMax cookie update failed.",
+          "5d63bbfbec": "MiniMax",
+          "15e831350e": "Configure MiniMax usage tracking from platform.minimax.io.",
+          "21d6eb141e": "MiniMax Session Cookie",
+          "33bba5ad83": "Paste your MiniMax session cookie for local rate-limit fetching.",
+          "73ea15f24b": "Saved",
+          "23afe8f226": "Not saved",
+          "566d9a99ab": "_token=…; minimax_group_id_v2=…",
+          "f38b9cc4bd": "Replace",
+          "590a3130f9": "Save",
+          "79418c782a": "Open platform.minimax.io/console/usage in your browser, sign in, then copy the Cookie request header from DevTools (Network → any remains request → Cookie).",
+          "9dd50d3f75": "Advanced",
+          "174fb408f9": "Leave these defaults alone unless MiniMax usage refresh points at the wrong workspace or model.",
+          "bf160bb6c0": "Group ID override",
+          "b1e2743313": "Optional. Leave blank to use minimax_group_id_v2 from the cookie.",
+          "0747d6391a": "Use group ID from cookie",
+          "4ff2af7524": "Usage model names",
+          "5cf4b0f85f": "Optional comma-separated model names. Leave as general unless MiniMax returns a model-specific error.",
+          "3c92b0d31c": "general",
+          "0d8e77bc40": "Open console",
+          "0b8c1c7e02": "Stored locally",
+          "1fd1b1b6b4": "Cookie not set",
+          "5e08b0fe57": "Stored locally and sent only to platform.minimax.io for usage refreshes.",
+          "43d7a45b97": "How to copy",
+          "b8a4f21c3e": "Paste the Cookie header from DevTools",
+          "53f7b8c7a2": "Last refresh: {{value0}}",
+          "31d24a4e87": "Cookie expires when you sign out in the browser.",
+          "3a30aaf526": "just now",
+          "f5d8d2a6a1": "Open platform.minimax.io/console/usage in your browser and sign in.",
+          "24560fe830": "Open DevTools.",
+          "4cab0fa42d": "Go to the Network tab and enable Preserve log.",
+          "bee4e63e1c": "Reload the page.",
+          "87f814af6f": "Filter for remains and select the coding_plan/remains request.",
+          "435df0ee51": "Under Request Headers, copy the Cookie value.",
+          "7492fb3bba": "Paste it here and click Save.",
+          "9fec52de4b": "How to copy the cookie",
+          "4e32e030b2": "Stored locally. Orca sends it only to platform.minimax.io for usage refreshes."
         },
         "AdvancedPane": {
           "40b29e0bf3": "Restart",
@@ -4733,7 +4813,10 @@
           "agentPermissionsDescription": "Choose whether Orca launches agents with fewer permission prompts or with manual checks.",
           "agentPermissionsYolo": "Yolo",
           "agentPermissionsManual": "Manual",
-          "3f1bdf3cb4": "Environment text is too large to parse safely."
+          "3f1bdf3cb4": "Environment text is too large to parse safely.",
+          "codexSessionSource": "Codex home to import from",
+          "codexSessionSourceInfo": "About importing Codex history",
+          "codexSessionSourceTooltip": "Orca runs Codex in an isolated home. Point this at your existing Codex home to import that session history. Empty uses ~/.codex."
         },
         "AppIconSelector": {
           "d5a112dc9b": "Next icon",
@@ -6821,7 +6904,9 @@
             "bdbd1e668e": "windows",
             "593720c17f": "location",
             "b84a5b0c8a": "Choose whether provider accounts are inspected and added on this device or in WSL.",
-            "d09fb5ca92": "Account Location"
+            "d09fb5ca92": "Account Location",
+            "733f9e2a93": "MiniMax Usage",
+            "f8374c3151": "Paste your platform.minimax.io session cookie for local rate-limit fetching."
           }
         },
         "advanced": {
@@ -6993,6 +7078,11 @@
             "40e5c3c285": "kimi",
             "c927a155d5": "Show Kimi subscription usage in the status bar.",
             "3a6c028ea8": "Kimi Usage",
+            "25e51b62ee": "rate limit",
+            "d9e7cef86f": "cookie",
+            "d16378a88f": "minimax",
+            "e46178eb1b": "Show MiniMax subscription usage in the status bar.",
+            "0f08f6b483": "MiniMax Usage",
             "edbf0f63a0": "cost",
             "afbb6a3767": "tokens",
             "d77537b580": "opencode-go",
@@ -8354,7 +8444,8 @@
                   "customCommand": "Custom command",
                   "supportedAgents": "Supported agents for this recipe: {{value0}}.",
                   "unsupportedSavedAgent": "{{value0}} cannot run this text-generation recipe. Pick one of the supported agents below.",
-                  "resolveComments": "Start an agent from selected unresolved PR or MR comments."
+                  "resolveComments": "Start an agent from selected unresolved PR or MR comments.",
+                  "fixPushFailure": "Start an agent when a pre-push hook or git push fails."
                 }
               }
             }
@@ -8868,7 +8959,8 @@
             "b234ab25b4": "Could not copy the file to the clipboard",
             "f9d7ca753d": "Copy Paths",
             "3161c4e425": "folder",
-            "e887fa4b2e": "Open in Terminal"
+            "e887fa4b2e": "Open in Terminal",
+            "1d8e182c32": "View File"
           },
           "FileExplorerToolbar": {
             "d238264654": "Show Git Ignored Files",
@@ -9215,7 +9307,24 @@
             "b715ef615b": "{{value0}} commits ahead of {{value1}}",
             "c1a8f3e204": "1 commit behind {{value0}}",
             "d2b9g4f315": "{{value0}} commits behind {{value1}}",
-            "e9c2a5d416": "Even with {{value0}}"
+            "e9c2a5d416": "Even with {{value0}}",
+            "4b4a7de138": "Open review page in browser",
+            "createPrIntentCommitBlockedSummary": "Commit blocked: {{value0}} Fix the issue, then retry Create PR.",
+            "pushRecovery": {
+              "4b37ae99b0": "Start the default AI agent to fix this push failure",
+              "30b8d4f181": "Fix push failure with AI",
+              "dd43c47089": "Choose an agent for this push failure",
+              "ec7bfced55": "Choose agent to fix push failure",
+              "9e5ccd00aa": "Push failure context unavailable",
+              "054ead86b1": "Fix Push Failure With AI",
+              "15b7f210d7": "Choose the agent and edit the full command input before launch.",
+              "011f9713fc": "Push blocked",
+              "60bd988f0b": "AI Fix",
+              "03d238218c": "Details",
+              "a9bf7c171a": "Push Failed",
+              "834cb3f23d": "Fix with AI",
+              "783a808870": "Close"
+            }
           },
           "SourceControlAgentActionDialog": {
             "8e856842d1": "Could not start the selected agent.",
@@ -9464,6 +9573,35 @@
                       "216f762bd7": "Unable to resolve the workspace connection."
                     }
                   }
+                },
+                "push": {
+                  "failure": {
+                    "launch": {
+                      "216f762bd7": "Unable to resolve the workspace connection.",
+                      "4f4e0418a0": "Could not build the agent prompt.",
+                      "f2b47026e8": "Push failure prompt is empty. Update Source Control AI settings.",
+                      "d481ab22f9": "Saved AI agent is unavailable. Use Customize launch to choose another agent.",
+                      "9bbd9077a2": "No enabled AI agents. Configure agents in Settings.",
+                      "5540ff50cc": "Could not build the agent launch command.",
+                      "a8b97d2318": "Started an AI agent for the push failure."
+                    }
+                  }
+                },
+                "recovery": {
+                  "launch": {
+                    "4f4e0418a0": "Could not build the agent prompt.",
+                    "push": {
+                      "empty": "Push failure prompt is empty. Update Source Control AI settings."
+                    },
+                    "commit": {
+                      "empty": "Commit failure prompt is empty. Update Source Control AI settings."
+                    },
+                    "d481ab22f9": "Saved AI agent is unavailable. Use Customize launch to choose another agent.",
+                    "9bbd9077a2": "No enabled AI agents. Configure agents in Settings.",
+                    "5540ff50cc": "Could not build the agent launch command.",
+                    "216f762bd7": "Unable to resolve the workspace connection.",
+                    "success": "Started an AI agent for the {{value0}} failure."
+                  }
                 }
               },
               "discard": {
@@ -9614,9 +9752,8 @@
             "logPath": "Log path",
             "originalPaneUnavailable": "Original pane is no longer available.",
             "worktreeUnavailable": "Worktree is no longer available.",
-            "runtimeBrowseLocalHistory": "Runtime-hosted workspaces can browse local history. Resume actions are available in local and SSH workspaces.",
-            "runtimeWorkspacesUnsupported": "Resume from history is not available in runtime-hosted workspaces.",
-            "openSupportedWorkspace": "Open a local or SSH workspace before resuming a session.",
+            "openSupportedWorkspace": "Open a workspace before resuming a session.",
+            "sessionHostMismatchUnsupported": "This session belongs to a different host. Open a workspace on the same host to resume it.",
             "localSessionSshWorkspaceUnsupported": "This session's history is stored on this machine, so it can't resume in an SSH workspace. Open a local workspace instead."
           },
           "AiVaultPanelControls": {
@@ -9646,12 +9783,20 @@
             "globalScope": "Global",
             "projectScope": "Project",
             "currentProjectLower": "current project",
-            "project": "Project"
+            "project": "Project",
+            "hostScopeAriaLabel": "Session History host: {{value0}}",
+            "host": "Host"
           },
           "AiVaultSessionDetails": {
             "originalAsk": "Original ask",
             "latestTurns": "Latest turns",
             "noPreviewAvailable": "No conversation preview available",
+            "conversationNotSaved": "Conversation not saved",
+            "recoverableEmptyDetail": "This session has no saved conversation, but {{value0}} recoverable item(s) survive.",
+            "recoverableEmptyOpenLogHint": "Open the log to recover them.",
+            "emptyConversationDetail": "This session has no saved conversation and cannot be resumed.",
+            "queuedMessages": "{{value0}} queued message(s)",
+            "subagentTranscripts": "{{value0}} subagent transcript(s)",
             "messageCount": "{{value0}} msgs",
             "updated": "Updated",
             "created": "Created",
@@ -9702,6 +9847,7 @@
           },
           "AiVaultSessionRow": {
             "noPreviewAvailable": "No conversation preview available",
+            "recoverableBadge": "Not saved",
             "dragToResume": "Drag to resume in a new tab",
             "resumeAgentSession": "Resume {{value0}} session",
             "resumeInNewTab": "Resume in New Tab",
@@ -9903,7 +10049,15 @@
           "3cd5374e22": "Notification settings are still loading",
           "b6a994e36e": "Notification sound could not be played",
           "c0692baa52": "Choose Custom File",
-          "ac80d97e02": "Change Custom File"
+          "ac80d97e02": "Change Custom File",
+          "56b836215c": "Checking notification permission…",
+          "fd84d3e9b8": "Notifications are enabled",
+          "4f7bce5644": "macOS will alert you when agents finish or terminals need attention.",
+          "95d99b52fa": "Allow notifications for Orca",
+          "94562ba367": "macOS is asking for permission. Click Allow in the dialog and this step updates automatically.",
+          "4f6a1da718": "Open System Settings",
+          "90b5d2e363": "macOS is not delivering Orca notifications",
+          "2c47f5465f": "Turn on Allow notifications for Orca in System Settings. This step updates automatically once enabled."
         },
         "OnboardingFlow": {
           "1b5e182e9f": "Welcome to Orca",
@@ -10029,6 +10183,17 @@
           "windowsDefault": "Windows default",
           "rightClickBehavior": "Right-click behavior",
           "rightClickBehaviorDescription": "Pick the terminal mouse behavior that matches your Windows muscle memory."
+        },
+        "mac": {
+          "notification": {
+            "permission": {
+              "card": {
+                "f696515944": "Click Allow in the macOS dialog.",
+                "3d18cf71f9": "Updates automatically.",
+                "721d2bedb6": "Turn on Allow notifications for Orca in System Settings."
+              }
+            }
+          }
         }
       },
       "new": {
@@ -10324,6 +10489,7 @@
           },
           "FloatingTerminalToggleButton": {
             "3b04b065b5": "Show floating workspace",
+            "4cb418b991": "Show floating workspace, new activity",
             "5785dd9148": "Minimize floating workspace",
             "bfe7809a70": "{{value0}} floating workspace ({{value1}})"
           },
@@ -11485,6 +11651,24 @@
         },
         "richMarkdownLargeTextPaste": {
           "tooLarge": "Paste is too large."
+        },
+        "ExternalFileChangeBanner": {
+          "7c41e90d12": "This file changed on disk while you have unsaved edits. Saving will overwrite the newer disk content.",
+          "3fa2b8d417": "Reload from Disk",
+          "a95d02c644": "Keep My Edits",
+          "5c02de9b31": "Reloaded from disk",
+          "d1e830fa22": "Undo",
+          "90b2ce7d43": "Compare"
+        },
+        "ExternalFileChangeCompareDialog": {
+          "4b8de20a11": "File changed on disk",
+          "90cc31e4d7": "Disk version on the left, your unsaved edits on the right.",
+          "8fe30ab254": "Reading file from disk...",
+          "e2b1cd0393": "Could not read the file from disk: {{value0}}",
+          "b6cf20d514": "The file on disk is binary — no text comparison available.",
+          "3fa2b8d417": "Reload from Disk",
+          "a95d02c644": "Keep My Edits",
+          "2c8f1e07b9": "Loading comparison..."
         }
       },
       "diff": {
@@ -11674,7 +11858,7 @@
             "f2d0c22d67": "Delete annotation {{value0}}",
             "11c5084aa2": "Clear annotations",
             "734e4343ec": "Clear browser annotations",
-            "95af781091": "Send feedback to a new agent",
+            "95af781091": "Send feedback to an agent",
             "ac39b9366b": "Send",
             "a3508d7e6e": "{{value0}} annotation{{value1}} ready. Select another element or copy all feedback.",
             "f796c774a4": "Type a URL above to start browsing.",
@@ -12519,7 +12703,10 @@
         "noSkills": "No matching skills",
         "localAttachmentUnsupported": "Local attachments are not available for remote sessions.",
         "removeAttachment": "Remove attachment",
-        "pastedImageLabel": "Pasted image"
+        "pastedImageLabel": "Pasted image",
+        "imagePasteFailed": "Image paste failed.",
+        "worktreeNotReady": "Worktree not ready — try again in a moment.",
+        "uploadingAttachments": "Uploading {{value0}} file{{value1}} to remote…"
       },
       "tool": {
         "running": "Running…",
@@ -12571,7 +12758,8 @@
         "title": "Allow {{value0}}?",
         "allow": "Allow",
         "deny": "Deny"
-      }
+      },
+      "launchPromptNotDelivered": "Not delivered — check the terminal"
     },
     "tab": {
       "bar": {

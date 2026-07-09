@@ -25,6 +25,7 @@
         "geminiToggleDescription": "활성 워크스페이스에 대한 Gemini 토큰 및 비용 사용량을 표시합니다.",
         "opencodeGoToggleDescription": "활성 워크스페이스에 대한 OpenCode Go 토큰 및 비용 사용량을 표시합니다.",
         "kimiToggleDescription": "활성 워크스페이스의 Kimi 구독 사용량을 표시합니다.",
+        "minimaxToggleDescription": "활성 워크스페이스의 MiniMax 구독 사용량을 표시합니다.",
         "sshToggleDescription": "사용 가능한 SSH 및 원격 Orca 호스트가 있으면 표시합니다.",
         "resourceUsageToggleDescription": "리소스 관리자를 표시합니다. 클릭하면 CPU, 메모리, 세션, 데몬 제어, 워크스페이스 디스크 스캔을 볼 수 있습니다.",
         "portsToggleDescription": "라이브 워크스페이스 포트를 표시합니다. 워크스페이스 범위 포트 및 외부 수신기를 보려면 클릭하세요."
@@ -135,6 +136,9 @@
         "3affe7de3a": "이 브라우저가 연결할 수 있는 Orca 서버의 페어링 URL을 붙여넣습니다.",
         "e3bcd082ac": "Orca에 연결",
         "mobileScopeRejected": "이 QR 코드는 제한된(모바일) 액세스 권한만 제공합니다. 전체 웹 앱을 사용하려면 설정 → 원격 Orca 서버 → 이 Orca 서버 공유 → 새 링크에서 브라우저 액세스 링크를 여세요."
+      },
+      "webPreloadApi": {
+        "aiVaultUnavailableForHost": "이 실행 호스트에서는 Agent 세션 기록을 사용할 수 없습니다."
       },
       "web": {
         "preload": {
@@ -561,6 +565,13 @@
       },
       "ephemeralVmWorkspaceTarget": {
         "projectRootRegistrationFailed": "Failed to register the recipe-created project root on the runtime."
+      },
+      "blocked": {
+        "notification": {
+          "fallback": {
+            "de50bef680": "macOS가 Orca 알림을 차단하고 있습니다"
+          }
+        }
       }
     },
     "hooks": {
@@ -2581,7 +2592,10 @@
             "connectFailed": "SSH 연결 실패",
             "title": "SSH 연결 필요",
             "connectingButton": "연결 중...",
-            "connectButton": "연결"
+            "connectButton": "연결",
+            "removedTitle": "SSH host removed",
+            "removedBody": "The SSH host for this workspace was removed, so it can no longer connect. Remove the workspace to clear it — remote files are left untouched.",
+            "removeWorkspaceButton": "Remove workspace"
           }
         }
       },
@@ -2607,9 +2621,9 @@
             "localWorkspacesOnly": "기록에서 재개하기는 로컬 워크스페이스에서만 사용할 수 있습니다.",
             "openLocalWorkspace": "세션을 재개하기 전에 로컬 워크스페이스를 여세요.",
             "sessionQueued": "세션이 대기열에 추가됨",
-            "runtimeWorkspacesUnsupported": "Resume from history is not available in runtime-hosted workspaces.",
-            "openSupportedWorkspace": "Open a local or SSH workspace before resuming a session.",
-            "localSessionSshWorkspaceUnsupported": "이 세션의 기록은 이 컴퓨터에 저장되어 있어 SSH 워크스페이스에서는 재개할 수 없습니다. 대신 로컬 워크스페이스에 놓으세요."
+            "openSupportedWorkspace": "Open a workspace before resuming a session.",
+            "localSessionSshWorkspaceUnsupported": "이 세션의 기록은 이 컴퓨터에 저장되어 있어 SSH 워크스페이스에서는 재개할 수 없습니다. 대신 로컬 워크스페이스에 놓으세요.",
+            "sessionHostMismatchUnsupported": "이 세션은 다른 호스트에 속합니다. 같은 호스트의 워크스페이스에 놓으세요."
           },
           "TabGroupDropOverlay": {
             "paneColumnLabel": "새 분할"
@@ -2789,6 +2803,9 @@
           "EditorFileTabCloseButton": {
             "4655cf570e": "탭 닫기",
             "a768f428f1": "탭 닫기"
+          },
+          "TerminalTabSplitMenuSection": {
+            "splitTerminal": "Split terminal"
           }
         }
       },
@@ -2954,7 +2971,9 @@
             "972a1ff497": "Codex 한도를 재설정할까요?",
             "6d1042aa6f": "활성 계정의 Codex rate-limit 재설정 크레딧 1회를 사용해 재설정 가능한 사용량 창을 즉시 초기화합니다.",
             "f077f586db": "다시 묻지 않기",
-            "c0e972d726": "취소"
+            "c0e972d726": "취소",
+            "06741a2f3d": "MiniMax 사용량 세부 정보 열기",
+            "3bbf140864": "MiniMax 사용량"
           },
           "StatusBarUsageEmptyCta": {
             "828c764a79": "계정 연결",
@@ -3697,7 +3716,8 @@
           "d36883e046": "취소",
           "8c097ef04e": "Orca에서. 아직 디스크에 있습니다.",
           "e62415c3d0": "다음 항목만 제거합니다",
-          "b79b39d865": "프로젝트 제거"
+          "b79b39d865": "프로젝트 제거",
+          "fromOrcaSsh": "from Orca. Its files stay on {{value0}} — re-add that SSH host to recover it."
         },
         "ScrollToCurrentWorkspaceToolbarButton": {
           "23989bb663": "활성 워크스페이스로 이동"
@@ -4413,7 +4433,16 @@
           "5e6f7a8b9c": "이 컴퓨터에서 저장된 SSH 호스트와 인증 정보를 제거합니다. 원격 파일은 삭제되지 않습니다.",
           "6f7a8b9c0d": "취소",
           "7a8b9c0d1e": "설정 열기",
-          "8b9c0d1e2f": "호스트 제거"
+          "8b9c0d1e2f": "호스트 제거",
+          "workspacesFailed": "Could not remove {{count}} of this host’s workspaces. The host was kept so you can retry.",
+          "oneWorkspace": "1 workspace",
+          "manyWorkspaces": "{{count}} workspaces",
+          "hostHasWorkspacesDefault": "Removes {{value0}} and its credentials from this computer. Its {{value1}} stay in Orca — remote files are not touched.",
+          "alsoDeleteRemote": "Also delete these {{value0}} on {{value1}}",
+          "alsoForgetLocal": "Also remove these {{value0}} from Orca",
+          "advanced": "Advanced",
+          "alsoDeleteRemoteHint": "Permanently deletes the remote Git worktrees and their branches. Cannot be undone.",
+          "alsoForgetLocalHint": "Clears them from Orca only. Remote files, worktrees, and branches are left untouched."
         },
         "HostRenameDialog": {
           "1a2b3c4d5e": "호스트 이름 바꾸기",
@@ -4526,6 +4555,16 @@
           "importing": "가져오는 중...",
           "importSshConfig": "~/.ssh/config 가져오기",
           "sshPersistenceDefault": "이 호스트의 원격 터미널은 종료하거나 릴레이를 재설정할 때까지 계속 실행됩니다."
+        },
+        "ForgetSshWorkspaceDialog": {
+          "reconnectFailed": "Reconnection failed",
+          "forgetBody": "Removes this workspace from Orca only. Files, the Git worktree, and branches on {{host}} are left untouched.",
+          "title": "Delete “{{name}}”?",
+          "disconnectedBody": "The SSH host for this workspace is not connected. Reconnect to delete it on the remote too, or remove it from Orca only.",
+          "ghostBody": "{{host}} is no longer a saved SSH host, so this workspace is no longer connected to a live host. It can only be removed from Orca — files and branches on the remote are left untouched.",
+          "cancel": "Cancel",
+          "forget": "Remove from Orca",
+          "reconnectAndDelete": "Reconnect & Delete"
         }
       },
       "shared": {
@@ -4573,6 +4612,7 @@
           "ae3b21eb6c": "opencode.ai/workspace/wrk_…/go",
           "51c9104e13": "opencode.ai에 로그인한 후 URL에서 이를 찾으세요(예:",
           "b398b834c9": "지우기",
+          "316ca4e610": "쿠키 잊기",
           "a122332371": "wrk_… (자동 조회를 위해 비워두세요)",
           "dbdb0b0bd8": "워크스페이스 ID 재정의",
           "d70a5287a4": "자동 조회가 실패할 때 사용할 선택적 워크스페이스 ID 재정의입니다.",
@@ -4638,7 +4678,47 @@
           "75ca9b718e": "Codex는 활성 계정에 새로 로그인해야 한다고 보고했습니다. 새 Codex 세션을 시작하기 전에 다시 인증하세요.",
           "b11078a9c2": "wsl",
           "350b2a1aa7": "현재 사용 중인",
-          "e05d0ff737": "현재 {{value0}} Claude 로그인을 사용하세요."
+          "e05d0ff737": "현재 {{value0}} Claude 로그인을 사용하세요.",
+          "2f24f244a4": "MiniMax Cookie가 필요합니다.",
+          "8e6f0cb1d8": "MiniMax Cookie가 저장되지 않았습니다.",
+          "8d61637a77": "MiniMax Cookie가 저장되었습니다.",
+          "b43e761fe5": "MiniMax Cookie 업데이트에 실패했습니다.",
+          "5d63bbfbec": "MiniMax",
+          "15e831350e": "platform.minimax.io에서 MiniMax 사용량 추적을 설정합니다.",
+          "21d6eb141e": "MiniMax 세션 Cookie",
+          "33bba5ad83": "로컬 rate-limit 가져오기에 사용할 MiniMax 세션 Cookie를 붙여넣으세요.",
+          "73ea15f24b": "저장됨",
+          "23afe8f226": "저장되지 않음",
+          "566d9a99ab": "_token=…; minimax_group_id_v2=…",
+          "f38b9cc4bd": "교체",
+          "590a3130f9": "저장",
+          "79418c782a": "브라우저에서 platform.minimax.io/console/usage 를 열고 로그인한 다음 DevTools(네트워크 → 임의의 remains 요청 → Cookie)에서 Cookie 요청 헤더를 복사하세요.",
+          "9dd50d3f75": "고급",
+          "174fb408f9": "MiniMax 사용량 새로 고침이 잘못된 워크스페이스나 모델을 가리키는 경우에만 이 기본값을 변경하세요.",
+          "bf160bb6c0": "Group ID 재정의",
+          "b1e2743313": "선택 항목입니다. 비워두면 Cookie의 minimax_group_id_v2가 사용됩니다.",
+          "0747d6391a": "Cookie의 Group ID 사용",
+          "4ff2af7524": "사용 모델 이름",
+          "5cf4b0f85f": "선택적인 쉼표로 구분된 모델 이름. MiniMax가 모델 관련 오류를 반환하지 않는 한 general로 두세요.",
+          "3c92b0d31c": "general",
+          "0d8e77bc40": "콘솔 열기",
+          "0b8c1c7e02": "로컬에 저장됨",
+          "1fd1b1b6b4": "Cookie가 설정되지 않음",
+          "5e08b0fe57": "로컬에 저장되며 사용량 새로 고침을 위해 platform.minimax.io로만 전송됩니다.",
+          "43d7a45b97": "복사 방법",
+          "b8a4f21c3e": "DevTools에서 Cookie 헤더 붙여넣기",
+          "53f7b8c7a2": "마지막 새로 고침: {{value0}}",
+          "31d24a4e87": "브라우저에서 로그아웃하면 Cookie가 만료됩니다.",
+          "3a30aaf526": "방금 전",
+          "f5d8d2a6a1": "브라우저에서 platform.minimax.io/console/usage를 열고 로그인합니다.",
+          "24560fe830": "DevTools를 엽니다.",
+          "4cab0fa42d": "네트워크 탭으로 이동하여 Preserve log를 활성화합니다.",
+          "bee4e63e1c": "페이지를 새로 고침합니다.",
+          "87f814af6f": "remains로 필터링하고 coding_plan/remains 요청을 선택합니다.",
+          "435df0ee51": "Request Headers에서 Cookie 값을 복사합니다.",
+          "7492fb3bba": "여기에 붙여넣고 저장을 클릭합니다.",
+          "9fec52de4b": "Cookie 복사 방법",
+          "4e32e030b2": "로컬에 저장됩니다. Orca는 사용량 새로 고침을 위해 platform.minimax.io로만 전송합니다."
         },
         "AdvancedPane": {
           "40b29e0bf3": "다시 시작",
@@ -4718,7 +4798,10 @@
           "agentPermissionsDescription": "Orca가 agents를 실행할 때 권한 프롬프트를 줄일지, 수동 확인을 유지할지 선택합니다.",
           "agentPermissionsYolo": "Yolo",
           "agentPermissionsManual": "수동",
-          "3f1bdf3cb4": "환경 텍스트가 너무 커서 안전하게 파싱할 수 없습니다."
+          "3f1bdf3cb4": "환경 텍스트가 너무 커서 안전하게 파싱할 수 없습니다.",
+          "codexSessionSource": "Codex home to import from",
+          "codexSessionSourceInfo": "About importing Codex history",
+          "codexSessionSourceTooltip": "Orca runs Codex in an isolated home. Point this at your existing Codex home to import that session history. Empty uses ~/.codex."
         },
         "AppIconSelector": {
           "d5a112dc9b": "다음 아이콘",
@@ -6769,7 +6852,9 @@
             "bdbd1e668e": "Windows",
             "593720c17f": "위치",
             "b84a5b0c8a": "이 장치 또는 WSL에서 공급자 계정을 검사하고 추가할지 선택합니다.",
-            "d09fb5ca92": "계정 위치"
+            "d09fb5ca92": "계정 위치",
+            "733f9e2a93": "MiniMax 사용량",
+            "f8374c3151": "로컬 rate-limit 가져오기에 사용할 platform.minimax.io 세션 Cookie를 붙여넣으세요."
           }
         },
         "advanced": {
@@ -6939,6 +7024,11 @@
             "40e5c3c285": "kimi",
             "c927a155d5": "상태 표시줄에 Kimi 구독 사용량을 표시합니다.",
             "3a6c028ea8": "Kimi 사용량",
+            "25e51b62ee": "사용 한도",
+            "d9e7cef86f": "쿠키",
+            "d16378a88f": "minimax",
+            "e46178eb1b": "상태 표시줄에 MiniMax 구독 사용량을 표시합니다.",
+            "0f08f6b483": "MiniMax 사용량",
             "edbf0f63a0": "비용",
             "afbb6a3767": "토큰",
             "d77537b580": "opencode-go",
@@ -8302,7 +8392,8 @@
                   "customCommand": "사용자 지정 명령",
                   "supportedAgents": "이 레시피에 지원되는 agent: {{value0}}.",
                   "unsupportedSavedAgent": "{{value0}}은(는) 이 텍스트 생성 레시피를 실행할 수 없습니다. 아래에서 지원되는 agent 중 하나를 선택하세요.",
-                  "resolveComments": "선택한 해결되지 않은 PR 또는 MR 댓글에서 agent를 시작합니다."
+                  "resolveComments": "선택한 해결되지 않은 PR 또는 MR 댓글에서 agent를 시작합니다.",
+                  "fixPushFailure": "Start an agent when a pre-push hook or git push fails."
                 }
               }
             }
@@ -8868,7 +8959,8 @@
             "b234ab25b4": "파일을 클립보드에 복사하지 못했습니다",
             "f9d7ca753d": "경로 복사",
             "3161c4e425": "폴더",
-            "e887fa4b2e": "터미널에서 열기"
+            "e887fa4b2e": "터미널에서 열기",
+            "1d8e182c32": "파일 보기"
           },
           "FileExplorerToolbar": {
             "d238264654": "Git이 무시한 파일 표시",
@@ -9215,7 +9307,24 @@
             "b715ef615b": "{{value1}}보다 {{value0}} commits 앞서 있음",
             "c1a8f3e204": "{{value0}}보다 1 commit 뒤처짐",
             "d2b9g4f315": "{{value1}}보다 {{value0}} commits 뒤처짐",
-            "e9c2a5d416": "{{value0}}와 동일한 상태"
+            "e9c2a5d416": "{{value0}}와 동일한 상태",
+            "4b4a7de138": "Open review page in browser",
+            "createPrIntentCommitBlockedSummary": "Commit blocked: {{value0}} Fix the issue, then retry Create PR.",
+            "pushRecovery": {
+              "4b37ae99b0": "Start the default AI agent to fix this push failure",
+              "30b8d4f181": "Fix push failure with AI",
+              "dd43c47089": "Choose an agent for this push failure",
+              "ec7bfced55": "Choose agent to fix push failure",
+              "9e5ccd00aa": "Push failure context unavailable",
+              "054ead86b1": "Fix Push Failure With AI",
+              "15b7f210d7": "Choose the agent and edit the full command input before launch.",
+              "011f9713fc": "Push blocked",
+              "60bd988f0b": "AI Fix",
+              "03d238218c": "Details",
+              "a9bf7c171a": "Push Failed",
+              "834cb3f23d": "Fix with AI",
+              "783a808870": "Close"
+            }
           },
           "SourceControlAgentActionDialog": {
             "8e856842d1": "선택한 agent를 시작할 수 없습니다.",
@@ -9464,6 +9573,35 @@
                       "216f762bd7": "워크스페이스 연결을 확인할 수 없습니다."
                     }
                   }
+                },
+                "push": {
+                  "failure": {
+                    "launch": {
+                      "216f762bd7": "Unable to resolve the workspace connection.",
+                      "4f4e0418a0": "Could not build the agent prompt.",
+                      "f2b47026e8": "Push failure prompt is empty. Update Source Control AI settings.",
+                      "d481ab22f9": "Saved AI agent is unavailable. Use Customize launch to choose another agent.",
+                      "9bbd9077a2": "No enabled AI agents. Configure agents in Settings.",
+                      "5540ff50cc": "Could not build the agent launch command.",
+                      "a8b97d2318": "Started an AI agent for the push failure."
+                    }
+                  }
+                },
+                "recovery": {
+                  "launch": {
+                    "4f4e0418a0": "Could not build the agent prompt.",
+                    "push": {
+                      "empty": "Push failure prompt is empty. Update Source Control AI settings."
+                    },
+                    "commit": {
+                      "empty": "Commit failure prompt is empty. Update Source Control AI settings."
+                    },
+                    "d481ab22f9": "Saved AI agent is unavailable. Use Customize launch to choose another agent.",
+                    "9bbd9077a2": "No enabled AI agents. Configure agents in Settings.",
+                    "5540ff50cc": "Could not build the agent launch command.",
+                    "216f762bd7": "Unable to resolve the workspace connection.",
+                    "success": "Started an AI agent for the {{value0}} failure."
+                  }
                 }
               },
               "discard": {
@@ -9614,10 +9752,9 @@
             "sessionsShownCompact": "{{value0}} 표시됨",
             "originalPaneUnavailable": "원래 창은 더 이상 사용할 수 없습니다.",
             "worktreeUnavailable": "워크트리는 더 이상 사용할 수 없습니다.",
-            "runtimeBrowseLocalHistory": "Runtime-hosted workspaces can browse local history. Resume actions are available in local and SSH workspaces.",
-            "runtimeWorkspacesUnsupported": "Resume from history is not available in runtime-hosted workspaces.",
-            "openSupportedWorkspace": "Open a local or SSH workspace before resuming a session.",
-            "localSessionSshWorkspaceUnsupported": "이 세션의 기록은 이 컴퓨터에 저장되어 있어 SSH 워크스페이스에서는 재개할 수 없습니다. 대신 로컬 워크스페이스를 여세요."
+            "openSupportedWorkspace": "Open a workspace before resuming a session.",
+            "localSessionSshWorkspaceUnsupported": "이 세션의 기록은 이 컴퓨터에 저장되어 있어 SSH 워크스페이스에서는 재개할 수 없습니다. 대신 로컬 워크스페이스를 여세요.",
+            "sessionHostMismatchUnsupported": "이 세션은 다른 호스트에 속합니다. 재개하려면 같은 호스트의 워크스페이스를 여세요."
           },
           "AiVaultPanelControls": {
             "scanningSessions": "세션 스캔 중",
@@ -9646,7 +9783,9 @@
             "globalScope": "전역",
             "projectScope": "프로젝트",
             "currentProjectLower": "현재 프로젝트",
-            "project": "프로젝트"
+            "project": "프로젝트",
+            "hostScopeAriaLabel": "Session History host: {{value0}}",
+            "host": "Host"
           },
           "AiVaultSessionDetails": {
             "updated": "업데이트됨",
@@ -9698,7 +9837,13 @@
             "sessionRole": "세션",
             "jumpToOriginalPane": "원래 창으로 이동",
             "worktree": "작업 트리",
-            "jumpToWorktree": "작업 트리로 이동"
+            "jumpToWorktree": "작업 트리로 이동",
+            "conversationNotSaved": "대화가 저장되지 않음",
+            "recoverableEmptyDetail": "이 세션에는 저장된 대화가 없지만 복구 가능한 항목이 {{value0}}개 남아 있습니다.",
+            "recoverableEmptyOpenLogHint": "로그를 열어 복구하세요.",
+            "emptyConversationDetail": "이 세션에는 저장된 대화가 없어 재개할 수 없습니다.",
+            "queuedMessages": "대기 중인 메시지 {{value0}}개",
+            "subagentTranscripts": "서브에이전트 대화 기록 {{value0}}개"
           },
           "AiVaultSessionRow": {
             "resumeAgentSession": "{{value0}} 세션 재개",
@@ -9724,7 +9869,8 @@
             "systemRole": "시스템",
             "sessionRole": "세션",
             "jumpToOriginalPane": "원래 창으로 이동",
-            "jumpToWorktree": "작업 트리로 이동"
+            "jumpToWorktree": "작업 트리로 이동",
+            "recoverableBadge": "저장 안 됨"
           },
           "FileExplorerNameFilter": {
             "26fb73c6e3": "파일 찾기",
@@ -9903,7 +10049,15 @@
           "3cd5374e22": "알림 설정이 아직 로드 중입니다.",
           "b6a994e36e": "알림음을 재생할 수 없습니다.",
           "c0692baa52": "사용자 정의 파일 선택",
-          "ac80d97e02": "사용자 정의 파일 변경"
+          "ac80d97e02": "사용자 정의 파일 변경",
+          "56b836215c": "알림 권한을 확인하는 중…",
+          "fd84d3e9b8": "알림이 활성화되었습니다",
+          "4f7bce5644": "에이전트가 완료되거나 터미널에 주의가 필요할 때 macOS가 알려 줍니다.",
+          "95d99b52fa": "Orca 알림 허용",
+          "94562ba367": "macOS가 권한을 요청하고 있습니다. 대화 상자에서 허용을 클릭하면 이 단계가 자동으로 업데이트됩니다.",
+          "4f6a1da718": "시스템 설정 열기",
+          "90b5d2e363": "macOS가 Orca 알림을 전달하지 않고 있습니다",
+          "2c47f5465f": "시스템 설정에서 Orca에 대한 알림 허용을 켜세요. 활성화되면 이 단계가 자동으로 업데이트됩니다."
         },
         "OnboardingFlow": {
           "1b5e182e9f": "Orca에 오신 것을 환영합니다",
@@ -10029,6 +10183,17 @@
           "windowsDefault": "Windows 기본값",
           "rightClickBehavior": "오른쪽 클릭 동작",
           "rightClickBehaviorDescription": "Windows에서 익숙한 terminal 마우스 동작을 선택하세요."
+        },
+        "mac": {
+          "notification": {
+            "permission": {
+              "card": {
+                "f696515944": "macOS 대화 상자에서 허용을 클릭하세요.",
+                "3d18cf71f9": "자동으로 업데이트됩니다.",
+                "721d2bedb6": "시스템 설정에서 Orca에 대한 알림 허용을 켜세요."
+              }
+            }
+          }
         }
       },
       "new": {
@@ -10324,6 +10489,7 @@
           },
           "FloatingTerminalToggleButton": {
             "3b04b065b5": "플로팅 워크스페이스 표시",
+            "4cb418b991": "Show floating workspace, new activity",
             "5785dd9148": "플로팅 워크스페이스 최소화",
             "bfe7809a70": "{{value0}} 플로팅 워크스페이스({{value1}})"
           },
@@ -11485,6 +11651,24 @@
           "3e6c9a2b71": "보류 중",
           "4f7d0c3e88": "단계 실패",
           "5a8e1d4f23": " · "
+        },
+        "ExternalFileChangeBanner": {
+          "7c41e90d12": "This file changed on disk while you have unsaved edits. Saving will overwrite the newer disk content.",
+          "3fa2b8d417": "Reload from Disk",
+          "a95d02c644": "Keep My Edits",
+          "5c02de9b31": "Reloaded from disk",
+          "d1e830fa22": "Undo",
+          "90b2ce7d43": "Compare"
+        },
+        "ExternalFileChangeCompareDialog": {
+          "4b8de20a11": "File changed on disk",
+          "90cc31e4d7": "Disk version on the left, your unsaved edits on the right.",
+          "8fe30ab254": "Reading file from disk...",
+          "e2b1cd0393": "Could not read the file from disk: {{value0}}",
+          "b6cf20d514": "The file on disk is binary — no text comparison available.",
+          "3fa2b8d417": "Reload from Disk",
+          "a95d02c644": "Keep My Edits",
+          "2c8f1e07b9": "Loading comparison..."
         }
       },
       "diff": {
@@ -11674,7 +11858,7 @@
             "f2d0c22d67": "주석 {{value0}} 삭제",
             "11c5084aa2": "주석 지우기",
             "734e4343ec": "브라우저 주석 지우기",
-            "95af781091": "새 agent에게 피드백 보내기",
+            "95af781091": "agent에게 피드백 보내기",
             "ac39b9366b": "보내기",
             "a3508d7e6e": "{{value0}} 주석{{value1}}이 준비되었습니다. 다른 요소를 선택하거나 모든 피드백을 복사하세요.",
             "f796c774a4": "탐색을 시작하려면 위에 URL을 입력하세요.",
@@ -12519,7 +12703,10 @@
         "noSkills": "어울리는 스킬 없음",
         "localAttachmentUnsupported": "원격 세션에는 로컬 첨부 파일을 사용할 수 없습니다.",
         "removeAttachment": "첨부파일 삭제",
-        "pastedImageLabel": "붙여넣은 이미지"
+        "pastedImageLabel": "붙여넣은 이미지",
+        "imagePasteFailed": "Image paste failed.",
+        "worktreeNotReady": "Worktree not ready — try again in a moment.",
+        "uploadingAttachments": "Uploading {{value0}} file{{value1}} to remote…"
       },
       "tool": {
         "running": "실행 중…",
@@ -12571,7 +12758,8 @@
         "title": "{{value0}}을(를) 허용하시겠습니까?",
         "allow": "허용하다",
         "deny": "부인하다"
-      }
+      },
+      "launchPromptNotDelivered": "Not delivered — check the terminal"
     },
     "tab": {
       "bar": {

@@ -54,6 +54,7 @@ import {
 import { isShellProcess } from '../../shared/shell-process-detection'
 import { parsePtySessionId } from './pty-session-id'
 import { getAgentForegroundContextPaths } from '../providers/agent-foreground-context-paths'
+import { assertSafeAgentStartupCwd, resolveSafePtyDefaultCwd } from '../providers/pty-default-cwd'
 
 const PANE_IDENTITY_ENV_KEYS = [
   'ORCA_PANE_KEY',
@@ -63,6 +64,12 @@ const PANE_IDENTITY_ENV_KEYS = [
 ] as const
 const FOREGROUND_AGENT_CACHE_TTL_MS = 1000
 const SHELL_FOREGROUND_REFRESH_RETRY_MS = 5_000
+// Why: a Windows refresh forks a powershell.exe whole-process-table CIM scan
+// (~10-40x heavier than POSIX `ps`). An idle shell with no agent identity and
+// no recent output retries far slower; output re-arms the 5s retry so an agent
+// start (which always prints) is still resolved promptly.
+const WINDOWS_IDLE_SHELL_FOREGROUND_REFRESH_RETRY_MS = 15_000
+const SHELL_FOREGROUND_OUTPUT_HOT_WINDOW_MS = 10_000
 const STARTUP_AGENT_FOREGROUND_BOOTSTRAP_MS = 5_000
 const PTY_SPAWN_HEALTH_TIMEOUT_MS = 4_000
 // Why: a busy machine right after an upgrade can make one short-lived shell
@@ -93,20 +100,7 @@ export type PtySubprocessOptions = {
  * Returns a stable default working directory for daemon-spawned PTYs.
  */
 function getDefaultCwd(): string {
-  if (process.platform !== 'win32') {
-    return process.env.HOME || '/'
-  }
-
-  // Why: HOMEPATH alone is drive-relative (`\\Users\\name`). Pair it with
-  // HOMEDRIVE when USERPROFILE is unavailable so daemon-spawned Windows PTYs
-  // still start in a valid absolute home directory.
-  if (process.env.USERPROFILE) {
-    return process.env.USERPROFILE
-  }
-  if (process.env.HOMEDRIVE && process.env.HOMEPATH) {
-    return `${process.env.HOMEDRIVE}${process.env.HOMEPATH}`
-  }
-  return 'C:\\'
+  return resolveSafePtyDefaultCwd()
 }
 
 /**
@@ -206,11 +200,13 @@ function isExistingDirectory(path: string | undefined): path is string {
  * Moves the daemon process to a stable cwd after its original cwd disappears.
  */
 function repairDaemonCwd(): string | null {
-  const candidates = [
-    process.env.ORCA_USER_DATA_PATH,
-    getDefaultCwd(),
-    process.platform === 'win32' ? 'C:\\' : '/'
-  ]
+  const candidates = [process.env.ORCA_USER_DATA_PATH]
+  try {
+    candidates.push(getDefaultCwd())
+  } catch {
+    // Keep daemon cwd repair best-effort even when no user terminal cwd is safe.
+  }
+  candidates.push(process.platform === 'win32' ? 'C:\\' : '/')
   for (const candidate of candidates) {
     if (isExistingDirectory(candidate)) {
       try {
@@ -312,6 +308,16 @@ function preflightWindowsPtySpawnEnvironment(args: {
   }
 
   validateWorkingDirectory(args.validationCwd)
+}
+
+/**
+ * Validates POSIX spawn cwd before node-pty can fail with an opaque ENOENT.
+ */
+function preflightPosixPtySpawnEnvironment(validationCwd: string): void {
+  if (process.platform === 'win32') {
+    return
+  }
+  validateWorkingDirectory(validationCwd)
 }
 
 /**
@@ -589,6 +595,9 @@ export function createPtySubprocess(opts: PtySubprocessOptions): SubprocessHandl
   let windowsFallbackAttempts: WindowsShellSpawnAttempt[] = []
   const startupAgentRecognition = recognizeAgentProcessFromCommandLine(opts.command)
   const isCodexStartupCommand = startupAgentRecognition?.agent === 'codex'
+  if (opts.command && startupAgentRecognition) {
+    assertSafeAgentStartupCwd(opts.cwd, opts.command)
+  }
   const requestedCwd = opts.cwd || getDefaultCwd()
   let spawnCwd = requestedCwd
   let validationCwd = spawnCwd
@@ -772,6 +781,7 @@ export function createPtySubprocess(opts: PtySubprocessOptions): SubprocessHandl
   // runs in a separate forked process with its own code path.
   ensureNodePtySpawnHelperExecutable()
   preflightUnixPtySpawnEnvironment()
+  preflightPosixPtySpawnEnvironment(validationCwd)
   preflightWindowsPtySpawnEnvironment({
     validationCwd,
     cwdWasExplicit: opts.cwd !== undefined
@@ -836,7 +846,11 @@ export function createPtySubprocess(opts: PtySubprocessOptions): SubprocessHandl
     }
   }
 
+  let lastOutputAt = 0
   proc.onData((data) => {
+    if (data.length > 0) {
+      lastOutputAt = Date.now()
+    }
     if (onDataCb) {
       onDataCb(data)
     } else {
@@ -908,10 +922,16 @@ export function createPtySubprocess(opts: PtySubprocessOptions): SubprocessHandl
       return
     }
     const now = Date.now()
-    const retryMs =
+    const idleNoEvidenceShell =
       fallbackIsShell && !getActiveStartupAgentForeground(now) && !cachedAgentForeground
-        ? SHELL_FOREGROUND_REFRESH_RETRY_MS
-        : FOREGROUND_AGENT_CACHE_TTL_MS
+    // Why: on Windows each refresh is a whole-table CIM scan; only shells with
+    // no agent evidence and no recent output relax, so agent-identity refresh
+    // (cached identity → 1s TTL) and post-output starts keep the fast retry.
+    const retryMs = !idleNoEvidenceShell
+      ? FOREGROUND_AGENT_CACHE_TTL_MS
+      : process.platform === 'win32' && now - lastOutputAt > SHELL_FOREGROUND_OUTPUT_HOT_WINDOW_MS
+        ? WINDOWS_IDLE_SHELL_FOREGROUND_REFRESH_RETRY_MS
+        : SHELL_FOREGROUND_REFRESH_RETRY_MS
     if (foregroundRefreshInFlight || now - lastForegroundRefreshStartedAt < retryMs) {
       return
     }
@@ -937,6 +957,16 @@ export function createPtySubprocess(opts: PtySubprocessOptions): SubprocessHandl
           ) {
             cachedAgentForeground = null
             startupAgentForeground = null
+          } else if (
+            cachedAgentForeground !== null &&
+            Date.now() - cachedAgentForeground.refreshedAt > FOREGROUND_AGENT_CACHE_TTL_MS &&
+            currentFallbackProcess !== null &&
+            isAgentForegroundWrapperProcess(currentFallbackProcess)
+          ) {
+            // Why: the wrapper's tree no longer resolves to an agent — an expired
+            // identity must not transfer to an unrelated wrapper (e.g. npm right
+            // after an agent exit). Fresh identities survive one-off scan hiccups.
+            cachedAgentForeground = null
           }
           return
         }
@@ -994,6 +1024,18 @@ export function createPtySubprocess(opts: PtySubprocessOptions): SubprocessHandl
         ) {
           return cachedAgentForeground.processName
         }
+        // Why: a wrapper foreground (node/python) can never identify itself, and
+        // readers poll slower than the cache TTL — returning the raw wrapper here
+        // would hide the resolved identity forever. Serve the last resolved agent
+        // while the scheduled refresh revalidates; exit truth is safe because an
+        // exited agent's foreground falls back to the shell, not a wrapper.
+        if (
+          cachedAgentForeground &&
+          fallbackProcess !== null &&
+          isAgentForegroundWrapperProcess(fallbackProcess)
+        ) {
+          return cachedAgentForeground.processName
+        }
         const activeStartupAgentForeground = getActiveStartupAgentForeground(now)
         if (fallbackProcess && isShellProcess(fallbackProcess) && activeStartupAgentForeground) {
           return activeStartupAgentForeground.processName
@@ -1024,6 +1066,16 @@ export function createPtySubprocess(opts: PtySubprocessOptions): SubprocessHandl
         proc.resize(cols, rows)
       } catch {
         dead = true
+      }
+    },
+    clear: () => {
+      if (dead) {
+        return
+      }
+      try {
+        proc.clear()
+      } catch {
+        // Best-effort: a clear on a just-exited PTY must not kill the handle.
       }
     },
     kill: () => {

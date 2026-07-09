@@ -152,6 +152,7 @@ import type {
   GetRateLimitResult,
   NotificationDispatchRequest,
   NotificationDispatchResult,
+  NotificationDeliveryProbeResult,
   NotificationDismissResult,
   NotificationPermissionStatusResult,
   NotificationSoundResult,
@@ -188,6 +189,7 @@ import type {
   StatsSummary,
   MemorySnapshot,
   TuiAgent,
+  UpdateCheckOptions,
   UpdateStatus,
   Worktree,
   WorktreeBaseStatusEvent,
@@ -918,6 +920,9 @@ export type PreloadApi = {
       kind?: 'git' | 'folder'
     }) => Promise<{ repo: Repo } | { error: string }>
     remove: (args: { repoId: string }) => Promise<void>
+    // Forget a project on one execution host only, leaving the same repo id on
+    // other hosts (local or a re-added SSH target) intact.
+    removeForHost: (args: { repoId: string; hostId: string }) => Promise<void>
     reorder: (args: { orderedIds: string[] }) => Promise<{ status: 'applied' | 'rejected' }>
     update: (args: {
       repoId: string
@@ -1118,6 +1123,9 @@ export type PreloadApi = {
       force?: boolean
       skipArchive?: boolean
     }) => Promise<RemoveWorktreeResult>
+    // Forget a workspace from Orca only — no remote Git/filesystem work. Used
+    // for workspaces pinned to a removed/disconnected SSH host.
+    forgetLocal: (args: { worktreeId: string }) => Promise<RemoveWorktreeResult>
     forceDeletePreservedBranch: (args: {
       worktreeId: string
       branchName: string
@@ -1168,6 +1176,7 @@ export type PreloadApi = {
       cols: number
       rows: number
       cwd?: string
+      cwdFallback?: 'worktree'
       env?: Record<string, string>
       command?: string
       launchConfig?: SleepingAgentLaunchConfig
@@ -1204,12 +1213,14 @@ export type PreloadApi = {
       replay?: string
       sessionExpired?: boolean
       coldRestore?: { scrollback: string; cwd: string }
+      startupCwdFallback?: { kind: 'worktree'; cwd: string }
     }>
     write: (id: string, data: string) => void
     writeAccepted: (id: string, data: string) => Promise<boolean>
     resize: (id: string, cols: number, rows: number) => void
     reportGeometry: (id: string, cols: number, rows: number) => void
     signal: (id: string, signal: string) => void
+    clearBuffer: (id: string) => void
     kill: (id: string, opts?: { keepHistory?: boolean }) => Promise<void>
     ackColdRestore: (id: string) => void
     ackData: (id: string, charCount: number) => void
@@ -1232,6 +1243,7 @@ export type PreloadApi = {
       seq?: number
       source?: 'headless' | 'renderer'
       alternateScreen?: boolean
+      pendingEscapeTailAnsi?: string
     } | null>
     getRendererDeliveryDebugSnapshot: () => Promise<{
       pendingPtyCount: number
@@ -1256,6 +1268,7 @@ export type PreloadApi = {
         seq?: number
         rawLength?: number
         background?: boolean
+        droppedBacklog?: boolean
       }) => void
     ) => () => void
     onReplay: (callback: (data: { id: string; data: string }) => void) => () => void
@@ -2043,7 +2056,7 @@ export type PreloadApi = {
     dismiss: (ids: string[]) => Promise<NotificationDismissResult>
     openSystemSettings: () => Promise<void>
     getPermissionStatus: () => Promise<NotificationPermissionStatusResult>
-    requestPermission: () => Promise<NotificationPermissionStatusResult>
+    probeDelivery: (args?: { force?: boolean }) => Promise<NotificationDeliveryProbeResult>
     playSound: (options?: { force?: boolean; volume?: number }) => Promise<NotificationSoundResult>
   }
   onboarding: {
@@ -2219,7 +2232,7 @@ export type PreloadApi = {
   updater: {
     getVersion: () => Promise<string>
     getStatus: () => Promise<UpdateStatus>
-    check: (options?: { includePrerelease?: boolean }) => Promise<void>
+    check: (options?: UpdateCheckOptions) => Promise<void>
     download: () => Promise<void>
     quitAndInstall: () => Promise<void>
     dismissNudge: () => Promise<void>
@@ -2297,7 +2310,9 @@ export type PreloadApi = {
       rootPath: string
       connectionId?: string
       excludePaths?: string[]
+      requestToken?: string
     }) => Promise<string[]>
+    cancelListFiles: (args: { requestToken: string }) => Promise<void>
     search: (args: SearchOptions & { connectionId?: string }) => Promise<SearchResult>
     importExternalPaths: (args: {
       sourcePaths: string[]
@@ -2736,6 +2751,7 @@ export type PreloadApi = {
     ) => () => void
     onSleepWorktree: (callback: (data: { worktreeId: string }) => void) => () => void
     onTerminalZoom: (callback: (direction: 'in' | 'out' | 'reset') => void) => () => void
+    onSystemResumed: (callback: () => void) => () => void
     readClipboardText: (options?: ReadClipboardTextOptions) => Promise<string>
     readSelectionClipboardText: (options?: ReadClipboardTextOptions) => Promise<string>
     saveClipboardImageAsTempFile: (args?: {
@@ -2856,17 +2872,26 @@ export type PreloadApi = {
     setPollingInterval: (ms: number) => Promise<void>
     fetchInactiveClaudeAccounts: () => Promise<void>
     fetchInactiveCodexAccounts: () => Promise<void>
+    refreshMiniMax: () => Promise<RateLimitState>
     onUpdate: (callback: (state: RateLimitState) => void) => () => void
+  }
+  minimaxCredentials: {
+    getStatus: () => Promise<{ configured: boolean }>
+    saveCookie: (cookie: string) => Promise<{ configured: boolean }>
+    clearCookie: () => Promise<{ configured: boolean }>
   }
   ssh: {
     listTargets: () => Promise<SshTarget[]>
+    // Removed-target id → last known label, for showing a friendly host name on
+    // workspaces still pinned to a target that no longer exists.
+    listRemovedTargetLabels: () => Promise<Record<string, string>>
     addTarget: (args: { target: Omit<SshTarget, 'id'> }) => Promise<SshTarget>
     updateTarget: (args: {
       id: string
       updates: Partial<Omit<SshTarget, 'id'>>
     }) => Promise<SshTarget>
     removeTarget: (args: { id: string }) => Promise<void>
-    importConfig: () => Promise<SshTarget[]>
+    importConfig: (args?: { reAdopt?: boolean }) => Promise<SshTarget[]>
     connect: (args: { targetId: string }) => Promise<SshConnectionState | null>
     disconnect: (args: { targetId: string }) => Promise<void>
     terminateSessions: (args: { targetId: string }) => Promise<void>

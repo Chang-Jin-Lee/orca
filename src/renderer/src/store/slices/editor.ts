@@ -42,6 +42,7 @@ import type { RemoteOpKind } from '@/components/right-sidebar/source-control-pri
 import { invalidateAutomaticPushTargetUpstreamStatusCache } from '@/components/right-sidebar/push-target-upstream-refresh-cache'
 import {
   isNonFastForwardRemoteError,
+  markSyncPushStageError,
   resolveRemoteOperationErrorMessage
 } from '@/lib/source-control-remote-error'
 import { shouldForcePushWithLeaseForUpstream } from '../../../../shared/git-upstream-status'
@@ -62,6 +63,10 @@ import { settingsForRuntimeOwner } from '@/runtime/runtime-rpc-client'
 import { notifyHostOfMirroredEditorClose } from '@/runtime/close-mirrored-editor-tab'
 import { findWorktreeById, getRepoIdFromWorktreeId } from './worktree-helpers'
 import { getRuntimeEnvironmentIdForWorktree } from '@/lib/worktree-runtime-owner'
+import {
+  addAdditionalValidWorkspaceKeys,
+  type WorkspaceSessionHydrationOptions
+} from '@/lib/workspace-session-hydration-keys'
 import { createUntitledMarkdownFileWithTemplateSelection } from '@/lib/create-untitled-markdown'
 import { extractIpcErrorMessage } from '@/lib/ipc-error'
 import { translate } from '@/i18n/i18n'
@@ -247,8 +252,21 @@ export type OpenFile = {
   // disk while it's open, we keep the tab around so the user can still see
   // (and potentially save) their in-memory content. The tab surfaces this as
   // a strikethrough label plus a "deleted"/"renamed" suffix. Cleared if the
-  // file reappears on disk at its original path.
-  externalMutation?: 'deleted' | 'renamed'
+  // file reappears on disk at its original path. 'changed' means the file was
+  // rewritten on disk while this tab held unsaved edits (issue #7265): the
+  // buffer is preserved and the editor shows a changed-on-disk banner instead
+  // of tab strikethrough.
+  externalMutation?: 'deleted' | 'renamed' | 'changed'
+  /** Why: signature of the disk content this tab's edits are based on (last
+   * load or save). Persisted with dirty drafts so a restore can re-derive a
+   * changed-on-disk conflict from ground truth — an agent write that landed
+   * while the app was closed must not be clobbered by a resumed autosave. */
+  lastKnownDiskSignature?: string
+  /** Why: set at hydration for restored dirty tabs; suspends autosave until
+   * the restored-tab conflict scan has compared disk against the baseline.
+   * Without this hard gate the scan's async read merely races the autosave
+   * timer, and a slow (SSH/runtime) read loses the race. Not persisted. */
+  pendingDiskBaselineVerification?: boolean
   /** Why: diff bodies are cached in EditorPanel. Re-selecting an existing diff
    * tab from the tree bumps this so the panel refetches instead of reusing a
    * stale snapshot. */
@@ -493,7 +511,9 @@ export type EditorSlice = {
   setActiveFile: (fileId: string) => void
   reorderFiles: (fileIds: string[]) => void
   markFileDirty: (fileId: string, dirty: boolean) => void
-  setExternalMutation: (fileId: string, mutation: 'deleted' | 'renamed' | null) => void
+  setExternalMutation: (fileId: string, mutation: 'deleted' | 'renamed' | 'changed' | null) => void
+  setLastKnownDiskSignature: (fileId: string, signature: string) => void
+  clearPendingDiskBaselineVerification: (fileId: string) => void
   clearUntitled: (fileId: string) => void
   openDiff: (
     worktreeId: string,
@@ -711,7 +731,10 @@ export type EditorSlice = {
   setPendingEditorReveal: (reveal: PendingEditorReveal | null) => void
 
   // Session hydration — restore editor files from persisted workspace session
-  hydrateEditorSession: (session: WorkspaceSessionState) => void
+  hydrateEditorSession: (
+    session: WorkspaceSessionState,
+    options?: WorkspaceSessionHydrationOptions
+  ) => void
 }
 
 function openWorkspaceEditorItem(
@@ -2462,6 +2485,32 @@ export const createEditorSlice: StateCreator<AppState, [], [], EditorSlice> = (s
       }
     }),
 
+  setLastKnownDiskSignature: (fileId, signature) =>
+    set((s) => {
+      const file = s.openFiles.find((f) => f.id === fileId)
+      if (!file || file.lastKnownDiskSignature === signature) {
+        return s
+      }
+      return {
+        openFiles: s.openFiles.map((f) =>
+          f.id === fileId ? { ...f, lastKnownDiskSignature: signature } : f
+        )
+      }
+    }),
+
+  clearPendingDiskBaselineVerification: (fileId) =>
+    set((s) => {
+      const file = s.openFiles.find((f) => f.id === fileId)
+      if (!file?.pendingDiskBaselineVerification) {
+        return s
+      }
+      return {
+        openFiles: s.openFiles.map((f) =>
+          f.id === fileId ? { ...f, pendingDiskBaselineVerification: undefined } : f
+        )
+      }
+    }),
+
   clearUntitled: (fileId) =>
     set((s) => ({
       openFiles: s.openFiles.map((f) => (f.id === fileId ? { ...f, isUntitled: undefined } : f))
@@ -3791,9 +3840,14 @@ export const createEditorSlice: StateCreator<AppState, [], [], EditorSlice> = (s
           await pushRuntimeGit(context, { pushTarget, forceWithLease: true })
           pushed = true
         } catch (error) {
-          toast.error(resolveRemoteOperationErrorMessage(error, { isSync: true }))
+          toast.error(
+            resolveRemoteOperationErrorMessage(error, {
+              isSync: true,
+              isSyncPushStage: true
+            })
+          )
           pushStageToastShown = true
-          throw error
+          throw markSyncPushStageError(error)
         }
       } else {
         await pullRuntimeGit(context, pushTarget)
@@ -3810,9 +3864,14 @@ export const createEditorSlice: StateCreator<AppState, [], [], EditorSlice> = (s
             // Why: format under the user-facing operation (sync) rather than
             // the inner step (push) — the user clicked Sync and shouldn't see
             // a "Push failed" toast for a step they didn't directly invoke.
-            toast.error(resolveRemoteOperationErrorMessage(error, { isSync: true }))
+            toast.error(
+              resolveRemoteOperationErrorMessage(error, {
+                isSync: true,
+                isSyncPushStage: true
+              })
+            )
             pushStageToastShown = true
-            throw error
+            throw markSyncPushStageError(error)
           }
         }
       }
@@ -4222,7 +4281,7 @@ export const createEditorSlice: StateCreator<AppState, [], [], EditorSlice> = (s
   // Why: only edit-mode files are restored — diffs and conflict views depend on
   // transient git state that may have changed between sessions. Restoring them
   // would show stale data or fail to load entirely.
-  hydrateEditorSession: (session) => {
+  hydrateEditorSession: (session, options) => {
     set((s) => {
       const openFilesByWorktree = session.openFilesByWorktree ?? {}
       const persistedActiveFileIdByWorktree = session.activeFileIdByWorktree ?? {}
@@ -4241,6 +4300,7 @@ export const createEditorSlice: StateCreator<AppState, [], [], EditorSlice> = (s
       for (const workspace of s.folderWorkspaces) {
         validWorktreeIds.add(folderWorkspaceKey(workspace.id))
       }
+      addAdditionalValidWorkspaceKeys(validWorktreeIds, options)
 
       const openFiles: OpenFile[] = []
       const editorDrafts: Record<string, string> = {}
@@ -4292,6 +4352,15 @@ export const createEditorSlice: StateCreator<AppState, [], [], EditorSlice> = (s
             isDirty: pf.dirtyDraftContent !== undefined,
             isPreview: pf.isPreview,
             runtimeEnvironmentId: pf.runtimeEnvironmentId,
+            lastKnownDiskSignature: pf.lastKnownDiskSignature,
+            // Why: hard-suspends autosave until the restored-tab conflict scan
+            // verifies disk against the baseline — an async race would let a
+            // slow remote read lose to the autosave timer and clobber an
+            // offline agent write.
+            pendingDiskBaselineVerification:
+              pf.dirtyDraftContent !== undefined && pf.lastKnownDiskSignature !== undefined
+                ? true
+                : undefined,
             mode: 'edit'
           })
         }
