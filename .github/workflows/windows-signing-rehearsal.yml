@@ -35,7 +35,7 @@ on:
         type: string
         default: windows-inner-binaries-zip
 
-# Trigger nonce: 1
+# Trigger nonce: 2 (retry after artifact configuration fix: max-matches=unbounded)
 
 jobs:
   rehearse:
