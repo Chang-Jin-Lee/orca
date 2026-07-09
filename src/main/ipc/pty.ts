@@ -5,6 +5,7 @@ boundary. Splitting it by line count would scatter tightly coupled terminal
 process behavior across files without a cleaner ownership seam. */
 import { join, delimiter } from 'node:path'
 import { randomUUID } from 'node:crypto'
+import { statSync } from 'node:fs'
 import {
   type BrowserWindow,
   type IpcMainEvent,
@@ -37,7 +38,11 @@ import { isPwshAvailable } from '../pwsh'
 import { LocalPtyProvider } from '../providers/local-pty-provider'
 import type { IPtyProvider, PtySpawnOptions, PtySpawnResult } from '../providers/types'
 import type { StartupCommandDelivery } from '../../shared/codex-startup-delivery'
-import { SSH_SESSION_EXPIRED_ERROR, isSshPtyNotFoundError } from '../providers/ssh-pty-provider'
+import {
+  SSH_SESSION_EXPIRED_ERROR,
+  isSshPtyIdentityMismatchError,
+  isSshPtyNotFoundError
+} from '../providers/ssh-pty-provider'
 import { parseAppSshPtyId, toAppSshPtyId, toRelaySshPtyId } from '../providers/ssh-pty-id'
 import { createPtySpawnTiming } from './pty-spawn-timing'
 import { mintPtySessionId, isSafePtySessionId } from '../daemon/pty-session-id'
@@ -77,7 +82,12 @@ import {
   parseLegacyNumericPaneKey,
   parsePaneKey
 } from '../../shared/stable-pane-id'
-import { resolveTerminalStartupCwdForWorkspace } from '../../shared/terminal-startup-cwd'
+import { isValidTerminalTabId } from '../../shared/terminal-tab-id'
+import {
+  resolveTerminalStartupCwdForWorkspace,
+  type TerminalStartupCwdMissingDirFallback
+} from '../../shared/terminal-startup-cwd'
+import { isWslUncPath } from '../../shared/wsl-paths'
 import {
   clearMigrationUnsupportedPty,
   clearMigrationUnsupportedPtysForPaneKey
@@ -904,15 +914,14 @@ export function buildPtyHostEnv(
     baseEnv.ORCA_CODEX_HOME = opts.selectedCodexHomePath
   }
 
-  // Why: in dev mode the `orca` CLI defaults to the production userData
-  // path, which routes status updates to the packaged Orca instead of this
-  // dev instance. Injecting ORCA_USER_DATA_PATH ensures CLI calls from
-  // agents running inside dev terminals reach the correct runtime. We also
-  // prepend the dev CLI launcher directory to PATH so `orca` resolves to
-  // the dev build (which supports ORCA_USER_DATA_PATH) instead of the
-  // production binary at /usr/local/bin/orca.
-  if (!opts.isPackaged) {
+  // Why: WSL shells need the managed userData root for shell-ready wrappers; dev-mode terminals need the same export so `orca` targets the live dev instance.
+  if (opts.isWsl) {
+    baseEnv.ORCA_USER_DATA_PATH = opts.userDataPath
+  } else if (!opts.isPackaged) {
     baseEnv.ORCA_USER_DATA_PATH ??= opts.userDataPath
+  }
+  // Why: dev mode needs the launcher PATH override so `orca` resolves to the dev build instead of the production binary at /usr/local/bin/orca.
+  if (!opts.isPackaged) {
     const devCliBin = join(opts.userDataPath, 'cli', 'bin')
     const inheritedPath = readInheritedPath(baseEnv)
     // Why: avoid a trailing delimiter when PATH is empty — some shells
@@ -1247,6 +1256,9 @@ export function registerPtyHandlers(
   store?: Store,
   options?: {
     awaitLocalPtyStartup?: () => Promise<void>
+    // Why: returns true (once, consuming the flag) for the crash-recovery reload
+    // so its did-finish-load skips the orphan sweep and keeps live PTYs (#5787).
+    isRecoveryReloadInFlight?: (webContentsId: number) => boolean
   }
 ): void {
   registerRendererLifecycleResetHandlers(mainWindow.webContents)
@@ -1355,6 +1367,10 @@ export function registerPtyHandlers(
     data: string
     startSeq?: number
     containsBackgroundOutput?: boolean
+    /** Set once this pty's unsent backlog was trimmed past the cap; rides the
+     *  next payload so the renderer rebuilds the dropped span from the main
+     *  headless snapshot (see appendPendingPtyData / dataCallback). */
+    droppedBacklog?: boolean
   }
 
   type PtyDataPayload = {
@@ -1363,6 +1379,7 @@ export function registerPtyHandlers(
     seq?: number
     rawLength?: number
     background?: boolean
+    droppedBacklog?: boolean
   }
 
   const pendingData = new Map<string, PendingPtyData>()
@@ -1376,6 +1393,15 @@ export function registerPtyHandlers(
   const PTY_BATCH_FLUSH_MAX_WRITES = 2
   const PTY_RENDERER_IN_FLIGHT_HIGH_WATER_CHARS = 512 * 1024
   const PTY_RENDERER_TOTAL_IN_FLIGHT_HIGH_WATER_CHARS = 8 * 1024 * 1024
+  // Why: the in-flight caps above bound only SENT-but-unacked bytes; the unsent
+  // `pendingData` backlog is drained only when the renderer ACKs. A background-
+  // throttled/frozen renderer (Win/Linux — macOS disables throttling) stops
+  // ACKing while a busy pane keeps producing, so without this the per-pty queue
+  // grows at raw PTY throughput (MB->GB). Cap it (matching the daemon 2 MB
+  // pendingOutput and renderer 2 MB scheduler caps); the trimmed span is
+  // recovered from the main headless buffer via the renderer's hidden-output
+  // snapshot restore, flagged by droppedBacklog — so no output is lost.
+  const PENDING_DATA_MAX_CHARS = 2 * 1024 * 1024
   const PTY_RENDERER_INTERACTIVE_RESERVE_CHARS = 256 * 1024
   // Why: active panes need a bounded lane through old hidden bulk output so a
   // keystroke redraw can reach the renderer before every background ACK lands.
@@ -1426,13 +1452,24 @@ export function registerPtyHandlers(
   }
 
   function recordPtyRendererDeliveryPressure(): void {
-    const current = readCurrentPtyRendererDeliveryDebugSnapshot()
-    peakPendingChars = Math.max(peakPendingChars, current.pendingChars)
-    peakMaxPendingCharsByPty = Math.max(peakMaxPendingCharsByPty, current.maxPendingCharsByPty)
-    peakRendererInFlightChars = Math.max(peakRendererInFlightChars, current.rendererInFlightChars)
+    // Why: this fires on every PTY delivery event (per send, per flush, per
+    // onData append). Update the four diagnostic peaks directly instead of
+    // allocating a full 13-field debug snapshot object per call — that object
+    // is only needed when the debug getter is actually read. Peak values are
+    // computed identically to readCurrentPtyRendererDeliveryDebugSnapshot.
+    let pendingChars = 0
+    let maxPendingCharsByPty = 0
+    for (const pending of pendingData.values()) {
+      const chars = pending.data.length
+      pendingChars += chars
+      maxPendingCharsByPty = Math.max(maxPendingCharsByPty, chars)
+    }
+    peakPendingChars = Math.max(peakPendingChars, pendingChars)
+    peakMaxPendingCharsByPty = Math.max(peakMaxPendingCharsByPty, maxPendingCharsByPty)
+    peakRendererInFlightChars = Math.max(peakRendererInFlightChars, rendererInFlightTotalChars)
     peakMaxRendererInFlightCharsByPty = Math.max(
       peakMaxRendererInFlightCharsByPty,
-      current.maxRendererInFlightCharsByPty
+      getMaxMapValue(rendererInFlightCharsByPty.values())
     )
   }
 
@@ -1483,7 +1520,8 @@ export function registerPtyHandlers(
     id: string,
     data: string,
     startSeq: number | undefined,
-    containsBackgroundOutput: boolean | undefined
+    containsBackgroundOutput: boolean | undefined,
+    droppedBacklog?: boolean
   ): PtyDataPayload {
     const payload: PtyDataPayload = { id, data }
     if (typeof startSeq === 'number') {
@@ -1492,6 +1530,9 @@ export function registerPtyHandlers(
     }
     if (containsBackgroundOutput === true) {
       payload.background = true
+    }
+    if (droppedBacklog === true) {
+      payload.droppedBacklog = true
     }
     return payload
   }
@@ -1564,6 +1605,28 @@ export function registerPtyHandlers(
     return [...active, ...background]
   }
 
+  // Why: bound the unsent backlog to the most-recent PENDING_DATA_MAX_CHARS,
+  // advancing startSeq by the dropped-char count (same arithmetic flushPendingData
+  // uses when it slices) so the remaining tail's seq stays correct. Flags
+  // droppedBacklog so the next payload tells the renderer to rebuild the dropped
+  // span from the main headless snapshot. A no-op when under the cap (the common
+  // case: the renderer is ACKing and pendingData stays tiny).
+  function capPendingPtyData(pending: PendingPtyData): PendingPtyData {
+    if (pending.data.length <= PENDING_DATA_MAX_CHARS) {
+      return pending
+    }
+    const trimmed = pending.data.slice(pending.data.length - PENDING_DATA_MAX_CHARS)
+    const droppedChars = pending.data.length - trimmed.length
+    const next: PendingPtyData = { data: trimmed, droppedBacklog: true }
+    if (typeof pending.startSeq === 'number') {
+      next.startSeq = pending.startSeq + droppedChars
+    }
+    if (pending.containsBackgroundOutput === true) {
+      next.containsBackgroundOutput = true
+    }
+    return next
+  }
+
   function appendPendingPtyData(
     existing: PendingPtyData | undefined,
     data: string,
@@ -1573,27 +1636,29 @@ export function registerPtyHandlers(
   ): PendingPtyData {
     const nextContainsBackgroundOutput =
       existing?.containsBackgroundOutput === true || containsBackgroundOutput
+    // Carry a prior drop flag forward until it actually rides an outgoing payload.
+    const inheritedDropped = existing?.droppedBacklog === true
+    const base: PendingPtyData = { data: '' }
     if (!preservesSeq) {
-      return {
-        data: (existing?.data ?? '') + data,
-        ...(nextContainsBackgroundOutput ? { containsBackgroundOutput: true } : {})
+      base.data = (existing?.data ?? '') + data
+    } else if (!existing) {
+      base.data = data
+      if (typeof startSeq === 'number') {
+        base.startSeq = startSeq
+      }
+    } else {
+      base.data = existing.data + data
+      if (typeof existing.startSeq === 'number') {
+        base.startSeq = existing.startSeq
       }
     }
-    if (!existing) {
-      return {
-        data,
-        ...(typeof startSeq === 'number' ? { startSeq } : {}),
-        ...(nextContainsBackgroundOutput ? { containsBackgroundOutput: true } : {})
-      }
+    if (nextContainsBackgroundOutput) {
+      base.containsBackgroundOutput = true
     }
-    const next: PendingPtyData = {
-      data: existing.data + data,
-      ...(nextContainsBackgroundOutput ? { containsBackgroundOutput: true } : {})
+    if (inheritedDropped) {
+      base.droppedBacklog = true
     }
-    if (typeof existing.startSeq === 'number') {
-      next.startSeq = existing.startSeq
-    }
-    return next
+    return capPendingPtyData(base)
   }
 
   function schedulePendingDataFlush(delayMs: number): void {
@@ -1634,9 +1699,18 @@ export function registerPtyHandlers(
         }
         pendingData.set(id, nextPending)
       }
+      // Why: the drop flag rides the first emitted chunk (renderer restore is
+      // idempotent) and is intentionally not copied onto `remaining` above, so a
+      // single backlog trim signals the renderer exactly once.
       sendPtyDataToRenderer(
         id,
-        makePtyDataPayload(id, chunk, pending.startSeq, pending.containsBackgroundOutput)
+        makePtyDataPayload(
+          id,
+          chunk,
+          pending.startSeq,
+          pending.containsBackgroundOutput,
+          pending.droppedBacklog
+        )
       )
       writes++
     }
@@ -1700,7 +1774,8 @@ export function registerPtyHandlers(
           payload.id,
           remaining.data,
           remaining.startSeq,
-          remaining.containsBackgroundOutput
+          remaining.containsBackgroundOutput,
+          remaining.droppedBacklog
         )
       )
       pendingData.delete(payload.id)
@@ -1813,7 +1888,8 @@ export function registerPtyHandlers(
           ...(typeof pending.startSeq === 'number'
             ? { seq: pending.startSeq + nextData.length, rawLength: nextData.length }
             : {}),
-          ...(pending.containsBackgroundOutput === true ? { background: true } : {})
+          ...(pending.containsBackgroundOutput === true ? { background: true } : {}),
+          ...(pending.droppedBacklog === true ? { droppedBacklog: true } : {})
         })
         return
       }
@@ -1934,7 +2010,16 @@ export function registerPtyHandlers(
   if (localProvider instanceof LocalPtyProvider) {
     const lp = localProvider
     didFinishLoadHandler = () => {
-      const killed = lp.killOrphanedPtys(lp.advanceGeneration() - 1)
+      // Why: always advance so the load generation stays monotonic, but skip the
+      // sweep (and its per-PTY cleanup) on the crash/freeze-recovery reload — it
+      // would kill live LOCAL PTYs across the single window before session
+      // restore re-attaches them (#5787). The getter consumes the flag, so the
+      // next genuine reload still reclaims genuinely-orphaned PTYs.
+      const generation = lp.advanceGeneration()
+      if (options?.isRecoveryReloadInFlight?.(mainWindow.webContents.id)) {
+        return
+      }
+      const killed = lp.killOrphanedPtys(generation - 1)
       for (const { id } of killed) {
         clearProviderPtyState(id)
         ptyOwnership.delete(id)
@@ -1961,16 +2046,32 @@ export function registerPtyHandlers(
     assertFolderWorkspacePathUsable(status)
   }
 
-  const resolveGuardedPtySpawnCwd = (
+  const resolvePtySpawnStartupCwd = (
     worktreeId: string | undefined,
-    cwd: string | undefined
+    cwd: string | undefined,
+    missingDirFallback?: TerminalStartupCwdMissingDirFallback
   ): string | undefined =>
     resolveTerminalStartupCwdForWorkspace({
       workspaceId: worktreeId,
       requestedCwd: cwd,
+      missingDirFallback,
       resolveFolderWorkspacePath: (folderWorkspaceId) =>
         store?.getFolderWorkspace(folderWorkspaceId)?.folderPath
     })
+
+  const localStartupCwdDirectoryExists = (path: string): boolean => {
+    // Why: Win32 statSync on \\wsl.localhost 9P shares can falsely report
+    // ENOENT for directories that exist on the Linux side; never fall back on
+    // that signal — the provider's WSL-aware validation decides instead.
+    if (isWslUncPath(path)) {
+      return true
+    }
+    try {
+      return statSync(path).isDirectory()
+    } catch {
+      return false
+    }
+  }
 
   // Why: the runtime controller must route through getProviderForPty() so that
   // CLI commands (terminal.send, terminal.stop) work for both local and remote PTYs.
@@ -1982,7 +2083,7 @@ export function registerPtyHandlers(
         await startupPromise
       }
       await assertFolderWorkspacePtyPathUsable(args.worktreeId)
-      const cwd = resolveGuardedPtySpawnCwd(args.worktreeId, args.cwd)
+      const cwd = resolvePtySpawnStartupCwd(args.worktreeId, args.cwd)
       const provider = getProvider(args.connectionId)
       const isClaudeLaunch = !args.connectionId && isClaudeLaunchCommand(args.command)
       if (isClaudeLaunch && isClaudeAuthSwitchInProgress()) {
@@ -2040,6 +2141,7 @@ export function registerPtyHandlers(
           !store ||
           typeof args.worktreeId !== 'string' ||
           typeof args.tabId !== 'string' ||
+          !isValidTerminalTabId(args.tabId) ||
           typeof args.leafId !== 'string' ||
           !isTerminalLeafId(args.leafId)
         ) {
@@ -2125,9 +2227,32 @@ export function registerPtyHandlers(
       if (args.worktreeId !== undefined) {
         spawnOptions.worktreeId = args.worktreeId
       }
+      const hadSessionSizeBeforeAttach =
+        effectiveSessionAppId !== undefined ? ptySizes.has(effectiveSessionAppId) : false
+      const sessionSizeBeforeAttach =
+        effectiveSessionAppId !== undefined ? ptySizes.get(effectiveSessionAppId) : undefined
       if (sessionId !== undefined) {
         spawnOptions.sessionId = sessionId
         ptySizes.set(effectiveSessionAppId ?? sessionId, { cols: args.cols, rows: args.rows })
+      }
+      const materializedPaneKey = hostSessionBinding
+        ? makePaneKey(hostSessionBinding.tabId, hostSessionBinding.leafId)
+        : null
+      const metadataLeafId =
+        typeof args.leafId === 'string' && isTerminalLeafId(args.leafId) ? args.leafId : null
+      const metadataPaneKey =
+        typeof args.tabId === 'string' &&
+        isValidTerminalTabId(args.tabId) &&
+        args.tabId.length <= 512 &&
+        metadataLeafId
+          ? makePaneKey(args.tabId, metadataLeafId)
+          : null
+      const spawnIdentityPaneKey = materializedPaneKey ?? metadataPaneKey
+      if (spawnIdentityPaneKey) {
+        spawnOptions.paneKey = spawnIdentityPaneKey
+      }
+      if (typeof args.tabId === 'string' && args.tabId.length > 0 && args.tabId.length <= 512) {
+        spawnOptions.tabId = args.tabId
       }
       if (process.platform === 'win32' && !args.connectionId) {
         spawnOptions.shellOverride = terminalRuntimeOptions.shellOverride
@@ -2138,9 +2263,6 @@ export function registerPtyHandlers(
           : undefined
       }
 
-      const materializedPaneKey = hostSessionBinding
-        ? makePaneKey(hostSessionBinding.tabId, hostSessionBinding.leafId)
-        : null
       const existingPaneSpawn = materializedPaneKey
         ? paneSpawnReservationsByPaneKey.get(materializedPaneKey)
         : undefined
@@ -2160,8 +2282,14 @@ export function registerPtyHandlers(
         } catch (err) {
           const rawMessage = err instanceof Error ? err.message : String(err)
           const spawnError = normalizeNodePtySpawnError(err)
+          const isIdentityMismatch =
+            isSshPtyIdentityMismatchError(spawnError) || isSshPtyIdentityMismatchError(rawMessage)
           if (effectiveSessionAppId !== undefined) {
-            ptySizes.delete(effectiveSessionAppId)
+            if (isIdentityMismatch && hadSessionSizeBeforeAttach && sessionSizeBeforeAttach) {
+              ptySizes.set(effectiveSessionAppId, sessionSizeBeforeAttach)
+            } else {
+              ptySizes.delete(effectiveSessionAppId)
+            }
           }
           if (
             args.connectionId &&
@@ -2169,11 +2297,13 @@ export function registerPtyHandlers(
             (spawnError.message.includes(SSH_SESSION_EXPIRED_ERROR) ||
               rawMessage.includes(SSH_SESSION_EXPIRED_ERROR))
           ) {
-            if (effectiveSessionAppId !== undefined) {
+            if (effectiveSessionAppId !== undefined && !isIdentityMismatch) {
               clearProviderPtyState(effectiveSessionAppId)
               deletePtyOwnership(effectiveSessionAppId)
             }
-            store?.markSshRemotePtyLease(args.connectionId, effectiveSessionRelayId, 'expired')
+            if (!isIdentityMismatch) {
+              store?.markSshRemotePtyLease(args.connectionId, effectiveSessionRelayId, 'expired')
+            }
           }
           if (isMintedSessionId && sessionId !== undefined) {
             clearProviderPtyState(sessionId)
@@ -2239,7 +2369,20 @@ export function registerPtyHandlers(
           runtime?.registerPreAllocatedHandleForPty(result.id, args.preAllocatedHandle)
         }
         if (args.worktreeId) {
-          runtime?.registerPty(result.id, args.worktreeId, args.connectionId ?? null)
+          runtime?.registerPty(
+            result.id,
+            args.worktreeId,
+            args.connectionId ?? null,
+            // Why: thread the validated pane identity so main can back a pending
+            // mobile create from this live spawn even if graph-sync stalls (#7587).
+            // Bound tabId like the sibling metadataPaneKey/spawnOptions.tabId here.
+            typeof args.tabId === 'string' &&
+              isValidTerminalTabId(args.tabId) &&
+              args.tabId.length <= 512 &&
+              metadataLeafId !== null
+              ? { tabId: args.tabId, leafId: metadataLeafId }
+              : undefined
+          )
         }
         if (isClaudeLaunch) {
           markClaudePtySpawned(result.id)
@@ -2491,6 +2634,7 @@ export function registerPtyHandlers(
       seq?: number
       source?: 'headless' | 'renderer'
       alternateScreen?: boolean
+      pendingEscapeTailAnsi?: string
     } | null> => {
       if (!runtime || typeof args?.id !== 'string' || args.id.length === 0) {
         return null
@@ -2519,6 +2663,10 @@ export function registerPtyHandlers(
         cols: number
         rows: number
         cwd?: string
+        // Why: fresh local renderer spawns opt into recovering a saved cwd
+        // whose directory was deleted (#7239); reattach/remote callers must
+        // keep exact cwd semantics, so the flag alone is not sufficient.
+        cwdFallback?: 'worktree'
         env?: Record<string, string>
         envToDelete?: string[]
         command?: string
@@ -2562,7 +2710,26 @@ export function registerPtyHandlers(
         await startupPromise
       }
       await assertFolderWorkspacePtyPathUsable(args.worktreeId)
-      const cwd = resolveGuardedPtySpawnCwd(args.worktreeId, args.cwd)
+      // Why: honor the fallback only for fresh local spawns even if a caller
+      // sends the flag — reattach must keep the session's exact cwd and
+      // remote/SSH paths cannot probe the local filesystem meaningfully.
+      const allowMissingCwdFallback =
+        !args.connectionId && !args.sessionId && args.cwdFallback === 'worktree'
+      let didFallbackToWorkspaceRootCwd = false
+      const cwd = resolvePtySpawnStartupCwd(
+        args.worktreeId,
+        args.cwd,
+        allowMissingCwdFallback
+          ? {
+              directoryExists: localStartupCwdDirectoryExists,
+              onFallbackToWorkspaceRoot: () => {
+                didFallbackToWorkspaceRootCwd = true
+              }
+            }
+          : undefined
+      )
+      const startupCwdFallback =
+        didFallbackToWorkspaceRootCwd && cwd ? ({ kind: 'worktree', cwd } as const) : undefined
       spawnTiming.mark('preflight')
       const provider = getProvider(args.connectionId)
       const isClaudeLaunch = !args.connectionId && isClaudeLaunchCommand(args.command)
@@ -2665,7 +2832,7 @@ export function registerPtyHandlers(
         typeof args.leafId === 'string' && isTerminalLeafId(args.leafId) ? args.leafId : null
       const metadataPaneKey =
         typeof args.tabId === 'string' &&
-        args.tabId.length > 0 &&
+        isValidTerminalTabId(args.tabId) &&
         args.tabId.length <= 512 &&
         metadataLeafId
           ? makePaneKey(args.tabId, metadataLeafId)
@@ -2853,6 +3020,12 @@ export function registerPtyHandlers(
       if (args.worktreeId !== undefined) {
         spawnOptions.worktreeId = args.worktreeId
       }
+      if (reservationPaneKey) {
+        spawnOptions.paneKey = reservationPaneKey
+      }
+      if (typeof args.tabId === 'string' && args.tabId.length > 0 && args.tabId.length <= 512) {
+        spawnOptions.tabId = args.tabId
+      }
       if (effectiveSessionId !== undefined) {
         spawnOptions.sessionId = effectiveSessionId
       }
@@ -2866,6 +3039,10 @@ export function registerPtyHandlers(
       if (effectiveShellOverride !== undefined) {
         spawnOptions.shellOverride = effectiveShellOverride
       }
+      const hadSessionSizeBeforeAttach =
+        effectiveSessionAppId !== undefined ? ptySizes.has(effectiveSessionAppId) : false
+      const sessionSizeBeforeAttach =
+        effectiveSessionAppId !== undefined ? ptySizes.get(effectiveSessionAppId) : undefined
       if (effectiveSessionId !== undefined) {
         // Why: daemon PTYs can emit prompt/startup bytes before spawn()
         // resolves. Runtime headless snapshots need the real pane geometry
@@ -2913,11 +3090,17 @@ export function registerPtyHandlers(
         } catch (err) {
           const rawMessage = err instanceof Error ? err.message : String(err)
           const spawnError = normalizeNodePtySpawnError(err)
+          const isIdentityMismatch =
+            isSshPtyIdentityMismatchError(spawnError) || isSshPtyIdentityMismatchError(rawMessage)
           if (preSpawnStartupTerminalColorReplyPtyId) {
             clearStartupTerminalColorQueryReplies(preSpawnStartupTerminalColorReplyPtyId)
           }
           if (effectiveSessionAppId !== undefined) {
-            ptySizes.delete(effectiveSessionAppId)
+            if (isIdentityMismatch && hadSessionSizeBeforeAttach && sessionSizeBeforeAttach) {
+              ptySizes.set(effectiveSessionAppId, sessionSizeBeforeAttach)
+            } else {
+              ptySizes.delete(effectiveSessionAppId)
+            }
           }
           if (
             args.connectionId &&
@@ -2928,11 +3111,13 @@ export function registerPtyHandlers(
             // Why: expired remote reattach means the relay has already dropped
             // the backing PTY. Clear the durable lease so later session writes
             // cannot restore the stale pane binding.
-            if (effectiveSessionAppId !== undefined) {
+            if (effectiveSessionAppId !== undefined && !isIdentityMismatch) {
               clearProviderPtyState(effectiveSessionAppId)
               deletePtyOwnership(effectiveSessionAppId)
             }
-            store?.markSshRemotePtyLease(args.connectionId, effectiveSessionRelayId, 'expired')
+            if (!isIdentityMismatch) {
+              store?.markSshRemotePtyLease(args.connectionId, effectiveSessionRelayId, 'expired')
+            }
           }
           // Why: if buildPtyHostEnv materialized provider state for this minted
           // id but provider.spawn failed, that state would otherwise leak.
@@ -3100,7 +3285,21 @@ export function registerPtyHandlers(
           args.worktreeId.length > 0 &&
           args.worktreeId.length <= 512
         ) {
-          runtime?.registerPty(result.id, args.worktreeId, args.connectionId ?? null)
+          runtime?.registerPty(
+            result.id,
+            args.worktreeId,
+            args.connectionId ?? null,
+            // Why: pass the validated pane identity so a mobile create waiting on
+            // this renderer tab can publish its surface main-side when graph-sync
+            // is throttled, instead of destroying the live PTY (#7587). Bound the
+            // untrusted tabId like the sibling metadataPaneKey/spawnOptions.tabId.
+            typeof args.tabId === 'string' &&
+              isValidTerminalTabId(args.tabId) &&
+              args.tabId.length <= 512 &&
+              metadataLeafId !== null
+              ? { tabId: args.tabId, leafId: metadataLeafId }
+              : undefined
+          )
         }
         if (isClaudeLaunch) {
           markClaudePtySpawned(result.id)
@@ -3192,7 +3391,10 @@ export function registerPtyHandlers(
           ...result,
           ...(!result.isReattach && effectiveLaunchConfig
             ? { launchConfig: effectiveLaunchConfig }
-            : {})
+            : {}),
+          // Why: a daemon-retry race can surface isReattach even for a minted
+          // session id, and a reattach must never claim its cwd was remapped.
+          ...(startupCwdFallback && !result.isReattach ? { startupCwdFallback } : {})
         }
         return resolvePaneSpawnReservation(reservationPaneKey, paneSpawnReservation, response)
       } catch (err) {
@@ -3490,6 +3692,17 @@ export function registerPtyHandlers(
     tryGetProviderForPty(args.id)
       ?.sendSignal(args.id, args.signal)
       .catch(() => {})
+  })
+
+  ipcMain.removeAllListeners('pty:clearBuffer')
+  ipcMain.on('pty:clearBuffer', (_event, args: { id: string }) => {
+    // Why: the renderer already cleared its own xterm buffer. This clears the
+    // PTY-side state (ConPTY screen buffer, daemon emulator, SSH host buffer)
+    // so the next prompt repaint doesn't land at a stale cursor row.
+    tryGetProviderForPty(args.id)
+      ?.clearBuffer(args.id)
+      .catch(() => {})
+    runtime?.clearHeadlessTerminalBuffer(args.id).catch(() => {})
   })
 
   ipcMain.handle('pty:kill', async (_event, args: { id: string; keepHistory?: boolean }) => {

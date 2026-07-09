@@ -12,6 +12,7 @@ import type { Worktree } from '../worktree/workspace-list-types'
 function session(overrides: Partial<AiVaultSession> = {}): AiVaultSession {
   return {
     id: 'claude:1',
+    executionHostId: 'local',
     agent: 'claude',
     sessionId: 'session-1',
     title: 'Resume target',
@@ -26,6 +27,8 @@ function session(overrides: Partial<AiVaultSession> = {}): AiVaultSession {
     messageCount: 2,
     totalTokens: 10,
     previewMessages: [],
+    queuedMessageCount: 0,
+    subagentTranscriptCount: 0,
     resumeCommand: '',
     ...overrides
   }

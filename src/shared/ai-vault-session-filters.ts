@@ -12,7 +12,12 @@ import type {
   AiVaultSession,
   AiVaultSort
 } from './ai-vault-types'
-import { aiVaultAgentLabel } from './ai-vault-types'
+import {
+  aiVaultAgentLabel,
+  isAiVaultSessionRecoverableEmpty,
+  isAiVaultSessionResumableContent
+} from './ai-vault-types'
+import type { ExecutionHostId } from './execution-host'
 import { sessionPreviewSearchText } from './ai-vault-session-display'
 
 // Why: the plain project descriptor is relocated here (no runtime dep) so the
@@ -24,7 +29,7 @@ export type AiVaultSessionProject = {
   label: string
   projectId?: string
   repoId?: string
-  hostKey?: string
+  hostKey?: ExecutionHostId
 }
 
 export type AiVaultSessionFilterState = {
@@ -76,7 +81,15 @@ export function filterAiVaultSessions(
       if (!agentSet.has(session.agent)) {
         return false
       }
-      if (filters.hideEmptySessions && session.messageCount === 0) {
+      // Hide plain empty sessions, but keep sessions with resumable content
+      // (some parsers only learn turns from previews, e.g. Grok) and zero-turn
+      // sessions that still carry recoverable content (queued prompts /
+      // subagent transcripts) so a lost conversation is surfaced distinctly.
+      if (
+        filters.hideEmptySessions &&
+        !isAiVaultSessionResumableContent(session) &&
+        !isAiVaultSessionRecoverableEmpty(session)
+      ) {
         return false
       }
       if (filters.scope === 'workspace') {

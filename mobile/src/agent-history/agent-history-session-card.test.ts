@@ -14,6 +14,7 @@ const NOW = Date.parse('2026-06-29T00:00:00.000Z')
 function session(overrides: Partial<AiVaultSession> = {}): AiVaultSession {
   return {
     id: 'claude:1',
+    executionHostId: 'local',
     agent: 'claude',
     sessionId: 'session-1',
     title: 'Implement vault filters',
@@ -31,6 +32,8 @@ function session(overrides: Partial<AiVaultSession> = {}): AiVaultSession {
       { role: 'user', text: 'add the scope tabs', timestamp: null },
       { role: 'assistant', text: 'done — tabs added', timestamp: null }
     ],
+    queuedMessageCount: 0,
+    subagentTranscriptCount: 0,
     resumeCommand: '',
     ...overrides
   }
@@ -90,7 +93,12 @@ describe('isSessionInActiveWorktree', () => {
 describe('buildMobileAgentHistorySections', () => {
   it('hides empty sessions by default and groups remaining by folder', () => {
     const sections = buildMobileAgentHistorySections(
-      [session(), session({ id: 'claude:empty', messageCount: 0 })],
+      [
+        session(),
+        // Truly empty: no turns, no preview turns, no recoverable signals —
+        // preview turns alone now count as resumable content and stay visible.
+        session({ id: 'claude:empty', messageCount: 0, previewMessages: [] })
+      ],
       {
         query: '',
         scope: 'all',

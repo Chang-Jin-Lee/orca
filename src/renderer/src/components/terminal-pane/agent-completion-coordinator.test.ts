@@ -115,6 +115,7 @@ describe('agent completion coordinator', () => {
       shouldPollProcessCadence: () => false
     })
 
+    coordinator.startProcessTracking()
     coordinator.observeTitle('Codex working')
     await vi.advanceTimersByTimeAsync(60_000)
 
@@ -136,6 +137,7 @@ describe('agent completion coordinator', () => {
       shouldPollProcessCadence: () => true
     })
 
+    coordinator.startProcessTracking()
     coordinator.observeTitle('Codex working')
     await vi.advanceTimersByTimeAsync(60_000)
 
@@ -156,6 +158,7 @@ describe('agent completion coordinator', () => {
       shouldPollProcessCadence: () => visible
     })
 
+    coordinator.startProcessTracking()
     coordinator.observeTitle('Codex working')
     // First hidden poll runs and arms the next 3s backstop timer.
     await vi.advanceTimersByTimeAsync(3_000)
@@ -188,6 +191,7 @@ describe('agent completion coordinator', () => {
       shouldPollProcessCadence: () => false
     })
 
+    coordinator.startProcessTracking()
     coordinator.observeTitle('Codex working')
     await vi.advanceTimersByTimeAsync(3_000)
 
@@ -1508,6 +1512,43 @@ describe('agent completion coordinator', () => {
 
     expect(dispatchCompletion).not.toHaveBeenCalled()
     expect(dispatchAttention).not.toHaveBeenCalled()
+  })
+
+  it('still dispatches completion on done after an intervening waiting state in the same turn', () => {
+    const dispatchCompletion = vi.fn()
+    const dispatchAttention = vi.fn()
+    const coordinator = createAgentCompletionCoordinator({
+      paneKey: 'tab-1:leaf-1',
+      getPtyId: () => 'pty-1',
+      getSettings: () => null,
+      inspectProcess: vi.fn(),
+      dispatchCompletion,
+      dispatchAttention,
+      isLive: () => true
+    })
+
+    const turn = {
+      prompt: 'fix the bug',
+      agentType: 'cursor' as const
+    }
+
+    // Realistic flow: the agent pauses for a permission prompt mid-turn, resumes,
+    // then genuinely finishes. The intervening attention state must surface as
+    // attention only and must not suppress the final completion. This fails if
+    // 'waiting' is treated as a completion state (issue #5698).
+    coordinator.observeHookStatus({ state: 'working', ...turn })
+    coordinator.observeHookStatus({
+      state: 'waiting',
+      ...turn,
+      toolName: 'Shell',
+      toolInput: 'pnpm test'
+    })
+    coordinator.observeHookStatus({ state: 'working', ...turn })
+    coordinator.observeHookStatus({ state: 'done', ...turn, lastAssistantMessage: 'Done.' })
+    vi.advanceTimersByTime(HOOK_DONE_QUIET_MS)
+
+    expect(dispatchAttention).toHaveBeenCalledTimes(1)
+    expect(dispatchCompletion).toHaveBeenCalledTimes(1)
   })
 
   it('keeps a generic title completion pending long enough for the first remote inspection', async () => {

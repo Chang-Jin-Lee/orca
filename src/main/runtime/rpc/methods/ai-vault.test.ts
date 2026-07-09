@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { RpcDispatcher } from '../dispatcher'
 import type { RpcRequest } from '../core'
 import { OrcaRuntimeService } from '../../orca-runtime'
-import type { AiVaultListResult } from '../../../../shared/ai-vault-types'
+import type { AiVaultListResult, AiVaultSession } from '../../../../shared/ai-vault-types'
 import type { AiVaultScanOptions } from '../../../ai-vault/session-scanner-types'
 
 const { scanAiVaultSessions } = vi.hoisted(() => ({
@@ -28,6 +28,30 @@ const SCANNED_AT = '2026-06-29T00:00:00.000Z'
 
 function makeResult(): AiVaultListResult {
   return { sessions: [], issues: [], scannedAt: SCANNED_AT }
+}
+
+function makeSession(): AiVaultSession {
+  return {
+    id: 'local:claude:sess-1:/tmp/t.jsonl',
+    executionHostId: 'local',
+    agent: 'claude',
+    sessionId: 'sess-1',
+    title: 'Test session',
+    cwd: '/tmp',
+    branch: null,
+    model: null,
+    filePath: '/tmp/t.jsonl',
+    codexHome: null,
+    createdAt: null,
+    updatedAt: null,
+    modifiedAt: SCANNED_AT,
+    messageCount: 2,
+    totalTokens: 0,
+    previewMessages: [],
+    queuedMessageCount: 0,
+    subagentTranscriptCount: 0,
+    resumeCommand: 'claude --resume sess-1'
+  }
 }
 
 function makeDispatcher(): RpcDispatcher {
@@ -67,6 +91,16 @@ describe('aiVault.listSessions params schema', () => {
     const parsed = AiVaultListSessionsParams.safeParse({ scopePaths: ['/'.padEnd(5000, 'a')] })
     expect(parsed.success).toBe(false)
   })
+
+  it('rejects non-runtime execution host ids before dispatch', () => {
+    expect(
+      AiVaultListSessionsParams.safeParse({ executionHostId: 'not-a-runtime-host' }).success
+    ).toBe(false)
+    expect(AiVaultListSessionsParams.safeParse({ executionHostId: 'local' }).success).toBe(false)
+    expect(AiVaultListSessionsParams.safeParse({ executionHostId: 'ssh:dev-box' }).success).toBe(
+      false
+    )
+  })
 })
 
 describe('aiVault.listSessions handler + shared cache', () => {
@@ -93,6 +127,38 @@ describe('aiVault.listSessions handler + shared cache', () => {
     // Second call via the RPC method with the same cache key.
     await dispatcher.dispatch(makeRequest('aiVault.listSessions', { limit: 500 }))
     expect(scanAiVaultSessions).toHaveBeenCalledTimes(1)
+  })
+
+  it('restamps the shared cached result as the addressed runtime host', async () => {
+    scanAiVaultSessions.mockResolvedValue({
+      sessions: [makeSession()],
+      issues: [{ executionHostId: 'local', agent: 'claude', path: '/tmp', message: 'boom' }],
+      scannedAt: SCANNED_AT
+    })
+    const dispatcher = makeDispatcher()
+    // A mobile-style caller (no executionHostId) primes the shared cache…
+    const localResponse = (await dispatcher.dispatch(
+      makeRequest('aiVault.listSessions', { limit: 500 })
+    )) as { ok: boolean; result: AiVaultListResult }
+    // …then a desktop/web caller addressing this host by runtime id reuses it.
+    const runtimeResponse = (await dispatcher.dispatch(
+      makeRequest('aiVault.listSessions', {
+        limit: 500,
+        executionHostId: 'runtime:remote-server'
+      })
+    )) as { ok: boolean; result: AiVaultListResult }
+
+    // Why: the host id must never change what is scanned — one host-local scan
+    // (and one cache entry) serves every caller; only the stamps differ.
+    expect(scanAiVaultSessions).toHaveBeenCalledTimes(1)
+    expect(scanAiVaultSessions.mock.calls[0]?.[0]).toMatchObject({ executionHostId: 'local' })
+
+    expect(localResponse.result.sessions[0]?.executionHostId).toBe('local')
+    expect(runtimeResponse.result.sessions[0]?.executionHostId).toBe('runtime:remote-server')
+    expect(runtimeResponse.result.sessions[0]?.id).toBe(
+      'runtime:remote-server:claude:sess-1:/tmp/t.jsonl'
+    )
+    expect(runtimeResponse.result.issues[0]?.executionHostId).toBe('runtime:remote-server')
   })
 
   it('injects codex-home dirs sourced from the runtime (serve-mode reachable)', async () => {

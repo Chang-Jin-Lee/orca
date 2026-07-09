@@ -35,6 +35,7 @@ import {
   type AgentProviderSessionMetadata
 } from './agent-session-resume'
 import { parsePaneKey } from './stable-pane-id'
+import { isHarnessInjectedUserTurnText } from './harness-injected-user-turns'
 
 /** Maximum request body size accepted by the listener (1 MB). */
 export const HOOK_REQUEST_MAX_BYTES = 1_000_000
@@ -392,6 +393,12 @@ function resolvePrompt(
   promptText: string,
   options?: { resetOnNewTurn?: boolean }
 ): string {
+  // Why: harness-injected turns (task notifications, system reminders) fire
+  // UserPromptSubmit but are not the user's ask — keep the cached real prompt
+  // instead of surfacing raw machinery tags in status labels.
+  if (isHarnessInjectedUserTurnText(promptText)) {
+    return state.lastPromptByPaneKey.get(paneKey) ?? ''
+  }
   if (options?.resetOnNewTurn) {
     state.lastPromptByPaneKey.delete(paneKey)
   }
@@ -2085,6 +2092,11 @@ function hasExplicitUserPrompt(
   if (extractedPrompt.text.length === 0) {
     return false
   }
+  // Why: harness-injected machinery turns are not proof of a user submit —
+  // they must not count for prompt-sent telemetry or permission stickiness.
+  if (isHarnessInjectedUserTurnText(extractedPrompt.text)) {
+    return false
+  }
   // Why: bare `message` fields often contain permission or status copy. They
   // may update visible status prompts, but they are not proof of user submit.
   if (extractedPrompt.source === 'message') {
@@ -2150,13 +2162,21 @@ function normalizeClaudeEvent(
   paneKey: string,
   hookPayload: Record<string, unknown>
 ): ParsedAgentStatusPayload | null {
+  // Why: Claude's AskUserQuestion tool is auto-allowed, so it emits PreToolUse
+  // (not PermissionRequest) while blocked on a human answer — Claude posts a
+  // Notification instead of PermissionRequest, and Orca does not register the
+  // Notification hook. Treat that PreToolUse as waiting so the sidebar shows the
+  // amber attention state instead of a working spinner that decays to grey while
+  // the question sits unanswered. Mirrors normalizeKimiEvent's handling.
+  const isAskUserQuestion =
+    eventName === 'PreToolUse' && isAskUserQuestionTool(readString(hookPayload, 'tool_name'))
   const stateName =
     eventName === 'UserPromptSubmit' ||
-    eventName === 'PreToolUse' ||
     eventName === 'PostToolUse' ||
-    eventName === 'PostToolUseFailure'
+    eventName === 'PostToolUseFailure' ||
+    (eventName === 'PreToolUse' && !isAskUserQuestion)
       ? 'working'
-      : eventName === 'PermissionRequest'
+      : eventName === 'PermissionRequest' || isAskUserQuestion
         ? 'waiting'
         : eventName === 'Stop' || eventName === 'StopFailure'
           ? 'done'

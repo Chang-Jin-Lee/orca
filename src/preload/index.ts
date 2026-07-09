@@ -36,6 +36,7 @@ import type {
   MemorySnapshot,
   NotificationDismissResult,
   NotificationDispatchResult,
+  NotificationDeliveryProbeResult,
   NotificationPermissionStatusResult,
   NotificationSoundDataResult,
   NotificationSoundPathResult,
@@ -481,6 +482,25 @@ const api = {
       ipcRenderer.invoke('app:pickFloatingWorkspaceDirectory')
   },
 
+  orcaProfiles: {
+    list: () => ipcRenderer.invoke('orcaProfiles:list'),
+    authStatus: () => ipcRenderer.invoke('orcaProfiles:authStatus'),
+    createLocal: (args) => ipcRenderer.invoke('orcaProfiles:createLocal', args),
+    createCloudLinked: (args) => ipcRenderer.invoke('orcaProfiles:createCloudLinked', args),
+    switchProfile: (args) => ipcRenderer.invoke('orcaProfiles:switch', args),
+    transferProject: (args) => ipcRenderer.invoke('orcaProfiles:transferProject', args),
+    findProjectProfiles: (args) => ipcRenderer.invoke('orcaProfiles:findProjectProfiles', args),
+    connectCurrent: () => ipcRenderer.invoke('orcaProfiles:connectCurrent'),
+    refreshAuth: () => ipcRenderer.invoke('orcaProfiles:refreshAuth'),
+    signOutCurrent: () => ipcRenderer.invoke('orcaProfiles:signOutCurrent'),
+    selectOrg: (args) => ipcRenderer.invoke('orcaProfiles:selectOrg', args),
+    orgMembersList: (args) => ipcRenderer.invoke('orcaProfiles:orgMembersList', args),
+    orgMemberInvite: (args) => ipcRenderer.invoke('orcaProfiles:orgMemberInvite', args),
+    orgInviteRevoke: (args) => ipcRenderer.invoke('orcaProfiles:orgInviteRevoke', args),
+    orgMemberChangeRole: (args) => ipcRenderer.invoke('orcaProfiles:orgMemberChangeRole', args),
+    orgMemberRemove: (args) => ipcRenderer.invoke('orcaProfiles:orgMemberRemove', args)
+  } satisfies PreloadApi['orcaProfiles'],
+
   platform: {
     get: () => ({
       platform: process.platform,
@@ -519,6 +539,8 @@ const api = {
       ipcRenderer.invoke('repos:getDefaultCreateProjectParent'),
 
     remove: (args) => ipcRenderer.invoke('repos:remove', args),
+
+    removeForHost: (args) => ipcRenderer.invoke('repos:removeForHost', args),
 
     reorder: (args) => ipcRenderer.invoke('repos:reorder', args),
 
@@ -652,6 +674,8 @@ const api = {
 
     remove: (args) => ipcRenderer.invoke('worktrees:remove', args),
 
+    forgetLocal: (args) => ipcRenderer.invoke('worktrees:forgetLocal', args),
+
     forceDeletePreservedBranch: (args) =>
       ipcRenderer.invoke('worktrees:forceDeletePreservedBranch', args),
 
@@ -752,6 +776,7 @@ const api = {
       cols: number
       rows: number
       cwd?: string
+      cwdFallback?: 'worktree'
       env?: Record<string, string>
       command?: string
       launchConfig?: SleepingAgentLaunchConfig
@@ -787,6 +812,7 @@ const api = {
       replay?: string
       sessionExpired?: boolean
       coldRestore?: { scrollback: string; cwd: string }
+      startupCwdFallback?: { kind: 'worktree'; cwd: string }
     }> => ipcRenderer.invoke('pty:spawn', opts),
 
     write: (id: string, data: string): void => {
@@ -810,6 +836,13 @@ const api = {
 
     signal: (id: string, signal: string): void => {
       ipcRenderer.send('pty:signal', { id, signal })
+    },
+
+    /** Why: Cmd/Ctrl+K clears the renderer xterm, but the PTY host (ConPTY,
+     * daemon emulator, SSH host buffer) keeps its own screen state and would
+     * repaint the next prompt at the stale cursor row. */
+    clearBuffer: (id: string): void => {
+      ipcRenderer.send('pty:clearBuffer', { id })
     },
 
     ackColdRestore: (id: string): void => {
@@ -843,6 +876,7 @@ const api = {
       seq?: number
       source?: 'headless' | 'renderer'
       alternateScreen?: boolean
+      pendingEscapeTailAnsi?: string
     } | null> => ipcRenderer.invoke('pty:getMainBufferSnapshot', { id, opts }),
 
     getRendererDeliveryDebugSnapshot: (): Promise<{
@@ -890,6 +924,7 @@ const api = {
         seq?: number
         rawLength?: number
         background?: boolean
+        droppedBacklog?: boolean
       }) => void
     ): (() => void) => {
       const listener = (
@@ -900,6 +935,7 @@ const api = {
           seq?: number
           rawLength?: number
           background?: boolean
+          droppedBacklog?: boolean
         }
       ) => callback(data)
       ipcRenderer.on('pty:data', listener)
@@ -1026,6 +1062,7 @@ const api = {
       linkedPRNumber?: number | null
       fallbackPRNumber?: number | null
       acceptMergedFallbackPR?: boolean
+      currentHeadOid?: string | null
     }): Promise<unknown> => ipcRenderer.invoke('gh:prForBranch', args),
 
     refreshPRNow: (args: { candidate: GitHubPRRefreshCandidate }): Promise<unknown> =>
@@ -1862,8 +1899,8 @@ const api = {
     openSystemSettings: (): Promise<void> => ipcRenderer.invoke('notifications:openSystemSettings'),
     getPermissionStatus: (): Promise<NotificationPermissionStatusResult> =>
       ipcRenderer.invoke('notifications:getPermissionStatus'),
-    requestPermission: (): Promise<NotificationPermissionStatusResult> =>
-      ipcRenderer.invoke('notifications:requestPermission'),
+    probeDelivery: (args?: { force?: boolean }): Promise<NotificationDeliveryProbeResult> =>
+      ipcRenderer.invoke('notifications:probeDelivery', args),
     playSound: async (options?: {
       force?: boolean
       volume?: number
@@ -2167,6 +2204,7 @@ const api = {
         screenY: number
         pageUrl: string
         linkUrl: string | null
+        selectionText: string
         canGoBack: boolean
         canGoForward: boolean
       }) => void
@@ -2181,6 +2219,7 @@ const api = {
           screenY: number
           pageUrl: string
           linkUrl: string | null
+          selectionText: string
           canGoBack: boolean
           canGoForward: boolean
         }
@@ -2631,7 +2670,10 @@ const api = {
       rootPath: string
       connectionId?: string
       excludePaths?: string[]
+      requestToken?: string
     }): Promise<string[]> => ipcRenderer.invoke('fs:listFiles', args),
+    cancelListFiles: (args: { requestToken: string }): Promise<void> =>
+      ipcRenderer.invoke('fs:cancelListFiles', args),
     search: (args: {
       query: string
       rootPath: string
@@ -3030,7 +3072,8 @@ const api = {
         requestId: string
         url: string
         worktreeId?: string
-        sessionProfileId?: string
+        sessionProfileId?: string | null
+        sessionPartition?: string
         activate?: boolean
       }) => void
     ): (() => void) => {
@@ -3040,7 +3083,8 @@ const api = {
           requestId: string
           url: string
           worktreeId?: string
-          sessionProfileId?: string
+          sessionProfileId?: string | null
+          sessionPartition?: string
           activate?: boolean
         }
       ) => callback(data)
@@ -3055,11 +3099,21 @@ const api = {
       ipcRenderer.send('browser:tabCreateReply', reply)
     },
     onRequestTabSetProfile: (
-      callback: (data: { requestId: string; browserPageId: string; profileId: string }) => void
+      callback: (data: {
+        requestId: string
+        browserPageId: string
+        profileId: string
+        sessionPartition?: string
+      }) => void
     ): (() => void) => {
       const listener = (
         _event: Electron.IpcRendererEvent,
-        data: { requestId: string; browserPageId: string; profileId: string }
+        data: {
+          requestId: string
+          browserPageId: string
+          profileId: string
+          sessionPartition?: string
+        }
       ) => callback(data)
       ipcRenderer.on('browser:requestTabSetProfile', listener)
       return () => ipcRenderer.removeListener('browser:requestTabSetProfile', listener)
@@ -3430,6 +3484,11 @@ const api = {
       ipcRenderer.on('terminal:zoom', listener)
       return () => ipcRenderer.removeListener('terminal:zoom', listener)
     },
+    onSystemResumed: (callback: () => void): (() => void) => {
+      const listener = (_event: Electron.IpcRendererEvent) => callback()
+      ipcRenderer.on('system:resumed', listener)
+      return () => ipcRenderer.removeListener('system:resumed', listener)
+    },
     readClipboardText: (options?: ReadClipboardTextOptions): Promise<string> =>
       ipcRenderer.invoke('clipboard:readText', options),
     readSelectionClipboardText: (options?: ReadClipboardTextOptions): Promise<string> =>
@@ -3784,6 +3843,7 @@ const api = {
       ipcRenderer.invoke('rateLimits:fetchInactiveClaudeAccounts'),
     fetchInactiveCodexAccounts: (): Promise<void> =>
       ipcRenderer.invoke('rateLimits:fetchInactiveCodexAccounts'),
+    refreshMiniMax: (): Promise<RateLimitState> => ipcRenderer.invoke('rateLimits:refreshMiniMax'),
     onUpdate: (callback: (state: RateLimitState) => void): (() => void) => {
       const listener = (_event: Electron.IpcRendererEvent, state: RateLimitState) => callback(state)
       ipcRenderer.on('rateLimits:update', listener)
@@ -3791,8 +3851,20 @@ const api = {
     }
   },
 
+  minimaxCredentials: {
+    getStatus: (): Promise<{ configured: boolean }> =>
+      ipcRenderer.invoke('minimaxCredentials:getStatus'),
+    saveCookie: (cookie: string): Promise<{ configured: boolean }> =>
+      ipcRenderer.invoke('minimaxCredentials:saveCookie', cookie),
+    clearCookie: (): Promise<{ configured: boolean }> =>
+      ipcRenderer.invoke('minimaxCredentials:clearCookie')
+  },
+
   ssh: {
     listTargets: (): Promise<SshTarget[]> => ipcRenderer.invoke('ssh:listTargets'),
+
+    listRemovedTargetLabels: (): Promise<Record<string, string>> =>
+      ipcRenderer.invoke('ssh:listRemovedTargetLabels'),
 
     addTarget: (args: { target: Omit<SshTarget, 'id'> }): Promise<SshTarget> =>
       ipcRenderer.invoke('ssh:addTarget', args),
@@ -3805,7 +3877,8 @@ const api = {
     removeTarget: (args: { id: string }): Promise<void> =>
       ipcRenderer.invoke('ssh:removeTarget', args),
 
-    importConfig: (): Promise<SshTarget[]> => ipcRenderer.invoke('ssh:importConfig'),
+    importConfig: (args?: { reAdopt?: boolean }): Promise<SshTarget[]> =>
+      ipcRenderer.invoke('ssh:importConfig', args),
 
     connect: (args: { targetId: string }): Promise<SshConnectionState | null> =>
       ipcRenderer.invoke('ssh:connect', args),

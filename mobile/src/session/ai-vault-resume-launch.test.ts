@@ -14,6 +14,7 @@ import {
 function session(overrides: Partial<AiVaultSession> = {}): AiVaultSession {
   return {
     id: 'claude:1',
+    executionHostId: 'local',
     agent: 'claude',
     sessionId: 'session 1',
     title: 'Resume me',
@@ -28,6 +29,8 @@ function session(overrides: Partial<AiVaultSession> = {}): AiVaultSession {
     messageCount: 2,
     totalTokens: 10,
     previewMessages: [],
+    queuedMessageCount: 0,
+    subagentTranscriptCount: 0,
     resumeCommand: '',
     ...overrides
   }
@@ -52,8 +55,24 @@ describe('buildMobileAiVaultResumeCommand', () => {
         hostPlatform: 'win32'
       })
     ).toBe(
-      "Set-Location -LiteralPath 'C:\\repo app'; $env:CODEX_HOME='C:\\Users\\Ada\\.codex'; codex resume \"codex-1\""
+      "Set-Location -LiteralPath 'C:\\repo app'; $env:CODEX_HOME='C:\\Users\\Ada\\.codex'; codex resume 'codex-1'"
     )
+  })
+
+  it('resumes OMP sessions by absolute transcript path like desktop', () => {
+    // Regression: custom OMP_CODING_AGENT_DIR / WSL-store sessions miss on an
+    // id lookup, so the forwarded filePath must win over the session id.
+    expect(
+      buildMobileAiVaultResumeCommand({
+        session: session({
+          agent: 'omp',
+          sessionId: '019f27cd-4268-7000-96e7-62f42a55c144',
+          filePath: '/Users/ada/.omp/agent/sessions/repo/sess.jsonl',
+          cwd: '/Users/ada/repo'
+        }),
+        hostPlatform: 'darwin'
+      })
+    ).toBe("cd '/Users/ada/repo' && omp --resume '/Users/ada/.omp/agent/sessions/repo/sess.jsonl'")
   })
 
   it('uses cmd wrapping when the host Windows terminal is configured as cmd', () => {

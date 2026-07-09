@@ -36,6 +36,7 @@ import {
   DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu'
 import { useAppStore } from '../../store'
+import { selectFloatingWorkspaceHasUnread } from '../../store/selectors'
 import type {
   ClaudeRateLimitAccountsState,
   CodexRateLimitAccountsState,
@@ -53,7 +54,7 @@ import {
   formatResetCreditExpiry,
   getProviderUsageStatusLabel
 } from './tooltip'
-import { ClaudeIcon, GeminiIcon, OpenAIIcon, OpenCodeGoIcon } from './icons'
+import { ClaudeIcon, GeminiIcon, MiniMaxIcon, OpenAIIcon, OpenCodeGoIcon } from './icons'
 import { AgentIcon } from '@/lib/agent-catalog'
 import { formatWindowLabel } from '@/lib/window-label-formatter'
 import { markLiveCodexSessionsForRestart } from '@/lib/codex-session-restart'
@@ -901,70 +902,63 @@ function MiniBar({ leftPct }: { leftPct: number }): React.JSX.Element {
 // Inline usage bars (compact bars for inactive accounts in the switcher)
 // ---------------------------------------------------------------------------
 
-function InlineUsageBars({
+export function InlineUsageBars({
   limits,
   isFetching
 }: {
   limits: ProviderRateLimits
   isFetching: boolean
 }): React.JSX.Element {
-  const sessionLeft = limits.session
-    ? Math.max(0, Math.round(100 - limits.session.usedPercent))
-    : null
-  const weeklyLeft = limits.weekly ? Math.max(0, Math.round(100 - limits.weekly.usedPercent)) : null
-  const fableLeft = limits.fableWeekly
-    ? Math.max(0, Math.round(100 - limits.fableWeekly.usedPercent))
-    : null
+  const usageWindows = [
+    limits.session
+      ? {
+          key: 'session',
+          left: Math.max(0, Math.round(100 - limits.session.usedPercent)),
+          label: translate('auto.components.status.bar.StatusBar.d79c3362c4', '% 5h')
+        }
+      : null,
+    limits.weekly
+      ? {
+          key: 'weekly',
+          left: Math.max(0, Math.round(100 - limits.weekly.usedPercent)),
+          label: translate('auto.components.status.bar.StatusBar.5c938d39ac', '% wk')
+        }
+      : null,
+    limits.fableWeekly
+      ? {
+          key: 'fableWeekly',
+          left: Math.max(0, Math.round(100 - limits.fableWeekly.usedPercent)),
+          label: translate('auto.components.status.bar.StatusBar.54e8d6bb2d', '% Fable')
+        }
+      : null
+  ].filter((window): window is { key: string; left: number; label: string } => window !== null)
 
   return (
-    <div className={`flex w-full items-center gap-2 ${isFetching ? 'animate-pulse' : ''}`}>
-      {sessionLeft !== null && (
-        <div className="flex flex-1 items-center gap-1">
-          <div className="h-[4px] flex-1 overflow-hidden rounded-full bg-muted">
+    <div
+      className={`grid w-full items-center gap-1.5 ${isFetching ? 'animate-pulse' : ''}`}
+      style={{
+        gridTemplateColumns: `repeat(${Math.max(1, usageWindows.length)}, minmax(0, 1fr))`
+      }}
+    >
+      {usageWindows.map((window) => (
+        <div key={window.key} className="flex min-w-0 items-center gap-1">
+          <div className="h-[4px] min-w-0 flex-1 overflow-hidden rounded-full bg-muted">
             <div
-              className={`h-full rounded-full ${barColor(sessionLeft)}`}
-              style={{ width: `${sessionLeft}%` }}
+              className={`h-full rounded-full ${barColor(window.left)}`}
+              style={{ width: `${window.left}%` }}
             />
           </div>
-          <span className="text-[10px] tabular-nums text-muted-foreground shrink-0">
-            {sessionLeft}
-            {translate('auto.components.status.bar.StatusBar.d79c3362c4', '% 5h')}
+          <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground">
+            {window.left}
+            {window.label}
           </span>
         </div>
-      )}
-      {weeklyLeft !== null && (
-        <div className="flex flex-1 items-center gap-1">
-          <div className="h-[4px] flex-1 overflow-hidden rounded-full bg-muted">
-            <div
-              className={`h-full rounded-full ${barColor(weeklyLeft)}`}
-              style={{ width: `${weeklyLeft}%` }}
-            />
-          </div>
-          <span className="text-[10px] tabular-nums text-muted-foreground shrink-0">
-            {weeklyLeft}
-            {translate('auto.components.status.bar.StatusBar.5c938d39ac', '% wk')}
-          </span>
-        </div>
-      )}
-      {fableLeft !== null && (
-        <div className="flex flex-1 items-center gap-1">
-          <div className="h-[4px] flex-1 overflow-hidden rounded-full bg-muted">
-            <div
-              className={`h-full rounded-full ${barColor(fableLeft)}`}
-              style={{ width: `${fableLeft}%` }}
-            />
-          </div>
-          <span className="text-[10px] tabular-nums text-muted-foreground shrink-0">
-            {fableLeft}
-            {translate('auto.components.status.bar.StatusBar.54e8d6bb2d', '% Fable')}
-          </span>
-        </div>
-      )}
-      {limits.status === 'error' && !limits.session && !limits.weekly && !limits.fableWeekly && (
+      ))}
+      {usageWindows.length === 0 && limits.status === 'error' ? (
         <span className="text-[10px] text-muted-foreground">
           {translate('auto.components.status.bar.StatusBar.f19a63e7cd', 'Sign in to see usage')}
         </span>
-      )}
+      ) : null}
     </div>
   )
 }
@@ -1696,7 +1690,9 @@ export function ProviderDetailsMenu({
                       ? 'O'
                       : provider.provider === 'kimi'
                         ? 'K'
-                        : 'X'}
+                        : provider.provider === 'minimax'
+                          ? 'M'
+                          : 'X'}
               </span>
             </span>
           ) : (
@@ -1752,6 +1748,10 @@ function StatusBarInner({ floatingTerminalOpen }: StatusBarProps): React.JSX.Ele
   const statusBarVisible = useAppStore((s) => s.statusBarVisible)
   const statusBarItems = useAppStore((s) => s.statusBarItems)
   const recordFeatureInteraction = useAppStore((s) => s.recordFeatureInteraction)
+  // Why: same launcher attention dot as the floating-button trigger, so an
+  // unacknowledged bell/agent-completion in the floating workspace is visible
+  // whichever trigger location the user picked (see FloatingTerminalToggleButton).
+  const hasFloatingUnread = useAppStore(selectFloatingWorkspaceHasUnread)
   const floatingTerminalEnabled = settings?.floatingTerminalEnabled === true
   const floatingTerminalTriggerLocation =
     settings?.floatingTerminalTriggerLocation ?? 'floating-button'
@@ -1838,17 +1838,21 @@ function StatusBarInner({ floatingTerminalOpen }: StatusBarProps): React.JSX.Ele
     return null
   }
 
-  const { claude, codex, gemini, opencodeGo, kimi } = rateLimits
+  const { claude, codex, gemini, opencodeGo, kimi, minimax } = rateLimits
 
   // Why: a provider earns a bar from either a usable live snapshot or durable
   // setup in Settings. The durable path keeps account switchers visible while
   // usage snapshots hydrate, fail, or temporarily report unavailable.
   // Detection-gating (see status-bar-agent-gating) additionally hides per-CLI
   // bars when the agent isn't installed on PATH.
-  const visibleClaude = getVisibleUsageProvider('claude', claude, settings)
-  const visibleCodex = getVisibleUsageProvider('codex', codex, settings)
-  const visibleGemini = getVisibleUsageProvider('gemini', gemini, settings)
-  const visibleKimi = getVisibleUsageProvider('kimi', kimi, settings)
+  // Why: thread the cookie durability flag from RateLimitState so the
+  // MiniMax bar stays visible after a reload and between snapshot refreshes.
+  const usageSettings = { ...settings, minimaxCookieConfigured: rateLimits.minimaxCookieConfigured }
+  const visibleClaude = getVisibleUsageProvider('claude', claude, usageSettings)
+  const visibleCodex = getVisibleUsageProvider('codex', codex, usageSettings)
+  const visibleGemini = getVisibleUsageProvider('gemini', gemini, usageSettings)
+  const visibleKimi = getVisibleUsageProvider('kimi', kimi, usageSettings)
+  const visibleMiniMax = getVisibleUsageProvider('minimax', minimax, usageSettings)
   const showClaude =
     visibleClaude !== null &&
     statusBarItems.includes('claude') &&
@@ -1865,9 +1869,12 @@ function StatusBarInner({ floatingTerminalOpen }: StatusBarProps): React.JSX.Ele
     visibleKimi !== null &&
     statusBarItems.includes('kimi') &&
     isStatusBarItemAvailable('kimi', detectedAgentIds)
+  // Why: MiniMax is a cookie-auth provider, not a CLI on PATH, so detection-gating
+  // doesn't apply (same rationale as OpenCode Go below).
+  const showMiniMax = visibleMiniMax !== null && statusBarItems.includes('minimax')
   // Why: OpenCode Go is a web/cookie-auth provider, not a CLI on PATH, so
   // detection-gating doesn't apply.
-  const visibleOpencodeGo = getVisibleUsageProvider('opencode-go', opencodeGo, settings)
+  const visibleOpencodeGo = getVisibleUsageProvider('opencode-go', opencodeGo, usageSettings)
   const showOpencodeGo = visibleOpencodeGo !== null && statusBarItems.includes('opencode-go')
   const showSsh = statusBarItems.includes('ssh')
   const showResourceUsage = statusBarItems.includes('resource-usage')
@@ -1875,12 +1882,21 @@ function StatusBarInner({ floatingTerminalOpen }: StatusBarProps): React.JSX.Ele
   const showFloatingTerminalToggle =
     floatingTerminalEnabled && floatingTerminalTriggerLocation === 'status-bar'
   const anyVisible =
-    showClaude || showCodex || showGemini || showOpencodeGo || showKimi || showResourceUsage
+    showClaude ||
+    showCodex ||
+    showGemini ||
+    showOpencodeGo ||
+    showKimi ||
+    showMiniMax ||
+    showResourceUsage
   // Why: a brand-new user with no provider configured would otherwise see an
   // empty left side of the status bar and wonder what's missing. Settings are
   // included because managed accounts are durable even when live usage
   // snapshots are still hydrating or unavailable after an update.
-  const isEmptyUsageState = isUsageEmptyState({ claude, codex, gemini, opencodeGo, kimi }, settings)
+  const isEmptyUsageState = isUsageEmptyState(
+    { claude, codex, gemini, opencodeGo, kimi, minimax },
+    usageSettings
+  )
   // Why: the teaching CTA is a one-time nudge — once the user hides it, keep it
   // hidden even after providers are disconnected again.
   const showEmptyUsageCta = isEmptyUsageState && !usageEmptyStateDismissed
@@ -1889,13 +1905,17 @@ function StatusBarInner({ floatingTerminalOpen }: StatusBarProps): React.JSX.Ele
     codex?.status === 'fetching' ||
     gemini?.status === 'fetching' ||
     opencodeGo?.status === 'fetching' ||
-    kimi?.status === 'fetching'
+    kimi?.status === 'fetching' ||
+    minimax?.status === 'fetching'
 
   const compact = containerWidth < 900
   const iconOnly = containerWidth < 500
   const floatingTerminalActionLabel = floatingTerminalOpen
     ? 'Minimize Floating Workspace'
     : 'Show Floating Workspace'
+  // Why: only while the panel is closed; the dot reflects unacknowledged
+  // floating-workspace activity and clears via the shared unread paths.
+  const showFloatingWorkspaceAttentionDot = !floatingTerminalOpen && hasFloatingUnread
 
   return (
     <div
@@ -1964,6 +1984,17 @@ function StatusBarInner({ floatingTerminalOpen }: StatusBarProps): React.JSX.Ele
                 )}
               />
             )}
+            {showMiniMax && (
+              <ProviderDetailsMenu
+                provider={visibleMiniMax}
+                compact={compact}
+                iconOnly={iconOnly}
+                ariaLabel={translate(
+                  'auto.components.status.bar.StatusBar.06741a2f3d',
+                  'Open MiniMax usage details'
+                )}
+              />
+            )}
           </>
         )}
         {anyVisible && !isEmptyUsageState && (
@@ -2009,13 +2040,26 @@ function StatusBarInner({ floatingTerminalOpen }: StatusBarProps): React.JSX.Ele
               <TooltipTrigger asChild>
                 <button
                   type="button"
-                  className="inline-flex size-5 cursor-pointer items-center justify-center rounded border border-border bg-secondary text-secondary-foreground shadow-xs transition-colors hover:bg-accent hover:text-accent-foreground"
-                  aria-label={floatingTerminalActionLabel}
+                  className="relative inline-flex size-5 cursor-pointer items-center justify-center rounded border border-border bg-secondary text-secondary-foreground shadow-xs transition-colors hover:bg-accent hover:text-accent-foreground"
+                  aria-label={
+                    showFloatingWorkspaceAttentionDot
+                      ? `${floatingTerminalActionLabel}, new activity`
+                      : floatingTerminalActionLabel
+                  }
                   onClick={() => {
                     window.dispatchEvent(new CustomEvent(TOGGLE_FLOATING_TERMINAL_EVENT))
                   }}
                 >
                   <PanelsTopLeft className="size-3.5" />
+                  {showFloatingWorkspaceAttentionDot ? (
+                    // Why: amber = Orca's "needs attention" convention; ring
+                    // matches the button fill so the dot reads on the icon.
+                    <span
+                      aria-hidden
+                      data-floating-terminal-attention
+                      className="pointer-events-none absolute right-0.5 top-0.5 size-1.5 rounded-full bg-amber-500 ring-1 ring-secondary"
+                    />
+                  ) : null}
                 </button>
               </TooltipTrigger>
               <TooltipContent side="top" sideOffset={6}>
@@ -2094,6 +2138,16 @@ function StatusBarInner({ floatingTerminalOpen }: StatusBarProps): React.JSX.Ele
               {translate('auto.components.status.bar.StatusBar.5e59007df4', 'Kimi Usage')}
             </DropdownMenuCheckboxItem>
           )}
+          <DropdownMenuCheckboxItem
+            checked={statusBarItems.includes('minimax')}
+            onCheckedChange={() => {
+              recordFeatureInteraction('usage-tracking')
+              toggleStatusBarItem('minimax')
+            }}
+          >
+            <MiniMaxIcon size={14} />
+            {translate('auto.components.status.bar.StatusBar.3bbf140864', 'MiniMax Usage')}
+          </DropdownMenuCheckboxItem>
           <DropdownMenuCheckboxItem
             checked={statusBarItems.includes('ssh')}
             onCheckedChange={() => {

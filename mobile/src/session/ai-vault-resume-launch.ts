@@ -36,7 +36,8 @@ const NODE_PLATFORMS = new Set<NodeJS.Platform>([
 ])
 
 export function buildMobileAiVaultResumeCommand(args: {
-  session: Pick<AiVaultSession, 'agent' | 'sessionId' | 'cwd' | 'codexHome'>
+  session: Pick<AiVaultSession, 'agent' | 'sessionId' | 'cwd' | 'codexHome'> &
+    Partial<Pick<AiVaultSession, 'filePath'>>
   hostPlatform: NodeJS.Platform
   hostTerminalWindowsShell?: string | null
   commandOverride?: string | null
@@ -50,6 +51,9 @@ export function buildMobileAiVaultResumeCommand(args: {
   return buildAiVaultResumeCommand({
     agent: args.session.agent,
     sessionId: args.session.sessionId,
+    // Why: OMP resumes by absolute transcript path (custom OMP dir / WSL-store
+    // sessions miss on an id lookup), so mobile forwards it like desktop does.
+    resumeFilePath: args.session.filePath,
     cwd: args.session.cwd,
     platform: args.hostPlatform,
     commandOverride: args.commandOverride,
@@ -72,7 +76,8 @@ export type MobileAiVaultResumeLaunch = {
 }
 
 export function buildMobileAiVaultResumeLaunch(args: {
-  session: Pick<AiVaultSession, 'agent' | 'sessionId' | 'cwd' | 'codexHome'>
+  session: Pick<AiVaultSession, 'agent' | 'sessionId' | 'cwd' | 'codexHome'> &
+    Partial<Pick<AiVaultSession, 'filePath'>>
   hostPlatform: NodeJS.Platform
   hostTerminalWindowsShell?: string | null
   settings?: MobileAiVaultResumeSettings | null

@@ -61,7 +61,6 @@ import { createNestedRepoImportTargetResolver } from '../project-groups/nested-r
 import {
   isGitRepo,
   getGitRepoRoot,
-  getGitUsername,
   getRepoName,
   getBaseRefDefault,
   getRemoteCount,
@@ -76,7 +75,8 @@ import {
 } from '../git/repo'
 import { getSshGitProvider } from '../providers/ssh-git-dispatch'
 import { getSshFilesystemProvider } from '../providers/ssh-filesystem-dispatch'
-import { getSshGitUsername } from '../git/git-username'
+import { getSshGitUsername, resolveLocalGitUsername } from '../git/git-username'
+import { enrichRepoGitUsernames } from '../repo-git-username-enrichment'
 import { getActiveMultiplexer } from './ssh'
 import { normalizeSparseDirectories } from './sparse-checkout-directories'
 import { track } from '../telemetry/client'
@@ -657,7 +657,7 @@ function emitCloneProgressFromText(mainWindow: BrowserWindow, text: string): voi
     if (match && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send('repos:clone-progress', {
         phase: match[1].trim(),
-        percent: parseInt(match[2], 10)
+        percent: Number.parseInt(match[2], 10)
       })
     }
   }
@@ -1118,6 +1118,7 @@ export function registerRepoHandlers(mainWindow: BrowserWindow, store: Store): v
   ipcMain.removeHandler('repos:list')
   ipcMain.removeHandler('repos:add')
   ipcMain.removeHandler('repos:remove')
+  ipcMain.removeHandler('repos:removeForHost')
   ipcMain.removeHandler('repos:reorder')
   ipcMain.removeHandler('repos:update')
   ipcMain.removeHandler('projects:list')
@@ -1161,6 +1162,12 @@ export function registerRepoHandlers(mainWindow: BrowserWindow, store: Store): v
 
   ipcMain.handle('repos:list', () => {
     enrichMissingRepoGitRemoteIdentities(store, {
+      onChanged: () => notifyReposChanged(mainWindow)
+    })
+    // Why: username resolution spawns git/gh and must stay off this handler's
+    // synchronous path (issue #7225); the background pass notifies the
+    // renderer to re-list once values land.
+    enrichRepoGitUsernames(store, {
       onChanged: () => notifyReposChanged(mainWindow)
     })
     return store.getRepos()
@@ -1920,6 +1927,22 @@ export function registerRepoHandlers(mainWindow: BrowserWindow, store: Store): v
     notifyReposChanged(mainWindow)
   })
 
+  // Why: forget a project on a single execution host without disturbing the
+  // same repo id on other hosts (local or a re-added SSH target). Used by the
+  // SSH-workspace forget flow when a host is removed/disconnected.
+  ipcMain.handle(
+    'repos:removeForHost',
+    async (_event, args: { repoId: string; hostId: string }) => {
+      const hostId = normalizeExecutionHostId(args.hostId)
+      if (!hostId) {
+        throw new Error(`Invalid host ID: ${args.hostId}`)
+      }
+      store.removeProjectForHost(args.repoId, hostId)
+      invalidateAuthorizedRootsCache()
+      notifyReposChanged(mainWindow)
+    }
+  )
+
   ipcMain.handle(
     'repos:update',
     (
@@ -2400,7 +2423,7 @@ export function registerRepoHandlers(mainWindow: BrowserWindow, store: Store): v
       }
       return getSshGitUsername(provider, repo.path)
     }
-    return getGitUsername(repo.path)
+    return resolveLocalGitUsername(repo.path)
   })
 
   ipcMain.handle(

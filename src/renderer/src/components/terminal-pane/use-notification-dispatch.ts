@@ -1,8 +1,9 @@
 import { useCallback } from 'react'
 import { useAppStore } from '@/store'
-import { resolveExplicitTerminalTitleAgentType } from '../../../../shared/terminal-title-agent-type'
+import { resolveCommittedTitleAgentType } from '@/lib/pane-agent-evidence'
 import { getRepoMapFromState, getWorktreeMapFromState } from '@/store/selectors'
 import { playDesktopNotificationSound } from '@/lib/desktop-notification-sound'
+import { showBlockedNotificationFallbackToast } from '@/lib/blocked-notification-fallback'
 import { buildAgentNotificationId } from '../../../../shared/agent-notification-id'
 import { isSupersededAgentCompletionSnapshot } from './agent-completion-snapshot-staleness'
 import type { AgentCompletionStatusSnapshot } from './agent-completion-coordinator-types'
@@ -52,7 +53,7 @@ export function dispatchTerminalNotification(
   // not lend its prompt/agentType or timing id to this notification.
   const explicitTitleAgentType =
     event.source === 'agent-task-complete' && event.terminalTitle
-      ? resolveExplicitTerminalTitleAgentType(event.terminalTitle)
+      ? resolveCommittedTitleAgentType(event.terminalTitle)
       : null
   const storedAgentStatus =
     event.source === 'agent-task-complete' && event.paneKey
@@ -189,6 +190,13 @@ export function dispatchTerminalNotification(
     .then((result) => {
       if (result.delivered) {
         void playDesktopNotificationSound(customSoundId, customSoundVolume)
+        return
+      }
+      // Why: macOS is silently swallowing notifications (permission off or
+      // prompt unanswered) — surface an in-app pointer at the fix instead of
+      // letting the alert vanish without a trace.
+      if (result.reason === 'blocked-by-system') {
+        showBlockedNotificationFallbackToast()
       }
     })
     .catch((err) => {

@@ -36,6 +36,12 @@ export type PtySpawnOptions = {
   /** Orca worktree identity. When present, the local provider scopes shell
    *  history to this worktree so ArrowUp only surfaces local commands. */
   worktreeId?: string
+  /** Stable terminal pane identity. Remote providers use this as PTY metadata
+   *  even when it must not be exported into the spawned shell environment. */
+  paneKey?: string
+  /** Stable terminal tab identity used as a coarser attach guard when a pane
+   *  identity is unavailable. */
+  tabId?: string
   /** Daemon session ID. A caller-provided ID is treated as an attach request;
    *  daemon hosts also pass minted IDs for fresh sessions that need stable
    *  per-PTY state before provider.spawn returns. */
@@ -99,6 +105,14 @@ export type PtySpawnResult = {
   }
 }
 
+export type PtyProcessInfo = {
+  id: string
+  cwd: string
+  title: string
+  /** Trusted ORCA_TERMINAL_HANDLE exported into this PTY, when known. */
+  terminalHandle?: string
+}
+
 export type IPtyProvider = {
   spawn(opts: PtySpawnOptions): Promise<PtySpawnResult>
   attach(id: string): Promise<void>
@@ -128,7 +142,7 @@ export type IPtyProvider = {
   getForegroundProcess(id: string): Promise<string | null>
   serialize(ids: string[]): Promise<string>
   revive(state: string): Promise<void>
-  listProcesses(): Promise<{ id: string; cwd: string; title: string }[]>
+  listProcesses(): Promise<PtyProcessInfo[]>
   getDefaultShell(): Promise<string>
   getProfiles(): Promise<{ name: string; path: string }[]>
   onData(callback: (payload: { id: string; data: string }) => void): () => void
@@ -183,7 +197,10 @@ export type IFilesystemProvider = {
   copy(source: string, destination: string): Promise<void>
   realpath(filePath: string): Promise<string>
   search(opts: SearchOptions): Promise<SearchResult>
-  listFiles(rootPath: string, options?: { excludePaths?: string[] }): Promise<string[]>
+  listFiles(
+    rootPath: string,
+    options?: { excludePaths?: string[]; signal?: AbortSignal }
+  ): Promise<string[]>
   scanWorkspaceSpace?(
     rootPath: string,
     options?: { signal?: AbortSignal }

@@ -11,6 +11,7 @@ import { sessionPreviewSearchText } from './ai-vault-session-display'
 
 const baseSession: AiVaultSession = {
   id: 'claude:1',
+  executionHostId: 'local',
   agent: 'claude',
   sessionId: 'session-1',
   title: 'Implement vault filters',
@@ -28,6 +29,8 @@ const baseSession: AiVaultSession = {
     { role: 'user', text: 'add the scope tabs', timestamp: null },
     { role: 'assistant', text: 'done — added Workspace/Project/All', timestamp: null }
   ],
+  queuedMessageCount: 0,
+  subagentTranscriptCount: 0,
   resumeCommand: "cd '/Users/ada/repo/app' && claude --resume 'session-1'"
 }
 
@@ -58,7 +61,16 @@ describe('/shared ai-vault-session-filters (lifted core)', () => {
   })
 
   it('hides empty sessions by default and keeps non-empty ones', () => {
-    const empty: AiVaultSession = { ...baseSession, id: 'claude:empty', messageCount: 0 }
+    // A session only counts as empty without conversation previews or
+    // recoverable signals — preview turns alone make it resumable content.
+    const empty: AiVaultSession = {
+      ...baseSession,
+      id: 'claude:empty',
+      messageCount: 0,
+      previewMessages: [],
+      queuedMessageCount: 0,
+      subagentTranscriptCount: 0
+    }
     expect(
       filterAiVaultSessions([baseSession, empty], {
         query: '',

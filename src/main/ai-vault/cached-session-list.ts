@@ -2,6 +2,7 @@ import { join } from 'node:path'
 import { scanAiVaultSessions } from './session-scanner'
 import { getWslHomeAsync, listWslDistrosAsync } from '../wsl'
 import type { AiVaultListArgs, AiVaultListResult } from '../../shared/ai-vault-types'
+import { LOCAL_EXECUTION_HOST_ID } from '../../shared/execution-host'
 
 // Why: ONE module owns the scan cache so the desktop IPC handler AND the runtime
 // RPC method share a single cache instance — opening the desktop panel and the
@@ -55,7 +56,10 @@ export async function listAiVaultSessions(args?: AiVaultListArgs): Promise<AiVau
       limit: args?.limit,
       scopePaths: args?.scopePaths,
       additionalCodexSessionsDirs,
-      wslHomeDirs: await getAiVaultWslHomeDirs()
+      wslHomeDirs: await getAiVaultWslHomeDirs(),
+      // Why: this scan is always host-local; callers addressing this host by a
+      // runtime id get the result restamped at the RPC edge, never rescanned.
+      executionHostId: LOCAL_EXECUTION_HOST_ID
     }))()
     .then((result) => {
       cachedList = {
