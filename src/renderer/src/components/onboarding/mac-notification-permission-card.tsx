@@ -151,8 +151,14 @@ export function MacNotificationPermissionCard({
             </div>
             <p className="max-w-[58ch] text-[13px] leading-relaxed text-muted-foreground">
               {translate(
-                'auto.components.onboarding.NotificationStep.94562ba367',
-                'macOS is asking for permission. Click Allow in the dialog and this step updates automatically.'
+                'auto.components.onboarding.mac.notification.permission.card.f696515944',
+                'Click Allow in the macOS dialog.'
+              )}
+            </p>
+            <p className="text-[13px] leading-relaxed text-muted-foreground/70">
+              {translate(
+                'auto.components.onboarding.mac.notification.permission.card.3d18cf71f9',
+                'Updates automatically.'
               )}
             </p>
           </div>
@@ -191,8 +197,14 @@ export function MacNotificationPermissionCard({
             </div>
             <p className="max-w-[58ch] text-[13px] leading-relaxed text-amber-700/80 dark:text-amber-200/80">
               {translate(
-                'auto.components.onboarding.NotificationStep.2c47f5465f',
-                'Turn on Allow notifications for Orca in System Settings. This step updates automatically once enabled.'
+                'auto.components.onboarding.mac.notification.permission.card.721d2bedb6',
+                'Turn on Allow notifications for Orca in System Settings.'
+              )}
+            </p>
+            <p className="text-[13px] leading-relaxed text-amber-700/60 dark:text-amber-200/50">
+              {translate(
+                'auto.components.onboarding.mac.notification.permission.card.3d18cf71f9',
+                'Updates automatically.'
               )}
             </p>
           </div>
