@@ -34,7 +34,7 @@ import { devinHookService } from '../devin/hook-service'
 import { grokHookService } from '../grok/hook-service'
 import { hermesHookService } from '../hermes/hook-service'
 import { kimiHookService } from '../kimi/hook-service'
-import { MANAGED_AGENT_HOOK_INSTALLERS } from './managed-agent-hook-controls'
+import { MANAGED_AGENT_HOOK_MANIFEST } from './managed-agent-hook-manifest'
 import {
   installRemoteManagedAgentHooks,
   REMOTE_MANAGED_HOOK_INSTALLER_AGENTS
@@ -629,7 +629,9 @@ describe('remote hook service installers', () => {
     ])
 
     // Guard against a service silently missing from the map above as new agents land.
-    for (const [agent] of MANAGED_AGENT_HOOK_INSTALLERS) {
+    for (const {
+      target: { agent }
+    } of MANAGED_AGENT_HOOK_MANIFEST) {
       expect(servicesByAgent.has(agent)).toBe(true)
     }
 
@@ -645,7 +647,11 @@ describe('remote hook service installers', () => {
 
   it('installs Droid and Copilot when running the aggregate remote installer (issue #7253)', async () => {
     const { sftp } = createFakeSftp()
-    const results = await installRemoteManagedAgentHooks(sftp, '/home/dev')
+    // Presence-gated installs require a positive remote CLI signal per agent.
+    const results = await installRemoteManagedAgentHooks(sftp, '/home/dev', {
+      droid: { state: 'found' },
+      copilot: { state: 'found' }
+    })
     const byAgent = new Map(results.map((r) => [r.agent, r.state]))
     expect(byAgent.get('droid')).toBe('installed')
     expect(byAgent.get('copilot')).toBe('installed')
