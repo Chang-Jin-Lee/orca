@@ -2329,6 +2329,8 @@ describe('OrcaRuntimeService', () => {
             '-c',
             'maintenance.auto=false',
             '-c',
+            'maintenance.commit-graph.auto=0',
+            '-c',
             'gc.auto=0',
             'fetch',
             '--no-tags',
@@ -2592,6 +2594,8 @@ describe('OrcaRuntimeService', () => {
         [
           '-c',
           'maintenance.auto=false',
+          '-c',
+          'maintenance.commit-graph.auto=0',
           '-c',
           'gc.auto=0',
           'fetch',
