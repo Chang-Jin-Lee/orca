@@ -1789,6 +1789,96 @@ describe('OrcaRuntimeService', () => {
     expect(after.terminals[0].handle).not.toBe(staleHandle)
   })
 
+  it('keeps a live CLI waiter pending when a re-keyed shared handle transfers to the live leaf', async () => {
+    const runtime = createRuntime()
+    const tabId = 'tab-1'
+    // The counterpart to the leaf-unique case above: a pre-allocated
+    // ORCA_TERMINAL_HANDLE is ptyId-keyed and shared, so re-keying its live PTY to
+    // a new leaf (a pane moved across tabs, no renderer reload) must hand the
+    // handle to the live leaf WITHOUT rejecting the agent's in-flight waiter. This
+    // pins the shared-handle branch so collapsing it into a blanket
+    // invalidateLeafHandle can't silently strand a CLI `terminal wait`. (A renderer
+    // reload is a separate path — markRendererReloading stales every waiter itself.)
+    runtime.preAllocateHandleForPty('pty-agent')
+    runtime.attachWindow(TEST_WINDOW_ID)
+    runtime.syncWindowGraph(TEST_WINDOW_ID, {
+      tabs: [
+        {
+          tabId,
+          worktreeId: TEST_WORKTREE_ID,
+          title: 'Claude',
+          activeLeafId: 'leaf-old',
+          layout: null
+        }
+      ],
+      leaves: [
+        {
+          tabId,
+          worktreeId: TEST_WORKTREE_ID,
+          leafId: 'leaf-old',
+          paneRuntimeId: 1,
+          ptyId: 'pty-agent'
+        }
+      ]
+    })
+    const before = await runtime.listTerminals(`id:${TEST_WORKTREE_ID}`)
+    const sharedHandle = before.terminals[0].handle
+    const abort = new AbortController()
+    let settled: 'resolved' | 'rejected' | null = null
+    const waiting = runtime
+      .waitForTerminal(sharedHandle, {
+        condition: 'exit',
+        timeoutMs: 30_000,
+        signal: abort.signal
+      })
+      .then(
+        () => {
+          settled = 'resolved'
+        },
+        () => {
+          settled = 'rejected'
+        }
+      )
+
+    // Re-key WITHOUT a renderer reload while the same agent PTY stays live under a
+    // new leaf.
+    runtime.syncWindowGraph(TEST_WINDOW_ID, {
+      tabs: [
+        {
+          tabId,
+          worktreeId: TEST_WORKTREE_ID,
+          title: 'Claude',
+          activeLeafId: 'leaf-new',
+          layout: null
+        }
+      ],
+      leaves: [
+        {
+          tabId,
+          worktreeId: TEST_WORKTREE_ID,
+          leafId: 'leaf-new',
+          paneRuntimeId: 2,
+          ptyId: 'pty-agent'
+        }
+      ]
+    })
+
+    // Let any synchronous stale-handle rejection propagate.
+    await new Promise<void>((resolve) => setImmediate(resolve))
+    // The shared handle belongs to leaf-new now, so the CLI's live waiter must stay
+    // pending — a blanket invalidateLeafHandle would reject it here as stale.
+    expect(settled).toBeNull()
+    // The same handle still resolves to the live PTY under the new leaf.
+    await expect(runtime.showTerminal(sharedHandle)).resolves.toMatchObject({
+      ptyId: 'pty-agent'
+    })
+
+    // Abort only for teardown; the assertion above already proved it was pending.
+    abort.abort()
+    await waiting
+    expect(settled).toBe('rejected')
+  })
+
   it('emits one mobile session terminal tab per live PTY even if two tabs resolve to it', () => {
     const runtime = createRuntime()
     const internals = runtime as unknown as {
