@@ -17,7 +17,7 @@ vi.mock('@/store', () => ({
   }
 }))
 
-import { installEditorFindShortcut } from './editor-shortcuts'
+import { installEditorFindShortcut, installMonacoEditorFindShortcut } from './editor-shortcuts'
 
 type ShortcutFixture = {
   container: HTMLDivElement
@@ -175,5 +175,24 @@ describe('installEditorFindShortcut', () => {
     expect(event.defaultPrevented).toBe(false)
     expect(fixture.onFind).not.toHaveBeenCalled()
     expect(fixture.onDownstreamKeyDown).toHaveBeenCalledTimes(1)
+  })
+
+  it('runs Monaco existing find action through the shared bridge', () => {
+    const container = document.createElement('div')
+    const input = document.createElement('textarea')
+    const run = vi.fn()
+    const getAction = vi.fn((_id: string) => ({ run }))
+    container.appendChild(input)
+    document.body.appendChild(container)
+    const dispose = installMonacoEditorFindShortcut({
+      getAction,
+      getContainerDomNode: () => container
+    })
+
+    dispatchKeyDown(input, { key: 'f', code: 'KeyU', metaKey: true })
+
+    expect(getAction).toHaveBeenCalledWith('actions.find')
+    expect(run).toHaveBeenCalledTimes(1)
+    dispose()
   })
 })

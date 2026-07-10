@@ -45,3 +45,14 @@ export function installEditorFindShortcut(target: HTMLElement, onFind: () => voi
   target.addEventListener('keydown', handleKeyDown, true)
   return () => target.removeEventListener('keydown', handleKeyDown, true)
 }
+
+type MonacoFindShortcutEditor = {
+  getAction: (id: string) => { run: () => void | Promise<void> } | null
+  getContainerDomNode: () => HTMLElement
+}
+
+export function installMonacoEditorFindShortcut(editor: MonacoFindShortcutEditor): () => void {
+  return installEditorFindShortcut(editor.getContainerDomNode(), () => {
+    void editor.getAction('actions.find')?.run()
+  })
+}

@@ -44,7 +44,7 @@ import {
   getDiffCommentPopoverTop
 } from '../diff-comments/diff-comment-popover-position'
 import { isLinuxUserAgent } from '../terminal-pane/pane-helpers'
-import { installEditorFindShortcut, installEditorSaveShortcut } from './editor-shortcuts'
+import { installEditorSaveShortcut, installMonacoEditorFindShortcut } from './editor-shortcuts'
 import { Plus } from 'lucide-react'
 import {
   getMonacoMarkdownSelectionAnnotationTarget,
@@ -395,9 +395,7 @@ export default function MonacoEditor({
         const value = editorInstance.getValue()
         propsRef.current.onSave(value)
       })
-      const cleanupFindShortcut = installEditorFindShortcut(editorDomNode, () => {
-        void editorInstance.getAction('actions.find')?.run()
-      })
+      const cleanupFindShortcut = installMonacoEditorFindShortcut(editorInstance)
       const searchInFilesAction = editorInstance.addAction({
         id: 'orca.searchInFiles',
         label: translate('auto.components.editor.MonacoEditor.fd68ae03b3', 'Search in Files'),
