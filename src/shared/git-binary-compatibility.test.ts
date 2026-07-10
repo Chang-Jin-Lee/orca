@@ -28,12 +28,17 @@ describeBinaryCompatibility('real Git binary compatibility', () => {
 
   async function runGit(args: string[]): Promise<GitResult> {
     if (image) {
+      const dockerUser =
+        typeof process.getuid === 'function' && typeof process.getgid === 'function'
+          ? ['--user', `${process.getuid()}:${process.getgid()}`]
+          : []
       return execFileAsync(
         'docker',
         [
           'run',
           '--rm',
           '--network=none',
+          ...dockerUser,
           '-v',
           `${repoPath}:/repo`,
           '-w',
