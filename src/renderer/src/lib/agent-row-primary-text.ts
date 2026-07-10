@@ -84,9 +84,13 @@ export function getOrcaDispatchTaskId(prompt: string): string | null {
   if (markerIndex === -1) {
     return null
   }
-  const afterMarker = scan.slice(markerIndex + ORCA_DISPATCH_TASK_ID_MARKER.length)
-  const lineEnd = afterMarker.search(/\r|\n/)
-  const idLine = (lineEnd === -1 ? afterMarker : afterMarker.slice(0, lineEnd)).trim()
+  // Why: delimit on the first whitespace, not just a newline. The task id is a
+  // whitespace-free token, and by the time this parses a live status prompt the
+  // trailing newline has been folded to a space by normalizeSingleLinePreview —
+  // splitting on \n alone would return the id plus the rest of the preamble.
+  const afterMarker = scan.slice(markerIndex + ORCA_DISPATCH_TASK_ID_MARKER.length).trimStart()
+  const idEnd = afterMarker.search(/\s/)
+  const idLine = idEnd === -1 ? afterMarker : afterMarker.slice(0, idEnd)
   return idLine || null
 }
 
