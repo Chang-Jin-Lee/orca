@@ -3771,6 +3771,11 @@ export function connectPanePty(
     ): void => {
       clearPaneMode2031State()
       clearHiddenOutputRestoreState()
+      // Why: a fresh spawn is a new process with kitty keyboard flags at
+      // zero. The exit-handler reset alone is not enough: a late exit from a
+      // replaced PTY takes the stale-transport early return and skips it, so
+      // a restart-in-place would leak the old TUI's flags into a fresh shell.
+      kittyKeyboardModes.reset()
       prepareFreshShellViewportForSpawn(options)
       if (connectionId && startupOverride?.command) {
         // Why: SSH providers use `command` only as spawn metadata; the renderer

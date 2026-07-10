@@ -920,6 +920,32 @@ describe('connectPanePty', () => {
     )
   })
 
+  // Why: a late exit from a replaced PTY takes the stale-transport early
+  // return in onExit and skips the kitty mirror reset there — a fresh spawn
+  // must therefore reset the reused per-pane tracker itself, or a
+  // restart-in-place leaks the old TUI's kitty flags into a fresh shell.
+  it('resets a stale kitty keyboard mirror when spawning a fresh PTY', async () => {
+    const { connectPanePty } = await import('./pty-connection')
+    const { TerminalKittyKeyboardModeTracker } =
+      await import('../../../../shared/terminal-kitty-keyboard-mode-tracker')
+    const transport = createMockTransport()
+    transportFactoryQueue.push(transport)
+    const staleTracker = new TerminalKittyKeyboardModeTracker()
+    staleTracker.scan('\x1b[>1u')
+    expect(staleTracker.flags).toBe(1)
+    // Why: a unique tab id keeps this pane's key clear of pendingSpawnByPaneKey
+    // entries from other tests, so the connect deterministically fresh-spawns.
+    const deps = createDeps({
+      tabId: 'tab-kitty-fresh-spawn',
+      paneKittyKeyboardModesRef: { current: new Map([[91, staleTracker]]) }
+    })
+
+    connectPanePty(createPane(91) as never, createManager(91) as never, deps as never)
+    await flushAsyncTicks()
+
+    expect(staleTracker.flags).toBe(0)
+  })
+
   it('threads the resolved local project runtime into IPC terminal transport options', async () => {
     const { connectPanePty } = await import('./pty-connection')
     const transport = createMockTransport()
