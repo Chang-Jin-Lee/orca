@@ -14618,6 +14618,7 @@ export class OrcaRuntimeService {
       const shouldActivate = args.activate === true || args.runHooks === true
       let warning: string | undefined
       let didSpawnStartup = false
+      let startupTerminal: CreateWorktreeResult['startupTerminal']
       if (effectiveStartup && this.ptyController?.spawn) {
         try {
           const startupTrustAgent = effectiveDraftPaste?.agent ?? effectiveCreatedWithAgent
@@ -14641,6 +14642,14 @@ export class OrcaRuntimeService {
             this.sendStartupFollowupWhenReady(terminal.handle, effectiveStartupFollowup)
           }
           didSpawnStartup = true
+          startupTerminal = {
+            spawned: true,
+            handle: terminal.handle,
+            ...(terminal.tabId ? { tabId: terminal.tabId } : {}),
+            ...(terminal.paneKey ? { paneKey: terminal.paneKey } : {}),
+            ...(terminal.ptyId ? { ptyId: terminal.ptyId } : {}),
+            surface: 'background'
+          }
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err)
           warning = `Failed to create the startup terminal for ${worktree.path}: ${message}`
@@ -14678,6 +14687,7 @@ export class OrcaRuntimeService {
             isMainWorktree: worktree.isMainWorktree
           }
         },
+        ...(startupTerminal ? { startupTerminal } : {}),
         ...(warning ? { warning } : {})
       }
     }

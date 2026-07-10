@@ -14,6 +14,7 @@ vi.mock('../selectors', () => ({ getTerminalHandle: getTerminalHandleMock }))
 
 import { ORCHESTRATION_HANDLERS } from './orchestration'
 import { RuntimeClientError } from '../runtime-client'
+import { printResult } from '../format'
 
 function staleHandleError(): RuntimeClientError {
   return new RuntimeClientError('terminal_handle_stale', 'terminal_handle_stale')
@@ -213,7 +214,7 @@ describe('orchestration send structured payload flags', () => {
     })
   })
 
-  it('continues to use ORCA_TERMINAL_HANDLE as worker lifecycle sender authority', async () => {
+  it('uses a live ORCA_TERMINAL_HANDLE as worker lifecycle sender metadata', async () => {
     process.env.ORCA_TERMINAL_HANDLE = 'term_worker_env'
 
     await invokeSend(
@@ -224,8 +225,11 @@ describe('orchestration send structured payload flags', () => {
       ])
     )
 
-    expect(callMock).toHaveBeenCalledTimes(1)
-    expect(callMock).toHaveBeenCalledWith('orchestration.send', {
+    expect(callMock).toHaveBeenCalledTimes(2)
+    expect(callMock).toHaveBeenNthCalledWith(1, 'terminal.show', {
+      terminal: 'term_worker_env'
+    })
+    expect(callMock).toHaveBeenNthCalledWith(2, 'orchestration.send', {
       from: 'term_worker_env',
       to: 'term_coord',
       subject: 'done',
@@ -236,6 +240,49 @@ describe('orchestration send structured payload flags', () => {
       payload: undefined,
       devMode: false
     })
+  })
+
+  it('remints a stale lifecycle sender from its pane key', async () => {
+    process.env.ORCA_TERMINAL_HANDLE = 'term_worker_stale'
+    process.env.ORCA_PANE_KEY = 'tab_worker:leaf_worker'
+    stubStaleHandleRemint('term_worker_live', { result: { message: { id: 'msg_1' } } })
+
+    await invokeSend(
+      new Map<string, string | boolean>([
+        ['to', 'term_coord'],
+        ['subject', 'done'],
+        ['type', 'worker_done']
+      ])
+    )
+
+    expect(callMock).toHaveBeenNthCalledWith(2, 'terminal.resolvePane', {
+      paneKey: 'tab_worker:leaf_worker'
+    })
+    expect(callMock).toHaveBeenNthCalledWith(
+      3,
+      'orchestration.send',
+      expect.objectContaining({ from: 'term_worker_live' })
+    )
+  })
+
+  it('keeps a stale lifecycle sender when no pane key is available', async () => {
+    process.env.ORCA_TERMINAL_HANDLE = 'term_worker_stale'
+    callMock.mockRejectedValueOnce(staleHandleError())
+
+    await invokeSend(
+      new Map<string, string | boolean>([
+        ['to', 'term_coord'],
+        ['subject', 'done'],
+        ['type', 'worker_done']
+      ])
+    )
+
+    expect(callMock).toHaveBeenCalledTimes(2)
+    expect(callMock).toHaveBeenNthCalledWith(
+      2,
+      'orchestration.send',
+      expect.objectContaining({ from: 'term_worker_stale' })
+    )
   })
 
   it('reports sender resolution failure instead of raw no_active_terminal', async () => {
@@ -631,13 +678,14 @@ describe('orchestration timeout flag validation', () => {
     expect(callMock).not.toHaveBeenCalled()
   })
 
-  it('passes a parsed check timeout into the RPC payload', async () => {
+  it('passes a parsed check timeout and peek mode into the RPC payload', async () => {
     process.env.ORCA_TERMINAL_HANDLE = 'term_worker'
     callMock.mockResolvedValue({ result: { messages: [], count: 0 } })
 
     await invokeCheck(
       new Map<string, string | boolean>([
         ['wait', true],
+        ['peek', true],
         ['timeout-ms', '250']
       ])
     )
@@ -645,6 +693,7 @@ describe('orchestration timeout flag validation', () => {
     expect(callMock).toHaveBeenCalledWith('orchestration.check', {
       terminal: 'term_worker',
       unread: undefined,
+      peek: true,
       all: undefined,
       types: undefined,
       inject: undefined,
@@ -695,5 +744,29 @@ describe('orchestration timeout flag validation', () => {
       },
       { timeoutMs: 5_123 }
     )
+  })
+})
+
+describe('orchestration task-list brief output', () => {
+  it('abbreviates task specs in the JSON response', async () => {
+    callMock.mockReset().mockResolvedValue({
+      result: {
+        tasks: [{ id: 'task_1', spec: `First line\n${'detail '.repeat(40)}`, status: 'ready' }],
+        count: 1
+      }
+    })
+    vi.mocked(printResult).mockClear()
+
+    await ORCHESTRATION_HANDLERS['orchestration task-list']({
+      flags: new Map([['brief', true]]),
+      client: { call: callMock },
+      json: true
+    } as never)
+
+    const response = vi.mocked(printResult).mock.calls[0]?.[0] as {
+      result: { tasks: { spec: string; spec_truncated: boolean }[] }
+    }
+    expect(response.result.tasks[0].spec).toHaveLength(160)
+    expect(response.result.tasks[0].spec_truncated).toBe(true)
   })
 })

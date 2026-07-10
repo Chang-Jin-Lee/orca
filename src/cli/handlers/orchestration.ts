@@ -8,12 +8,13 @@ import {
 } from '../flags'
 import { RuntimeClientError } from '../runtime-client'
 import { getTerminalHandle } from '../selectors'
+import { abbreviateOrchestrationTasks } from '../orchestration-task-summary'
 
 // Why: 15 s is well under Claude Code's empirical ~2 min Bash-tool silence
 // budget and generates only ~40 lines per 10 min wait — enough to assure the
 // parent process the subprocess is alive without flooding logs. See design
 // doc §3.4.
-const DEFAULT_HEARTBEAT_INTERVAL_MS = 15_000
+const DEFAULT_KEEPALIVE_INTERVAL_MS = 15_000
 function getLifecycleGroupRecipientError(type: 'worker_done' | 'heartbeat'): string {
   return `${type} messages must be sent to a concrete coordinator terminal handle, not a group address.`
 }
@@ -21,33 +22,36 @@ function getLifecycleGroupRecipientError(type: 'worker_done' | 'heartbeat'): str
 // Why: test-only escape hatch so subprocess tests can verify the feature in
 // under 10 s rather than needing a full 15 s silence window. Production users
 // should never set this — there is no surface documentation. A bogus value
-// falls back to the default rather than disabling the heartbeat.
-function resolveHeartbeatIntervalMs(): number {
-  const raw = process.env.ORCA_HEARTBEAT_INTERVAL_MS
+// falls back to the default rather than disabling the keepalive.
+function resolveKeepaliveIntervalMs(): number {
+  const raw = process.env.ORCA_KEEPALIVE_INTERVAL_MS ?? process.env.ORCA_HEARTBEAT_INTERVAL_MS
   if (!raw) {
-    return DEFAULT_HEARTBEAT_INTERVAL_MS
+    return DEFAULT_KEEPALIVE_INTERVAL_MS
   }
   const parsed = Number(raw)
   if (!Number.isFinite(parsed) || parsed <= 0) {
-    return DEFAULT_HEARTBEAT_INTERVAL_MS
+    return DEFAULT_KEEPALIVE_INTERVAL_MS
   }
   return parsed
 }
 
-function startCheckHeartbeat(deadlineMs: number | undefined): () => void {
+function startCheckKeepalive(deadlineMs: number | undefined): () => void {
   const startedAt = Date.now()
   const interval = setInterval(() => {
     const payload = {
+      _keepalive: true,
+      // Why: retain the old marker for scripts filtering merged stderr while
+      // callers migrate to the unambiguous _keepalive field.
       _heartbeat: true,
       elapsedMs: Date.now() - startedAt,
       deadlineMs: deadlineMs ?? null
     }
     // Why: `process.stderr.write` is line-flushed per-call in Node, whereas a
-    // fully-buffered writer would hold all heartbeat lines until exit and
+    // fully-buffered writer would hold all keepalive lines until exit and
     // silently defeat the whole point of the ping. Subprocess test asserts
     // this by reading stderr incrementally. See §3.4.
     process.stderr.write(`${JSON.stringify(payload)}\n`)
-  }, resolveHeartbeatIntervalMs())
+  }, resolveKeepaliveIntervalMs())
   if (typeof interval.unref === 'function') {
     interval.unref()
   }
@@ -128,7 +132,7 @@ async function resolveOrchestrationTerminalHandle(
   cwd: string,
   client: Parameters<CommandHandler>[0]['client'],
   flagName: 'from' | 'terminal',
-  options: { validateEnvHandle?: boolean } = {}
+  options: { validateEnvHandle?: boolean; allowStaleEnvHandle?: boolean } = {}
 ): Promise<string> {
   const explicit = getOptionalStringFlag(flags, flagName)
   if (explicit) {
@@ -142,7 +146,16 @@ async function resolveOrchestrationTerminalHandle(
       // coordinator preambles.
       const live = await isLiveTerminalHandle(envHandle, client)
       if (!live) {
-        return await resolveStaleOrchestrationSender(client)
+        const reminted = await resolveOrchestrationPaneTerminalHandle(client, {
+          optional: options.allowStaleEnvHandle
+        })
+        if (reminted) {
+          return reminted
+        }
+        if (options.allowStaleEnvHandle) {
+          return envHandle
+        }
+        throwNoActiveSenderTerminal()
       }
     }
     return envHandle
@@ -268,16 +281,6 @@ function getClientErrorMessage(err: unknown): string | undefined {
   return typeof message === 'string' ? message : undefined
 }
 
-async function resolveStaleOrchestrationSender(
-  client: Parameters<CommandHandler>[0]['client']
-): Promise<string> {
-  const paneHandle = await resolveOrchestrationPaneTerminalHandle(client)
-  if (paneHandle) {
-    return paneHandle
-  }
-  throwNoActiveSenderTerminal()
-}
-
 async function resolveCoordinatorTerminalHandle(
   flags: Map<string, string | boolean>,
   cwd: string,
@@ -348,7 +351,12 @@ export const ORCHESTRATION_HANDLERS: Record<string, CommandHandler> = {
     const type = getOptionalStringFlag(flags, 'type')
     rejectLifecycleGroupRecipient(type, to)
 
-    const from = await resolveOrchestrationTerminalHandle(flags, cwd, client, 'from')
+    const from = await resolveOrchestrationTerminalHandle(flags, cwd, client, 'from', {
+      validateEnvHandle: type === 'worker_done' || type === 'heartbeat',
+      // Why: payload IDs remain authoritative when an older/SSH session lacks
+      // a pane key, so handle repair must not prevent lifecycle delivery.
+      allowStaleEnvHandle: type === 'worker_done' || type === 'heartbeat'
+    })
     const result = await client.call<
       { message: { id: string } } | { messages: { id: string }[]; recipients: number }
     >('orchestration.send', {
@@ -377,12 +385,12 @@ export const ORCHESTRATION_HANDLERS: Record<string, CommandHandler> = {
 
     // Why: Claude Code's Bash tool auto-backgrounds subprocesses that produce
     // no output for ~2 min (shorter on the non-interactive path). Emit a
-    // heartbeat line to stderr every HEARTBEAT_INTERVAL_MS while the wait is
+    // keepalive line to stderr every KEEPALIVE_INTERVAL_MS while the wait is
     // active so the parent process can see the subprocess is still alive.
     // Stderr rather than stdout so stdout stays a single final JSON payload,
     // and JSON-shaped rather than `# …` so `2>&1 | jq` pipelines still work
     // (jq refuses `#`-prefixed lines). See design doc §3.4.
-    const stopHeartbeat = wait ? startCheckHeartbeat(timeoutMs) : null
+    const stopKeepalive = wait ? startCheckKeepalive(timeoutMs) : null
     type CheckResult = {
       messages: MessageSummary[]
       count: number
@@ -393,6 +401,7 @@ export const ORCHESTRATION_HANDLERS: Record<string, CommandHandler> = {
       result = await client.call<CheckResult>('orchestration.check', {
         terminal,
         unread: flags.has('unread') ? true : undefined,
+        peek: flags.has('peek') ? true : undefined,
         all: flags.has('all') ? true : undefined,
         types: getOptionalStringFlag(flags, 'types'),
         inject: flags.has('inject') ? true : undefined,
@@ -400,7 +409,7 @@ export const ORCHESTRATION_HANDLERS: Record<string, CommandHandler> = {
         timeoutMs
       })
     } finally {
-      stopHeartbeat?.()
+      stopKeepalive?.()
     }
     printResult(result, json, (r) => {
       if (r.formatted) {
@@ -491,7 +500,13 @@ export const ORCHESTRATION_HANDLERS: Record<string, CommandHandler> = {
       status: getOptionalStringFlag(flags, 'status'),
       ready: flags.has('ready') ? true : undefined
     })
-    printResult(result, json, (r) => {
+    const output = flags.has('brief')
+      ? {
+          ...result,
+          result: { ...result.result, tasks: abbreviateOrchestrationTasks(result.result.tasks) }
+        }
+      : result
+    printResult(output, json, (r) => {
       if (r.count === 0) {
         return 'No tasks.'
       }

@@ -598,11 +598,11 @@ describe('orchestration RPC methods', () => {
       expect(db.getDispatchContextById(dispatch.id)?.status).toBe('dispatched')
     })
 
-    it('does not complete worker_done from a terminal that does not own the dispatch', async () => {
+    it('completes worker_done by payload IDs when the sender handle changed', async () => {
       setup()
       const { task, dispatch } = createDispatchedTask('term_owner')
       insertWorkerDone({
-        from: 'term_intruder',
+        from: 'term_reminted',
         taskId: task.id,
         dispatchId: dispatch.id
       })
@@ -613,8 +613,8 @@ describe('orchestration RPC methods', () => {
       })) as { count: number }
 
       expect(result.count).toBe(1)
-      expect(db.getTask(task.id)?.status).toBe('dispatched')
-      expect(db.getDispatchContextById(dispatch.id)?.status).toBe('dispatched')
+      expect(db.getTask(task.id)?.status).toBe('completed')
+      expect(db.getDispatchContextById(dispatch.id)?.status).toBe('completed')
     })
 
     it('does not complete worker_done for a stale inactive dispatch', async () => {
@@ -670,6 +670,11 @@ describe('orchestration RPC methods', () => {
       ).rejects.toThrow('Invalid --types')
     })
 
+    it('rejects conflicting message read modes', () => {
+      const method = findMethod('orchestration.check')
+      expect(() => method.params!.parse({ unread: true, peek: true })).toThrow(/read mode/)
+    })
+
     it('default (unread only) marks returned rows as read', async () => {
       setup()
       db.insertMessage({ from: 'a', to: 'b', subject: 'one' })
@@ -684,6 +689,19 @@ describe('orchestration RPC methods', () => {
         count: number
       }
       expect(second.count).toBe(0)
+    })
+
+    it('--peek returns unread messages without marking them read', async () => {
+      setup()
+      db.insertMessage({ from: 'a', to: 'b', subject: 'one' })
+
+      const result = (await call('orchestration.check', {
+        terminal: 'b',
+        peek: true
+      })) as { count: number }
+
+      expect(result.count).toBe(1)
+      expect(db.getUnreadMessages('b')).toHaveLength(1)
     })
 
     it('--all returns every message for the handle without marking read', async () => {

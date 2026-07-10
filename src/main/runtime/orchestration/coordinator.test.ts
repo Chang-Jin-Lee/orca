@@ -570,7 +570,7 @@ describe('Coordinator', () => {
     expect(db.getDispatchContextById(activeCtx.id)?.status).toBe('completed')
   })
 
-  it('ignores worker_done sent by a terminal that does not own the dispatch', async () => {
+  it('accepts worker_done payload provenance after an assignee handle changes', async () => {
     db = new OrchestrationDb(':memory:')
     const runtime = createMockRuntime()
     const logs: string[] = []
@@ -579,9 +579,9 @@ describe('Coordinator', () => {
     const ctx = db.createDispatchContext(task.id, 'term_owner')
 
     db.insertMessage({
-      from: 'term_intruder',
+      from: 'term_reminted',
       to: 'coord',
-      subject: 'Spoofed done',
+      subject: 'Done after restart',
       type: 'worker_done',
       payload: JSON.stringify({ taskId: task.id, dispatchId: ctx.id })
     })
@@ -592,16 +592,12 @@ describe('Coordinator', () => {
       pollIntervalMs: 20,
       onLog: (m) => logs.push(m)
     })
-    const runPromise = coordinator.run()
-    await new Promise((r) => {
-      setTimeout(r, 80)
-    })
-    coordinator.stop()
-    await runPromise
+    const result = await coordinator.run()
 
-    expect(db.getTask(task.id)?.status).toBe('dispatched')
-    expect(db.getDispatchContextById(ctx.id)?.status).toBe('dispatched')
-    expect(logs.some((m) => m.includes('expected term_owner'))).toBe(true)
+    expect(result.status).toBe('completed')
+    expect(db.getTask(task.id)?.status).toBe('completed')
+    expect(db.getDispatchContextById(ctx.id)?.status).toBe('completed')
+    expect(logs.some((m) => m.includes('accepting payload provenance'))).toBe(true)
   })
 
   it('can be stopped', async () => {

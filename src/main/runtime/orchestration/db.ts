@@ -382,6 +382,20 @@ export class OrchestrationDb {
       .run(...ids)
   }
 
+  markAsReadAndDelivered(ids: string[]): void {
+    if (ids.length === 0) {
+      return
+    }
+    const placeholders = ids.map(() => '?').join(',')
+    // Why: superseded lifecycle messages stay queryable through history but
+    // must not be consumed or injected after their dispatch has finished.
+    this.db
+      .prepare(
+        `UPDATE messages SET read = 1, delivered_at = COALESCE(delivered_at, datetime('now')) WHERE id IN (${placeholders})`
+      )
+      .run(...ids)
+  }
+
   getInbox(limit = 20): MessageRow[] {
     return this.db
       .prepare('SELECT * FROM messages ORDER BY sequence DESC LIMIT ?')

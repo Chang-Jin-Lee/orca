@@ -63,6 +63,15 @@ function reconcileHeartbeatMessage(
     return { action: 'ignored' }
   }
 
+  const dispatch = db.getDispatchContextById(dispatchId)
+  if (!dispatch || dispatch.status !== 'dispatched') {
+    // Why: an in-flight heartbeat can arrive after completion; retain it for
+    // audit history without surfacing obsolete liveness to the coordinator.
+    db.markAsReadAndDelivered([msg.id])
+    onLog(`Heartbeat for inactive dispatch ${dispatchId} suppressed`)
+    return { action: 'ignored' }
+  }
+
   // Why: dispatchId-specific writes let the DB ignore late heartbeats for
   // completed/failed retries without masking a newer hung dispatch.
   db.recordHeartbeat(dispatchId, msg.created_at)
@@ -113,9 +122,8 @@ function reconcileWorkerDoneMessage(
   }
   if (dispatch.assignee_handle !== msg.from_handle) {
     onLog(
-      `Warning: worker_done for dispatch ${dispatchId} came from ${msg.from_handle}, expected ${dispatch.assignee_handle ?? '<unknown>'}`
+      `Warning: worker_done for dispatch ${dispatchId} came from ${msg.from_handle}, expected ${dispatch.assignee_handle ?? '<unknown>'}; accepting payload provenance`
     )
-    return { action: 'ignored' }
   }
   // Why: `orchestration.send` can release the DB lock before waking the
   // coordinator; the later coordinator read still needs to observe completion.
@@ -143,7 +151,26 @@ function reconcileWorkerDoneMessage(
     completedAt: new Date().toISOString()
   })
   db.updateTaskStatus(taskId, 'completed', result)
+  suppressEarlierHeartbeats(db, msg, dispatchId)
 
   onLog(`Task ${taskId} completed`)
   return { action: 'completed', taskId, dispatchId }
+}
+
+function suppressEarlierHeartbeats(
+  db: OrchestrationDb,
+  workerDone: MessageRow,
+  dispatchId: string
+): void {
+  const heartbeatIds = db
+    .getUnreadMessages(workerDone.to_handle, ['heartbeat'])
+    .filter((message) => {
+      if (message.sequence >= workerDone.sequence) {
+        return false
+      }
+      const payload = parseObjectPayload(message, () => undefined)
+      return payload.dispatchId === dispatchId
+    })
+    .map((message) => message.id)
+  db.markAsReadAndDelivered(heartbeatIds)
 }

@@ -72,18 +72,33 @@ const SendParams = z
     })
   })
 
-const CheckParams = z.object({
-  terminal: OptionalString,
-  unread: OptionalBoolean,
-  // Why: `all` surfaces every message for the handle and skips mark-read.
-  // Previously the only way to ask for "all" was the hidden RPC trick
-  // `{unread: false}`. See design doc §3.2 / §3.3.
-  all: OptionalBoolean,
-  types: OptionalString,
-  inject: OptionalBoolean,
-  wait: OptionalBoolean,
-  timeoutMs: OptionalFiniteNumber
-})
+const CheckParams = z
+  .object({
+    terminal: OptionalString,
+    unread: OptionalBoolean,
+    peek: OptionalBoolean,
+    // Why: `all` surfaces every message for the handle and skips mark-read.
+    // Previously the only way to ask for "all" was the hidden RPC trick
+    // `{unread: false}`. See design doc §3.2 / §3.3.
+    all: OptionalBoolean,
+    types: OptionalString,
+    inject: OptionalBoolean,
+    wait: OptionalBoolean,
+    timeoutMs: OptionalFiniteNumber
+  })
+  .superRefine((params, ctx) => {
+    const modes = [
+      params.unread === true,
+      params.peek === true,
+      params.all === true || params.unread === false
+    ].filter(Boolean)
+    if (modes.length > 1) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Choose at most one message read mode: --unread, --peek, or --all.'
+      })
+    }
+  })
 
 const ReplyParams = z.object({
   id: requiredString('Missing --id'),
@@ -265,14 +280,14 @@ export const ORCHESTRATION_METHODS: RpcMethod[] = [
       // shim so in-flight callers don't break (see design doc §5). Otherwise
       // today's behavior is preserved: default is unread-only + mark-read.
       const showAll = params.all === true || params.unread === false
-      const showUnread = !showAll
+      const consumeUnread = !showAll && params.peek !== true
 
       const readAndReturn = () => {
-        const messages = showUnread
-          ? db.getUnreadMessages(handle, typeFilter)
-          : db.getAllMessagesForHandle(handle, undefined, typeFilter)
+        const messages = showAll
+          ? db.getAllMessagesForHandle(handle, undefined, typeFilter)
+          : db.getUnreadMessages(handle, typeFilter)
 
-        if (showUnread && messages.length > 0) {
+        if (consumeUnread && messages.length > 0) {
           // Why: manual coordinators can consume lifecycle messages before
           // the coordinator loop sees them, but unread `check` is still an
           // authoritative read path for worker_done/heartbeat.
