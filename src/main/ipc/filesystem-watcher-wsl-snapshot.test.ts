@@ -109,25 +109,31 @@ done
   )
 
   it.skipIf(process.platform === 'win32')(
-    'surfaces real portable stat failures instead of treating them as churn',
+    'degrades unreadable entries to a partial frame instead of aborting the poll loop',
     async () => {
       const root = await mkdtemp(join(tmpdir(), 'orca-wsl-portable-error-'))
       temporaryRoots.push(root)
       const denied = join(root, 'denied.md')
+      const readable = join(root, 'readable.md')
       await writeFile(denied, 'still exists')
+      await writeFile(readable, 'fine')
       const result = await runSnapshotScript(
         root,
         `#!/bin/sh
 shift 3
 if test "$#" -gt 1; then exit 1; fi
 if test "$1" = ${JSON.stringify(denied)}; then echo 'permission denied' >&2; exit 1; fi
-printf 'directory\\t1\\n'
+printf 'regular file\\t1\\n'
 `
       )
 
-      expect(result.code).toEqual(expect.any(Number))
-      expect(result.code).not.toBe(0)
+      // Why: one unreadable subtree must not orphan the whole worktree; the
+      // frame still terminates so the engine keeps polling the readable rest.
+      expect(result.code).toBe(0)
       expect(result.stderr).toContain('permission denied')
+      const frame = result.stdout.toString('utf8')
+      expect(frame).toContain(`regular file\t1\t${readable}\0`)
+      expect(frame.endsWith('\0\0') || frame === '\0').toBe(true)
     }
   )
 })

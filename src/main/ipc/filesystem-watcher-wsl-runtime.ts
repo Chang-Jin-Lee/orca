@@ -114,14 +114,29 @@ function validateManifest(value: unknown): WslWatcherManifest {
   return manifest as WslWatcherManifest
 }
 
+export async function readWslWatcherBundleManifest(
+  bundlePath: string
+): Promise<WslWatcherManifest> {
+  try {
+    return validateManifest(JSON.parse(await readFile(join(bundlePath, 'manifest.json'), 'utf8')))
+  } catch (error) {
+    if (error instanceof WslWatcherCompatibilityError) {
+      throw error
+    }
+    // Why: a missing or corrupt bundle cannot heal at runtime; classifying it
+    // permanent stops the native reprobe loop from retrying every 30s forever.
+    throw new WslWatcherCompatibilityError(
+      `Unreadable managed WSL watcher bundle at ${bundlePath}: ${error instanceof Error ? error.message : String(error)}`
+    )
+  }
+}
+
 async function installRuntime(
   distro: string,
   signal?: AbortSignal
 ): Promise<InstalledWslWatcherRuntime> {
   const bundlePath = resolveWslWatcherBundlePath()
-  const manifest = validateManifest(
-    JSON.parse(await readFile(join(bundlePath, 'manifest.json'), 'utf8'))
-  )
+  const manifest = await readWslWatcherBundleManifest(bundlePath)
   return installWslWatcherRuntime(distro, bundlePath, manifest, signal)
 }
 
@@ -224,7 +239,10 @@ export function parseRunningWslDistros(output: string | Buffer): string[] {
 
 async function queryWslDistroRunning(distro: string): Promise<boolean> {
   try {
+    // Why: wsl.exe emits UTF-16LE; a raw buffer lets decodeWslListOutput pick
+    // the encoding so non-ASCII distro names survive instead of garbling.
     const { stdout } = await execFileAsync('wsl.exe', ['--list', '--running', '--quiet'], {
+      encoding: 'buffer',
       timeout: 5_000,
       maxBuffer: 64 * 1024
     })

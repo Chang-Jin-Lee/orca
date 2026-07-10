@@ -1,12 +1,15 @@
 import { spawn } from 'node:child_process'
-import { existsSync } from 'node:fs'
+import { existsSync, mkdirSync } from 'node:fs'
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { build } from 'esbuild'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createWatcherBindingWatchdog } from './wsl-watcher-host-binding-watchdog'
-import { startWslWatcherCanary } from './wsl-watcher-host-canary'
+import {
+  startWslWatcherCanary,
+  sweepStaleWslWatcherCanaryDirectories
+} from './wsl-watcher-host-canary'
 
 afterEach(() => {
   vi.useRealTimers()
@@ -128,6 +131,28 @@ describe('WSL watcher host canary', () => {
     expect(existsSync(canaryDir)).toBe(false)
     expect(process.listenerCount('exit')).toBe(listenerCount)
     expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('sweeps only dead-owner canary directories at host start', async () => {
+    const base = await mkdtemp(join(tmpdir(), 'orca-canary-sweep-test-'))
+    try {
+      const stale = join(base, 'orca-wsl-watcher-4242-abc123')
+      const live = join(base, 'orca-wsl-watcher-5151-def456')
+      const own = join(base, `orca-wsl-watcher-${process.pid}-ghi789`)
+      const unrelated = join(base, 'orca-wsl-watcher-legacyname')
+      for (const dir of [stale, live, own, unrelated]) {
+        mkdirSync(dir)
+      }
+
+      sweepStaleWslWatcherCanaryDirectories(base, (pid) => pid === 5151)
+
+      expect(existsSync(stale)).toBe(false)
+      expect(existsSync(live)).toBe(true)
+      expect(existsSync(own)).toBe(true)
+      expect(existsSync(unrelated)).toBe(true)
+    } finally {
+      await rm(base, { recursive: true, force: true })
+    }
   })
 
   it('unsubscribes and cleans resources on an ordinary close', async () => {

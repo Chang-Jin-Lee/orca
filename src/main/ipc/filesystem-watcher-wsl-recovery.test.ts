@@ -263,8 +263,12 @@ describe('WSL watcher recovery policy', () => {
   })
 
   it('does not re-probe a packaged build with a missing managed resource', async () => {
+    // Why: the runtime layer wraps missing/corrupt bundles in the
+    // compatibility error, which is the only permanent-failure signal.
     ensureRuntimeMock.mockRejectedValue(
-      new Error('Packaged managed WSL watcher resource is missing at C:\\Orca\\resources')
+      new CompatibilityError(
+        'Unreadable managed WSL watcher bundle at C:\\Orca\\resources\\wsl-watcher'
+      )
     )
     const snapshot = new FakeChildProcess()
     spawnMock.mockReturnValueOnce(snapshot)

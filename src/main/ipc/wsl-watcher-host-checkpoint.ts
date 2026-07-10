@@ -111,6 +111,14 @@ export function fileSystemErrorCode(error: unknown): string | undefined {
   return (error as NodeJS.ErrnoException | undefined)?.code
 }
 
+// Why: unreadable entries are invisible to every engine (native watches and
+// snapshot scans alike), so treating them as absent keeps a worktree with one
+// root-owned subtree watchable instead of failing the whole subscription.
+export function isInvisibleFileSystemError(error: unknown): boolean {
+  const code = fileSystemErrorCode(error)
+  return code === 'ENOENT' || code === 'EACCES' || code === 'EPERM'
+}
+
 export function createSafetySnapshotEntry(stats: Stats): SafetySnapshotEntry {
   const directory = stats.isDirectory()
   return {
@@ -260,7 +268,7 @@ async function scanWithLimits(
       return statResult
     }
     if (statResult.kind === 'error') {
-      if (fileSystemErrorCode(statResult.error) === 'ENOENT') {
+      if (isInvisibleFileSystemError(statResult.error)) {
         continue
       }
       return { kind: 'io-error' }
@@ -283,7 +291,7 @@ async function scanWithLimits(
       return readResult
     }
     if (readResult.kind === 'error') {
-      if (fileSystemErrorCode(readResult.error) !== 'ENOENT') {
+      if (!isInvisibleFileSystemError(readResult.error)) {
         return { kind: 'io-error' }
       }
       continue

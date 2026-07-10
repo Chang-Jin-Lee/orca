@@ -2,7 +2,7 @@ import {
   boundedFileSystemOperation,
   createSafetySnapshotEntry,
   defaultSafetyFileSystem,
-  fileSystemErrorCode,
+  isInvisibleFileSystemError,
   type SafetyScanOptions,
   type SafetySnapshot,
   type SafetySnapshotEntry
@@ -87,9 +87,9 @@ export async function applyNativeEventsToSafetySnapshot(
       return 'topology'
     }
     if (statResult.kind === 'error') {
-      if (fileSystemErrorCode(statResult.error) !== 'ENOENT') {
-        // Why: keep the known-good baseline when permissions or I/O failures
-        // leave the path's recursive-watch topology uncertain.
+      // Why: vanished and unreadable paths are equally invisible to safety
+      // scans; only unknown I/O failures leave the topology uncertain.
+      if (!isInvisibleFileSystemError(statResult.error)) {
         return 'topology'
       }
       if (previous?.directory) {

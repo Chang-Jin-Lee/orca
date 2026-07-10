@@ -9,7 +9,9 @@ import {
   PROBE_BUNDLE_SENTINEL,
   parseInstallerResponse,
   parseRunningWslDistros,
-  resolveWslWatcherBundlePath
+  readWslWatcherBundleManifest,
+  resolveWslWatcherBundlePath,
+  WslWatcherCompatibilityError
 } from './filesystem-watcher-wsl-runtime'
 
 const temporaryRoots: string[] = []
@@ -74,6 +76,46 @@ describe('managed WSL watcher runtime', () => {
     expect(createWslRuntimeTransferPaths('Ubuntu', '/home/me', 'a'.repeat(20), '42')).toEqual({
       linuxPath: `/home/me/.local/share/orca/wsl-watcher-transfer/${'a'.repeat(20)}-42`,
       windowsPath: `\\\\wsl.localhost\\Ubuntu\\home\\me\\.local\\share\\orca\\wsl-watcher-transfer\\${'a'.repeat(20)}-42`
+    })
+  })
+
+  it('classifies missing or corrupt bundles as permanent compatibility failures', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'orca-wsl-runtime-manifest-'))
+    temporaryRoots.push(root)
+
+    await expect(readWslWatcherBundleManifest(root)).rejects.toBeInstanceOf(
+      WslWatcherCompatibilityError
+    )
+    await writeFile(join(root, 'manifest.json'), 'not json')
+    await expect(readWslWatcherBundleManifest(root)).rejects.toBeInstanceOf(
+      WslWatcherCompatibilityError
+    )
+    await writeFile(
+      join(root, 'manifest.json'),
+      JSON.stringify({
+        protocol: 2,
+        installLayout: 1,
+        nodeVersion: '24.15.0',
+        bundleVersion: 'a'.repeat(20)
+      })
+    )
+    await expect(readWslWatcherBundleManifest(root)).rejects.toThrow(
+      'Invalid managed WSL watcher manifest'
+    )
+    await writeFile(
+      join(root, 'manifest.json'),
+      JSON.stringify({
+        protocol: 1,
+        installLayout: 1,
+        nodeVersion: '24.15.0',
+        bundleVersion: 'a'.repeat(20)
+      })
+    )
+    await expect(readWslWatcherBundleManifest(root)).resolves.toEqual({
+      protocol: 1,
+      installLayout: 1,
+      nodeVersion: '24.15.0',
+      bundleVersion: 'a'.repeat(20)
     })
   })
 

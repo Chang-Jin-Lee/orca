@@ -38,7 +38,8 @@ function buildPruneExpression(ignoreDirs: readonly string[]): string {
 }
 
 // Why: files can vanish after find batches them. Retry a failed batch one path
-// at a time so churn is skipped without hiding errors for paths that still exist.
+// at a time so churn is skipped; unreadable survivors are logged and skipped
+// too, because a partial snapshot beats aborting the whole watcher.
 const BUSYBOX_STAT_BATCH_SCRIPT =
   'tmp="${TMPDIR:-/tmp}/orca-wsl-snapshot-$$"; error="$tmp.error"; ' +
   'trap \'rm -f "$tmp" "$error"\' EXIT; ' +
@@ -48,7 +49,7 @@ const BUSYBOX_STAT_BATCH_SCRIPT =
   'else for path do if metadata=$(stat -c "%F\t%y" -- "$path" 2>"$error"); then ' +
   'printf "%s\\t%s\\0" "$metadata" "$path"; ' +
   'elif test ! -e "$path" && test ! -L "$path"; then :; ' +
-  'else cat "$error" >&2; exit 75; fi; done; fi'
+  'else cat "$error" >&2; fi; done; fi'
 
 function quoteShellArgument(value: string): string {
   return `'${value.replaceAll("'", `'"'"'`)}'`
@@ -79,8 +80,10 @@ export function buildSnapshotScript(
     '  if [ -d "$root" ]; then',
     // Why: GNU find is the zero-fork fast path. BusyBox batches paths through
     // one stat process per ARG_MAX group while retaining NUL-safe filenames.
-    `    if [ "$snapshot_find" = gnu ]; then find "$root" -mindepth 1 ${prune} -printf '%y\\t%T@\\t%p\\0';`,
-    `    else find "$root" -mindepth 1 ${prune} -exec sh -c ${quoteShellArgument(BUSYBOX_STAT_BATCH_SCRIPT)} sh {} +; fi`,
+    // Why: `|| true` — an unreadable subtree or mid-scan churn must degrade to
+    // a partial snapshot, not abort the engine and orphan the whole worktree.
+    `    if [ "$snapshot_find" = gnu ]; then find "$root" -mindepth 1 ${prune} -printf '%y\\t%T@\\t%p\\0' || true;`,
+    `    else find "$root" -mindepth 1 ${prune} -exec sh -c ${quoteShellArgument(BUSYBOX_STAT_BATCH_SCRIPT)} sh {} + || true; fi`,
     '  fi',
     "  printf '\\0'",
     repeat,

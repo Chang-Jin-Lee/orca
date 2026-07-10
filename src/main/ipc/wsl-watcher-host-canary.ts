@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { WatcherBindingWatchdog } from './wsl-watcher-host-binding-watchdog'
@@ -13,12 +13,41 @@ export type WslWatcherCanary = { close(): Promise<void> }
 const CANARY_INTERVAL_MS = 10_000
 const CANARY_EVENT_TIMEOUT_MS = 5_000
 const CANARY_MAX_MISSES = 2
+const CANARY_DIR_PATTERN = /^orca-wsl-watcher-(\d+)-/
+
+// Why: hard kills from the Windows side (wsl.exe teardown) never run the
+// 'exit' handler, so each host start reclaims directories whose owner died.
+export function sweepStaleWslWatcherCanaryDirectories(
+  baseDir: string = tmpdir(),
+  isProcessAlive: (pid: number) => boolean = (pid) => existsSync(`/proc/${pid}`)
+): void {
+  let entries: string[]
+  try {
+    entries = readdirSync(baseDir)
+  } catch {
+    return
+  }
+  for (const entry of entries) {
+    const owner = Number(CANARY_DIR_PATTERN.exec(entry)?.[1])
+    if (!Number.isSafeInteger(owner) || owner === process.pid || isProcessAlive(owner)) {
+      continue
+    }
+    try {
+      rmSync(join(baseDir, entry), { recursive: true, force: true })
+    } catch {
+      // Another sweeper or the filesystem may win the race; try again next start.
+    }
+  }
+}
 
 export async function startWslWatcherCanary(
   binding: CanaryWatcherBinding,
   watchdog: WatcherBindingWatchdog
 ): Promise<WslWatcherCanary> {
-  const dir = mkdtempSync(join(tmpdir(), 'orca-wsl-watcher-'))
+  if (process.platform === 'linux') {
+    sweepStaleWslWatcherCanaryDirectories()
+  }
+  const dir = mkdtempSync(join(tmpdir(), `orca-wsl-watcher-${process.pid}-`))
   let lastEventAt = 0
   const callback = (error: Error | null): void => {
     if (!error) {

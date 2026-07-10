@@ -110,6 +110,21 @@ describe('WSL watcher host safety', () => {
     ).resolves.toBe('topology')
     expect(snapshot.get(directory)).toEqual(baseline)
 
+    const failing = join(root, 'failing')
+    await expect(
+      applyNativeEventsToSafetySnapshot(root, snapshot, [{ type: 'update', path: failing }], {
+        fileSystem: {
+          lstat: async () => {
+            throw Object.assign(new Error('io failure'), { code: 'EIO' })
+          },
+          readdir: async () => []
+        }
+      })
+    ).resolves.toBe('topology')
+    expect(snapshot.get(directory)).toEqual(baseline)
+
+    // Why: unreadable paths are invisible to safety scans, so events about
+    // them must not interrupt the subscription the way unknown I/O does.
     const denied = join(root, 'denied')
     await expect(
       applyNativeEventsToSafetySnapshot(root, snapshot, [{ type: 'update', path: denied }], {
@@ -120,8 +135,36 @@ describe('WSL watcher host safety', () => {
           readdir: async () => []
         }
       })
-    ).resolves.toBe('topology')
+    ).resolves.toBe('applied')
+    expect(snapshot.has(denied)).toBe(false)
     expect(snapshot.get(directory)).toEqual(baseline)
+  })
+
+  it('scans past unreadable subtrees instead of failing the subscription', async () => {
+    const root = makeTemporaryRoot()
+    const locked = join(root, 'locked')
+    const blocked = join(root, 'blocked.md')
+    const readable = join(root, 'readable.md')
+    mkdirSync(locked)
+    writeFileSync(join(locked, 'secret.md'), 'hidden')
+    writeFileSync(blocked, 'lstat denied')
+    writeFileSync(readable, 'fine')
+    const { lstat, readdir } = await import('node:fs/promises')
+    const denied = (): Promise<never> =>
+      Promise.reject(Object.assign(new Error('denied'), { code: 'EACCES' }))
+    const result = await scanWatcherSafetySnapshot(root, new Set(), {
+      fileSystem: {
+        lstat: (path) => (path === blocked ? denied() : lstat(path)),
+        readdir: (path) => (path === locked ? denied() : readdir(path, { withFileTypes: true }))
+      }
+    })
+
+    expect(result.kind).toBe('complete')
+    const snapshot = (result as Extract<typeof result, { kind: 'complete' }>).snapshot
+    expect(snapshot.has(readable)).toBe(true)
+    expect(snapshot.get(locked)?.directory).toBe(true)
+    expect(snapshot.has(join(locked, 'secret.md'))).toBe(false)
+    expect(snapshot.has(blocked)).toBe(false)
   })
 
   it('bounds asynchronous native-event inspection without committing partial state', async () => {
