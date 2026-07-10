@@ -17,6 +17,8 @@ vi.mock('@/i18n/i18n', () => ({
 }))
 
 import {
+  barColor,
+  clampUsedPercent,
   formatResetCreditExpiry,
   formatResetCountdown,
   getProviderUsageErrorMessage,
@@ -404,7 +406,7 @@ describe('ProviderPanel reset rendering', () => {
     expect(markup).toContain('Resets in 6d 17h')
   })
 
-  it('renders MiniMax session as `100 - usedPercent` left so the value matches the bar', () => {
+  it('renders MiniMax session as usedPercent so the value matches the bar', () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date(2026, 6, 4, 15, 0))
     const p = provider({
@@ -420,14 +422,13 @@ describe('ProviderPanel reset rendering', () => {
 
     const markup = renderToStaticMarkup(ProviderPanel({ p }))
 
-    // Why: the bar reads "65% 5h"; the tooltip must read "65% left" from the
-    // same source field so the two views stay consistent.
-    expect(markup).toContain('65%')
-    expect(markup).toContain('% left')
-    expect(markup).not.toContain('100% left')
+    // Why: bars show consumption (% used), matching harness meters (#7551).
+    expect(markup).toContain('35%')
+    expect(markup).toContain('% used')
+    expect(markup).not.toContain('% left')
   })
 
-  it('clamps MiniMax session to 0% left when usedPercent reports 100', () => {
+  it('clamps MiniMax session to 100% used when usedPercent reports 100', () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date(2026, 6, 4, 15, 0))
     const p = provider({
@@ -443,7 +444,52 @@ describe('ProviderPanel reset rendering', () => {
 
     const markup = renderToStaticMarkup(ProviderPanel({ p }))
 
-    expect(markup).toContain('0% left')
+    expect(markup).toContain('100%')
+    expect(markup).toContain('% used')
+  })
+
+  it('clamps over-100 usedPercent to 100% used in the panel', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date(2026, 6, 4, 15, 0))
+    const p = provider({
+      provider: 'minimax',
+      status: 'ok',
+      session: {
+        usedPercent: 140,
+        windowMinutes: 300,
+        resetsAt: Date.now() + 2 * 60 * 60_000,
+        resetDescription: null
+      }
+    })
+
+    const markup = renderToStaticMarkup(ProviderPanel({ p }))
+
+    expect(markup).toContain('100%')
+    expect(markup).toContain('width:100%')
+    expect(markup).not.toContain('140%')
+  })
+})
+
+describe('clampUsedPercent', () => {
+  it('rounds and clamps into 0–100', () => {
+    expect(clampUsedPercent(-3)).toBe(0)
+    expect(clampUsedPercent(32.4)).toBe(32)
+    expect(clampUsedPercent(32.6)).toBe(33)
+    expect(clampUsedPercent(100)).toBe(100)
+    expect(clampUsedPercent(140)).toBe(100)
+  })
+})
+
+describe('barColor', () => {
+  // Why: thresholds are on % used (consumption). Guard against flipping back
+  // to remaining-based colors without noticing.
+  it('maps used percent to green / yellow / red bands', () => {
+    expect(barColor(0)).toBe('bg-green-500')
+    expect(barColor(59)).toBe('bg-green-500')
+    expect(barColor(60)).toBe('bg-yellow-500')
+    expect(barColor(79)).toBe('bg-yellow-500')
+    expect(barColor(80)).toBe('bg-red-500')
+    expect(barColor(100)).toBe('bg-red-500')
   })
 })
 

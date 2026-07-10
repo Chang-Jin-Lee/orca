@@ -51,6 +51,7 @@ import {
   ProviderIcon,
   ProviderPanel,
   barColor,
+  clampUsedPercent,
   formatResetCreditExpiry,
   getProviderUsageStatusLabel
 } from './tooltip'
@@ -932,15 +933,15 @@ function ClaudeSwitcherMenu({
 }
 
 // ---------------------------------------------------------------------------
-// Mini progress bar (shows remaining capacity, grey)
+// Mini progress bar (shows consumption / % used, grey)
 // ---------------------------------------------------------------------------
 
-function MiniBar({ leftPct }: { leftPct: number }): React.JSX.Element {
+function MiniBar({ usedPct }: { usedPct: number }): React.JSX.Element {
   return (
     <div className="w-[48px] h-[6px] rounded-full bg-muted overflow-hidden flex-shrink-0">
       <div
         className="h-full rounded-full transition-all duration-300 bg-muted-foreground/40"
-        style={{ width: `${Math.min(100, Math.max(0, leftPct))}%` }}
+        style={{ width: `${clampUsedPercent(usedPct)}%` }}
       />
     </div>
   )
@@ -957,29 +958,32 @@ export function InlineUsageBars({
   limits: ProviderRateLimits
   isFetching: boolean
 }): React.JSX.Element {
+  // Why: show % used (consumption), not remaining — matches harness meters (#7551).
+  // Keep the "used" word in compact labels so bare "32% 5h" is not read as remaining.
+  const usedSuffix = translate('auto.components.status.bar.tooltip.cedb7b99e3', '% used')
   const usageWindows = [
     limits.session
       ? {
           key: 'session',
-          left: Math.max(0, Math.round(100 - limits.session.usedPercent)),
-          label: translate('auto.components.status.bar.StatusBar.d79c3362c4', '% 5h')
+          used: clampUsedPercent(limits.session.usedPercent),
+          label: translate('auto.components.status.bar.StatusBar.d79c3362c4', '5h')
         }
       : null,
     limits.weekly
       ? {
           key: 'weekly',
-          left: Math.max(0, Math.round(100 - limits.weekly.usedPercent)),
-          label: translate('auto.components.status.bar.StatusBar.5c938d39ac', '% wk')
+          used: clampUsedPercent(limits.weekly.usedPercent),
+          label: translate('auto.components.status.bar.StatusBar.5c938d39ac', 'wk')
         }
       : null,
     limits.fableWeekly
       ? {
           key: 'fableWeekly',
-          left: Math.max(0, Math.round(100 - limits.fableWeekly.usedPercent)),
-          label: translate('auto.components.status.bar.StatusBar.54e8d6bb2d', '% Fable')
+          used: clampUsedPercent(limits.fableWeekly.usedPercent),
+          label: translate('auto.components.status.bar.StatusBar.54e8d6bb2d', 'Fable')
         }
       : null
-  ].filter((window): window is { key: string; left: number; label: string } => window !== null)
+  ].filter((window): window is { key: string; used: number; label: string } => window !== null)
 
   return (
     <div
@@ -992,13 +996,13 @@ export function InlineUsageBars({
         <div key={window.key} className="flex min-w-0 items-center gap-1">
           <div className="h-[4px] min-w-0 flex-1 overflow-hidden rounded-full bg-muted">
             <div
-              className={`h-full rounded-full ${barColor(window.left)}`}
-              style={{ width: `${window.left}%` }}
+              className={`h-full rounded-full ${barColor(window.used)}`}
+              style={{ width: `${window.used}%` }}
             />
           </div>
           <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground">
-            {window.left}
-            {window.label}
+            {window.used}
+            {usedSuffix} {window.label}
           </span>
         </div>
       ))}
@@ -1071,14 +1075,16 @@ function InlineUsageSkeleton(): React.JSX.Element {
 }
 
 // ---------------------------------------------------------------------------
-// Window label (shows percent remaining)
+// Window label (shows percent used / consumption)
 // ---------------------------------------------------------------------------
 
 function WindowLabel({ w, label }: { w: RateLimitWindow; label: string }): React.JSX.Element {
-  const left = Math.max(0, Math.round(100 - w.usedPercent))
+  const used = clampUsedPercent(w.usedPercent)
+  // Why: "32% 5h" is ambiguous after the remaining→used flip; keep "used" explicit.
   return (
     <span className="tabular-nums">
-      {left}% {label}
+      {used}
+      {translate('auto.components.status.bar.tooltip.cedb7b99e3', '% used')} {label}
     </span>
   )
 }
@@ -1150,12 +1156,13 @@ function ProviderSegment({
       <span className="inline-flex items-center gap-1.5">
         <ProviderIcon provider={provider} />
         {visibleBuckets.map((bucket, i) => {
-          const left = Math.max(0, Math.round(100 - bucket.usedPercent))
+          const used = clampUsedPercent(bucket.usedPercent)
           return (
             <React.Fragment key={bucket.name}>
               {i > 0 && <span className="text-muted-foreground">·</span>}
               <span className="tabular-nums">
-                {bucket.name} {left}%
+                {bucket.name} {used}
+                {translate('auto.components.status.bar.tooltip.cedb7b99e3', '% used')}
               </span>
             </React.Fragment>
           )
@@ -1195,7 +1202,7 @@ function ProviderSegment({
   return (
     <span className="inline-flex items-center gap-1.5">
       <ProviderIcon provider={provider} />
-      {p.session && !compact && <MiniBar leftPct={Math.max(0, 100 - p.session.usedPercent)} />}
+      {p.session && !compact && <MiniBar usedPct={clampUsedPercent(p.session.usedPercent)} />}
       {visibleWindows.map((window, index) => (
         <React.Fragment key={window.key}>
           {index > 0 && <span className="text-muted-foreground">·</span>}

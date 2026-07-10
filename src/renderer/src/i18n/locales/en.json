@@ -2998,9 +2998,9 @@
             "2483c60695": "···",
             "c35af53b73": "Sign in",
             "f19a63e7cd": "Sign in to see usage",
-            "5c938d39ac": "% wk",
-            "54e8d6bb2d": "% Fable",
-            "d79c3362c4": "% 5h",
+            "5c938d39ac": "wk",
+            "54e8d6bb2d": "Fable",
+            "d79c3362c4": "5h",
             "a79c64f87e": "Fable",
             "8295903d17": "Restart live Claude terminals before continuing old conversations after switching.",
             "c98ea88392": "No other accounts",
@@ -3166,7 +3166,7 @@
             }
           },
           "tooltip": {
-            "cedb7b99e3": "% left",
+            "cedb7b99e3": "% used",
             "6d6df77f41": "No data available",
             "7f7f208060": "Monthly",
             "252c096536": "Weekly",
@@ -10989,11 +10989,11 @@
                 "945865332e": "Signing in"
               },
               "UsagePage": {
-                "64265cb295": "71% 5h",
+                "64265cb295": "29% used 5h",
                 "be5a165875": "Switch to",
                 "277a9c65a9": "Codex Account",
                 "4dce5ca3aa": "Resets in 4d 3h",
-                "05ce4ecdd3": "62% left",
+                "05ce4ecdd3": "38% used",
                 "0470aaed99": "Weekly",
                 "f421abf962": "Session",
                 "5e45fb1238": "Updated 1m ago",
