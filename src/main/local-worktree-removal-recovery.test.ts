@@ -26,7 +26,7 @@ vi.mock('./git/worktree', () => ({
 }))
 
 import {
-  recoverLocalWindowsLongPathWorktreeRemoval,
+  recoverLocalWindowsWorktreeRemoval,
   removeStaleLocalWorktreeRegistrationAfterFilesystemRemoval
 } from './local-worktree-removal-recovery'
 
@@ -40,7 +40,7 @@ async function withPlatform<T>(platform: NodeJS.Platform, fn: () => Promise<T>):
   }
 }
 
-describe('recoverLocalWindowsLongPathWorktreeRemoval', () => {
+describe('recoverLocalWindowsWorktreeRemoval', () => {
   beforeEach(() => {
     gitExecFileAsyncMock.mockReset()
     listWorktreesStrictMock.mockReset()
@@ -62,7 +62,7 @@ describe('recoverLocalWindowsLongPathWorktreeRemoval', () => {
         stderr: "error: failed to delete 'C:/repo/worktree/delete-e2e-held-cwd': Permission denied"
       })
 
-      const result = await recoverLocalWindowsLongPathWorktreeRemoval({
+      const result = await recoverLocalWindowsWorktreeRemoval({
         error,
         force: true,
         canonicalWorktreePath: 'C:/repo/worktree/delete-e2e-held-cwd',
@@ -90,6 +90,93 @@ describe('recoverLocalWindowsLongPathWorktreeRemoval', () => {
     })
   })
 
+  it('finishes a clean non-force deletion after Git leaves a Windows directory behind', async () => {
+    await withPlatform('win32', async () => {
+      const error = Object.assign(new Error('git worktree remove failed'), {
+        stderr:
+          "error: failed to delete 'C:/repo/worktree/delete-e2e-held-cwd': Directory not empty"
+      })
+
+      const result = await recoverLocalWindowsWorktreeRemoval({
+        error,
+        force: false,
+        canonicalWorktreePath: 'C:/repo/worktree/delete-e2e-held-cwd',
+        repoPath: 'C:/repo',
+        localWorktreeGitOptions: {},
+        registeredWorktree: { branch: 'refs/heads/delete-e2e-held-cwd', head: 'abc123' },
+        deleteBranch: true,
+        overrideLock: false,
+        closeWatcher: vi.fn().mockResolvedValue(undefined)
+      })
+
+      expect(removeLocalWorktreePathMock).toHaveBeenCalledWith(
+        'C:/repo/worktree/delete-e2e-held-cwd',
+        {}
+      )
+      expect(gitExecFileAsyncMock).toHaveBeenCalledWith(['worktree', 'prune'], {
+        cwd: 'C:/repo'
+      })
+      expect(result).toEqual({
+        preservedBranch: {
+          branchName: 'delete-e2e-held-cwd',
+          head: 'abc123'
+        }
+      })
+    })
+  })
+
+  it('recovers localized Windows failures after Git already removed the registration', async () => {
+    await withPlatform('win32', async () => {
+      const result = await recoverLocalWindowsWorktreeRemoval({
+        error: Object.assign(new Error('git worktree remove failed'), {
+          stderr: "Fehler: 'C:/repo/worktree/feature' konnte nicht gelöscht werden"
+        }),
+        force: false,
+        canonicalWorktreePath: 'C:/repo/worktree/feature',
+        repoPath: 'C:/repo',
+        localWorktreeGitOptions: {},
+        registeredWorktree: { branch: 'refs/heads/feature', head: 'abc123' },
+        deleteBranch: false,
+        overrideLock: false,
+        closeWatcher: vi.fn().mockResolvedValue(undefined)
+      })
+
+      expect(removeLocalWorktreePathMock).toHaveBeenCalledWith('C:/repo/worktree/feature', {})
+      expect(result).toEqual({})
+    })
+  })
+
+  it('does not recover unrelated localized failures while Git still owns the row', async () => {
+    await withPlatform('win32', async () => {
+      listWorktreesStrictMock.mockResolvedValue([
+        {
+          path: 'C:/repo/worktree/feature',
+          head: 'abc123',
+          branch: 'refs/heads/feature',
+          isBare: false,
+          isMainWorktree: false
+        }
+      ])
+
+      await expect(
+        recoverLocalWindowsWorktreeRemoval({
+          error: Object.assign(new Error('git worktree remove failed'), {
+            stderr: 'Fehler: unerwarteter Git-Zustand'
+          }),
+          force: false,
+          canonicalWorktreePath: 'C:/repo/worktree/feature',
+          repoPath: 'C:/repo',
+          localWorktreeGitOptions: {},
+          registeredWorktree: { branch: 'refs/heads/feature', head: 'abc123' },
+          deleteBranch: false,
+          overrideLock: false,
+          closeWatcher: vi.fn().mockResolvedValue(undefined)
+        })
+      ).resolves.toBeUndefined()
+      expect(removeLocalWorktreePathMock).not.toHaveBeenCalled()
+    })
+  })
+
   it('does not recover partial filesystem deletion wording off Windows', async () => {
     await withPlatform('linux', async () => {
       const error = Object.assign(new Error('git worktree remove failed'), {
@@ -97,7 +184,7 @@ describe('recoverLocalWindowsLongPathWorktreeRemoval', () => {
       })
 
       await expect(
-        recoverLocalWindowsLongPathWorktreeRemoval({
+        recoverLocalWindowsWorktreeRemoval({
           error,
           force: true,
           canonicalWorktreePath: 'C:/repo/worktree/delete-e2e-held-cwd',
@@ -122,7 +209,7 @@ describe('recoverLocalWindowsLongPathWorktreeRemoval', () => {
         lockReason: 'active agent'
       }
 
-      await recoverLocalWindowsLongPathWorktreeRemoval({
+      await recoverLocalWindowsWorktreeRemoval({
         error: Object.assign(new Error('git worktree remove failed'), {
           stderr: 'error: failed to delete deep/file.txt: Filename too long'
         }),

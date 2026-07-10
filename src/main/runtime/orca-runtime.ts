@@ -450,7 +450,7 @@ import {
 } from '../local-worktree-filesystem'
 import {
   removeStaleLocalWorktreeRegistrationAfterFilesystemRemoval,
-  recoverLocalWindowsLongPathWorktreeRemoval
+  recoverLocalWindowsWorktreeRemoval
 } from '../local-worktree-removal-recovery'
 import {
   connect as connectLinear,
@@ -15893,9 +15893,9 @@ export class OrcaRuntimeService {
           refreshedRegisteredWorktree.head
         )
       } catch (error) {
-        // Why: Git for Windows can fail long-path directory deletion after
-        // Orca has already validated the target and explicit force delete.
-        const recoveredRemovalResult = await recoverLocalWindowsLongPathWorktreeRemoval({
+        // Why: Git for Windows can deregister a clean worktree before its
+        // recursive filesystem deletion fails transiently.
+        const recoveredRemovalResult = await recoverLocalWindowsWorktreeRemoval({
           error,
           force,
           canonicalWorktreePath,
