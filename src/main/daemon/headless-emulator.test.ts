@@ -498,6 +498,26 @@ describe('HeadlessEmulator', () => {
       expect(snapshot.rehydrateSequences).toContain('\x1b[?1006h')
       expect(snapshot.rehydrateSequences).not.toContain('\x1b[?1002h')
     })
+
+    it('rehydrates kitty keyboard flags a TUI pushed (CSI > u)', async () => {
+      emulator = new HeadlessEmulator({ cols: 80, rows: 24 })
+      // OMP/pi negotiate progressive enhancement with a level-1 push.
+      await emulator.write('\x1b[>1u')
+
+      const snapshot = emulator.getSnapshot()
+      expect(snapshot.modes.kittyKeyboardFlags).toBe(1)
+      expect(snapshot.rehydrateSequences).toContain('\x1b[=1;1u')
+    })
+
+    it('omits kitty rehydration after the TUI pops its flags', async () => {
+      emulator = new HeadlessEmulator({ cols: 80, rows: 24 })
+      await emulator.write('\x1b[>1u')
+      await emulator.write('\x1b[<u')
+
+      const snapshot = emulator.getSnapshot()
+      expect(snapshot.modes.kittyKeyboardFlags).toBe(0)
+      expect(snapshot.rehydrateSequences).not.toContain('u')
+    })
   })
 
   describe('dispose', () => {

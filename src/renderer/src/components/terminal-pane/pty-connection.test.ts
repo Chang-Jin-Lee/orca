@@ -485,6 +485,7 @@ function createDeps(overrides: Record<string, unknown> = {}) {
     restoredPtyIdByLeafId: {},
     paneTransportsRef: { current: new Map() },
     paneMode2031Ref: { current: new Map() },
+    paneKittyKeyboardModesRef: { current: new Map() },
     paneLastThemeModeRef: { current: new Map() },
     replayingPanesRef: { current: new Map() },
     isActiveRef: { current: true },

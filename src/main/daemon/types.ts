@@ -47,6 +47,10 @@ export type TerminalModes = {
   sgrMousePixelsMode?: boolean
   applicationCursor: boolean
   alternateScreen: boolean
+  /** Kitty keyboard protocol flags (CSI > u) the session's TUI negotiated;
+   *  0/absent when inactive. SerializeAddon cannot capture these, so the
+   *  emulator mirrors them for snapshot rehydration. */
+  kittyKeyboardFlags?: number
 }
 
 // The on-disk checkpoint.json shape lives in daemon-checkpoint-file.ts (it

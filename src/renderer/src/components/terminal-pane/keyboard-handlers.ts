@@ -14,6 +14,7 @@ import {
   type TerminalShortcutPolicy
 } from '../../../../shared/keybindings'
 import type { PaneCwdMap } from './resolve-split-cwd'
+import type { TerminalKittyKeyboardModeTracker } from '../../../../shared/terminal-kitty-keyboard-mode-tracker'
 import { keyboardEventBelongsToScope } from './terminal-keyboard-scope'
 import { normalizeSelectedTextForFileSearch } from '@/lib/file-search-selection'
 import { isFindQueryTooLarge } from '@/lib/find-query-bounds'
@@ -161,6 +162,7 @@ type KeyboardHandlersDeps = {
   searchOpenRef: React.RefObject<boolean>
   searchStateRef: React.RefObject<SearchState>
   macOptionAsAltRef: React.RefObject<MacOptionAsAlt>
+  paneKittyKeyboardModesRef?: React.RefObject<Map<number, TerminalKittyKeyboardModeTracker>>
   keybindings?: KeybindingOverrides
   terminalShortcutPolicy?: TerminalShortcutPolicy
 }
@@ -194,6 +196,7 @@ export function useTerminalKeyboardShortcuts({
   searchOpenRef,
   searchStateRef,
   macOptionAsAltRef,
+  paneKittyKeyboardModesRef,
   keybindings,
   terminalShortcutPolicy = 'orca-first'
 }: KeyboardHandlersDeps): void {
@@ -293,6 +296,17 @@ export function useTerminalKeyboardShortcuts({
         })
       }
 
+      // Why: the pane's TUI opted into kitty keyboard reporting via CSI > u;
+      // the tracker mirrors that from PTY output so the policy can encode
+      // Option chords the way the application negotiated.
+      const isKittyKeyboardActivePane = (): boolean => {
+        const activePane = manager.getActivePane() ?? manager.getPanes()[0]
+        if (!activePane) {
+          return false
+        }
+        return (paneKittyKeyboardModesRef?.current.get(activePane.id)?.flags ?? 0) > 0
+      }
+
       const action = resolveTerminalShortcutAction(
         e,
         isMac,
@@ -300,7 +314,8 @@ export function useTerminalKeyboardShortcuts({
         optionKeyLocation,
         isWindows,
         keybindings,
-        isLocalWindowsConptyPane
+        isLocalWindowsConptyPane,
+        isKittyKeyboardActivePane
       )
       if (!action) {
         return
@@ -537,6 +552,7 @@ export function useTerminalKeyboardShortcuts({
     searchOpenRef,
     searchStateRef,
     macOptionAsAltRef,
+    paneKittyKeyboardModesRef,
     keybindings,
     terminalShortcutPolicy,
     tabId,
