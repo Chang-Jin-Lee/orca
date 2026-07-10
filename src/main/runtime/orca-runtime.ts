@@ -2984,26 +2984,40 @@ export class OrcaRuntimeService {
       }
     }
 
+    // Why: computed BEFORE preserving stale leaves so preservation can refuse a
+    // leaf whose PTY the incoming graph already rebound to a live leaf. Two
+    // leaves on one PTY resolve to the same handle (handles are ptyId-keyed) and
+    // crash paired clients with a duplicate React key.
+    const nextPtyIds = new Set(
+      [...nextLeaves.values()].map((leaf) => leaf.ptyId).filter((ptyId): ptyId is string => !!ptyId)
+    )
     for (const oldLeafKey of this.leaves.keys()) {
       if (!nextLeaves.has(oldLeafKey)) {
         const oldLeaf = this.leaves.get(oldLeafKey)
         if (
           preserveLivePtysDuringReload &&
           oldLeaf?.ptyId &&
-          this.handleByPtyId.has(oldLeaf.ptyId)
+          this.handleByPtyId.has(oldLeaf.ptyId) &&
+          !nextPtyIds.has(oldLeaf.ptyId)
         ) {
           // Why: a CLI-created agent keeps using its exported handle even if
           // the reloaded renderer has not rebound the pane yet.
           nextLeaves.set(oldLeafKey, oldLeaf)
+          nextPtyIds.add(oldLeaf.ptyId)
+        } else if (oldLeaf?.ptyId && nextPtyIds.has(oldLeaf.ptyId)) {
+          // Why: the incoming graph already rebound this PTY to a live leaf (e.g.
+          // a woken agent re-keyed to a new leaf during renderer reload). Keeping
+          // the old leaf too would put two leaves on ONE PTY, which emit the same
+          // terminal handle and crash paired clients. Drop the stale leaf but
+          // leave the shared handle intact — it belongs to the live leaf now, so
+          // don't invalidate it; just release this dead leaf key's alias.
+          this.handleByLeafKey.delete(oldLeafKey)
         } else {
           this.invalidateLeafHandle(oldLeafKey)
         }
       }
     }
 
-    const nextPtyIds = new Set(
-      [...nextLeaves.values()].map((leaf) => leaf.ptyId).filter((ptyId): ptyId is string => !!ptyId)
-    )
     for (const [ptyId, leaf] of this.detachedPreAllocatedLeaves) {
       if (nextPtyIds.has(ptyId) || !this.handleByPtyId.has(ptyId)) {
         this.detachedPreAllocatedLeaves.delete(ptyId)
@@ -19286,6 +19300,15 @@ export class OrcaRuntimeService {
   ): RuntimeMobileSessionTabsResult {
     const tabs: RuntimeMobileSessionClientTab[] = []
     const liveBrowserTabsByPageId = this.getLiveBrowserTabsByPageId(snapshot.worktree)
+    // Why: a live PTY backs exactly one terminal surface, so it must map to a
+    // single emitted tab. After agent sleep + mobile wake, a stale
+    // headless-hydrated leaf can survive beside the renderer's live leaf and both
+    // resolve to the freshly-woken agent PTY (same issuePtyHandle handle) — which
+    // renders two panes with the same React key and crashes the client. Claim
+    // each live PTY once. Split siblings never collide because distinct leaves own
+    // distinct PTYs; renderer tabs precede preserved headless tabs, so the live
+    // one wins.
+    const claimedLivePtyIds = new Set<string>()
     for (const tab of snapshot.tabs) {
       if (tab.type === 'browser') {
         const liveTab = tab.browserPageId
@@ -19322,6 +19345,19 @@ export class OrcaRuntimeService {
             allowWorktreeOnlyMatch: !snapshot.publicationEpoch.startsWith('headless')
           })
       const livePty = pty?.connected ? pty : null
+      // Why: enforce the one-live-PTY-per-tab invariant. A later tab resolving to
+      // a PTY an earlier tab already claimed is a duplicate surface (e.g. a stale
+      // headless-hydrated leaf re-bound to a woken agent PTY) — drop it so the
+      // client never sees two tabs sharing a terminal handle. Handles derive purely
+      // from the PTY id (issuePtyHandle), so the id is a faithful proxy for the
+      // emitted handle. Pending tabs (no live PTY) are left untouched.
+      const resolvedLivePtyId = liveLeafPtyId ?? livePty?.ptyId ?? null
+      if (resolvedLivePtyId !== null) {
+        if (claimedLivePtyIds.has(resolvedLivePtyId)) {
+          continue
+        }
+        claimedLivePtyIds.add(resolvedLivePtyId)
+      }
       const legacyPaneId = /^pane:(\d+)$/.exec(tab.leafId)?.[1] ?? null
       const paneKey = isTerminalLeafId(tab.leafId)
         ? makePaneKey(tab.parentTabId, tab.leafId)
