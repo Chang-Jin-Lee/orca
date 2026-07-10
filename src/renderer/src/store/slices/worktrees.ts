@@ -3476,9 +3476,8 @@ export const createWorktreeSlice: StateCreator<AppState, [], [], WorktreeSlice> 
             delete next[worktreeId]
             return next
           })(),
-          // Why: shutdownWorktreeBrowsers/Terminals above already pushed kind
-          // entries for this worktree's tabs; a deleted worktree's tabs can
-          // never be reopened, so purge symmetrically with the snapshot stacks.
+          // Why: a deleted worktree's tabs can never be reopened, so purge the
+          // cross-type kind list symmetrically with the snapshot stacks above.
           recentlyClosedTabKindsByWorktree: (() => {
             const next = { ...s.recentlyClosedTabKindsByWorktree }
             delete next[worktreeId]

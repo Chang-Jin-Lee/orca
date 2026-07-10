@@ -131,6 +131,26 @@ describe('reopenClosedTerminalTab', () => {
     expect(store.getState().reopenClosedTerminalTab(WT)).toBe(false)
     expect(store.getState().tabsByWorktree[WT]).toHaveLength(1)
   })
+
+  it('skips local reopen on a remote-runtime worktree (host owns the terminal)', () => {
+    const store = makeSeededStore()
+    const tab = store
+      .getState()
+      .createTab(WT, undefined, undefined, { startupCwd: '/path/wt1/api' })
+    store.getState().closeTab(tab.id)
+    expect(store.getState().recentlyClosedTerminalTabsByWorktree[WT]).toHaveLength(1)
+
+    // Why: an active runtime environment makes the worktree host-owned; a local
+    // createTab would leave an unbacked phantom tab, so reopen must bail.
+    store.setState({
+      settings: { ...store.getState().settings, activeRuntimeEnvironmentId: 'runtime-env-1' }
+    })
+
+    expect(store.getState().reopenClosedTerminalTab(WT)).toBe(false)
+    // No local tab spawned, and the snapshot is left intact (not consumed).
+    expect(store.getState().tabsByWorktree[WT] ?? []).toHaveLength(0)
+    expect(store.getState().recentlyClosedTerminalTabsByWorktree[WT]).toHaveLength(1)
+  })
 })
 
 describe('reopenClosedTab cross-type MRU', () => {

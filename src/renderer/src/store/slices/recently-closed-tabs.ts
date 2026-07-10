@@ -1,5 +1,6 @@
 import type { StateCreator } from 'zustand'
 import type { AppState } from '../types'
+import { getRuntimeEnvironmentIdForWorktree } from '@/lib/worktree-runtime-owner'
 
 /** Snapshot of a terminal tab captured at user-initiated close time. Reopen
  *  recreates a fresh shell in the same startup directory (Ghostty semantics) —
@@ -71,6 +72,17 @@ export const createRecentlyClosedTabsSlice: StateCreator<
   recentlyClosedTabKindsByWorktree: {},
 
   reopenClosedTerminalTab: (worktreeId) => {
+    // Why: remote-runtime worktrees own their terminals through the host
+    // session (a non-empty runtime env id === host-owned, mirroring
+    // isWebRuntimeSessionActive). A raw local createTab here would leave an
+    // unbacked phantom tab that races the next host snapshot, so skip local
+    // reopen for those worktrees — the cross-type dispatcher falls through to
+    // browser/editor. Imported directly instead of via web-runtime-session to
+    // avoid a store slice ↔ store-index import cycle. Remote terminal reopen is
+    // deferred (see PR notes); local + SSH worktrees are the covered surface.
+    if (getRuntimeEnvironmentIdForWorktree(get(), worktreeId)?.trim()) {
+      return false
+    }
     // Why: read and pop atomically inside set() to prevent a TOCTOU race where
     // two rapid Cmd+Shift+T presses both restore the same entry (mirrors
     // reopenClosedBrowserTab).
