@@ -8896,6 +8896,26 @@
           "reviewFirst": "Revisar primero",
           "singular": "Guardar a nivel global no cambiará 1 repositorio con su propia receta.",
           "tooltipTitle": "Anulaciones de repositorio"
+        },
+        "linear": {
+          "agent": {
+            "skill": {
+              "install": {
+                "cta": {
+                  "copiedCommand": "Copied command.",
+                  "copyFailed": "Failed to copy command.",
+                  "skillLabel": "Agent skill:",
+                  "checking": "Checking...",
+                  "installed": "Installed",
+                  "notInstalled": "Not installed",
+                  "recheck": "Re-check",
+                  "installedDescription": "Agent skill installed. To update it, run:",
+                  "description": "Let your agents read and edit Linear tasks.",
+                  "copyCommand": "Copy command"
+                }
+              }
+            }
+          }
         }
       },
       "right": {
