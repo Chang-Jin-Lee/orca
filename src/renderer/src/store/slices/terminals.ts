@@ -3315,7 +3315,12 @@ export const createTerminalSlice: StateCreator<AppState, [], [], TerminalSlice> 
       const worktree = Object.values(get().worktreesByRepo)
         .flat()
         .find((entry) => entry.id === worktreeId)
-      const repo = worktree ? get().repos.find((entry) => entry.id === worktree.repoId) : null
+      // Why: SSH worktrees aren't in worktreesByRepo at cold start (relay
+      // discovery needs the connection). Fall back to the repo id embedded in
+      // the composite worktree id so their sessions still reach the deferred
+      // map — otherwise panes fresh-spawn into a missing PTY provider.
+      const repoId = worktree?.repoId ?? getRepoIdFromWorktreeId(worktreeId)
+      const repo = repoId ? get().repos.find((entry) => entry.id === repoId) : null
       if (!repo?.connectionId) {
         continue
       }

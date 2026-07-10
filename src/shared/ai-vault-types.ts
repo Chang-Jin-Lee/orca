@@ -12,6 +12,7 @@ export const AI_VAULT_AGENTS = [
   'codex',
   'hermes',
   'pi',
+  'omp',
   'cursor',
   'gemini',
   'rovo',
@@ -34,6 +35,7 @@ export const AI_VAULT_AGENT_LABELS = {
   codex: 'Codex',
   hermes: 'Hermes',
   pi: 'Pi',
+  omp: 'OMP',
   cursor: 'Cursor',
   gemini: 'Gemini',
   rovo: 'Rovo Dev',
@@ -70,7 +72,46 @@ export type AiVaultSession = {
   messageCount: number
   totalTokens: number
   previewMessages: AiVaultSessionPreviewMessage[]
+  // Recoverable signal for sessions whose conversation transcript persisted zero
+  // user/assistant turns: queued (never-flushed) prompts and sibling subagent
+  // transcripts survive even when the main conversation was lost.
+  queuedMessageCount: number
+  subagentTranscriptCount: number
   resumeCommand: string
+}
+
+// A session is only offered for normal resume when its transcript actually holds
+// conversation turns; resuming a zero-turn transcript lands in an empty session.
+// Conversation previews count as evidence too: some parsers (e.g. Grok, OpenCode
+// fallback schemas) only learn the turn count from metadata that may be absent.
+export function isAiVaultSessionResumableContent(
+  session: Pick<AiVaultSession, 'messageCount' | 'previewMessages'>
+): boolean {
+  return (
+    session.messageCount > 0 ||
+    session.previewMessages.some(
+      (message) => message.role === 'user' || message.role === 'assistant'
+    )
+  )
+}
+
+export function aiVaultSessionRecoverableSignalCount(
+  session: Pick<AiVaultSession, 'queuedMessageCount' | 'subagentTranscriptCount'>
+): number {
+  return Math.max(0, session.queuedMessageCount) + Math.max(0, session.subagentTranscriptCount)
+}
+
+// Zero-turn transcript that still carries recoverable content (queued prompts
+// and/or subagent transcripts). Surfaced distinctly instead of hidden as empty.
+export function isAiVaultSessionRecoverableEmpty(
+  session: Pick<
+    AiVaultSession,
+    'messageCount' | 'previewMessages' | 'queuedMessageCount' | 'subagentTranscriptCount'
+  >
+): boolean {
+  return (
+    !isAiVaultSessionResumableContent(session) && aiVaultSessionRecoverableSignalCount(session) > 0
+  )
 }
 
 export type AiVaultScanIssue = {
@@ -102,13 +143,29 @@ export function buildAiVaultResumeCommand(args: {
   platform: NodeJS.Platform
   commandOverride?: string | null
   codexHome?: string | null
+  resumeFilePath?: string | null
+  shell?: AgentStartupShell
 }): string {
-  const { agent, sessionId, cwd, platform, commandOverride, codexHome } = args
+  const { agent, sessionId, cwd, platform, commandOverride, codexHome, resumeFilePath, shell } =
+    args
   const baseCommand = commandOverride?.trim() || defaultAiVaultResumeCommandBase(agent)
-  const sessionArg = quoteShellArg(sessionId, platform)
+  // Why: OMP's `--resume` accepts an absolute transcript path, which resolves
+  // regardless of which session-dir root (custom OMP_CODING_AGENT_DIR / WSL
+  // home) the file was discovered under, where an id-prefix lookup scoped to
+  // the default store would miss it. Falls back to the id if no path is known.
+  const resumeTarget = agent === 'omp' && resumeFilePath?.trim() ? resumeFilePath.trim() : sessionId
+  const sessionArg = shell
+    ? quoteStartupArg(resumeTarget, shell)
+    : quoteShellArg(resumeTarget, platform)
   const resumeCommand = buildAgentResumeInvocation(agent, baseCommand, sessionArg)
 
-  return buildAiVaultResumeShellCommand({ resumeCommand, cwd, platform, codexHome })
+  return buildAiVaultResumeShellCommand({
+    resumeCommand,
+    cwd,
+    platform,
+    codexHome,
+    shell
+  })
 }
 
 export function buildAiVaultResumeShellCommand(args: {
@@ -222,6 +279,9 @@ function buildAgentResumeInvocation(
     case 'devin':
     case 'openclaw':
     case 'droid':
+    // Why: OMP resumes by absolute transcript path (see buildAiVaultResumeCommand),
+    // but the `--resume <arg>` invocation form is identical to the others here.
+    case 'omp':
       return `${baseCommand} --resume ${sessionArg}`
   }
 }

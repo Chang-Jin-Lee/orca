@@ -132,6 +132,7 @@ function createTestStore() {
         openModal: vi.fn(),
         shutdownWorktreeTerminals: vi.fn().mockResolvedValue(undefined),
         shutdownWorktreeBrowsers: vi.fn().mockResolvedValue(undefined),
+        ptyIdsByTabId: {},
         tabsByWorktree: {},
         tabBarOrderByWorktree: {},
         pendingReconnectTabByWorktree: {},
@@ -5811,6 +5812,103 @@ describe('fetchAllWorktrees hydration-time purge (design §4.4)', () => {
     expect(store.getState().hasHydratedWorktreePurge).toBe(true)
   })
 
+  it('reuses an offline runtime preflight across hydrated all-worktree refresh repos', async () => {
+    const store = createTestStore()
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const repos = Array.from({ length: WORKTREE_REFRESH_CONCURRENCY + 2 }, (_, index) => ({
+      id: `runtime-repo-${index}`,
+      path: `/remote/repos/${index}`,
+      displayName: `runtime-repo-${index}`,
+      badgeColor: '#000',
+      addedAt: 0,
+      executionHostId: 'runtime:env-offline'
+    }))
+
+    runtimeEnvironmentTransportCall.mockImplementation((args: RuntimeEnvironmentCallRequest) => {
+      if (args.method === 'status.get') {
+        return Promise.resolve({
+          id: 'status',
+          ok: false,
+          error: { code: 'runtime_unavailable', message: 'offline' },
+          _meta: { runtimeId: 'runtime-offline' }
+        })
+      }
+      return runtimeEnvironmentCall(args)
+    })
+
+    try {
+      store.setState({
+        hasHydratedWorktreePurge: true,
+        repos
+      } as unknown as Partial<AppState>)
+
+      await store.getState().fetchAllWorktrees()
+    } finally {
+      consoleError.mockRestore()
+    }
+
+    expect(runtimeEnvironmentTransportCall.mock.calls.map((call) => call[0].method)).toEqual([
+      'status.get'
+    ])
+    expect(runtimeEnvironmentCall).not.toHaveBeenCalled()
+    expect(mockApi.worktrees.listDetected).not.toHaveBeenCalled()
+  })
+
+  it('does not coalesce a foreground re-probe onto a background reuse:true scan for a remote repo', async () => {
+    // Why: the reuse flag is part of the coalescing key for remote targets, so a
+    // foreground fetchWorktrees (reuse:false) must run its own compat-preflighted
+    // scan instead of sharing a background reuse:true scan that may have reused a
+    // stale failure — the foreground caller must always re-probe.
+    const store = createTestStore()
+    const remote = makeWorktree({ id: 'repo1::/remote/wt', repoId: 'repo1', path: '/remote/wt' })
+    store.setState({
+      settings: { activeRuntimeEnvironmentId: 'env-1' } as never,
+      hasHydratedWorktreePurge: true,
+      repos: [
+        {
+          id: 'repo1',
+          path: '/r1',
+          displayName: 'R1',
+          badgeColor: '#000',
+          addedAt: 0,
+          executionHostId: 'runtime:env-1'
+        }
+      ]
+    } as Partial<AppState>)
+
+    let scanStartedCount = 0
+    const scanReleases: (() => void)[] = []
+    runtimeEnvironmentCall.mockImplementation(({ method }: RuntimeEnvironmentCallRequest) => {
+      if (method === 'worktree.detectedList') {
+        scanStartedCount += 1
+        return new Promise((resolve) => {
+          scanReleases.push(() =>
+            resolve({
+              id: 'rpc',
+              ok: true,
+              result: makeDetectedResult('repo1', [remote]),
+              _meta: { runtimeId: 'runtime-remote' }
+            })
+          )
+        })
+      }
+      return Promise.resolve({ id: method, ok: true, result: {}, _meta: {} })
+    })
+
+    const background = store.getState().fetchAllWorktrees()
+    const foreground = store.getState().fetchWorktrees('repo1')
+    // Flush microtasks so both compat preflights settle and both scans block.
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(scanStartedCount).toBe(2)
+
+    scanReleases.forEach((release) => release())
+    await Promise.all([background, foreground])
+    expect(store.getState().worktreesByRepo.repo1?.map((worktree) => worktree.id)).toEqual([
+      remote.id
+    ])
+  })
+
   it('preserves floating workspace state while purging a real stale worktree', async () => {
     const store = createTestStore()
     const wtA = makeWorktree({ id: 'repoA::/a/wt1', repoId: 'repoA', path: '/a/wt1' })
@@ -6314,7 +6412,7 @@ describe('setWorktreesPinnedAndReveal', () => {
     store.getState().setWorktreesPinnedAndReveal([wt.id], true)
 
     expect(store.getState().worktreesByRepo.repo1[0].isPinned).toBe(true)
-    expect(reveal).toHaveBeenCalledWith(wt.id, { behavior: 'smooth', highlight: true })
+    expect(reveal).toHaveBeenCalledWith(wt.id, { highlight: true })
   })
 
   it('reveals on unpin so the viewport follows the row back to its status group', () => {
@@ -6329,7 +6427,7 @@ describe('setWorktreesPinnedAndReveal', () => {
     store.getState().setWorktreesPinnedAndReveal([wt.id], false)
 
     expect(store.getState().worktreesByRepo.repo1[0].isPinned).toBe(false)
-    expect(reveal).toHaveBeenCalledWith(wt.id, { behavior: 'smooth', highlight: true })
+    expect(reveal).toHaveBeenCalledWith(wt.id, { highlight: true })
   })
 
   it('skips a no-op toggle without requesting a reveal', () => {
@@ -6394,7 +6492,7 @@ describe('setWorktreesPinnedAndReveal', () => {
     store.getState().setWorktreesPinnedAndReveal([alreadyPinned.id, first.id, second.id], true)
 
     expect(reveal).toHaveBeenCalledTimes(1)
-    expect(reveal).toHaveBeenCalledWith(first.id, { behavior: 'smooth', highlight: true })
+    expect(reveal).toHaveBeenCalledWith(first.id, { highlight: true })
     // Every targeted row is pinned, not just the revealed one, and the
     // already-pinned row is left untouched.
     expect(store.getState().worktreesByRepo.repo1[0].isPinned).toBe(true)

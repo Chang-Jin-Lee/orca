@@ -11,6 +11,7 @@ import type { AiVaultSessionGroup } from './ai-vault-session-filters'
 import type { AiVaultOriginalPaneTarget } from './ai-vault-original-pane'
 import {
   aiVaultSessionResumeLabel,
+  aiVaultSessionRowResumeGating,
   type AiVaultSessionResumeActions,
   type AiVaultSessionResumeState
 } from './ai-vault-session-resume'
@@ -154,7 +155,10 @@ export function AiVaultSessionVirtualList({
   })
 
   return (
-    <div ref={listScrollRef} className="min-h-0 flex-1 overflow-y-auto scrollbar-sleek">
+    <div
+      ref={listScrollRef}
+      className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden scrollbar-sleek"
+    >
       {loading && sessionsCount === 0 ? <SessionLoadingState /> : null}
 
       {!loading && sessionsCount === 0 && !error ? (
@@ -279,6 +283,12 @@ function AiVaultVirtualRow({
       : null
   const resumeState = row.type === 'session' ? getSessionResumeState(row.session) : null
   const resumeActions = row.type === 'session' ? getSessionResumeActions(row.session) : null
+  // Gate resume on real content: a zero-turn transcript would resume into an
+  // empty conversation, so it is never offered as normally resumable.
+  const resumeGating =
+    row.type === 'session'
+      ? aiVaultSessionRowResumeGating(row.session, resumeState)
+      : { resumeDisabled: true, canCopyResumeCommand: false }
   const resumeLabel = resumeState ? aiVaultSessionResumeLabel(resumeState) : ''
   const canOpenLocalSessionPaths =
     row.type === 'session' && canUseLocalAiVaultSessionPathActions(row.session.executionHostId)
@@ -306,7 +316,7 @@ function AiVaultVirtualRow({
           worktreeInfo={worktreeInfo}
           vaultScope={vaultScope}
           detailsExpanded={expandedSessionIds.has(row.session.id)}
-          resumeDisabled={resumeState?.blocked ?? true}
+          resumeDisabled={resumeGating.resumeDisabled}
           resumeLabel={resumeLabel}
           resumeActions={
             resumeActions ?? {
@@ -335,7 +345,11 @@ function AiVaultVirtualRow({
               onResume(row.session, resumeActions.newTab.worktreeId)
             }
           }}
-          onCopyResume={() => onCopyResume(row.session, resumeState?.worktreeId)}
+          onCopyResume={
+            resumeGating.canCopyResumeCommand
+              ? () => onCopyResume(row.session, resumeState?.worktreeId)
+              : undefined
+          }
           onCopyId={() => onCopyId(row.session)}
           onCopyPath={() => onCopyPath(row.session)}
           onOpenLog={canOpenLocalSessionPaths ? () => onOpenLog(row.session) : undefined}

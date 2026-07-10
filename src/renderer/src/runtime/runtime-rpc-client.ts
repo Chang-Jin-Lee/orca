@@ -13,7 +13,9 @@ const RECENT_RUNTIME_COMPATIBILITY_FAILURE_TTL_MS = 60_000
 type RuntimeCompatibilityCacheEntry = {
   check: Promise<void>
   failedAt: number | null
-  reuseFailure: boolean
+  // True only once status.get settled and proved compatible. Stays false while
+  // the probe is in flight, so a recovery clear can drop a doomed pending probe.
+  provenCompatible: boolean
 }
 
 const runtimeCompatibilityChecks = new Map<string, RuntimeCompatibilityCacheEntry>()
@@ -106,7 +108,7 @@ async function ensureRuntimeEnvironmentCompatible(
   const entry: RuntimeCompatibilityCacheEntry = {
     check: Promise.resolve(),
     failedAt: null,
-    reuseFailure: options.reuseRecentCompatibilityFailure === true
+    provenCompatible: false
   }
   const check = (async () => {
     const response = await window.api.runtimeEnvironments.call({
@@ -123,6 +125,9 @@ async function ensureRuntimeEnvironmentCompatible(
   rememberRuntimeEnvironmentCompatibility(environmentId, entry)
   try {
     await check
+    if (runtimeCompatibilityChecks.get(environmentId) === entry) {
+      entry.provenCompatible = true
+    }
   } catch (error) {
     if (runtimeCompatibilityChecks.get(environmentId) === entry) {
       // Why: startup asks each remote for repos, groups, then folders; an
@@ -148,10 +153,7 @@ function getCachedRuntimeCompatibilityCheck(
     runtimeCompatibilityChecks.delete(environmentId)
     return null
   }
-  if (
-    cached.failedAt !== null &&
-    (!cached.reuseFailure || options.reuseRecentCompatibilityFailure !== true)
-  ) {
+  if (cached.failedAt !== null && options.reuseRecentCompatibilityFailure !== true) {
     return null
   }
   runtimeCompatibilityChecks.delete(environmentId)
@@ -176,6 +178,22 @@ function rememberRuntimeEnvironmentCompatibility(
   }
 }
 
+// Why: a live status.get answer proves any cached compatibility verdict that is
+// not a settled success is stale. Drop settled failures AND still-pending probes
+// (a probe queued on the dropped connection is doomed, and a reachability-
+// triggered refresh must not coalesce onto it) so the refresh re-probes. Only
+// proven-compatible successes stay cached.
+export function clearRecentRuntimeCompatibilityFailure(environmentId: string): void {
+  const trimmed = environmentId.trim()
+  if (!trimmed) {
+    return
+  }
+  const cached = runtimeCompatibilityChecks.get(trimmed)
+  if (cached && !cached.provenCompatible) {
+    runtimeCompatibilityChecks.delete(trimmed)
+  }
+}
+
 export function clearRuntimeCompatibilityCache(environmentId?: string | null): void {
   const trimmed = environmentId?.trim()
   if (trimmed) {
@@ -193,7 +211,7 @@ export function markRuntimeEnvironmentCompatible(environmentId: string): void {
   rememberRuntimeEnvironmentCompatibility(trimmed, {
     check: Promise.resolve(),
     failedAt: null,
-    reuseFailure: false
+    provenCompatible: true
   })
 }
 

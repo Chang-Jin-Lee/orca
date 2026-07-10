@@ -24,7 +24,17 @@ import TerminalSearch from '@/components/TerminalSearch'
 import type { PtyTransport } from './pty-transport'
 import { fitPanes, isWindowsUserAgent } from './pane-helpers'
 import { getConnectionId, getConnectionIdFromState } from '@/lib/connection-context'
-import { getRuntimeEnvironmentIdForWorktree } from '@/lib/worktree-runtime-owner'
+import {
+  getExplicitRuntimeEnvironmentIdForWorktree,
+  getRuntimeEnvironmentIdForWorktree
+} from '@/lib/worktree-runtime-owner'
+import {
+  selectRuntimeAwareSshStatus,
+  selectRuntimeAwareSshTargetLabel,
+  selectRuntimeAwareSshTargetRemoved
+} from '@/store/slices/runtime-environment-ssh'
+import { hydrateRuntimeEnvironmentSshState } from '@/runtime/runtime-environment-ssh-state'
+import { isPairedWebClientWindow } from '@/lib/desktop-window-chrome'
 import { handleInternalTerminalFileDrop } from './terminal-drop-handler'
 import { recordTerminalUserInputForLeaf } from './terminal-input-activity'
 import {
@@ -306,16 +316,44 @@ export default function TerminalPane({
     }
     return connectionId
   })
+  // Which machine's SSH store this target belongs to: a remote Orca server's
+  // per-environment bucket, or null for this machine's local SSH maps. The
+  // explicit-owner resolver never lets a merely focused runtime make a
+  // local-owned workspace look remote. The paired web client mirrors its one
+  // host through the local maps instead.
+  const sshReconnectEnvironmentId = useAppStore((store) =>
+    sshReconnectTargetId && !isPairedWebClientWindow()
+      ? getExplicitRuntimeEnvironmentIdForWorktree(store, worktreeId)
+      : null
+  )
   const sshReconnectStatus = useAppStore((store) =>
     sshReconnectTargetId
-      ? (store.sshConnectionStates.get(sshReconnectTargetId)?.status ?? 'disconnected')
+      ? selectRuntimeAwareSshStatus(store, sshReconnectEnvironmentId, sshReconnectTargetId)
       : null
   )
   const sshReconnectTargetLabel = useAppStore((store) =>
     sshReconnectTargetId
-      ? (store.sshTargetLabels.get(sshReconnectTargetId) ?? sshReconnectTargetId)
+      ? selectRuntimeAwareSshTargetLabel(store, sshReconnectEnvironmentId, sshReconnectTargetId)
       : ''
   )
+  // Why: the target was removed entirely (a ghost) when it's no longer a known
+  // SSH target on its owning host. Reconnecting to it can only fail ("SSH
+  // target not found"), so the overlay must offer to remove the workspace
+  // instead of Connect. The selector requires positive removal evidence.
+  const sshReconnectTargetRemoved = useAppStore((store) =>
+    sshReconnectTargetId
+      ? selectRuntimeAwareSshTargetRemoved(store, sshReconnectEnvironmentId, sshReconnectTargetId)
+      : false
+  )
+  useEffect(() => {
+    if (!sshReconnectEnvironmentId) {
+      return
+    }
+    // Why: an SSH-backed workspace can be mirrored before its owning
+    // environment's bucket ever hydrated (no-op once hydrated), and overlay
+    // state must come from fetched evidence, never from an empty default.
+    void hydrateRuntimeEnvironmentSshState(sshReconnectEnvironmentId).catch(() => {})
+  }, [sshReconnectEnvironmentId])
 
   useVisibleTerminalTabClaim({ isVisible, tabId })
 
@@ -2972,6 +3010,9 @@ export default function TerminalPane({
           targetId={sshReconnectTargetId}
           targetLabel={sshReconnectTargetLabel}
           status={sshReconnectStatus}
+          targetRemoved={sshReconnectTargetRemoved}
+          worktreeId={worktreeId}
+          sshOwnerEnvironmentId={sshReconnectEnvironmentId}
         />
       ) : null}
       <DaemonActionDialog api={daemonActions} />

@@ -25,6 +25,7 @@ export type AiVaultScanOptions = {
   openclawStateDir?: string
   openclawLegacyStateDir?: string
   piSessionsDir?: string
+  ompSessionsDir?: string
   droidSessionsDir?: string
   droidProjectsDir?: string
   kimiSessionsDir?: string
@@ -99,6 +100,9 @@ export type SessionAccumulator = {
   messageCount: number
   totalTokens: number
   previewMessages: AiVaultSessionPreviewMessage[]
+  // Recoverable signal for a zero-turn transcript (see AiVaultSession).
+  queuedMessageCount: number
+  subagentTranscriptCount: number
   latestTimestampMs: number
 }
 

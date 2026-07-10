@@ -5,14 +5,13 @@ import { parseAgentSessionFile } from './session-scanner-agent-parser'
 import { createCodexSessionResumeState } from './session-scanner-codex-parser'
 import { createDroidSessionResumeState } from './session-scanner-droid-parser'
 import { createMessageGraphSessionResumeState } from './session-scanner-graph-parsers'
-import {
-  createClaudeSessionResumeState,
-  createGeminiJsonlSessionResumeState
-} from './session-scanner-primary-parsers'
+import { createClaudeSessionResumeState } from './session-scanner-primary-parsers'
+import { createGeminiJsonlSessionResumeState } from './session-scanner-gemini-parsers'
 import {
   createCopilotSessionResumeState,
   createCursorSessionResumeState
 } from './session-scanner-secondary-parsers'
+import { countSubagentTranscripts } from './session-scanner-subagent-transcripts'
 import type { ResumableSessionParseState, SessionFileCandidate } from './session-scanner-types'
 
 // Sized past the default recency cap (1000) plus the in-scope cap (2000) so a
@@ -59,7 +58,8 @@ function resumableStateFactoryFor(
     case 'droid':
       return () => createDroidSessionResumeState(candidate.file)
     case 'openclaw':
-    case 'pi': {
+    case 'pi':
+    case 'omp': {
       const agent = candidate.agent
       return () => createMessageGraphSessionResumeState(agent, candidate.file)
     }
@@ -67,7 +67,12 @@ function resumableStateFactoryFor(
       return candidate.file.path.endsWith('.jsonl')
         ? () => createGeminiJsonlSessionResumeState(candidate.file)
         : null
-    default:
+    case 'devin':
+    case 'grok':
+    case 'hermes':
+    case 'kimi':
+    case 'opencode':
+    case 'rovo':
       return null
   }
 }
@@ -103,7 +108,7 @@ function storeEntry(path: string, entry: SessionParseCacheEntry): void {
 /**
  * Parse a session file, reusing prior work where the file is provably
  * unchanged (mtime+size) and, for append-only JSONL transcripts (Claude,
- * Codex, Cursor, Copilot, Droid, OpenClaw/Pi, Gemini-JSONL), resuming the
+ * Codex, Cursor, Copilot, Droid, OpenClaw/Pi/OMP, Gemini-JSONL), resuming the
  * parse from the last consumed byte when the file only grew. This is what
  * keeps the renderer's ~5s forced rescans from re-reading gigabytes of
  * transcripts (STA-1278/STA-1417: main process pegging one core during
@@ -125,6 +130,16 @@ export async function parseAgentSessionFileCached(
   if (unchanged) {
     if (stats) {
       stats.reused++
+    }
+    // A zero-turn transcript usually never changes again, but its sibling
+    // subagents/ dir can gain files after the parent's last write (a
+    // still-running subagent finishing). The mtime+size key can't see that,
+    // so refresh the cheap directory count on reuse.
+    if (entry.session && candidate.agent === 'claude' && entry.session.messageCount === 0) {
+      const subagentTranscriptCount = await countSubagentTranscripts(file.path)
+      if (subagentTranscriptCount !== entry.session.subagentTranscriptCount) {
+        entry.session = { ...entry.session, subagentTranscriptCount }
+      }
     }
     storeEntry(file.path, entry)
     return entry.session

@@ -1,6 +1,6 @@
 /* eslint-disable max-lines */
 import type { ExecutionHostId } from './execution-host'
-import type { SshRemotePtyLease, SshTarget } from './ssh-types'
+import type { RemovedSshTargetTombstone, SshRemotePtyLease, SshTarget } from './ssh-types'
 import type { Automation, AutomationExecutionTargetType, AutomationRun } from './automations-types'
 import type { WorkspaceSource } from './workspace-source'
 import type { GitHubProjectSettings } from './github-project-types'
@@ -1022,6 +1022,9 @@ export type PersistedOpenFile = {
   runtimeEnvironmentId?: string | null
   /** Unsaved editor buffer captured for hot exit; presence restores the tab dirty. */
   dirtyDraftContent?: string
+  /** Signature of the disk content the dirty draft is based on; lets restore
+   *  re-derive a changed-on-disk conflict from ground truth. */
+  lastKnownDiskSignature?: string
 }
 
 export type WorkspaceSessionState = {
@@ -2784,6 +2787,16 @@ export type GlobalSettings = {
   geminiCliOAuthEnabled: boolean
   /** Per-agent CLI command overrides. A missing key means use the catalog default binary name. */
   agentCmdOverrides: Partial<Record<TuiAgent, string>>
+  /** Why: Orca bridges Codex session history from the user's real Codex home into
+   *  its managed home so /resume finds it, but defaults to ~/.codex. Users who run
+   *  Codex with a custom CODEX_HOME can point history discovery at that folder here.
+   *  History-only: this does not change which account/config/hooks Orca uses. */
+  codexSessionSourceHome?: {
+    /** Absolute host path; empty/undefined falls back to ~/.codex. */
+    host?: string
+    /** Per-WSL-distro absolute Linux path; missing distro falls back to <wslHome>/.codex. */
+    wsl?: Record<string, string>
+  }
   /** Per-agent default CLI arguments appended after the binary/path and before prompts. */
   agentDefaultArgs?: Partial<Record<TuiAgent, string>>
   /** Per-agent launch environment defaults used when yolo mode is exposed as env. */
@@ -3013,7 +3026,9 @@ export type NotificationDispatchRequest = {
 
 export type NotificationDispatchResult = {
   delivered: boolean
-  /** Present when delivered is false. Tells the caller why delivery was skipped. */
+  /** Present when delivered is false. Tells the caller why delivery was skipped.
+   *  'blocked-by-system' means the OS-level permission readout says macOS
+   *  would silently swallow the notification (denied or prompt unanswered). */
   reason?:
     | 'disabled'
     | 'source-disabled'
@@ -3021,6 +3036,7 @@ export type NotificationDispatchResult = {
     | 'cooldown'
     | 'not-supported'
     | 'not-displayed'
+    | 'blocked-by-system'
 }
 
 export type NotificationDismissResult = {
@@ -3091,6 +3107,18 @@ export type NotificationPermissionStatusResult = {
   supported: boolean
   platform: NodeJS.Platform
   requested: boolean
+}
+
+/** Outcome of a macOS notification permission check. Preferred source is the
+ *  bundled native helper reading UNUserNotificationCenter authorization
+ *  (authoritative); when unavailable, a silent delivery probe supplies weaker
+ *  scheduling-based evidence. 'awaiting-decision' means the macOS permission
+ *  dialog has not been answered yet. */
+export type NotificationDeliveryProbeResult = {
+  state: 'delivered' | 'blocked' | 'awaiting-decision' | 'unsupported'
+  /** True when the state comes from the native authorization readout. Silent
+   *  to poll; probe-based fallbacks flash a banner when delivery works. */
+  authoritative: boolean
 }
 
 export type WorktreeCardProperty =
@@ -3498,6 +3526,13 @@ export type PersistedState = {
    *  pre-partition builds keep working. Optional/absent on legacy files. */
   workspaceSessionsByHostId?: Partial<Record<ExecutionHostId, WorkspaceSessionState>>
   sshTargets: SshTarget[]
+  /** SSH config aliases the user explicitly deleted. Suppresses re-import of the
+   *  matching ~/.ssh/config host on the next sync so a deleted host does not
+   *  reappear. Cleared for an alias when the user re-adds it or re-adopts config. */
+  deletedSshConfigAliases: string[]
+  /** Identity records for removed SSH targets. Lets a re-added host re-adopt
+   *  workspaces that were orphaned on the old target id. Pruned by age/count. */
+  removedSshTargetTombstones?: RemovedSshTargetTombstone[]
   sshRemotePtyLeases: SshRemotePtyLease[]
   /** Daemon session ids of live local Claude launches. Seeds the Claude
    *  live-PTY gate on startup so an early OAuth refresh cannot rotate the

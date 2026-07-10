@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-07-03",
+  "updatedAt": "2026-07-08",
   "policy": {
     "maturityLevels": [
       "experimental",
@@ -104,6 +104,163 @@
         "SSH and remote providers are intentionally unknown-liveness paths and need separate provider-contract gates."
       ],
       "demotionRule": "Demote or quarantine if the gate flakes once without a product bug or harness bug filed to the owner."
+    },
+    {
+      "id": "terminal-session.startup-cwd-missing-dir-recovery",
+      "title": "Fresh local terminal creation cannot be bricked by a deleted startup cwd",
+      "maturity": "experimental",
+      "protection": "partial",
+      "owner": "terminal-runtime",
+      "layer": "shared-main-renderer-contract",
+      "surfaces": [
+        "terminal lifecycle",
+        "tab creation",
+        "PTY spawn",
+        "startup cwd persistence"
+      ],
+      "platforms": [
+        "macos",
+        "linux",
+        "windows",
+        "mobile"
+      ],
+      "providers": [
+        "local",
+        "daemon",
+        "ssh",
+        "wsl",
+        "remote-runtime"
+      ],
+      "coveredPlatforms": [
+        "macos"
+      ],
+      "coveredProviders": [
+        "local",
+        "ssh",
+        "remote-runtime"
+      ],
+      "coverageNotes": "Local macOS evidence covers the shared missing-dir fallback policy, main pty:spawn recovery and metadata, no-flag and reattach strictness, renderer IPC flag routing, SSH-tagged and remote-runtime omission, and the visibility-gated terminal notice. Daemon shares the same pre-provider main cwd decision but lacks a live daemon-provider run; WSL UNC paths are exempt from the probe by design and lack a live run; Linux/Windows and mobile/API strictness are gaps.",
+      "motivatingLinks": [
+        "https://github.com/stablyai/orca/issues/7239",
+        "https://github.com/stablyai/orca/pull/7750",
+        "https://github.com/stablyai/orca/pull/7678"
+      ],
+      "invariant": "A fresh local renderer terminal spawn may recover from a saved startup cwd whose directory no longer exists only by spawning at the selected workspace root and printing a generic in-terminal notice; existing directories — including ones outside the worktree (#7685) — spawn as requested, and reattach, SSH, remote-runtime, runtime/API, and mobile callers keep exact cwd semantics.",
+      "oracle": "The shared resolver falls back to the workspace root only when the injected existence probe reports the resolved cwd missing and the workspace root present, and never probes floating terminals or a cwd equal to the root. The renderer sends cwdFallback only for fresh local IPC spawns, main honors it only when connectionId and sessionId are absent, WSL UNC paths never engage the probe-based fallback, main returns fallback metadata only after an actual fallback, the IPC transport preserves that metadata, and the connection layer writes a generic notice that omits the missing path.",
+      "commands": [
+        "pnpm exec vitest run --config config/vitest.config.ts src/shared/terminal-startup-cwd.test.ts",
+        "pnpm exec vitest run --config config/vitest.config.ts src/main/ipc/pty.test.ts",
+        "pnpm exec vitest run --config config/vitest.config.ts src/renderer/src/components/terminal-pane/pty-transport.test.ts",
+        "pnpm exec vitest run --config config/vitest.config.ts src/renderer/src/components/terminal-pane/pty-connection.test.ts"
+      ],
+      "testFiles": [
+        "src/shared/terminal-startup-cwd.test.ts",
+        "src/main/ipc/pty.test.ts",
+        "src/renderer/src/components/terminal-pane/pty-transport.test.ts",
+        "src/renderer/src/components/terminal-pane/pty-connection.test.ts"
+      ],
+      "assertionRefs": [
+        {
+          "file": "src/shared/terminal-startup-cwd.test.ts",
+          "assertions": [
+            "a missing requested cwd falls back to the workspace root and reports the missing path to the callback",
+            "existing cwds — nested or outside the worktree (#7685) — are never remapped",
+            "no fallback happens when the workspace root is missing too",
+            "floating terminal cwds and root-equal requests are never probed",
+            "non-ASCII worktree roots and folder workspace roots are recovered verbatim"
+          ]
+        },
+        {
+          "file": "src/main/ipc/pty.test.ts",
+          "assertions": [
+            "local pty:spawn with cwdFallback worktree spawns at the worktree root when the saved cwd is missing and returns fallback metadata",
+            "a missing cwd without the flag still surfaces the provider's missing-directory error",
+            "an existing outside-worktree cwd spawns as requested without fallback metadata",
+            "session reattach spawns ignore the fallback flag and keep exact cwd semantics"
+          ]
+        },
+        {
+          "file": "src/renderer/src/components/terminal-pane/pty-transport.test.ts",
+          "assertions": [
+            "IPC transport sends cwdFallback only for local fresh spawns",
+            "SSH-tagged and session reattach spawns omit cwdFallback",
+            "IPC transport returns startup cwd fallback metadata to the connection layer"
+          ]
+        },
+        {
+          "file": "src/renderer/src/components/terminal-pane/pty-connection.test.ts",
+          "assertions": [
+            "fresh local IPC worktree spawns are marked with cwdFallback worktree",
+            "startup cwd fallback metadata prints a generic in-terminal notice",
+            "remote-runtime worktree spawns are not marked with cwdFallback"
+          ]
+        }
+      ],
+      "evidenceRuns": [
+        {
+          "date": "2026-07-08",
+          "runner": "local",
+          "platform": "macos",
+          "command": "pnpm exec vitest run --config config/vitest.config.ts src/shared/terminal-startup-cwd.test.ts",
+          "result": "passed",
+          "durationSeconds": 0.2,
+          "summary": "1 test file passed, 21 tests passed; covers the missing-dir fallback policy, #7685 outside-worktree preservation, and root-missing/floating exemptions."
+        },
+        {
+          "date": "2026-07-08",
+          "runner": "local",
+          "platform": "macos",
+          "command": "pnpm exec vitest run --config config/vitest.config.ts src/main/ipc/pty.test.ts",
+          "result": "passed",
+          "durationSeconds": 0.9,
+          "summary": "1 test file passed, 225 tests passed; covers main pty:spawn recovery, fallback metadata, and no-flag/reattach provider-error strictness."
+        },
+        {
+          "date": "2026-07-08",
+          "runner": "local",
+          "platform": "macos",
+          "command": "pnpm exec vitest run --config config/vitest.config.ts src/renderer/src/components/terminal-pane/pty-transport.test.ts",
+          "result": "passed",
+          "durationSeconds": 0.4,
+          "summary": "1 test file passed, 58 tests passed; covers cwdFallback forwarding only for local fresh spawns and metadata handoff."
+        },
+        {
+          "date": "2026-07-08",
+          "runner": "local",
+          "platform": "macos",
+          "command": "pnpm exec vitest run --config config/vitest.config.ts src/renderer/src/components/terminal-pane/pty-connection.test.ts",
+          "result": "passed",
+          "durationSeconds": 6.5,
+          "summary": "1 test file passed, 341 tests passed; covers local IPC marking, the generic terminal fallback notice, and remote-runtime omission."
+        }
+      ],
+      "runtimeBudget": {
+        "p95Seconds": 30,
+        "scope": "focused unit and IPC contract tests"
+      },
+      "flakeHistory": {
+        "status": "unknown",
+        "evidence": "New experimental gate added with local deterministic evidence only; needs CI soak before promotion."
+      },
+      "redGreenEvidence": {
+        "status": "partial",
+        "evidence": "The main IPC missing-cwd tests fail with the provider's 'Working directory ... does not exist.' error when the fallback is removed and pass with it. Full live Electron reproduction from a production persisted session is not captured."
+      },
+      "performanceBudget": {
+        "required": true,
+        "evidence": "The runtime change adds at most two statSync probes on the fresh-local spawn path (the provider already stats the same paths during validation) and one bounded terminal write only when fallback actually occurs; no polling, provider listing, hidden-pane work, startup awaits, subprocesses, or render-loop work was added."
+      },
+      "promotionCriteria": [
+        "Attach CI evidence for all declared test files.",
+        "Add a live Electron regression that opens a local terminal whose persisted startupCwd was deleted and proves visible shell input/output at the workspace root.",
+        "Add WSL/mobile/API provider-contract coverage or explicitly narrow their risk scope."
+      ],
+      "knownGaps": [
+        "No live Electron fixture seeds a persisted tab whose startupCwd directory was deleted.",
+        "Daemon coverage is via the shared pre-provider main cwd decision, not a live daemon provider spawn.",
+        "WSL UNC paths bypass the probe by design and have no live existence-recovery run; Linux, Windows, and mobile/API strictness are not directly exercised."
+      ],
+      "demotionRule": "Demote or quarantine if the gate flakes without a product bug, if an existing directory is ever remapped away from the requested cwd, or if a reattach/remote/API caller can engage the fallback."
     },
     {
       "id": "agent-session.provider-ownership",
@@ -1273,7 +1430,7 @@
         "macos"
       ],
       "coveredProviders": [],
-      "coverageNotes": "Local macOS evidence on main@1282f5c2d; identical files to the pending stack. Real OS IME automation, Windows ConPTY post-agent reset, and the CJK/Vietnamese/Arabic matrix remain registered gaps.",
+      "coverageNotes": "Local macOS evidence on main@1282f5c2d, deterministic renderer-unit coverage for the Linux/Sogou candidate-key policy, and a local Electron/CDP live-PTY Sogou-style repro. Real Linux/Sogou OS IME automation, Windows ConPTY post-agent reset, and the CJK/Vietnamese/Arabic matrix remain registered gaps.",
       "motivatingLinks": [
         "https://github.com/stablyai/orca/pull/6699",
         "https://github.com/stablyai/orca/pull/6682",
@@ -1281,14 +1438,20 @@
         "https://github.com/stablyai/orca/pull/6999"
       ],
       "invariant": "Composition, native text forwarding, synthetic input, paste, and platform keyboard bypass paths must not send preedit/control bytes before commit and must commit text exactly once to the intended PTY.",
-      "oracle": "The current renderer-unit slice asserts native text commits route to the intended PTY once, composition/preedit bookkeeping does not leak premature text, input-source classification handles synthetic/native paths, and paste/runtime forwarding avoids duplicate terminal payloads for covered fixtures. Real IME paths and the full CJK/Vietnamese/Arabic/JIS-yen matrix run in follow-up platform soak where automation is possible.",
+      "oracle": "The current renderer-unit slice asserts native text commits route to the intended PTY once, composition/preedit bookkeeping does not leak premature text, input-source classification handles synthetic/native paths, paste/runtime forwarding avoids duplicate terminal payloads for covered fixtures, and Linux/Sogou candidate Space/digit selectors do not leak keydown/keypress/keyup while ordinary post-IME typing remains available. The Electron/CDP live-PTY repro verifies Sogou-style Space and digit candidate selectors submit only the committed Chinese text. Real IME paths and the full CJK/Vietnamese/Arabic/JIS-yen matrix run in follow-up platform soak where automation is possible.",
       "commands": [
-        "pnpm exec vitest run --config config/vitest.config.ts src/renderer/src/components/terminal-pane/terminal-ime-native-text-forwarder.test.ts src/renderer/src/components/terminal-pane/terminal-ime-input-source.test.ts src/renderer/src/components/terminal-pane/terminal-paste-runtime.test.ts"
+        "pnpm exec vitest run --config config/vitest.config.ts src/renderer/src/components/terminal-pane/terminal-ime-native-text-forwarder.test.ts src/renderer/src/components/terminal-pane/terminal-ime-input-source.test.ts src/renderer/src/components/terminal-pane/terminal-paste-runtime.test.ts src/renderer/src/components/terminal-pane/terminal-ime-composition-tracker.test.ts src/renderer/src/components/terminal-pane/terminal-ime-candidate-key-release-guard.test.ts src/renderer/src/components/terminal-pane/xterm-bypass-policy-non-mac.test.ts src/renderer/src/components/terminal-pane/xterm-bypass-policy.test.ts",
+        "pnpm run test:e2e -- tests/e2e/chinese-ime-chat-input-repro.spec.ts"
       ],
       "testFiles": [
         "src/renderer/src/components/terminal-pane/terminal-ime-native-text-forwarder.test.ts",
         "src/renderer/src/components/terminal-pane/terminal-ime-input-source.test.ts",
-        "src/renderer/src/components/terminal-pane/terminal-paste-runtime.test.ts"
+        "src/renderer/src/components/terminal-pane/terminal-paste-runtime.test.ts",
+        "src/renderer/src/components/terminal-pane/terminal-ime-composition-tracker.test.ts",
+        "src/renderer/src/components/terminal-pane/terminal-ime-candidate-key-release-guard.test.ts",
+        "src/renderer/src/components/terminal-pane/xterm-bypass-policy-non-mac.test.ts",
+        "src/renderer/src/components/terminal-pane/xterm-bypass-policy.test.ts",
+        "tests/e2e/chinese-ime-chat-input-repro.spec.ts"
       ],
       "assertionRefs": [
         {
@@ -1309,34 +1472,80 @@
           "assertions": [
             "paste/runtime forwarding avoids duplicate terminal payloads"
           ]
+        },
+        {
+          "file": "src/renderer/src/components/terminal-pane/terminal-ime-composition-tracker.test.ts",
+          "assertions": [
+            "empty Sogou-style compositionupdate keeps composition active",
+            "stale composition state expires so editing keys cannot stay suppressed indefinitely",
+            "post-composition candidate guard is armed only by Sogou-style empty updates and clears after real typing"
+          ]
+        },
+        {
+          "file": "src/renderer/src/components/terminal-pane/terminal-ime-candidate-key-release-guard.test.ts",
+          "assertions": [
+            "suppressed candidate keydown arms only the matching keypress/keyup release guard",
+            "held-key repeat keydowns stay guarded until their keyup, even past expiry",
+            "fresh keydowns, other keys, modified keys, and expired keypresses are not guarded, and a fresh press drops a stale pending release"
+          ]
+        },
+        {
+          "file": "src/renderer/src/components/terminal-pane/xterm-bypass-policy-non-mac.test.ts",
+          "assertions": [
+            "standalone Linux 229 keydowns reach xterm while Windows 229 keydowns stay suppressed",
+            "candidate Space/digit selectors are suppressed only while candidate guards are active"
+          ]
+        },
+        {
+          "file": "src/renderer/src/components/terminal-pane/xterm-bypass-policy.test.ts",
+          "assertions": [
+            "macOS standalone Process key behavior and composition-owned key suppression stay intact"
+          ]
+        },
+        {
+          "file": "tests/e2e/chinese-ime-chat-input-repro.spec.ts",
+          "assertions": [
+            "Sogou-style Space candidate selection submits only the committed Chinese character",
+            "Sogou-style digit candidate selection submits only the committed Chinese phrase",
+            "Post-composition Sogou-style digit selection stays out of the PTY after compositionend"
+          ]
         }
       ],
       "evidenceRuns": [
         {
-          "date": "2026-07-03",
+          "date": "2026-07-07",
           "runner": "local",
           "platform": "macos",
-          "command": "pnpm exec vitest run --config config/vitest.config.ts src/renderer/src/components/terminal-pane/terminal-ime-native-text-forwarder.test.ts src/renderer/src/components/terminal-pane/terminal-ime-input-source.test.ts src/renderer/src/components/terminal-pane/terminal-paste-runtime.test.ts",
+          "command": "pnpm exec vitest run --config config/vitest.config.ts src/renderer/src/components/terminal-pane/terminal-ime-native-text-forwarder.test.ts src/renderer/src/components/terminal-pane/terminal-ime-input-source.test.ts src/renderer/src/components/terminal-pane/terminal-paste-runtime.test.ts src/renderer/src/components/terminal-pane/terminal-ime-composition-tracker.test.ts src/renderer/src/components/terminal-pane/terminal-ime-candidate-key-release-guard.test.ts src/renderer/src/components/terminal-pane/xterm-bypass-policy-non-mac.test.ts src/renderer/src/components/terminal-pane/xterm-bypass-policy.test.ts",
           "result": "passed",
-          "durationSeconds": 0.9,
-          "summary": "3 test file(s) passed, 63 tests passed on main@1282f5c2d in a clean checkout."
+          "durationSeconds": 0.7,
+          "summary": "7 test file(s) passed, 144 tests passed on the Linux/Sogou candidate-key branch (includes held-key repeat guard coverage)."
+        },
+        {
+          "date": "2026-07-07",
+          "runner": "local",
+          "platform": "macos",
+          "command": "pnpm run test:e2e -- tests/e2e/chinese-ime-chat-input-repro.spec.ts",
+          "result": "passed",
+          "durationSeconds": 72.0,
+          "summary": "Electron/CDP IME repro passed: Sogou candidate selection, post-composition candidate selection, and existing Chinese IME harness passed; real Codex IME test was skipped behind ORCA_E2E_REAL_CODEX_IME."
         }
       ],
       "runtimeBudget": {
-        "p95Seconds": 30,
-        "scope": "renderer unit plus platform soak"
+        "p95Seconds": 90,
+        "scope": "renderer unit plus focused Electron/CDP IME repro"
       },
       "flakeHistory": {
         "status": "unknown",
-        "evidence": "Focused renderer input tests are now registered; needs soak history and platform IME evidence before promotion."
+        "evidence": "Focused renderer input tests and the Electron/CDP Sogou-style repro are now registered; needs soak history and true platform IME evidence before promotion."
       },
       "redGreenEvidence": {
         "status": "partial",
-        "evidence": "Focused tests cover existing native-text, input-source, and paste/runtime forwarding contracts. Needs intentional-break proof for duplicate native text forwarding and composition preedit leakage, plus the broader language/platform matrix."
+        "evidence": "Focused tests cover existing native-text, input-source, paste/runtime forwarding, Linux/Sogou candidate selector, post-composition guard contracts, and live-PTY Sogou-style candidate commits. Needs intentional-break proof for duplicate native text forwarding and composition preedit leakage, plus the broader language/platform matrix."
       },
       "performanceBudget": {
-        "required": false,
-        "evidence": "Required if input forwarding adds polling, repeated event listeners, or renderer hot-path work."
+        "required": true,
+        "evidence": "Terminal IME hot-path audit clean on 2026-07-07: candidate guard adds O(1) boolean checks plus a bounded Space/digit release map; composition listeners are disposed with pane lifecycle; no polling, IPC fan-out, subprocess work, or SSH/remote transport cost added."
       },
       "promotionCriteria": [
         "Cover deterministic byte/cell oracles first.",
@@ -1344,7 +1553,7 @@
         "Pair with Windows ConPTY keyboard reset for Windows standard-key behavior."
       ],
       "knownGaps": [
-        "Current command is a renderer-unit slice; real OS IME automation may need manual or soak evidence.",
+        "Current commands include renderer-unit coverage and a CDP-driven Electron repro; real OS IME automation may need manual or soak evidence.",
         "Backspace/Enter during composition, JIS yen, Arabic/RTL, paste edge cases, and Windows ConPTY post-agent key reset still need representative gate coverage."
       ],
       "demotionRule": "Cannot promote if success is based only on DOM text without PTY byte/cell evidence."
@@ -1410,6 +1619,144 @@
         "Real Windows ConPTY execution is not covered by macOS/Linux CI."
       ],
       "demotionRule": "Cannot promote if standard-key behavior is inferred without PTY byte evidence."
+    },
+    {
+      "id": "terminal-input.agent-prompt-injection",
+      "title": "Orchestration agent prompts arrive as bracketed paste before submit",
+      "maturity": "experimental",
+      "protection": "partial",
+      "owner": "terminal-input",
+      "layer": "runtime-contract-and-cli-repro",
+      "surfaces": [
+        "terminal input",
+        "agent prompt injection",
+        "orchestration dispatch",
+        "PTY writes",
+        "bracketed paste"
+      ],
+      "platforms": [
+        "macos",
+        "linux",
+        "windows"
+      ],
+      "providers": [
+        "local",
+        "daemon",
+        "ssh",
+        "remote-runtime"
+      ],
+      "coveredPlatforms": [
+        "macos"
+      ],
+      "coveredProviders": [
+        "local"
+      ],
+      "coverageNotes": "Local macOS evidence covers the runtime PTY write contract and a live dev-runtime CLI repro. SSH, daemon, remote-runtime, Linux, and Windows remain provider/platform gaps; the product path stays provider-owned and does not add local filesystem or process assumptions.",
+      "motivatingLinks": [
+        "https://github.com/stablyai/orca/issues/7226"
+      ],
+      "invariant": "Injected orchestration task prompts for recognized agent CLIs must send the prompt body inside one bracketed-paste frame, sanitize embedded ESC bytes, preserve chunk boundaries without losing the frame, and send Enter only after the paste frame completes.",
+      "oracle": "Runtime tests assert the exact PTY write sequence and failure cleanup; orchestration tests assert dispatch/coordinator use the agent prompt path; the live CLI harness dispatches a 32KB task to a fake Codex-like TUI and requires marker present, bracketed paste present, zero unframed line breaks, and submit observed.",
+      "commands": [
+        "pnpm exec vitest run --config config/vitest.config.ts src/shared/agent-prompt-injection.test.ts src/main/runtime/orca-runtime.test.ts src/main/runtime/rpc/methods/orchestration.test.ts src/main/runtime/orchestration/coordinator.test.ts",
+        "node tools/repro-orchestration-long-prompt.mjs --cli out/bin/orca-dev --mode codex-like --size-kb 32 --timeout-ms 20000"
+      ],
+      "testFiles": [
+        "src/shared/agent-prompt-injection.test.ts",
+        "src/main/runtime/orca-runtime.test.ts",
+        "src/main/runtime/rpc/methods/orchestration.test.ts",
+        "src/main/runtime/orchestration/coordinator.test.ts",
+        "tools/repro-orchestration-long-prompt.mjs"
+      ],
+      "assertionRefs": [
+        {
+          "file": "src/shared/agent-prompt-injection.test.ts",
+          "assertions": [
+            "agent prompts are always framed as bracketed paste",
+            "submit stays separate from the paste frame",
+            "embedded ESC bytes are made inert before framing",
+            "chunk reconstruction preserves the paste frame"
+          ]
+        },
+        {
+          "file": "src/main/runtime/orca-runtime.test.ts",
+          "assertions": [
+            "runtime writes bracketed paste before a delayed submit",
+            "large prompt frames are chunked and reconstructed before submit",
+            "partial prompt write failure closes the paste frame and does not submit"
+          ]
+        },
+        {
+          "file": "src/main/runtime/rpc/methods/orchestration.test.ts",
+          "assertions": [
+            "orchestration.dispatch uses the agent prompt path for injected preambles",
+            "raw terminal.send is not called for injected task prompts",
+            "failed prompt injection rolls back the active dispatch"
+          ]
+        },
+        {
+          "file": "src/main/runtime/orchestration/coordinator.test.ts",
+          "assertions": [
+            "coordinator dispatch failures from prompt injection circuit-break through the DB",
+            "silent-skip paths do not attempt prompt injection"
+          ]
+        },
+        {
+          "file": "tools/repro-orchestration-long-prompt.mjs",
+          "assertions": [
+            "fake Codex-like worker observes submit after long orchestration dispatch",
+            "32KB task marker survives before submit",
+            "prompt bytes include a bracketed-paste frame with zero unframed line breaks"
+          ]
+        }
+      ],
+      "evidenceRuns": [
+        {
+          "date": "2026-07-07",
+          "runner": "local",
+          "platform": "macos",
+          "command": "pnpm exec vitest run --config config/vitest.config.ts src/shared/agent-prompt-injection.test.ts src/main/runtime/orca-runtime.test.ts src/main/runtime/rpc/methods/orchestration.test.ts src/main/runtime/orchestration/coordinator.test.ts",
+          "result": "passed",
+          "durationSeconds": 7.4,
+          "summary": "4 test files passed, 697 tests passed; covers framing, runtime PTY writes, orchestration RPC dispatch, and coordinator dispatch behavior."
+        },
+        {
+          "date": "2026-07-07",
+          "runner": "local",
+          "platform": "macos",
+          "command": "node tools/repro-orchestration-long-prompt.mjs --cli out/bin/orca-dev --mode codex-like --size-kb 32 --timeout-ms 20000",
+          "result": "passed",
+          "durationSeconds": 2.2,
+          "summary": "Live dev-runtime repro passed: expectedSpecBytes=32830, hasSubmit=true, rawContainsMarker=true, hasBracketedPasteFrame=true, unframedLineBreaks=0, contractOk=true."
+        }
+      ],
+      "runtimeBudget": {
+        "p95Seconds": 30,
+        "scope": "runtime contract tests plus optional local dev-runtime CLI repro"
+      },
+      "flakeHistory": {
+        "status": "unknown",
+        "evidence": "First local macOS evidence only; needs repeated dev-runtime harness runs and provider matrix evidence before promotion."
+      },
+      "redGreenEvidence": {
+        "status": "partial",
+        "evidence": "The live harness reproduced the unsafe raw multiline contract before the fix and passes after the fix; intentional-break evidence is local only and not yet in CI."
+      },
+      "performanceBudget": {
+        "required": true,
+        "evidence": "Agent prompt dispatch remains O(prompt bytes), uses the existing 16KB terminal input chunking and one existing 500ms submit delay, and adds no polling, provider listing, subprocess churn, hidden-pane wakeups, or renderer work."
+      },
+      "promotionCriteria": [
+        "Run the live harness in soak with a self-starting dev runtime or provider-contract fixture.",
+        "Add daemon, SSH, remote-runtime, Linux, and Windows evidence or mark narrower provider scope.",
+        "Capture stable red/green intentional-break evidence in CI before blocking promotion."
+      ],
+      "knownGaps": [
+        "Live harness command currently expects an already-running dev runtime and generated out/bin/orca-dev wrapper.",
+        "No Windows ConPTY, Linux PTY, SSH, daemon, or remote-runtime live evidence yet.",
+        "Push-on-idle orchestration message banners remain outside this dispatch-prompt gate."
+      ],
+      "demotionRule": "Demote or quarantine if the live harness flakes without a product bug or harness bug filed to the terminal-input owner."
     },
     {
       "id": "terminal-render.windows-cjk-repaint",

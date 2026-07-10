@@ -5,6 +5,7 @@ import {
   buildRuntimeClientEventEnvironmentKey,
   buildNewWorkspaceShortcutModalData,
   getNewlyConnectedRuntimeEnvironmentIds,
+  getNewlyDisconnectedRuntimeEnvironmentIds,
   getRuntimeProjectRefreshEnvironmentIds,
   openNewWorkspaceFromShortcut,
   resolveBrowserSessionTabTarget,
@@ -54,6 +55,15 @@ describe('getNewlyConnectedRuntimeEnvironmentIds', () => {
       'env-a',
       'env-b'
     ])
+  })
+})
+
+describe('getNewlyDisconnectedRuntimeEnvironmentIds', () => {
+  it('returns only environments whose transport was just observed down', () => {
+    expect(getNewlyDisconnectedRuntimeEnvironmentIds(['env-a', 'env-b'], ['env-a'])).toEqual([
+      'env-b'
+    ])
+    expect(getNewlyDisconnectedRuntimeEnvironmentIds(['env-a'], ['env-a', 'env-b'])).toEqual([])
   })
 })
 
@@ -968,6 +978,7 @@ describe('useIpcEvents browser tab create routing', () => {
           onOpenDiffFromMobile: () => () => {},
           onCloseTerminal: () => () => {},
           onSleepWorktree: () => () => {},
+          onResumeSleepingAgents: () => () => {},
           onNewBrowserTab: () => () => {},
           onNewMarkdownTab: () => () => {},
           onRequestTabCreate: (
@@ -1188,6 +1199,7 @@ describe('useIpcEvents updater integration', () => {
           onOpenDiffFromMobile: () => () => {},
           onCloseTerminal: () => () => {},
           onSleepWorktree: () => () => {},
+          onResumeSleepingAgents: () => () => {},
           onNewBrowserTab: () => () => {},
           onNewMarkdownTab: () => () => {},
           onRequestTabCreate: () => () => {},
@@ -1431,6 +1443,7 @@ describe('useIpcEvents updater integration', () => {
           onOpenDiffFromMobile: () => () => {},
           onCloseTerminal: () => () => {},
           onSleepWorktree: () => () => {},
+          onResumeSleepingAgents: () => () => {},
           onNewBrowserTab: () => () => {},
           onNewMarkdownTab: () => () => {},
           onRequestTabCreate: () => () => {},
@@ -1918,6 +1931,7 @@ describe('useIpcEvents updater integration', () => {
           onOpenDiffFromMobile: () => () => {},
           onCloseTerminal: () => () => {},
           onSleepWorktree: () => () => {},
+          onResumeSleepingAgents: () => () => {},
           onNewBrowserTab: () => () => {},
           onNewMarkdownTab: () => () => {},
           onRequestTabCreate: () => () => {},
@@ -2111,7 +2125,7 @@ describe('useIpcEvents updater integration', () => {
     expect(dispatchEvent).toHaveBeenCalledWith(
       expect.objectContaining({
         type: 'orca-background-mount-terminal-worktree',
-        detail: { worktreeId: 'wt-3' }
+        detail: { worktreeId: 'wt-3', tabIds: ['tab-new'] }
       })
     )
     expect(setTabCustomTitle).toHaveBeenCalledWith('tab-new', 'Shell', {
@@ -2174,7 +2188,7 @@ describe('useIpcEvents updater integration', () => {
     expect(dispatchEvent).toHaveBeenCalledWith(
       expect.objectContaining({
         type: 'orca-background-mount-terminal-worktree',
-        detail: { worktreeId: 'wt-2' }
+        detail: { worktreeId: 'wt-2', tabIds: ['tab-new'] }
       })
     )
     expect(setTabCustomTitle).toHaveBeenCalledWith('tab-new', 'Codex', {
@@ -2769,6 +2783,7 @@ describe('useIpcEvents browser tab close routing', () => {
             return () => {}
           },
           onSleepWorktree: () => () => {},
+          onResumeSleepingAgents: () => () => {},
           onNewBrowserTab: () => () => {},
           onNewMarkdownTab: () => () => {},
           onRequestTabCreate: () => () => {},
@@ -3247,6 +3262,7 @@ describe('useIpcEvents browser tab close routing', () => {
           onOpenDiffFromMobile: () => () => {},
           onCloseTerminal: () => () => {},
           onSleepWorktree: () => () => {},
+          onResumeSleepingAgents: () => () => {},
           onNewBrowserTab: () => () => {},
           onNewMarkdownTab: () => () => {},
           onRequestTabCreate: () => () => {},
@@ -3463,6 +3479,7 @@ describe('useIpcEvents browser tab close routing', () => {
           onOpenDiffFromMobile: () => () => {},
           onCloseTerminal: () => () => {},
           onSleepWorktree: () => () => {},
+          onResumeSleepingAgents: () => () => {},
           onNewBrowserTab: () => () => {},
           onNewMarkdownTab: () => () => {},
           onRequestTabCreate: () => () => {},
@@ -3674,6 +3691,7 @@ describe('useIpcEvents browser tab close routing', () => {
           onOpenDiffFromMobile: () => () => {},
           onCloseTerminal: () => () => {},
           onSleepWorktree: () => () => {},
+          onResumeSleepingAgents: () => () => {},
           onNewBrowserTab: () => () => {},
           onNewMarkdownTab: () => () => {},
           onRequestTabCreate: () => () => {},
@@ -3912,6 +3930,7 @@ describe('useIpcEvents CLI-created worktree activation', () => {
           onOpenDiffFromMobile: () => () => {},
           onCloseTerminal: () => () => {},
           onSleepWorktree: () => () => {},
+          onResumeSleepingAgents: () => () => {},
           onNewBrowserTab: () => () => {},
           onNewMarkdownTab: () => () => {},
           onRequestTabCreate: () => () => {},
@@ -4006,7 +4025,6 @@ describe('useIpcEvents CLI-created worktree activation', () => {
     expect(activateAndRevealWorktree).toHaveBeenCalledTimes(1)
     expect(activateAndRevealWorktree).toHaveBeenCalledWith('wt-new', {
       setup,
-      sidebarRevealBehavior: 'auto',
       notifyHostRuntime: false
     })
 
@@ -4158,6 +4176,7 @@ describe('useIpcEvents CLI-created worktree activation', () => {
           onOpenDiffFromMobile: () => () => {},
           onCloseTerminal: () => () => {},
           onSleepWorktree: () => () => {},
+          onResumeSleepingAgents: () => () => {},
           onNewBrowserTab: () => () => {},
           onNewMarkdownTab: () => () => {},
           onRequestTabCreate: () => () => {},
@@ -4390,6 +4409,7 @@ describe('useIpcEvents agent status snapshot integration', () => {
           onOpenDiffFromMobile: () => () => {},
           onCloseTerminal: () => () => {},
           onSleepWorktree: () => () => {},
+          onResumeSleepingAgents: () => () => {},
           onNewBrowserTab: () => () => {},
           onNewMarkdownTab: () => () => {},
           onRequestTabCreate: () => () => {},

@@ -65,6 +65,12 @@ import { parseOsc7 } from './parse-osc7'
 import { resolveTerminalJisYenInput } from './terminal-jis-yen-input'
 import { installTerminalImeCompositionTracker } from './terminal-ime-composition-tracker'
 import {
+  armTerminalImePendingCandidateKeyRelease,
+  clearTerminalImePendingCandidateKeyRelease,
+  createTerminalImePendingCandidateKeyReleases,
+  shouldApplyTerminalImePendingCandidateKeyRelease
+} from './terminal-ime-candidate-key-release-guard'
+import {
   DISABLED_MAC_NATIVE_TEXT_INPUT_SOURCE_FEATURES,
   getMacNativeTextInputSourceTracker
 } from './terminal-ime-input-source'
@@ -72,6 +78,7 @@ import { installTerminalImeNativeTextForwarder } from './terminal-ime-native-tex
 import {
   shouldBypassXtermKeyboardEvent,
   shouldHandleTerminalInterruptKeyboardEvent,
+  shouldPreventDefaultTerminalImeCandidateKey,
   shouldSuppressTerminalImeKeyboardEvent,
   shouldSuppressTerminalInterruptKeyup,
   shouldSuppressTerminalModifierKeyboardEvent,
@@ -106,8 +113,10 @@ import {
 import {
   SPLIT_TERMINAL_PANE_EVENT,
   CLOSE_TERMINAL_PANE_EVENT,
+  WAKE_HIBERNATED_AGENTS_WORKTREE_EVENT,
   type SplitTerminalPaneDetail,
-  type CloseTerminalPaneDetail
+  type CloseTerminalPaneDetail,
+  type WakeHibernatedAgentsWorktreeDetail
 } from '@/constants/terminal'
 import { acquireWebviewsDragPassthrough } from '../browser-pane/webview-registry'
 import { recordCreatedTerminalPaneSplit } from './terminal-pane-split-completion'
@@ -842,7 +851,16 @@ export function useTerminalPaneLifecycle({
         // encoder runs, letting the browser and Electron paths fire normally.
         // See xterm-bypass-policy.ts for the rule derivation.
         let pendingTerminalInterruptKeyup = false
+        const pendingTerminalImeCandidateKeyReleases =
+          createTerminalImePendingCandidateKeyReleases()
         const isMac = navigator.userAgent.includes('Mac')
+        // Why: Android/ChromeOS UAs also contain "Linux"; keep the Sogou/fcitx
+        // candidate-key policy scoped to desktop Linux so paired web clients on
+        // those platforms keep their previous IME behavior.
+        const isLinux =
+          !isMac &&
+          navigator.userAgent.includes('Linux') &&
+          !/Android|CrOS/.test(navigator.userAgent)
         const macNativeTextInputSourceTracker = isMac ? getMacNativeTextInputSourceTracker() : null
         const imeCompositionTracker = installTerminalImeCompositionTracker(pane.terminal.element)
         imeCompositionDisposablesRef.current.set(pane.id, imeCompositionTracker)
@@ -864,14 +882,39 @@ export function useTerminalPaneLifecycle({
             }
         imeNativeTextForwarderDisposablesRef.current.set(pane.id, imeNativeTextForwarder)
         pane.terminal.attachCustomKeyEventHandler((e) => {
-          if (
-            shouldSuppressTerminalImeKeyboardEvent(e, {
-              compositionActive: imeCompositionTracker.isActive(),
-              isMac
-            })
-          ) {
+          const now = Date.now()
+          const pendingCandidateReleaseGuardActive =
+            shouldApplyTerminalImePendingCandidateKeyRelease(
+              e,
+              pendingTerminalImeCandidateKeyReleases,
+              now
+            )
+          const imeKeyboardOptions = {
+            compositionActive: imeCompositionTracker.isActive(),
+            candidateKeyGuardActive:
+              imeCompositionTracker.isCandidateKeyGuardActive() ||
+              pendingCandidateReleaseGuardActive,
+            pendingCandidateKeyReleaseActive: pendingCandidateReleaseGuardActive,
+            isMac,
+            isLinux
+          }
+          if (shouldSuppressTerminalImeKeyboardEvent(e, imeKeyboardOptions)) {
+            // Why: clear before arm — a fresh keydown drops any stale pending
+            // release for its key before the new press arms its own.
+            clearTerminalImePendingCandidateKeyRelease(pendingTerminalImeCandidateKeyReleases, e)
+            if (shouldPreventDefaultTerminalImeCandidateKey(e, imeKeyboardOptions)) {
+              // Why: without preventDefault the suppressed candidate keydown
+              // still fires a keypress and mutates the helper textarea.
+              e.preventDefault()
+              armTerminalImePendingCandidateKeyRelease(
+                pendingTerminalImeCandidateKeyReleases,
+                e,
+                now
+              )
+            }
             return false
           }
+          clearTerminalImePendingCandidateKeyRelease(pendingTerminalImeCandidateKeyReleases, e)
           if (pendingTerminalInterruptKeyup && shouldSuppressTerminalInterruptKeyup(e)) {
             pendingTerminalInterruptKeyup = false
             return false
@@ -1705,6 +1748,37 @@ export function useTerminalPaneLifecycle({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tabId, cwd])
+
+  // Why: mobile wake fanout — this pane self-selects by worktreeId and fires its
+  // own armed hibernation --resume while staying hidden on the desktop (no
+  // reveal, no focus/navigation change). Not-yet-mounted panes are covered by
+  // the background-mount fresh-connect cold-restore path instead.
+  useEffect(() => {
+    const onWakeHibernatedAgents = (event: Event): void => {
+      const detail = (event as CustomEvent<WakeHibernatedAgentsWorktreeDetail>).detail
+      if (!detail || detail.worktreeId !== worktreeId) {
+        return
+      }
+      for (const panePtyBinding of panePtyBindingsRef.current.values()) {
+        const claimKey = (
+          panePtyBinding as IDisposable & {
+            wakeHibernatedAgentIfArmed?: (claimedProviderSessions?: Set<string>) => string | null
+          }
+        ).wakeHibernatedAgentIfArmed?.(detail.wokenClaimKeys)
+        // Why: the dispatcher's follow-up generic resume must skip provider
+        // sessions this pane woke (or latched) in place — the sleeping record
+        // is only cleared after the in-place spawn succeeds, so without this
+        // the same session would resume twice.
+        if (claimKey) {
+          detail.wokenClaimKeys?.add(claimKey)
+        }
+      }
+    }
+    window.addEventListener(WAKE_HIBERNATED_AGENTS_WORKTREE_EVENT, onWakeHibernatedAgents)
+    return () => {
+      window.removeEventListener(WAKE_HIBERNATED_AGENTS_WORKTREE_EVENT, onWakeHibernatedAgents)
+    }
+  }, [worktreeId, panePtyBindingsRef])
 
   useEffect(() => {
     const previousIsVisible = getPreviousVisibleForTerminalPane({

@@ -5,6 +5,7 @@ boundary. Splitting it by line count would scatter tightly coupled terminal
 process behavior across files without a cleaner ownership seam. */
 import { join, delimiter } from 'node:path'
 import { randomUUID } from 'node:crypto'
+import { statSync } from 'node:fs'
 import {
   type BrowserWindow,
   type IpcMainEvent,
@@ -82,8 +83,11 @@ import {
   parsePaneKey
 } from '../../shared/stable-pane-id'
 import { isValidTerminalTabId } from '../../shared/terminal-tab-id'
-import { resolveTerminalStartupCwdForWorkspace } from '../../shared/terminal-startup-cwd'
-import { localTerminalCwdCanonicalizer } from '../pty/terminal-cwd-realpath'
+import {
+  resolveTerminalStartupCwdForWorkspace,
+  type TerminalStartupCwdMissingDirFallback
+} from '../../shared/terminal-startup-cwd'
+import { isWslUncPath } from '../../shared/wsl-paths'
 import {
   clearMigrationUnsupportedPty,
   clearMigrationUnsupportedPtysForPaneKey
@@ -910,15 +914,14 @@ export function buildPtyHostEnv(
     baseEnv.ORCA_CODEX_HOME = opts.selectedCodexHomePath
   }
 
-  // Why: in dev mode the `orca` CLI defaults to the production userData
-  // path, which routes status updates to the packaged Orca instead of this
-  // dev instance. Injecting ORCA_USER_DATA_PATH ensures CLI calls from
-  // agents running inside dev terminals reach the correct runtime. We also
-  // prepend the dev CLI launcher directory to PATH so `orca` resolves to
-  // the dev build (which supports ORCA_USER_DATA_PATH) instead of the
-  // production binary at /usr/local/bin/orca.
-  if (!opts.isPackaged) {
+  // Why: WSL shells need the managed userData root for shell-ready wrappers; dev-mode terminals need the same export so `orca` targets the live dev instance.
+  if (opts.isWsl) {
+    baseEnv.ORCA_USER_DATA_PATH = opts.userDataPath
+  } else if (!opts.isPackaged) {
     baseEnv.ORCA_USER_DATA_PATH ??= opts.userDataPath
+  }
+  // Why: dev mode needs the launcher PATH override so `orca` resolves to the dev build instead of the production binary at /usr/local/bin/orca.
+  if (!opts.isPackaged) {
     const devCliBin = join(opts.userDataPath, 'cli', 'bin')
     const inheritedPath = readInheritedPath(baseEnv)
     // Why: avoid a trailing delimiter when PATH is empty — some shells
@@ -1364,6 +1367,10 @@ export function registerPtyHandlers(
     data: string
     startSeq?: number
     containsBackgroundOutput?: boolean
+    /** Set once this pty's unsent backlog was trimmed past the cap; rides the
+     *  next payload so the renderer rebuilds the dropped span from the main
+     *  headless snapshot (see appendPendingPtyData / dataCallback). */
+    droppedBacklog?: boolean
   }
 
   type PtyDataPayload = {
@@ -1372,6 +1379,7 @@ export function registerPtyHandlers(
     seq?: number
     rawLength?: number
     background?: boolean
+    droppedBacklog?: boolean
   }
 
   const pendingData = new Map<string, PendingPtyData>()
@@ -1385,6 +1393,15 @@ export function registerPtyHandlers(
   const PTY_BATCH_FLUSH_MAX_WRITES = 2
   const PTY_RENDERER_IN_FLIGHT_HIGH_WATER_CHARS = 512 * 1024
   const PTY_RENDERER_TOTAL_IN_FLIGHT_HIGH_WATER_CHARS = 8 * 1024 * 1024
+  // Why: the in-flight caps above bound only SENT-but-unacked bytes; the unsent
+  // `pendingData` backlog is drained only when the renderer ACKs. A background-
+  // throttled/frozen renderer (Win/Linux — macOS disables throttling) stops
+  // ACKing while a busy pane keeps producing, so without this the per-pty queue
+  // grows at raw PTY throughput (MB->GB). Cap it (matching the daemon 2 MB
+  // pendingOutput and renderer 2 MB scheduler caps); the trimmed span is
+  // recovered from the main headless buffer via the renderer's hidden-output
+  // snapshot restore, flagged by droppedBacklog — so no output is lost.
+  const PENDING_DATA_MAX_CHARS = 2 * 1024 * 1024
   const PTY_RENDERER_INTERACTIVE_RESERVE_CHARS = 256 * 1024
   // Why: active panes need a bounded lane through old hidden bulk output so a
   // keystroke redraw can reach the renderer before every background ACK lands.
@@ -1503,7 +1520,8 @@ export function registerPtyHandlers(
     id: string,
     data: string,
     startSeq: number | undefined,
-    containsBackgroundOutput: boolean | undefined
+    containsBackgroundOutput: boolean | undefined,
+    droppedBacklog?: boolean
   ): PtyDataPayload {
     const payload: PtyDataPayload = { id, data }
     if (typeof startSeq === 'number') {
@@ -1512,6 +1530,9 @@ export function registerPtyHandlers(
     }
     if (containsBackgroundOutput === true) {
       payload.background = true
+    }
+    if (droppedBacklog === true) {
+      payload.droppedBacklog = true
     }
     return payload
   }
@@ -1584,6 +1605,28 @@ export function registerPtyHandlers(
     return [...active, ...background]
   }
 
+  // Why: bound the unsent backlog to the most-recent PENDING_DATA_MAX_CHARS,
+  // advancing startSeq by the dropped-char count (same arithmetic flushPendingData
+  // uses when it slices) so the remaining tail's seq stays correct. Flags
+  // droppedBacklog so the next payload tells the renderer to rebuild the dropped
+  // span from the main headless snapshot. A no-op when under the cap (the common
+  // case: the renderer is ACKing and pendingData stays tiny).
+  function capPendingPtyData(pending: PendingPtyData): PendingPtyData {
+    if (pending.data.length <= PENDING_DATA_MAX_CHARS) {
+      return pending
+    }
+    const trimmed = pending.data.slice(pending.data.length - PENDING_DATA_MAX_CHARS)
+    const droppedChars = pending.data.length - trimmed.length
+    const next: PendingPtyData = { data: trimmed, droppedBacklog: true }
+    if (typeof pending.startSeq === 'number') {
+      next.startSeq = pending.startSeq + droppedChars
+    }
+    if (pending.containsBackgroundOutput === true) {
+      next.containsBackgroundOutput = true
+    }
+    return next
+  }
+
   function appendPendingPtyData(
     existing: PendingPtyData | undefined,
     data: string,
@@ -1593,27 +1636,29 @@ export function registerPtyHandlers(
   ): PendingPtyData {
     const nextContainsBackgroundOutput =
       existing?.containsBackgroundOutput === true || containsBackgroundOutput
+    // Carry a prior drop flag forward until it actually rides an outgoing payload.
+    const inheritedDropped = existing?.droppedBacklog === true
+    const base: PendingPtyData = { data: '' }
     if (!preservesSeq) {
-      return {
-        data: (existing?.data ?? '') + data,
-        ...(nextContainsBackgroundOutput ? { containsBackgroundOutput: true } : {})
+      base.data = (existing?.data ?? '') + data
+    } else if (!existing) {
+      base.data = data
+      if (typeof startSeq === 'number') {
+        base.startSeq = startSeq
+      }
+    } else {
+      base.data = existing.data + data
+      if (typeof existing.startSeq === 'number') {
+        base.startSeq = existing.startSeq
       }
     }
-    if (!existing) {
-      return {
-        data,
-        ...(typeof startSeq === 'number' ? { startSeq } : {}),
-        ...(nextContainsBackgroundOutput ? { containsBackgroundOutput: true } : {})
-      }
+    if (nextContainsBackgroundOutput) {
+      base.containsBackgroundOutput = true
     }
-    const next: PendingPtyData = {
-      data: existing.data + data,
-      ...(nextContainsBackgroundOutput ? { containsBackgroundOutput: true } : {})
+    if (inheritedDropped) {
+      base.droppedBacklog = true
     }
-    if (typeof existing.startSeq === 'number') {
-      next.startSeq = existing.startSeq
-    }
-    return next
+    return capPendingPtyData(base)
   }
 
   function schedulePendingDataFlush(delayMs: number): void {
@@ -1654,9 +1699,18 @@ export function registerPtyHandlers(
         }
         pendingData.set(id, nextPending)
       }
+      // Why: the drop flag rides the first emitted chunk (renderer restore is
+      // idempotent) and is intentionally not copied onto `remaining` above, so a
+      // single backlog trim signals the renderer exactly once.
       sendPtyDataToRenderer(
         id,
-        makePtyDataPayload(id, chunk, pending.startSeq, pending.containsBackgroundOutput)
+        makePtyDataPayload(
+          id,
+          chunk,
+          pending.startSeq,
+          pending.containsBackgroundOutput,
+          pending.droppedBacklog
+        )
       )
       writes++
     }
@@ -1720,7 +1774,8 @@ export function registerPtyHandlers(
           payload.id,
           remaining.data,
           remaining.startSeq,
-          remaining.containsBackgroundOutput
+          remaining.containsBackgroundOutput,
+          remaining.droppedBacklog
         )
       )
       pendingData.delete(payload.id)
@@ -1833,7 +1888,8 @@ export function registerPtyHandlers(
           ...(typeof pending.startSeq === 'number'
             ? { seq: pending.startSeq + nextData.length, rawLength: nextData.length }
             : {}),
-          ...(pending.containsBackgroundOutput === true ? { background: true } : {})
+          ...(pending.containsBackgroundOutput === true ? { background: true } : {}),
+          ...(pending.droppedBacklog === true ? { droppedBacklog: true } : {})
         })
         return
       }
@@ -1990,20 +2046,32 @@ export function registerPtyHandlers(
     assertFolderWorkspacePathUsable(status)
   }
 
-  const resolveGuardedPtySpawnCwd = (
+  const resolvePtySpawnStartupCwd = (
     worktreeId: string | undefined,
     cwd: string | undefined,
-    connectionId?: string | null
+    missingDirFallback?: TerminalStartupCwdMissingDirFallback
   ): string | undefined =>
     resolveTerminalStartupCwdForWorkspace({
       workspaceId: worktreeId,
       requestedCwd: cwd,
+      missingDirFallback,
       resolveFolderWorkspacePath: (folderWorkspaceId) =>
-        store?.getFolderWorkspace(folderWorkspaceId)?.folderPath,
-      // Why: realpath only makes sense on the local filesystem; SSH worktree
-      // paths live on the remote host.
-      canonicalizePath: localTerminalCwdCanonicalizer(connectionId)
+        store?.getFolderWorkspace(folderWorkspaceId)?.folderPath
     })
+
+  const localStartupCwdDirectoryExists = (path: string): boolean => {
+    // Why: Win32 statSync on \\wsl.localhost 9P shares can falsely report
+    // ENOENT for directories that exist on the Linux side; never fall back on
+    // that signal — the provider's WSL-aware validation decides instead.
+    if (isWslUncPath(path)) {
+      return true
+    }
+    try {
+      return statSync(path).isDirectory()
+    } catch {
+      return false
+    }
+  }
 
   // Why: the runtime controller must route through getProviderForPty() so that
   // CLI commands (terminal.send, terminal.stop) work for both local and remote PTYs.
@@ -2015,7 +2083,7 @@ export function registerPtyHandlers(
         await startupPromise
       }
       await assertFolderWorkspacePtyPathUsable(args.worktreeId)
-      const cwd = resolveGuardedPtySpawnCwd(args.worktreeId, args.cwd, args.connectionId)
+      const cwd = resolvePtySpawnStartupCwd(args.worktreeId, args.cwd)
       const provider = getProvider(args.connectionId)
       const isClaudeLaunch = !args.connectionId && isClaudeLaunchCommand(args.command)
       if (isClaudeLaunch && isClaudeAuthSwitchInProgress()) {
@@ -2301,7 +2369,20 @@ export function registerPtyHandlers(
           runtime?.registerPreAllocatedHandleForPty(result.id, args.preAllocatedHandle)
         }
         if (args.worktreeId) {
-          runtime?.registerPty(result.id, args.worktreeId, args.connectionId ?? null)
+          runtime?.registerPty(
+            result.id,
+            args.worktreeId,
+            args.connectionId ?? null,
+            // Why: thread the validated pane identity so main can back a pending
+            // mobile create from this live spawn even if graph-sync stalls (#7587).
+            // Bound tabId like the sibling metadataPaneKey/spawnOptions.tabId here.
+            typeof args.tabId === 'string' &&
+              isValidTerminalTabId(args.tabId) &&
+              args.tabId.length <= 512 &&
+              metadataLeafId !== null
+              ? { tabId: args.tabId, leafId: metadataLeafId }
+              : undefined
+          )
         }
         if (isClaudeLaunch) {
           markClaudePtySpawned(result.id)
@@ -2553,6 +2634,7 @@ export function registerPtyHandlers(
       seq?: number
       source?: 'headless' | 'renderer'
       alternateScreen?: boolean
+      pendingEscapeTailAnsi?: string
     } | null> => {
       if (!runtime || typeof args?.id !== 'string' || args.id.length === 0) {
         return null
@@ -2581,6 +2663,10 @@ export function registerPtyHandlers(
         cols: number
         rows: number
         cwd?: string
+        // Why: fresh local renderer spawns opt into recovering a saved cwd
+        // whose directory was deleted (#7239); reattach/remote callers must
+        // keep exact cwd semantics, so the flag alone is not sufficient.
+        cwdFallback?: 'worktree'
         env?: Record<string, string>
         envToDelete?: string[]
         command?: string
@@ -2624,7 +2710,26 @@ export function registerPtyHandlers(
         await startupPromise
       }
       await assertFolderWorkspacePtyPathUsable(args.worktreeId)
-      const cwd = resolveGuardedPtySpawnCwd(args.worktreeId, args.cwd, args.connectionId)
+      // Why: honor the fallback only for fresh local spawns even if a caller
+      // sends the flag — reattach must keep the session's exact cwd and
+      // remote/SSH paths cannot probe the local filesystem meaningfully.
+      const allowMissingCwdFallback =
+        !args.connectionId && !args.sessionId && args.cwdFallback === 'worktree'
+      let didFallbackToWorkspaceRootCwd = false
+      const cwd = resolvePtySpawnStartupCwd(
+        args.worktreeId,
+        args.cwd,
+        allowMissingCwdFallback
+          ? {
+              directoryExists: localStartupCwdDirectoryExists,
+              onFallbackToWorkspaceRoot: () => {
+                didFallbackToWorkspaceRootCwd = true
+              }
+            }
+          : undefined
+      )
+      const startupCwdFallback =
+        didFallbackToWorkspaceRootCwd && cwd ? ({ kind: 'worktree', cwd } as const) : undefined
       spawnTiming.mark('preflight')
       const provider = getProvider(args.connectionId)
       const isClaudeLaunch = !args.connectionId && isClaudeLaunchCommand(args.command)
@@ -3180,7 +3285,21 @@ export function registerPtyHandlers(
           args.worktreeId.length > 0 &&
           args.worktreeId.length <= 512
         ) {
-          runtime?.registerPty(result.id, args.worktreeId, args.connectionId ?? null)
+          runtime?.registerPty(
+            result.id,
+            args.worktreeId,
+            args.connectionId ?? null,
+            // Why: pass the validated pane identity so a mobile create waiting on
+            // this renderer tab can publish its surface main-side when graph-sync
+            // is throttled, instead of destroying the live PTY (#7587). Bound the
+            // untrusted tabId like the sibling metadataPaneKey/spawnOptions.tabId.
+            typeof args.tabId === 'string' &&
+              isValidTerminalTabId(args.tabId) &&
+              args.tabId.length <= 512 &&
+              metadataLeafId !== null
+              ? { tabId: args.tabId, leafId: metadataLeafId }
+              : undefined
+          )
         }
         if (isClaudeLaunch) {
           markClaudePtySpawned(result.id)
@@ -3272,7 +3391,10 @@ export function registerPtyHandlers(
           ...result,
           ...(!result.isReattach && effectiveLaunchConfig
             ? { launchConfig: effectiveLaunchConfig }
-            : {})
+            : {}),
+          // Why: a daemon-retry race can surface isReattach even for a minted
+          // session id, and a reattach must never claim its cwd was remapped.
+          ...(startupCwdFallback && !result.isReattach ? { startupCwdFallback } : {})
         }
         return resolvePaneSpawnReservation(reservationPaneKey, paneSpawnReservation, response)
       } catch (err) {

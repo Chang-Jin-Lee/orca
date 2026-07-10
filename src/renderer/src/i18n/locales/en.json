@@ -137,6 +137,9 @@
         "e3bcd082ac": "Connect to Orca",
         "mobileScopeRejected": "This QR code grants limited (mobile) access. To use the full web app, open the browser access link from Settings → Runtime Environments → Share this Orca server → New Link."
       },
+      "webPreloadApi": {
+        "aiVaultUnavailableForHost": "Agent Session History is not available for this execution host."
+      },
       "web": {
         "preload": {
           "api": {
@@ -207,7 +210,8 @@
         },
         "workspace": {
           "cleanup": {
-            "9d6e531da6": "Workspace no longer exists."
+            "9d6e531da6": "Workspace no longer exists.",
+            "changedSinceConfirmation": "Workspace changed after confirmation. Refresh to review it before removing."
           }
         },
         "worktrees": {
@@ -244,7 +248,9 @@
           "a8e4b3af5b": "Project already added",
           "6d3318e813": "Failed to import repositories",
           "3be0f7df04": "Cannot open folder on selected runtime",
-          "15cf5319ec": "{{path}} was checked on {{hostName}}, but that host did not report a usable folder."
+          "15cf5319ec": "{{path}} was checked on {{hostName}}, but that host did not report a usable folder.",
+          "2dcd706774": "Project also exists in another profile",
+          "presenceProfileOverflow": "{{names}} +{{count}} more"
         },
         "settings": {
           "e12dab333b": "Failed to switch servers",
@@ -259,6 +265,24 @@
         },
         "linear": {
           "37d36984d0": "Linear connection was superseded by a newer request."
+        },
+        "orca": {
+          "profiles": {
+            "612f7f6861": "Failed to create profile",
+            "319d7cf39b": "Cloud profile created",
+            "d6e764e7db": "Reconnect this profile",
+            "f0c9e11a6d": "Failed to create cloud profile",
+            "8b8fa73174": "Orca Cloud sign-in is not configured",
+            "33290e88ed": "Failed to connect profile",
+            "9fcb07a796": "Profile connected",
+            "2f6c78a039": "Failed to refresh profile auth",
+            "a37b5e6d37": "Signed out of profile",
+            "83600521e7": "Failed to sign out",
+            "76deec8f58": "Failed to switch organization",
+            "7d4bc516ee": "Failed to switch profile",
+            "f518e89aa5": "Project already exists in that profile",
+            "f03ae7f27b": "Failed to transfer project"
+          }
         }
       }
     },
@@ -542,6 +566,13 @@
       },
       "ephemeralVmWorkspaceTarget": {
         "projectRootRegistrationFailed": "Failed to register the recipe-created project root on the runtime."
+      },
+      "blocked": {
+        "notification": {
+          "fallback": {
+            "de50bef680": "macOS is blocking Orca notifications"
+          }
+        }
       }
     },
     "hooks": {
@@ -2309,7 +2340,61 @@
             "gitFilter": "Git",
             "contextFilter": "Context",
             "sortBy": "Sort by",
-            "sortDirection": "Direction"
+            "sortDirection": "Direction",
+            "1d3503357d": "You can close this and come back while deletion continues.",
+            "4c2990886e": "{{value0}}/{{value1}} deleted",
+            "86ba852118": "{{value0}}, {{value1}} failed",
+            "7b7bde5181": "Checked workspaces so far: {{value0}}",
+            "deletingCount": "Deleting workspaces: {{value0}}",
+            "deleteCount": "Delete workspaces: {{value0}}?",
+            "selectedForDeletionCount": "Selected for deletion: {{value0}}",
+            "deleteButtonCount": "Delete {{value0}}",
+            "archivedStatus": "Archived",
+            "readyStatus": "Ready"
+          },
+          "backgroundRemoval": {
+            "removed": "Removed workspaces: {{value0}}",
+            "failed": "Workspaces not removed: {{value0}}",
+            "error": "Workspace cleanup failed",
+            "skippedAncestor": "Skipped because a nested workspace could not be removed.",
+            "timedOut": "Removing {{value0}} is taking longer than expected. It will keep running in the background."
+          },
+          "candidateRow": {
+            "gitLabel": "Git",
+            "commitsLabel": "Commits",
+            "contextLabel": "Context",
+            "flagsLabel": "Flags",
+            "collapseDetails": "Collapse details",
+            "expandDetails": "Expand details",
+            "cleanGit": "Clean git",
+            "dirtyGit": "Dirty git",
+            "unpushedCommits": "Unpushed commits",
+            "gitUnknown": "Git unknown",
+            "gitStatusUnknown": "Git status unknown",
+            "noUnpushedCommits": "No unpushed commits",
+            "unpushedCommitsCount": "Unpushed commits: {{value0}}",
+            "uncommittedChanges": "Uncommitted changes",
+            "terminalTabsCount": "Terminal tabs: {{value0}}",
+            "editorTabsCount": "Editor tabs: {{value0}}",
+            "browserTabsCount": "Browser tabs: {{value0}}",
+            "diffNotesCount": "Diff notes: {{value0}}",
+            "completedAgentsCount": "Completed agents: {{value0}}",
+            "contextCount": "Context: {{value0}}",
+            "mainWorkspaceBlocker": "Main workspace",
+            "folderProjectBlocker": "Folder project",
+            "pinnedBlocker": "Pinned",
+            "activeWorkspaceBlocker": "Active workspace",
+            "runningTerminalBlocker": "Running terminal process",
+            "terminalLivenessUnknownBlocker": "Terminal liveness unknown",
+            "dirtyEditorBufferBlocker": "Unsaved editor buffer",
+            "volatileLocalContextBlocker": "Volatile local context",
+            "recentVisibleContextBlocker": "Recently visited tabs",
+            "liveAgentBlocker": "Active agent",
+            "sshDisconnectedBlocker": "Remote unavailable",
+            "gitStatusErrorBlocker": "Git status unavailable",
+            "dirtyFilesBlocker": "Changed files",
+            "unknownBaseBlocker": "Could not verify unpushed commits",
+            "dismissedBlocker": "Ignored"
           }
         }
       },
@@ -2562,7 +2647,10 @@
             "connectFailed": "SSH connection failed",
             "title": "SSH connection required",
             "connectingButton": "Connecting...",
-            "connectButton": "Connect"
+            "connectButton": "Connect",
+            "removedTitle": "SSH host removed",
+            "removedBody": "The SSH host for this workspace was removed, so it can no longer connect. Remove the workspace to clear it — remote files are left untouched.",
+            "removeWorkspaceButton": "Remove workspace"
           }
         }
       },
@@ -2588,8 +2676,7 @@
             "localWorkspacesOnly": "Resume from history is only available in local workspaces.",
             "openLocalWorkspace": "Open a local workspace before resuming a session.",
             "sessionQueued": "Session queued",
-            "runtimeWorkspacesUnsupported": "Resume from history is not available in runtime-hosted workspaces.",
-            "openSupportedWorkspace": "Open a local or SSH workspace before resuming a session.",
+            "openSupportedWorkspace": "Open a workspace before resuming a session.",
             "sessionHostMismatchUnsupported": "This session belongs to a different host. Drop it onto a workspace on the same host.",
             "localSessionSshWorkspaceUnsupported": "This session's history is stored on this machine, so it can't resume in an SSH workspace. Drop it onto a local workspace instead."
           },
@@ -2771,6 +2858,9 @@
           "EditorFileTabCloseButton": {
             "4655cf570e": "Close tab",
             "a768f428f1": "Close tab"
+          },
+          "TerminalTabSplitMenuSection": {
+            "splitTerminal": "Split terminal"
           }
         }
       },
@@ -2938,7 +3028,8 @@
             "f077f586db": "Don't ask again",
             "c0e972d726": "Cancel",
             "06741a2f3d": "Open MiniMax usage details",
-            "3bbf140864": "MiniMax Usage"
+            "3bbf140864": "MiniMax Usage",
+            "remoteServerLabel": "Remote server"
           },
           "StatusBarUsageEmptyCta": {
             "828c764a79": "Connect an account",
@@ -3715,7 +3806,8 @@
           "d36883e046": "Cancel",
           "8c097ef04e": "from Orca. It is still on your disk.",
           "e62415c3d0": "This only removes",
-          "b79b39d865": "Remove Project"
+          "b79b39d865": "Remove Project",
+          "fromOrcaSsh": "from Orca. Its files stay on {{value0}} — re-add that SSH host to recover it."
         },
         "ScrollToCurrentWorkspaceToolbarButton": {
           "23989bb663": "Reveal active workspace"
@@ -3991,7 +4083,8 @@
           "runtimeHostProject": "Project on Orca server",
           "automationCreated": "Created by automation",
           "branchIdentity": "Branch",
-          "branchFolderPathIdentity": "Branch or folder path"
+          "branchFolderPathIdentity": "Branch or folder path",
+          "ef18787206": "Queued for deletion"
         },
         "WorktreeCardAgents": {
           "1b0a156717": "Agents"
@@ -4344,7 +4437,16 @@
           "5e6f7a8b9c": "This removes the saved SSH host and its credentials from this computer. Remote files are not deleted.",
           "6f7a8b9c0d": "Cancel",
           "7a8b9c0d1e": "Open settings",
-          "8b9c0d1e2f": "Remove host"
+          "8b9c0d1e2f": "Remove host",
+          "workspacesFailed": "Could not remove {{count}} of this host’s workspaces. The host was kept so you can retry.",
+          "oneWorkspace": "1 workspace",
+          "manyWorkspaces": "{{count}} workspaces",
+          "hostHasWorkspacesDefault": "Removes {{value0}} and its credentials from this computer. Its {{value1}} stay in Orca — remote files are not touched.",
+          "alsoDeleteRemote": "Also delete these {{value0}} on {{value1}}",
+          "alsoForgetLocal": "Also remove these {{value0}} from Orca",
+          "advanced": "Advanced",
+          "alsoDeleteRemoteHint": "Permanently deletes the remote Git worktrees and their branches. Cannot be undone.",
+          "alsoForgetLocalHint": "Clears them from Orca only. Remote files, worktrees, and branches are left untouched."
         },
         "HostRenameDialog": {
           "1a2b3c4d5e": "Rename host",
@@ -4510,6 +4612,16 @@
           "sshImportFailed": "Failed to import SSH config.",
           "importing": "Importing...",
           "importSshConfig": "Import ~/.ssh/config"
+        },
+        "ForgetSshWorkspaceDialog": {
+          "reconnectFailed": "Reconnection failed",
+          "forgetBody": "Removes this workspace from Orca only. Files, the Git worktree, and branches on {{host}} are left untouched.",
+          "title": "Delete “{{name}}”?",
+          "disconnectedBody": "The SSH host for this workspace is not connected. Reconnect to delete it on the remote too, or remove it from Orca only.",
+          "ghostBody": "{{host}} is no longer a saved SSH host, so this workspace is no longer connected to a live host. It can only be removed from Orca — files and branches on the remote are left untouched.",
+          "cancel": "Cancel",
+          "forget": "Remove from Orca",
+          "reconnectAndDelete": "Reconnect & Delete"
         }
       },
       "shared": {
@@ -4678,7 +4790,13 @@
           "435df0ee51": "Under Request Headers, copy the Cookie value.",
           "7492fb3bba": "Paste it here and click Save.",
           "9fec52de4b": "How to copy the cookie",
-          "4e32e030b2": "Stored locally. Orca sends it only to platform.minimax.io for usage refreshes."
+          "4e32e030b2": "Stored locally. Orca sends it only to platform.minimax.io for usage refreshes.",
+          "remoteServerFallback": "the remote server",
+          "loadAccountsFailed": "Could not load provider accounts.",
+          "remoteScopeAccounts": "Showing accounts managed by {{value0}}. Add or re-authenticate accounts on that server.",
+          "remoteScopeAuthContext": "Each account keeps its own sign-in context on {{value0}}.",
+          "remoteEmptyClaudeAccounts": "No managed Claude accounts on {{value0}}. It uses its system default Claude login; add accounts on that server.",
+          "remoteEmptyCodexAccounts": "No managed Codex accounts on {{value0}}. It uses its system default Codex login; add accounts on that server."
         },
         "AdvancedPane": {
           "40b29e0bf3": "Restart",
@@ -4758,7 +4876,10 @@
           "agentPermissionsDescription": "Choose whether Orca launches agents with fewer permission prompts or with manual checks.",
           "agentPermissionsYolo": "Yolo",
           "agentPermissionsManual": "Manual",
-          "3f1bdf3cb4": "Environment text is too large to parse safely."
+          "3f1bdf3cb4": "Environment text is too large to parse safely.",
+          "codexSessionSource": "Codex home to import from",
+          "codexSessionSourceInfo": "About importing Codex history",
+          "codexSessionSourceTooltip": "Orca runs Codex in an isolated home. Point this at your existing Codex home to import that session history. Empty uses ~/.codex."
         },
         "AppIconSelector": {
           "d5a112dc9b": "Next icon",
@@ -8386,7 +8507,8 @@
                   "customCommand": "Custom command",
                   "supportedAgents": "Supported agents for this recipe: {{value0}}.",
                   "unsupportedSavedAgent": "{{value0}} cannot run this text-generation recipe. Pick one of the supported agents below.",
-                  "resolveComments": "Start an agent from selected unresolved PR or MR comments."
+                  "resolveComments": "Start an agent from selected unresolved PR or MR comments.",
+                  "fixPushFailure": "Start an agent when a pre-push hook or git push fails."
                 }
               }
             }
@@ -8708,7 +8830,14 @@
           "behindBaseRefToastDescription": "Persistent prompt with an inline Settings link and footer action.",
           "notificationPlayground": "Notification playground",
           "notificationPlaygroundDescription": "Dev-only triggers for checking toast layout, recovery actions, and long-copy wrapping.",
-          "devOnly": "Dev only"
+          "devOnly": "Dev only",
+          "orcaCloud": "Orca Cloud",
+          "orcaCloudDescription": "Dev-only preview of first-party cloud sign-in. Hidden in production; in dev it also appears in the sidebar account switcher once ORCA_CLOUD_API_URL and ORCA_CLOUD_CLIENT_ID are set.",
+          "orcaCloudStatus": "Status",
+          "orcaCloudSignOut": "Sign out",
+          "orcaCloudConnect": "Connect profile",
+          "orcaCloudRefresh": "Refresh status",
+          "orcaCloudNotConfigured": "Set ORCA_CLOUD_API_URL and ORCA_CLOUD_CLIENT_ID to preview Orca Cloud sign-in in this dev build."
         },
         "EphemeralVmRecipeRow": {
           "useInWorkspace": "Use in workspace"
@@ -8774,6 +8903,26 @@
           "reviewFirst": "Review first",
           "singular": "Global saves won't change 1 repository with its own recipe.",
           "tooltipTitle": "Repository overrides"
+        },
+        "linear": {
+          "agent": {
+            "skill": {
+              "install": {
+                "cta": {
+                  "copiedCommand": "Copied command.",
+                  "copyFailed": "Failed to copy command.",
+                  "skillLabel": "Agent skill:",
+                  "checking": "Checking...",
+                  "installed": "Installed",
+                  "notInstalled": "Not installed",
+                  "recheck": "Re-check",
+                  "installedDescription": "Agent skill installed. To update it, run:",
+                  "description": "Let your agents read and edit Linear tasks.",
+                  "copyCommand": "Copy command"
+                }
+              }
+            }
+          }
         }
       },
       "right": {
@@ -9243,7 +9392,22 @@
             "d2b9g4f315": "{{value0}} commits behind {{value1}}",
             "e9c2a5d416": "Even with {{value0}}",
             "4b4a7de138": "Open review page in browser",
-            "createPrIntentCommitBlockedSummary": "Commit blocked: {{value0}} Fix the issue, then retry Create PR."
+            "createPrIntentCommitBlockedSummary": "Commit blocked: {{value0}} Fix the issue, then retry Create PR.",
+            "pushRecovery": {
+              "4b37ae99b0": "Start the default AI agent to fix this push failure",
+              "30b8d4f181": "Fix push failure with AI",
+              "dd43c47089": "Choose an agent for this push failure",
+              "ec7bfced55": "Choose agent to fix push failure",
+              "9e5ccd00aa": "Push failure context unavailable",
+              "054ead86b1": "Fix Push Failure With AI",
+              "15b7f210d7": "Choose the agent and edit the full command input before launch.",
+              "011f9713fc": "Push blocked",
+              "60bd988f0b": "AI Fix",
+              "03d238218c": "Details",
+              "a9bf7c171a": "Push Failed",
+              "834cb3f23d": "Fix with AI",
+              "783a808870": "Close"
+            }
           },
           "SourceControlAgentActionDialog": {
             "8e856842d1": "Could not start the selected agent.",
@@ -9492,6 +9656,35 @@
                       "216f762bd7": "Unable to resolve the workspace connection."
                     }
                   }
+                },
+                "push": {
+                  "failure": {
+                    "launch": {
+                      "216f762bd7": "Unable to resolve the workspace connection.",
+                      "4f4e0418a0": "Could not build the agent prompt.",
+                      "f2b47026e8": "Push failure prompt is empty. Update Source Control AI settings.",
+                      "d481ab22f9": "Saved AI agent is unavailable. Use Customize launch to choose another agent.",
+                      "9bbd9077a2": "No enabled AI agents. Configure agents in Settings.",
+                      "5540ff50cc": "Could not build the agent launch command.",
+                      "a8b97d2318": "Started an AI agent for the push failure."
+                    }
+                  }
+                },
+                "recovery": {
+                  "launch": {
+                    "4f4e0418a0": "Could not build the agent prompt.",
+                    "push": {
+                      "empty": "Push failure prompt is empty. Update Source Control AI settings."
+                    },
+                    "commit": {
+                      "empty": "Commit failure prompt is empty. Update Source Control AI settings."
+                    },
+                    "d481ab22f9": "Saved AI agent is unavailable. Use Customize launch to choose another agent.",
+                    "9bbd9077a2": "No enabled AI agents. Configure agents in Settings.",
+                    "5540ff50cc": "Could not build the agent launch command.",
+                    "216f762bd7": "Unable to resolve the workspace connection.",
+                    "success": "Started an AI agent for the {{value0}} failure."
+                  }
                 }
               },
               "discard": {
@@ -9642,9 +9835,7 @@
             "logPath": "Log path",
             "originalPaneUnavailable": "Original pane is no longer available.",
             "worktreeUnavailable": "Worktree is no longer available.",
-            "runtimeBrowseLocalHistory": "Runtime-hosted workspaces can browse local history. Resume actions are available in local and SSH workspaces.",
-            "runtimeWorkspacesUnsupported": "Resume from history is not available in runtime-hosted workspaces.",
-            "openSupportedWorkspace": "Open a local or SSH workspace before resuming a session.",
+            "openSupportedWorkspace": "Open a workspace before resuming a session.",
             "sessionHostMismatchUnsupported": "This session belongs to a different host. Open a workspace on the same host to resume it.",
             "localSessionSshWorkspaceUnsupported": "This session's history is stored on this machine, so it can't resume in an SSH workspace. Open a local workspace instead."
           },
@@ -9683,6 +9874,12 @@
             "originalAsk": "Original ask",
             "latestTurns": "Latest turns",
             "noPreviewAvailable": "No conversation preview available",
+            "conversationNotSaved": "Conversation not saved",
+            "recoverableEmptyDetail": "This session has no saved conversation, but {{value0}} recoverable item(s) survive.",
+            "recoverableEmptyOpenLogHint": "Open the log to recover them.",
+            "emptyConversationDetail": "This session has no saved conversation and cannot be resumed.",
+            "queuedMessages": "{{value0}} queued message(s)",
+            "subagentTranscripts": "{{value0}} subagent transcript(s)",
             "messageCount": "{{value0}} msgs",
             "updated": "Updated",
             "created": "Created",
@@ -9733,6 +9930,7 @@
           },
           "AiVaultSessionRow": {
             "noPreviewAvailable": "No conversation preview available",
+            "recoverableBadge": "Not saved",
             "dragToResume": "Drag to resume in a new tab",
             "resumeAgentSession": "Resume {{value0}} session",
             "resumeInNewTab": "Resume in New Tab",
@@ -9934,7 +10132,15 @@
           "3cd5374e22": "Notification settings are still loading",
           "b6a994e36e": "Notification sound could not be played",
           "c0692baa52": "Choose Custom File",
-          "ac80d97e02": "Change Custom File"
+          "ac80d97e02": "Change Custom File",
+          "56b836215c": "Checking notification permission…",
+          "fd84d3e9b8": "Notifications are enabled",
+          "4f7bce5644": "macOS will alert you when agents finish or terminals need attention.",
+          "95d99b52fa": "Allow notifications for Orca",
+          "94562ba367": "macOS is asking for permission. Click Allow in the dialog and this step updates automatically.",
+          "4f6a1da718": "Open System Settings",
+          "90b5d2e363": "macOS is not delivering Orca notifications",
+          "2c47f5465f": "Turn on Allow notifications for Orca in System Settings. This step updates automatically once enabled."
         },
         "OnboardingFlow": {
           "1b5e182e9f": "Welcome to Orca",
@@ -10060,6 +10266,17 @@
           "windowsDefault": "Windows default",
           "rightClickBehavior": "Right-click behavior",
           "rightClickBehaviorDescription": "Pick the terminal mouse behavior that matches your Windows muscle memory."
+        },
+        "mac": {
+          "notification": {
+            "permission": {
+              "card": {
+                "f696515944": "Click Allow in the macOS dialog.",
+                "3d18cf71f9": "Updates automatically.",
+                "721d2bedb6": "Turn on Allow notifications for Orca in System Settings."
+              }
+            }
+          }
         }
       },
       "new": {
@@ -10355,6 +10572,7 @@
           },
           "FloatingTerminalToggleButton": {
             "3b04b065b5": "Show floating workspace",
+            "4cb418b991": "Show floating workspace, new activity",
             "5785dd9148": "Minimize floating workspace",
             "bfe7809a70": "{{value0}} floating workspace ({{value1}})"
           },
@@ -11516,6 +11734,24 @@
         },
         "richMarkdownLargeTextPaste": {
           "tooLarge": "Paste is too large."
+        },
+        "ExternalFileChangeBanner": {
+          "7c41e90d12": "This file changed on disk while you have unsaved edits. Saving will overwrite the newer disk content.",
+          "3fa2b8d417": "Reload from Disk",
+          "a95d02c644": "Keep My Edits",
+          "5c02de9b31": "Reloaded from disk",
+          "d1e830fa22": "Undo",
+          "90b2ce7d43": "Compare"
+        },
+        "ExternalFileChangeCompareDialog": {
+          "4b8de20a11": "File changed on disk",
+          "90cc31e4d7": "Disk version on the left, your unsaved edits on the right.",
+          "8fe30ab254": "Reading file from disk...",
+          "e2b1cd0393": "Could not read the file from disk: {{value0}}",
+          "b6cf20d514": "The file on disk is binary — no text comparison available.",
+          "3fa2b8d417": "Reload from Disk",
+          "a95d02c644": "Keep My Edits",
+          "2c8f1e07b9": "Loading comparison..."
         }
       },
       "diff": {
@@ -11705,7 +11941,7 @@
             "f2d0c22d67": "Delete annotation {{value0}}",
             "11c5084aa2": "Clear annotations",
             "734e4343ec": "Clear browser annotations",
-            "95af781091": "Send feedback to a new agent",
+            "95af781091": "Send feedback to an agent",
             "ac39b9366b": "Send",
             "a3508d7e6e": "{{value0}} annotation{{value1}} ready. Select another element or copy all feedback.",
             "f796c774a4": "Type a URL above to start browsing.",
@@ -12366,6 +12602,158 @@
         "contextMenu": {
           "copy": "Copy"
         }
+      },
+      "orca": {
+        "profiles": {
+          "switcher": {
+            "cloud": {
+              "unavailable": "Cloud sign-in unavailable"
+            },
+            "account": "Account",
+            "reconnect": "Reconnect profile",
+            "connect": "Connect profile",
+            "organization": "Organization",
+            "create": {
+              "profile": {
+                "for": {
+                  "org": "Create profile for org"
+                }
+              }
+            },
+            "signout": "Sign out",
+            "16e3681072": "New local profile",
+            "e3b91a3d90": "Create an empty profile for separate projects and worktrees.",
+            "f322e1f4d6": "Profile name",
+            "cfa59f8ad1": "Create and Switch",
+            "b4f9d1125d": "Local",
+            "4815f7d163": "Switch profile",
+            "d00d853e2a": "Manage profiles",
+            "c106c674fe": "New local profile",
+            "org": {
+              "members": "Organization members"
+            }
+          },
+          "management": {
+            "04e7bd2a23": "Transfer",
+            "128c7dfe64": "Copy to",
+            "df8b7d876b": "Move to",
+            "9aa26347b3": "Project moved",
+            "816ce624b6": "Project copied",
+            "2c45bda8d3": "Manage profiles",
+            "2db945e4a0": "Copy or move projects from the active profile to another local profile.",
+            "8668cb2946": "No projects in this profile.",
+            "93034915ab": "Create another profile before copying projects.",
+            "projectCountSingular": "{{count}} project",
+            "projectCountPlural": "{{count}} projects"
+          },
+          "project": {
+            "transfer": {
+              "confirm": {
+                "move": {
+                  "title": "Move project?",
+                  "description": "Move {{repoName}} to {{targetName}}. Orca removes it from {{activeProfileName}}, keeps files in place, and relaunches into {{targetName}}.",
+                  "action": "Move project"
+                },
+                "copy": {
+                  "title": "Copy project?",
+                  "description": "Copy {{repoName}} to {{targetName}}. Both profiles will point at the same files with separate Orca metadata.",
+                  "action": "Copy project"
+                },
+                "live": {
+                  "work": "Live work in this project"
+                },
+                "cancel": "Cancel",
+                "terminalSingular": "{{count}} live terminal tab",
+                "terminalPlural": "{{count}} live terminal tabs",
+                "agentSingular": "{{count}} active agent",
+                "agentPlural": "{{count}} active agents",
+                "browserSingular": "{{count}} browser workspace",
+                "browserPlural": "{{count}} browser workspaces"
+              }
+            }
+          },
+          "signout": {
+            "confirm": {
+              "title": "Sign out?",
+              "description": "Sign out of {{profileName}} and keep its projects, worktrees, and local metadata on this device.",
+              "cancel": "Cancel",
+              "action": "Sign out"
+            }
+          },
+          "switch": {
+            "confirm": {
+              "target": "the selected profile",
+              "title": "Switch profiles?",
+              "description": "Switching to {{targetName}} will relaunch Orca and reload the workspace for {{activeProfileName}}.",
+              "live": {
+                "work": "Live work in this profile"
+              },
+              "cancel": "Cancel",
+              "switch": "Switch profile",
+              "terminalSingular": "{{count}} live terminal tab",
+              "terminalPlural": "{{count}} live terminal tabs",
+              "agentSingular": "{{count}} active agent",
+              "agentPlural": "{{count}} active agents",
+              "browserSingular": "{{count}} browser workspace",
+              "browserPlural": "{{count}} browser workspaces"
+            }
+          },
+          "org": {
+            "members": {
+              "role": {
+                "label": "Role",
+                "owner": "Owner",
+                "admin": "Admin",
+                "member": "Member"
+              },
+              "not": {
+                "signed": {
+                  "in": "They haven't signed in to Orca yet."
+                }
+              },
+              "remove": {
+                "confirm": "Remove",
+                "cancel": "Cancel",
+                "label": "Remove teammate"
+              },
+              "title": "Organization members",
+              "load": {
+                "error": "Couldn't load organization members."
+              },
+              "retry": "Try again",
+              "pending": {
+                "title": "Pending invites",
+                "revoke": "Revoke"
+              },
+              "invite": {
+                "title": "Invite",
+                "placeholder": "teammate@example.com",
+                "role": "Invite role",
+                "submit": "Send"
+              },
+              "error": {
+                "forbidden": "Your role can't do that.",
+                "conflict": "Already a member or invited.",
+                "remove": {
+                  "self": "You can't remove yourself."
+                },
+                "own": {
+                  "role": "You can't change your own role."
+                },
+                "not": {
+                  "found": "That teammate is no longer in this organization."
+                },
+                "reconnect": "Reconnect your profile to manage members.",
+                "unconfigured": "Organization management is unavailable in this build.",
+                "failed": "Something went wrong. Please try again."
+              },
+              "subtitle": {
+                "named": "People in {{orgName}} who can collaborate on Orca.",
+                "default": "People in your organization who can collaborate on Orca."
+              }
+            }
+          }
+        }
       }
     },
     "i18n": {
@@ -12398,7 +12786,10 @@
         "noSkills": "No matching skills",
         "localAttachmentUnsupported": "Local attachments are not available for remote sessions.",
         "removeAttachment": "Remove attachment",
-        "pastedImageLabel": "Pasted image"
+        "pastedImageLabel": "Pasted image",
+        "imagePasteFailed": "Image paste failed.",
+        "worktreeNotReady": "Worktree not ready — try again in a moment.",
+        "uploadingAttachments": "Uploading {{value0}} file{{value1}} to remote…"
       },
       "tool": {
         "running": "Running…",

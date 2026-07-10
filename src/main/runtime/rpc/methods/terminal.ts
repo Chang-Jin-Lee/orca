@@ -55,6 +55,7 @@ type SnapshotFrameOptions = {
   truncatedByByteBudget?: boolean
   source?: 'headless' | 'renderer'
   oscLinks?: TerminalOscLinkRange[]
+  pendingEscapeTailAnsi?: string
 }
 
 type SerializedSnapshot = {
@@ -67,6 +68,7 @@ type SerializedSnapshot = {
   oscLinks?: TerminalOscLinkRange[]
   scrollbackRows: number
   truncatedByByteBudget: boolean
+  pendingEscapeTailAnsi?: string
 } | null
 
 type TerminalViewportClient = {
@@ -466,6 +468,7 @@ function sendSnapshotFrames(
       cwd: options.cwd,
       source: options.source,
       oscLinks: options.oscLinks,
+      pendingEscapeTailAnsi: options.pendingEscapeTailAnsi,
       truncated: options.truncated === true,
       truncatedByByteBudget: options.truncatedByByteBudget === true
     })
@@ -901,7 +904,10 @@ export const TERMINAL_METHODS: RpcAnyMethod[] = [
     params: TerminalSend,
     handler: async (params, { runtime }) => {
       await assertTerminalSendTextWithinLimit(params.text)
-      const leaf = runtime.resolveLeafForHandle(params.terminal)
+      // Why: guarded resolution — a stale handle must fail with
+      // terminal_handle_stale (clients recover by re-deriving the handle)
+      // instead of evaluating driver/lock state against the wrong PTY (#7718).
+      const leaf = runtime.resolveLiveLeafForHandle(params.terminal)
       const driver = leaf?.ptyId ? runtime.getDriver(leaf.ptyId) : null
       if (leaf?.ptyId && isTerminalInputLockedForClient(runtime, leaf.ptyId, params.client)) {
         return {
@@ -1398,6 +1404,7 @@ export const TERMINAL_METHODS: RpcAnyMethod[] = [
             cwd: serialized?.cwd,
             source: serialized?.source,
             oscLinks: serialized?.oscLinks,
+            pendingEscapeTailAnsi: serialized?.pendingEscapeTailAnsi,
             truncated: false,
             truncatedByByteBudget: serialized?.truncatedByByteBudget,
             data: serialized?.data ?? ''
@@ -1432,8 +1439,19 @@ export const TERMINAL_METHODS: RpcAnyMethod[] = [
         const request = parsed.data
         detachStream(request.streamId, false)
 
-        let leaf = runtime.resolveLeafForHandle(request.terminal)
         const isMobile = request.client?.type === 'mobile'
+        let leaf: { ptyId: string | null } | null
+        try {
+          // Why: guarded resolution — binding the output stream to whatever
+          // PTY now occupies a stale handle's pane silently mirrors the wrong
+          // terminal after a reconnect (#7718). terminal_handle_stale lets the
+          // client re-derive the handle from the current session snapshot.
+          leaf = runtime.resolveLiveLeafForHandle(request.terminal)
+        } catch {
+          sendStreamError(request.streamId, 'terminal_handle_stale')
+          emit({ type: 'end', streamId: request.streamId })
+          return
+        }
         if (!leaf?.ptyId && isMobile) {
           try {
             const ptyId = await runtime.waitForLeafPtyId(request.terminal, 10_000, signal)
@@ -1602,6 +1620,7 @@ export const TERMINAL_METHODS: RpcAnyMethod[] = [
             truncatedByByteBudget: serialized?.truncatedByByteBudget,
             source: serialized?.source,
             oscLinks: serialized?.oscLinks,
+            pendingEscapeTailAnsi: serialized?.pendingEscapeTailAnsi,
             data: serialized?.data ?? (read.tail.length > 0 ? `${read.tail.join('\r\n')}\r\n` : '')
           })
           // Why: baseline for resize re-stream gating; the client already

@@ -9,8 +9,10 @@ import { scheduleRuntimeGraphSync } from '@/runtime/sync-runtime-graph'
 import { useAppStore } from '@/store'
 import { getWorktreeMapFromState } from '@/store/selectors'
 import { parseWorkspaceKey } from '../../../../shared/workspace-scope'
+import { isRuntimeOwnedSshTargetId } from '../../../../shared/execution-host'
 import { createTerminalZeroDimensionsMessage } from '../../../../shared/terminal-zero-dimensions-diagnostic'
 import { parseTerminalOscColorQuery } from '../../../../shared/terminal-osc-color-reply'
+import { isTerminalQueryReply } from '../../../../shared/terminal-query-reply'
 import type { PtyBufferSnapshot, PtyConnectResult } from './pty-transport'
 import { createIpcPtyTransport } from './pty-transport'
 import { createRemoteRuntimePtyTransport } from './remote-runtime-pty-transport'
@@ -47,7 +49,8 @@ import {
   type PanePtyResizeHoldFlushDetail
 } from '@/lib/pane-manager/pane-pty-resize-hold'
 import {
-  POST_REPLAY_LIVE_AGENT_REATTACH_RESET,
+  buildPostReplayLiveAgentReattachReset,
+  POST_REPLAY_LIVE_AGENT_SNAPSHOT_RESET,
   POST_REPLAY_LIVE_SNAPSHOT_RESET,
   POST_REPLAY_MODE_RESET,
   POST_REPLAY_REATTACH_RESET,
@@ -85,9 +88,14 @@ import {
 } from '@/lib/pane-manager/terminal-scroll-intent'
 import { createBrowserUuid } from '@/lib/browser-uuid'
 import { makePaneKey, parseLegacyNumericPaneKey } from '../../../../shared/stable-pane-id'
+import {
+  getProviderSessionClaimKey,
+  isPassiveCompletedHibernationEvidence
+} from '@/lib/sleeping-agent-pane-ownership'
 import { createTerminalCommandLifecycle } from './terminal-command-lifecycle'
 import { createPaneForegroundAgentTracker } from './pane-foreground-agent-tracker'
 import { parseAppSshPtyId } from '../../../../shared/ssh-pty-id'
+import { resolveSshPaneConnectGate } from './ssh-pane-connect-gate'
 import { dispatchTerminalCommandFinishedEvent } from '@/hooks/terminal-command-finished-event'
 import { e2eConfig } from '@/lib/e2e-config'
 import {
@@ -161,6 +169,7 @@ import {
   normalizeCompatibleAgentTitleForOwner,
   resolveCompatibleAgentTypeForOwner
 } from '../../../../shared/agent-title-owner'
+import { resolvePaneAgentOwner } from '../../../../shared/pane-agent-owner'
 import { resolveCommittedTitleAgentType } from '@/lib/pane-agent-evidence'
 import {
   isExpectedAgentProcess,
@@ -187,6 +196,10 @@ const COMMAND_CODE_OUTPUT_DONE_SETTLE_MS = 1500
 const SSH_SHELL_READY_STARTUP_FALLBACK_MS = 1500
 const MANUAL_AGENT_COMMAND_MAX_CHARS = 4096
 const STARTUP_DRAFT_PASTE_QUIET_MS = 1500
+// Why: the notice deliberately omits the rejected path — saved cwds can
+// contain private repo/user names; the terminal itself shows where it opened.
+export const STARTUP_CWD_FALLBACK_NOTICE =
+  '\r\n[Orca opened this terminal at the workspace root because its saved start folder no longer exists.]\r\n'
 const STARTUP_DRAFT_PASTE_TIMEOUT_MS = 8000
 const HIDDEN_OUTPUT_RESTORE_SCROLLBACK_ROWS = 5000
 const HIDDEN_OUTPUT_RESTORE_PENDING_CHARS = 512 * 1024
@@ -664,6 +677,13 @@ let inactiveForegroundImmediateBudgetWindowStart = 0
 type PanePtyBinding = IDisposable & {
   syncProcessTracking: () => void
   noteVisibilityResume: () => void
+  /** Navigation-free hibernation wake: fires the armed cold-restore --resume
+   *  without the size-reassert/foreground-sample side effects of a real reveal.
+   *  Used by the mobile wake fanout so a hidden hibernated pane resumes with no
+   *  desktop hidden→visible transition. Returns the sleeping record's provider
+   *  session claim key when this pane started (or latched) the in-place wake,
+   *  so the follow-up generic resume never launches the same session twice. */
+  wakeHibernatedAgentIfArmed: (claimedProviderSessions?: Set<string>) => string | null
   /** Re-sample process identity when the pane gains intra-tab focus: the tab
    *  icon follows the active leaf, and a shell-marked entry on a still-running
    *  agent pane has no OSC boundary left to correct it. */
@@ -1489,11 +1509,13 @@ export function connectPanePty(
       (entry) => entry.id === deps.tabId
     )
     return (
-      tab?.launchAgent ??
-      paneStartup?.launchAgent ??
-      paneStartup?.initialAgentStatus?.agent ??
-      commandInferredPaneAgent ??
-      state.agentStatusByPaneKey[cacheKey]?.agentType
+      resolvePaneAgentOwner({
+        launchAgent: tab?.launchAgent,
+        startupLaunchAgent: paneStartup?.launchAgent,
+        initialStatusAgent: paneStartup?.initialAgentStatus?.agent,
+        commandInferredAgent: commandInferredPaneAgent,
+        hookAgent: state.agentStatusByPaneKey[cacheKey]?.agentType
+      }) ?? undefined
     )
   }
   // Why: the renderer veto (owner evidence beating a Gemini-looking title) must
@@ -1990,6 +2012,17 @@ export function connectPanePty(
       }),
     shouldPollProcessCadence: () =>
       isAgentTaskCompleteTrackingEnabled() && deps.isVisibleRef.current,
+    isProcessInspectionCostly: () => {
+      // Why: local Windows inspection forks a powershell.exe whole-process-table
+      // CIM scan per poll (~10-40x heavier than POSIX `ps`); SSH/remote PTYs run
+      // their scans on the remote host, so only local Windows panes relax the
+      // no-evidence cadence.
+      if (!navigator.userAgent.includes('Windows')) {
+        return false
+      }
+      const ptyId = transport.getPtyId()
+      return ptyId !== null && !isRemoteRuntimePtyId(ptyId) && parseAppSshPtyId(ptyId) === null
+    },
     isLive: () => {
       if (disposed) {
         return false
@@ -2052,35 +2085,80 @@ export function connectPanePty(
   let spawnedFreshPtyId: string | null = null
   // Why: hibernation suppresses its kill's exit while the pane is hidden, so
   // onExit must not tear the pane down — but the pane still owes the user a
-  // wake. Remember the hibernated ptyId; the visibility-resume hook consumes
-  // it and relaunches the recorded agent session on next reveal.
-  let hibernatedWakePtyId: string | null = null
-  let wakeHibernatedAgentPane: (() => void) | null = null
+  // wake. Remember the hibernated PTY and exact record; the visibility-resume
+  // hook consumes both and cannot accidentally adopt a later stale record.
+  type HibernatedWakeTarget = { ptyId: string; record: SleepingAgentSessionRecord }
+  let hibernatedWakeTarget: HibernatedWakeTarget | null = null
+  let wakeHibernatedAgentPane: (() => Promise<string | null>) | null = null
+  // Why: a mobile wake can land after the sleeping record is written but
+  // before the suppressed kill exit arms the wake target. The phone never
+  // reveals the desktop pane, so without a latch the edge-triggered wake would
+  // be dropped and the phone left on a frozen terminal.
+  let pendingHibernatedWakeTarget: HibernatedWakeTarget | null = null
+  // Why: transport.connect settles asynchronously. Repeated mobile activation
+  // must keep claiming this provider session until the replacement PTY either
+  // exists (and clears the sleep record) or the spawn fails and can be retried.
+  let hibernatedWakeInFlightClaimKey: string | null = null
   // Why: reveal is the normal wake trigger, but a reveal that lands *during* the
   // in-flight hibernation kill runs noteVisibilityResume before onExit arms the
   // wake. Sharing the guarded consume lets both the reveal hook and the
   // arm-time foreground check resume the pane exactly once.
-  const consumeHibernatedAgentWake = (): void => {
-    if (hibernatedWakePtyId === null || disposed) {
-      return
+  const consumeHibernatedAgentWake = (claimedProviderSessions?: Set<string>): string | null => {
+    const target = hibernatedWakeTarget
+    if (!target || disposed) {
+      return null
     }
     if (deps.paneTransportsRef.current.get(pane.id) !== transport) {
-      return
+      return null
+    }
+    const currentRecord = getSleepingRecordForPane(useAppStore.getState())?.record
+    if (currentRecord !== target.record) {
+      hibernatedWakeTarget = null
+      pendingHibernatedWakeTarget = null
+      return null
     }
     const currentPtyId = transport.getPtyId()
     // Why: a real pty:exit clears the transport's ptyId before onExit while a
     // reconcile-driven exit leaves it bound; both mean "nothing respawned since
     // hibernation". A different non-null id means another flow (e.g. an
     // intentional restart) already rebound the pane — its spawn wins.
-    if (currentPtyId !== null && currentPtyId !== hibernatedWakePtyId) {
-      hibernatedWakePtyId = null
-      return
+    if (currentPtyId !== null && currentPtyId !== target.ptyId) {
+      hibernatedWakeTarget = null
+      pendingHibernatedWakeTarget = null
+      return null
     }
-    hibernatedWakePtyId = null
+    if (!wakeHibernatedAgentPane) {
+      return null
+    }
+    const claimKey = getProviderSessionClaimKey(target.record)
+    if (claimedProviderSessions?.has(claimKey)) {
+      return null
+    }
+    // Why: one wake event can visit multiple mounted legacy/stable panes for
+    // the same provider session. Claim synchronously before any spawn starts.
+    claimedProviderSessions?.add(claimKey)
+    hibernatedWakeTarget = null
+    pendingHibernatedWakeTarget = null
+    hibernatedWakeInFlightClaimKey = claimKey
     // Why: reveal is the wake signal for a hibernated pane. Resume the recorded
     // agent session (or fall back to a fresh shell) instead of leaving the
     // frozen frame with no PTY behind it.
-    wakeHibernatedAgentPane?.()
+    void wakeHibernatedAgentPane()
+      .then((spawnedPtyId) => {
+        if (!spawnedPtyId) {
+          // Why: a transient replacement-spawn failure leaves the passive
+          // record owned by this pane. Re-arm the exact target so a later
+          // mobile open can retry instead of stranding the frozen session;
+          // consume revalidates disposal, binding, PTY, and record identity.
+          hibernatedWakeTarget = target
+        }
+      })
+      .finally(() => {
+        if (hibernatedWakeInFlightClaimKey === claimKey) {
+          hibernatedWakeInFlightClaimKey = null
+        }
+      })
+    return claimKey
   }
   const onExit = (ptyId: string): void => {
     if (handledExitPtyId === ptyId) {
@@ -2126,20 +2204,34 @@ export function connectPanePty(
       // Why: the action that suppressed the exit owns whether the leaf binding
       // is a wake hint or should be discarded; runtime cleanup above is enough.
       manager.setPaneGpuRendering(pane.id, true)
-      if (getSleepingRecordForPane(useAppStore.getState())) {
+      const sleepingRecordEntry = getSleepingRecordForPane(useAppStore.getState())
+      if (
+        sleepingRecordEntry &&
+        isPassiveCompletedHibernationEvidence(sleepingRecordEntry.record)
+      ) {
         // Why: hibernation killed this pane's PTY while hidden. The frozen TUI
         // frame still has mouse-tracking/bracketed-paste armed, which silently
         // eats every click and keystroke against a dead transport — disarm the
         // modes now and arm the reveal-time wake.
         replayIntoTerminal(pane, deps.replayingPanesRef, POST_REPLAY_MODE_RESET)
-        hibernatedWakePtyId = ptyId
-        if (deps.isVisibleRef.current) {
-          // Why: a reveal that raced this kill already ran noteVisibilityResume
-          // before the exit landed, so it saw nothing armed. Consume the wake
-          // now (deferred off the exit handler) so a foreground pane still
-          // resumes without needing a second hide/reveal.
-          queueMicrotask(consumeHibernatedAgentWake)
+        hibernatedWakeTarget = { ptyId, record: sleepingRecordEntry.record }
+        const pendingWakeMatches =
+          pendingHibernatedWakeTarget?.ptyId === ptyId &&
+          pendingHibernatedWakeTarget.record === sleepingRecordEntry.record
+        if (pendingHibernatedWakeTarget && !pendingWakeMatches) {
+          pendingHibernatedWakeTarget = null
         }
+        if (deps.isVisibleRef.current || pendingWakeMatches) {
+          // Why: a reveal (or a mobile wake) that raced this kill already ran
+          // before the exit landed, so it saw nothing armed. Consume the wake
+          // now (deferred off the exit handler) so the pane still resumes
+          // without needing a second hide/reveal or wake event.
+          queueMicrotask(() => {
+            consumeHibernatedAgentWake()
+          })
+        }
+      } else if (pendingHibernatedWakeTarget?.ptyId === ptyId) {
+        pendingHibernatedWakeTarget = null
       }
       return
     }
@@ -2745,6 +2837,10 @@ export function connectPanePty(
     : undefined
   const transportOptions = {
     cwd: deps.cwd,
+    // Why: only fresh local IPC spawns may recover from a saved startup cwd
+    // whose directory was deleted (#7239); remote-runtime and SSH spawns
+    // resolve cwd on another host and must keep exact cwd semantics.
+    ...(runtimeEnvironmentId === null && !connectionId ? { cwdFallback: 'worktree' as const } : {}),
     env: paneEnv,
     command: shouldDeliverStartupViaTerminalPaste ? undefined : paneStartup?.command,
     startupCommandDelivery: shouldDeliverStartupViaTerminalPaste
@@ -2846,13 +2942,16 @@ export function connectPanePty(
   const terminalCapabilityRepliesDisposable = installTerminalCapabilityReplyHandlers({
     terminal: pane.terminal,
     parser: pane.terminal.parser,
-    sendInput: (data) => transport.sendInput(data),
+    // Why: OSC 10/11 + DA1 replies must beat the querying program's raw-mode
+    // read window; the remote transport's input debounce would corrupt them
+    // (#7329), so send immediately.
+    sendInput: (data) => transport.sendInputImmediate(data),
     isReplaying: () => isPaneReplaying(deps.replayingPanesRef, pane.id),
     ...(isNativeWindowsConpty ? { da1Response: CONPTY_DA1_RESPONSE } : {})
   })
   const respondToTerminalPixelSizeQueries = createTerminalPixelSizeQueryResponder(
     pane.terminal,
-    (data) => transport.sendInput(data)
+    (data) => transport.sendInputImmediate(data)
   )
 
   const onDataDisposable = pane.terminal.onData((data) => {
@@ -2888,6 +2987,19 @@ export function connectPanePty(
     // explicit Take back action owns restoring desktop input and dimensions.
     if (currentPtyId && isPtyLocked(currentPtyId)) {
       clearPendingTerminalInputIntent()
+      return
+    }
+    // Why: xterm answers CPR/DSR/DA queries natively through this same onData
+    // stream (mixed with keystrokes). Those replies are latency-critical — a
+    // querying program reads them in raw mode with a short timeout — so send
+    // them immediately, skipping the remote input debounce that would corrupt
+    // them (#7329). They are not user input, so they bypass intent inference and
+    // activity recording below. No pending-intent guard: the only intents are
+    // plain-escape (`\x1b`) and ctrl-c (`\x03`), neither of which can satisfy
+    // isTerminalQueryReply (it requires length >= 3 and a full reply grammar),
+    // so a real keystroke never reaches this branch.
+    if (isTerminalQueryReply(data)) {
+      transport.sendInputImmediate(data)
       return
     }
     const intent = pendingTerminalInputIntent
@@ -3622,9 +3734,9 @@ export function connectPanePty(
     const startFreshColdRestoreAgentResume = (
       startup: ColdRestoreAgentResumeStartup | null = buildColdRestoreAgentResumeStartup(),
       options: FreshSpawnOptions = {}
-    ): void => {
+    ): Promise<string | null> => {
       applyColdRestoreAgentResumeStartup(startup)
-      startFreshSpawn(startup, options)
+      return startFreshSpawn(startup, options)
     }
     // Why: the hibernation wake fires from noteVisibilityResume in the outer
     // connection scope, long after this deferred-connect closure has run.
@@ -3704,7 +3816,7 @@ export function connectPanePty(
     const startFreshSpawn = (
       startupOverride?: PendingStartupCommand | null,
       options: FreshSpawnOptions = {}
-    ): void => {
+    ): Promise<string | null> => {
       clearPaneMode2031State()
       clearHiddenOutputRestoreState()
       prepareFreshShellViewportForSpawn(options)
@@ -3761,6 +3873,15 @@ export function connectPanePty(
             })
           }
           if (resolvedPtyId) {
+            if (
+              spawnedPtyId &&
+              typeof spawnedPtyId === 'object' &&
+              spawnedPtyId.startupCwdFallback?.kind === 'worktree'
+            ) {
+              writeTerminalOutput(pane.terminal, STARTUP_CWD_FALLBACK_NOTICE, {
+                foreground: shouldWritePtyOutputForeground(deps.isVisibleRef.current)
+              })
+            }
             if (coldRestoreOverride?.hasSleepingRecord) {
               showSessionRestoredBanner()
             }
@@ -3824,6 +3945,7 @@ export function connectPanePty(
       // Why: split panes in the same tab can spawn concurrently. Key by pane
       // as well as tab so a remount cannot attach to a sibling setup pane's PTY.
       pendingSpawnByPaneKey.set(pendingSpawnKey, trackedPromise)
+      return trackedPromise
     }
 
     let foregroundRefreshRiskScanTail = ''
@@ -3971,9 +4093,9 @@ export function connectPanePty(
       return replayIntoTerminalAsync(pane, deps.replayingPanesRef, data)
     }
 
-    const reattachReplayResetSequence = (): string => {
+    const reattachReplayResetSequence = (payload: string): string => {
       return shouldPreserveAgentReattachModes()
-        ? POST_REPLAY_LIVE_AGENT_REATTACH_RESET
+        ? buildPostReplayLiveAgentReattachReset(payload)
         : POST_REPLAY_REATTACH_RESET
     }
 
@@ -4017,7 +4139,9 @@ export function connectPanePty(
         ) {
           if (parsedViewportShowsParkedCursorAgentScreen(pane.terminal) === false) {
             reattachReplayPayloadHasCursorAgentSignal = false
-            writeReplayData(FOCUS_REPORTING_DISABLE_SEQUENCE)
+            // Why: the live-agent reset preserved the payload's ?25l; a plain
+            // shell never re-shows the cursor itself.
+            writeReplayData(`${CURSOR_SHOW_SEQUENCE}${FOCUS_REPORTING_DISABLE_SEQUENCE}`)
             return
           }
         }
@@ -4039,13 +4163,14 @@ export function connectPanePty(
     type PendingReplayData = {
       data: string
       clearBeforeReplay: boolean
+      pendingEscapeTailAnsi?: string
     }
 
     let pendingReplayData: PendingReplayData | null = null
     let replayDrainQueued = false
     const drainReplayDataQueue = async (): Promise<void> => {
       while (pendingReplayData !== null) {
-        const { data, clearBeforeReplay } = pendingReplayData
+        const { data, clearBeforeReplay, pendingEscapeTailAnsi } = pendingReplayData
         pendingReplayData = null
         // Relay replay buffers may overlap with content already rendered in
         // xterm. Local eager replay decides this earlier so metadata-only frames
@@ -4060,8 +4185,16 @@ export function connectPanePty(
         }
         await writeReplayDataAsync(data)
         if (clearBeforeReplay || data.length > 0) {
-          await writeReplayDataAsync(reattachReplayResetSequence())
+          await writeReplayDataAsync(reattachReplayResetSequence(data))
           sendFocusedReattachFocusInAfterReplay()
+        }
+        // Why: the daemon could not serialize a PTY read that ended mid-escape,
+        // so the emulator shipped the dangling partial separately. Write it LAST
+        // — after the reset, whose ESC would otherwise abort it — so the next
+        // live chunk completes the sequence instead of rendering literally
+        // (#7329). Guarded so a later ESC cannot leave the parser wedged.
+        if (pendingEscapeTailAnsi) {
+          await writeReplayDataAsync(pendingEscapeTailAnsi)
         }
         if (disposed) {
           pendingReplayData = null
@@ -4073,10 +4206,14 @@ export function connectPanePty(
         manager.rebuildPaneWebgl(pane.id)
       }
     }
-    const replayDataCallback = (data: string, meta: { clearBeforeReplay?: boolean } = {}): void => {
+    const replayDataCallback = (
+      data: string,
+      meta: { clearBeforeReplay?: boolean; pendingEscapeTailAnsi?: string } = {}
+    ): void => {
       pendingReplayData = {
         data,
-        clearBeforeReplay: meta.clearBeforeReplay !== false
+        clearBeforeReplay: meta.clearBeforeReplay !== false,
+        ...(meta.pendingEscapeTailAnsi ? { pendingEscapeTailAnsi: meta.pendingEscapeTailAnsi } : {})
       }
       if (replayDrainQueued) {
         return
@@ -4089,7 +4226,10 @@ export function connectPanePty(
           replayDrainQueued = false
           if (pendingReplayData !== null) {
             replayDataCallback(pendingReplayData.data, {
-              clearBeforeReplay: pendingReplayData.clearBeforeReplay
+              clearBeforeReplay: pendingReplayData.clearBeforeReplay,
+              ...(pendingReplayData.pendingEscapeTailAnsi
+                ? { pendingEscapeTailAnsi: pendingReplayData.pendingEscapeTailAnsi }
+                : {})
             })
           }
         })
@@ -4181,7 +4321,9 @@ export function connectPanePty(
       // mode 2031 out-of-band so TUIs still render the snapshot with the same
       // theme-dependent styling they would have used in a visible pane.
       deps.paneMode2031Ref.current.set(pane.id, true)
-      transport.sendInput(mode2031SequenceFor(mode))
+      // Why: a query reply — send immediately so the remote input debounce
+      // cannot delay it past the querying program's read window (#7329).
+      transport.sendInputImmediate(mode2031SequenceFor(mode))
       deps.paneLastThemeModeRef.current.set(pane.id, mode)
       recordHiddenMode2031Reply()
     }
@@ -4471,9 +4613,10 @@ export function connectPanePty(
       hiddenStartupRendererQueryPending = extracted.pending
       if (extracted.oscColorQueryData) {
         // Why: Codex's startup palette probe has a 100 ms budget. Answer
-        // hidden color queries directly so renderer scheduling cannot miss it.
+        // hidden color queries directly and immediately so neither renderer
+        // scheduling nor the remote input debounce (#7329) can miss it.
         sendTerminalOscColorQueryReplies(extracted.oscColorQueryData, pane.terminal, (reply) =>
-          transport.sendInput(reply)
+          transport.sendInputImmediate(reply)
         )
       }
       if (extracted.statelessQueryData) {
@@ -4948,6 +5091,7 @@ export function connectPanePty(
       rows: number
       seq?: number
       alternateScreen?: boolean
+      pendingEscapeTailAnsi?: string
     }): void {
       const scrollIntent = captureTerminalWriteScrollIntent(pane.terminal)
       const colsBeforeReplay = pane.terminal.cols
@@ -4987,7 +5131,21 @@ export function connectPanePty(
         writeReplayData('\x1b[?1049h\x1b[2J\x1b[H')
       }
       writeReplayData(snapshot.data)
-      writeReplayData(POST_REPLAY_LIVE_SNAPSHOT_RESET)
+      // Why: status/title-corroborated live agents own ?25l/?1004h (a forced
+      // ?1004l here would silence focus events until the agent restarts, since
+      // agents only enable focus reporting at startup).
+      writeReplayData(
+        hasLiveAgentReattachStatusOrTitleSignal()
+          ? POST_REPLAY_LIVE_AGENT_SNAPSHOT_RESET
+          : POST_REPLAY_LIVE_SNAPSHOT_RESET
+      )
+      if (snapshot.pendingEscapeTailAnsi) {
+        // Why last: the snapshot was serialized while the emulator sat mid-escape;
+        // re-arm the dangling sequence as the FINAL replay write (any later ESC —
+        // including the reset above — would abort it) so the racing live tail's
+        // continuation completes it instead of rendering literally (#7329).
+        writeReplayData(snapshot.pendingEscapeTailAnsi)
+      }
       hiddenRendererStateDirty = false
       recordRendererOrderedSeq(snapshot)
       resetHiddenRendererRiskState()
@@ -5183,6 +5341,9 @@ export function connectPanePty(
       if (data.length > 0) {
         hasReceivedPtyOutput = true
         recordAgentHibernationPaneOutput(cacheKey)
+        // Why: output is the agent-start escalation signal that ends the relaxed
+        // no-evidence process-scan cadence (a starting agent always prints).
+        agentCompletionCoordinator.observeOutputActivity()
       }
       if (sshShellReadyMarkerScan) {
         const scanned = scanForShellReadyMarker(sshShellReadyMarkerScan, data)
@@ -5193,6 +5354,13 @@ export function connectPanePty(
       }
       observeStartupDraftPasteReadiness(data)
       resetHiddenOutputRestoreIfPtyChanged()
+      if (meta?.droppedBacklog === true) {
+        // Why: main trimmed this pty's unsent backlog (the renderer was
+        // background-throttled/frozen and stopped ACKing). Rebuild the dropped
+        // span from the main headless snapshot — same recovery the renderer's
+        // own 2 MB scheduler overflow uses. No-op cost when already visible+synced.
+        markHiddenOutputRestoreNeeded()
+      }
       respondToTerminalPixelSizeQueries(data)
       observeTerminalBracketedPasteModeOutput(pane.terminal, data)
       for (const link of observeTerminalGitHubPRLink(data)) {
@@ -5242,7 +5410,9 @@ export function connectPanePty(
         sendTerminalOscColorQueryReplies(
           pendingForegroundQuery.oscColorQueryData,
           pane.terminal,
-          (reply) => transport.sendInput(reply)
+          // Why: OSC color reply — immediate so the remote debounce cannot delay
+          // it past the querying program's read window (#7329).
+          (reply) => transport.sendInputImmediate(reply)
         )
       }
       const restoreAppliesToCurrentPty =
@@ -5373,12 +5543,45 @@ export function connectPanePty(
       // and only the freshest source belongs on screen.
       if (connectResult?.snapshot) {
         rememberReattachPayloadAgentSignal(connectResult.snapshot, { fullScreenReplay: true })
+        // Why: the daemon serializes its grid with soft-wrapped lines as
+        // continuous text. Replaying that at a different column count rewraps
+        // rows one cell early/late (bug #7279). Replay at the snapshot's own
+        // dimensions first; safeFit below fits the pane back and resizes the
+        // remote PTY. Suppress the xterm->PTY forward so this layout-only
+        // resize does not SIGWINCH the live remote TUI. Mirrors
+        // applyMainBufferSnapshot.
+        const snapshotCols = connectResult.snapshotCols
+        const snapshotRows = connectResult.snapshotRows
+        const hasSnapshotDimensions =
+          typeof snapshotCols === 'number' &&
+          typeof snapshotRows === 'number' &&
+          Number.isFinite(snapshotCols) &&
+          Number.isFinite(snapshotRows) &&
+          snapshotCols > 0 &&
+          snapshotRows > 0
+        if (
+          hasSnapshotDimensions &&
+          (pane.terminal.cols !== snapshotCols || pane.terminal.rows !== snapshotRows)
+        ) {
+          suppressSnapshotReplayPtyResize = true
+          try {
+            pane.terminal.resize(snapshotCols, snapshotRows)
+          } finally {
+            suppressSnapshotReplayPtyResize = false
+          }
+        }
         writeReplayData('\x1b[2J\x1b[3J\x1b[H')
         writeReplayData(connectResult.snapshot)
         // Snapshot reattach keeps a live session, so avoid the broader mode
         // reset. We only drop renderer-owned state that should not leak from
         // replay bytes into the restored renderer terminal.
-        writeReplayData(reattachReplayResetSequence())
+        writeReplayData(reattachReplayResetSequence(connectResult.snapshot))
+        if (connectResult.pendingEscapeTailAnsi) {
+          // Why last: re-arm the daemon's dangling mid-escape sequence AFTER the
+          // reset (whose ESC would abort it) so the racing live continuation
+          // completes it instead of rendering literally (#7329).
+          writeReplayData(connectResult.pendingEscapeTailAnsi)
+        }
         sendFocusedReattachFocusInAfterReplay()
         if (connectResult.coldRestore) {
           // Snapshot superseded the cold-restore payload — ack it so the
@@ -5395,7 +5598,7 @@ export function connectPanePty(
         // tearing down the still-running TUI's live modes.
         writeReplayData('\x1b[2J\x1b[3J\x1b[H')
         writeReplayData(connectResult.replay)
-        writeReplayData(reattachReplayResetSequence())
+        writeReplayData(reattachReplayResetSequence(connectResult.replay))
         sendFocusedReattachFocusInAfterReplay()
         if (connectResult.coldRestore) {
           if (!isRemoteRuntimePtyId(ptyId)) {
@@ -5459,17 +5662,42 @@ export function connectPanePty(
     // because the SSH provider isn't registered until after connect succeeds.
     if (connectionId) {
       const storeState = useAppStore.getState()
+      // Why: the SSH target was removed entirely (a ghost workspace). Reattaching
+      // can only fail with "SSH target not found", which surfaces a red "file an
+      // issue" banner for what is an expected user action. Skip reattach — the
+      // terminal overlay already shows a "host removed" state with a remove
+      // action. Runtime-owned targets aren't user-managed, so they're exempt.
+      // A target map that exists but omits this id means the target was removed.
+      // (Guard the map's presence for minimal test stubs that omit it; an absent
+      // map is "not hydrated", not "target gone".)
+      if (
+        !isRuntimeOwnedSshTargetId(connectionId) &&
+        storeState.sshTargetLabels instanceof Map &&
+        !storeState.sshTargetLabels.has(connectionId)
+      ) {
+        return
+      }
       const restoredLeafSessionId =
         deps.restoredLeafId && deps.restoredPtyIdByLeafId
           ? (deps.restoredPtyIdByLeafId[deps.restoredLeafId] ?? null)
           : null
-      const pendingSessionId =
-        restoredLeafSessionId ?? storeState.deferredSshSessionIdsByTabId[deps.tabId]
-      const isDeferredTarget = storeState.deferredSshReconnectTargets.includes(connectionId)
+      const gate = resolveSshPaneConnectGate({
+        connectionId,
+        sshStatus: storeState.sshConnectionStates.get(connectionId)?.status,
+        isDeferredTarget: storeState.deferredSshReconnectTargets.includes(connectionId),
+        restoredLeafSessionId,
+        deferredTabSessionId: storeState.deferredSshSessionIdsByTabId[deps.tabId],
+        tabPtyId: storeState.tabsByWorktree[deps.worktreeId]?.find((t) => t.id === deps.tabId)
+          ?.ptyId,
+        hasLeafSessionMap: Boolean(
+          deps.restoredPtyIdByLeafId && Object.keys(deps.restoredPtyIdByLeafId).length > 0
+        )
+      })
+      const pendingSessionId = gate.pendingSessionId
       console.warn(
-        `[pty-connection] SSH tab=${deps.tabId} connectionId=${connectionId} pendingSessionId=${pendingSessionId} isDeferredTarget=${isDeferredTarget}`
+        `[pty-connection] SSH tab=${deps.tabId} connectionId=${connectionId} pendingSessionId=${pendingSessionId} sshConnected=${gate.sshConnected}`
       )
-      if (pendingSessionId || isDeferredTarget) {
+      if (gate.enterDeferredFlow) {
         void (async () => {
           // Why: if the target requires a passphrase/password and no credential
           // is cached yet, auto-firing ssh.connect would surprise the user —
@@ -6086,6 +6314,47 @@ export function connectPanePty(
       ptySizeReassertion.request({ fit: false })
       consumeHibernatedAgentWake()
       sampleVisiblePaneForegroundAgent()
+    },
+    // Why: mobile wake reaches this pane while it stays hidden on the desktop, so
+    // it must consume only the armed hibernation wake — no size/foreground reads.
+    wakeHibernatedAgentIfArmed(claimedProviderSessions) {
+      if (hibernatedWakeInFlightClaimKey) {
+        if (claimedProviderSessions?.has(hibernatedWakeInFlightClaimKey)) {
+          return null
+        }
+        claimedProviderSessions?.add(hibernatedWakeInFlightClaimKey)
+        return hibernatedWakeInFlightClaimKey
+      }
+      const consumedClaimKey = consumeHibernatedAgentWake(claimedProviderSessions)
+      if (consumedClaimKey) {
+        return consumedClaimKey
+      }
+      // Why: wake arrived mid-hibernation-kill — the record exists but onExit
+      // has not armed the wake target yet (the transport is still bound to the
+      // dying PTY). Only the exact PTY already marked for suppressed shutdown
+      // may latch; a stale/manual record beside an ordinary live PTY must not.
+      const state = useAppStore.getState()
+      const recordEntry = getSleepingRecordForPane(state)
+      const currentPtyId = transport.getPtyId()
+      if (
+        recordEntry &&
+        isPassiveCompletedHibernationEvidence(recordEntry.record) &&
+        currentPtyId !== null &&
+        state.suppressedPtyExitIds[currentPtyId] === true &&
+        !disposed &&
+        hibernatedWakeTarget === null &&
+        deps.paneTransportsRef.current.get(pane.id) === transport &&
+        transport.getPtyId() === currentPtyId
+      ) {
+        const claimKey = getProviderSessionClaimKey(recordEntry.record)
+        if (claimedProviderSessions?.has(claimKey)) {
+          return null
+        }
+        claimedProviderSessions?.add(claimKey)
+        pendingHibernatedWakeTarget = { ptyId: currentPtyId, record: recordEntry.record }
+        return claimKey
+      }
+      return null
     },
     sampleForegroundAgentOnFocus() {
       sampleVisiblePaneForegroundAgent()

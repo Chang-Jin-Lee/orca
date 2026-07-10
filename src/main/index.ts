@@ -14,6 +14,7 @@ import {
   getCanonicalUserDataPath,
   migrateMobilePairingDataToCanonicalUserDataPath
 } from './persistence'
+import { ensureActiveOrcaProfile, initOrcaProfilePaths } from './orca-profiles/profile-index-store'
 import { applyAppIcon } from './app-icon'
 import { StatsCollector, initStatsPath } from './stats/collector'
 import { ClaudeUsageStore, initClaudeUsagePath } from './claude-usage/store'
@@ -27,7 +28,8 @@ import { registerCoreHandlers } from './ipc/register-core-handlers'
 import { initObservability, shutdownObservability } from './observability'
 import { startSpan } from './observability/tracer'
 import { registerMobileHandlers } from './ipc/mobile'
-import { initTelemetry, shutdownTelemetry, trackAppOpenedOnce } from './telemetry/client'
+import { initTelemetry, shutdownTelemetry, trackAppOpenedOnce, track } from './telemetry/client'
+import { classifyError } from './telemetry/classify-error'
 import { runManagedHookInstallers } from './agent-hooks/install-telemetry'
 import {
   isAgentStatusHooksEnabled,
@@ -109,8 +111,9 @@ import {
   ensureAutoUpdaterConfigured
 } from './window/attach-main-window-services'
 import { createMainWindow, loadMainWindow } from './window/createMainWindow'
-import { createSystemTray, destroySystemTray } from './tray/system-tray'
+import { createSystemTray, destroySystemTray, setTrayAttention } from './tray/system-tray'
 import { focusExistingMainWindow } from './window/focus-existing-window'
+import { notifyMainWindowBecameVisible } from './window/main-window-visibility'
 import { CodexAccountService } from './codex-accounts/service'
 import { CodexRuntimeHomeService } from './codex-accounts/runtime-home-service'
 import {
@@ -119,6 +122,7 @@ import {
 } from './codex-accounts/runtime-selection'
 import { normalizeClaudeRuntimeSelection } from './claude-accounts/runtime-selection'
 import { codexHookService } from './codex/hook-service'
+import { getDefaultWslDistro } from './wsl'
 import { ClaudeAccountService } from './claude-accounts/service'
 import { ClaudeRuntimeAuthService } from './claude-accounts/runtime-auth-service'
 import {
@@ -151,6 +155,7 @@ import { AutomationService } from './automations/service'
 import { createHeadlessAutomationOutputSnapshotBuffer } from './automations/headless-dispatch'
 import { buildHeadlessAutomationWorktreeCreateArgs } from './automations/headless-workspace-create'
 import { AgentAwakeService } from './agent-awake-service'
+import { registerSystemResumeBroadcast } from './system-resume-broadcast'
 import {
   getCrashBreadcrumbSnapshot,
   recordCoalescedCrashBreadcrumb,
@@ -212,6 +217,7 @@ let starNag: StarNagService | null = null
 let agentAwakeService: AgentAwakeService | null = null
 let crashReports: CrashReportStore | null = null
 let unsubscribeAgentAwakeStatusChanges: (() => void) | null = null
+let unsubscribeSystemResumeBroadcast: (() => void) | null = null
 let watcherShutdownPromise: Promise<void> | null = null
 let watcherShutdownDone = false
 let automations: AutomationService | null = null
@@ -578,6 +584,7 @@ if (hasSingleInstanceLock) {
   // orca-dev in dev mode) but before app.setName('Orca') inside whenReady
   // (which would change the resolved path on case-sensitive filesystems).
   initDataPath()
+  initOrcaProfilePaths()
   // Why: same timing constraint as initDataPath — capture the userData path
   // before app.setName changes it. See persistence.ts:20-28.
   initStatsPath()
@@ -641,7 +648,16 @@ function startDesktopFirstWindowStartupServices(): Promise<void> {
       logStartupMilestone('startup-service-done', { service: 'agent-hook-server' })
     },
     onDaemonError: (error) => {
-      console.error('[daemon] Failed to start daemon PTY provider, falling back to local:', error)
+      // Why: daemon startup failure silently dropped terminals onto the local
+      // provider (killed on quit, no persistence) — the v1.4.129-rc.1 outage was
+      // invisible in the field. Log loudly (error.message carries the captured
+      // daemon stderr tail from the fork) and emit a low-cardinality telemetry
+      // signal so a fleet-wide daemon failure is observable without a bug report.
+      const reason = error instanceof Error ? error.message : String(error)
+      console.error(
+        `[daemon] STARTUP FAILED — falling back to local PTYs; terminals will not persist across quit. Reason: ${reason}`
+      )
+      track('daemon_start_failed', classifyError(error))
     },
     onAgentHookServerError: (error) => {
       // Why: Claude/Codex/Gemini/OpenCode/Cursor hook callbacks are sidebar
@@ -679,13 +695,22 @@ async function startServeAgentHookServer(): Promise<void> {
 
 function prepareCodexRuntimeHomeForLaunch(target?: CodexAccountSelectionTarget): string | null {
   const runtimeHomePath = codexRuntimeHome!.prepareForCodexLaunch(target)
+  const hookTarget =
+    target?.runtime === 'wsl'
+      ? {
+          runtime: 'wsl' as const,
+          wslDistro: target.wslDistro?.trim() || getDefaultWslDistro()
+        }
+      : target
   const hooksEnabled = isAgentStatusHooksEnabled(store?.getSettings())
   try {
     // Why: launch prep is reachable after startup via PTY/runtime paths; honor
     // the persisted off switch so those launches cannot reinstall removed hooks.
     const status = hooksEnabled
-      ? codexHookService.install()
-      : codexHookService.refreshRuntimeUserHooks()
+      ? (codexHookService.installForRuntimeHome(runtimeHomePath, hookTarget) ??
+        codexHookService.install())
+      : (codexHookService.refreshRuntimeUserHooksForRuntimeHome(runtimeHomePath, hookTarget) ??
+        codexHookService.refreshRuntimeUserHooks())
     if (status.state === 'error') {
       console.warn(
         `[codex-hook-service] failed to ${
@@ -984,6 +1009,15 @@ function openMainWindow(): BrowserWindow {
   window.on('restore', resumeSyntheticTitleSpinnerTimer)
   window.on('hide', stopSyntheticTitleSpinnerTimer)
   window.on('minimize', stopSyntheticTitleSpinnerTimer)
+  // Why: visibility-gated main-process pollers (SSH port scanner) park while
+  // hidden and rely on this signal to resume; re-wired per window because
+  // macOS dock re-activation recreates the BrowserWindow.
+  window.on('show', notifyMainWindowBecameVisible)
+  window.on('restore', notifyMainWindowBecameVisible)
+  // Why: showing/restoring the window means the user is back, so clear the
+  // tray attention dot set while it was minimized/hidden (see notifications.ts).
+  window.on('show', () => setTrayAttention(false))
+  window.on('restore', () => setTrayAttention(false))
   agentHookServer.setListener(
     ({
       paneKey,
@@ -1624,7 +1658,8 @@ app.whenReady().then(async () => {
   electronApp.setAppUserModelId(devInstanceIdentity.appUserModelId)
   app.setName(devInstanceIdentity.name)
 
-  store = new Store()
+  const activeOrcaProfile = ensureActiveOrcaProfile()
+  store = new Store({ dataFile: activeOrcaProfile.dataFile })
   logStartupMilestone('store-loaded')
   // Why: must run before ClaudeRuntimeAuthService's constructor sync — a Claude
   // CLI that survived the restart inside the daemon still holds the current
@@ -1652,7 +1687,11 @@ app.whenReady().then(async () => {
   }
   // Why: browser sessions are used by desktop webviews and runtime profile
   // commands, so initialize them at app startup instead of a renderer IPC path.
-  initializeBrowserSessionsForApp()
+  initializeBrowserSessionsForApp({
+    orcaProfileId: activeOrcaProfile.profile.id,
+    profileDirectory: activeOrcaProfile.profileDirectory
+  })
+  unsubscribeSystemResumeBroadcast = registerSystemResumeBroadcast()
   agentAwakeService = new AgentAwakeService()
   agentAwakeService.setEnabled(store.getSettings().keepComputerAwakeWhileAgentsRun)
   // Why: disk-hydrated status rows are UI continuity only. The service starts
@@ -2018,7 +2057,9 @@ app.whenReady().then(async () => {
   // a random OS-assigned port — breaking deterministic mobile pairing/repro
   // scripts against the dev instance. Pin the first dev instance to 6769 so
   // ws://127.0.0.1:6769 is stable; a second dev instance still falls back via
-  // ws-transport's EADDRINUSE handler.
+  // ws-transport's EADDRINUSE handler. Note: once an instance has ever fallen
+  // back, the persisted fallback port is re-bound in preference to 6769
+  // (STA-1511) until mobile-ws-fallback-port.json is removed from userData.
   const devWsPort = is.dev && !isE2E ? 6769 : undefined
   let serveOptions: ServeOptions | null = null
   try {
@@ -2170,6 +2211,8 @@ app.whenReady().then(async () => {
 
 app.on('before-quit', () => {
   isQuitting = true
+  unsubscribeSystemResumeBroadcast?.()
+  unsubscribeSystemResumeBroadcast = null
   unsubscribeAgentAwakeStatusChanges?.()
   unsubscribeAgentAwakeStatusChanges = null
   agentAwakeService?.dispose()
