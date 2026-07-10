@@ -3440,6 +3440,13 @@ describe('OrcaRuntimeRpcServer', () => {
         expect(hasColumn('tasks')).toBe(true)
         expect(hasColumn('dispatch_contexts')).toBe(true)
         expect(hasColumn('messages')).toBe(true)
+        expect(
+          probe
+            .prepare(
+              `SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'idx_coordinator_runs_handle_status'`
+            )
+            .all()
+        ).toHaveLength(1)
 
         // Pre-existing rows survive the migration with NULL workspace_key, so a
         // scoped read still treats them as legacy/global.

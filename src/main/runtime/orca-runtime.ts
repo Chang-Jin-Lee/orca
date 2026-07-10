@@ -8463,15 +8463,16 @@ export class OrcaRuntimeService {
   // never cross-attribute; a legacy NULL dispatch keeps the original global
   // most-recent-run behavior.
   private resolveCoordinatorRunForDispatch(
-    workspaceKey: string | null
+    workspaceKey: string | null,
+    db = this._orchestrationDb
   ): ReturnType<OrchestrationDb['getActiveCoordinatorRun']> {
-    if (!this._orchestrationDb) {
+    if (!db) {
       return undefined
     }
     if (workspaceKey == null) {
-      return this._orchestrationDb.getActiveCoordinatorRun()
+      return db.getActiveCoordinatorRun()
     }
-    return this._orchestrationDb.getActiveCoordinatorRunForWorkspace(workspaceKey)
+    return db.getActiveCoordinatorRunForWorkspace(workspaceKey)
   }
 
   async listTerminals(
@@ -19708,9 +19709,7 @@ export class OrcaRuntimeService {
     const activeRun =
       dispatch.status === 'completed'
         ? undefined
-        : dispatch.workspace_key == null
-          ? db?.getActiveCoordinatorRun?.()
-          : db?.getActiveCoordinatorRunForWorkspace?.(dispatch.workspace_key)
+        : this.resolveCoordinatorRunForDispatch(dispatch.workspace_key, db)
     const parentTerminalHandle =
       task?.created_by_terminal_handle ??
       (activeRun?.coordinator_handle && activeRun.coordinator_handle !== handle
@@ -20591,8 +20590,9 @@ export class OrcaRuntimeService {
       return
     }
 
-    // The active coordinator prompt is user-owned input, so push-on-idle must not synthesize Enter.
-    if (this._orchestrationDb.getActiveCoordinatorRun()?.coordinator_handle === handle) {
+    // Why (#4389): every concurrent coordinator owns its prompt; checking the
+    // latest global run would auto-submit into an older workspace's coordinator.
+    if (this._orchestrationDb.getActiveCoordinatorRunForHandle(handle)) {
       this._orchestrationDb.markAsDelivered(unread.map((m) => m.id))
       return
     }

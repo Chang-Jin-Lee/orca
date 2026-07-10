@@ -3394,7 +3394,11 @@ describe('orca cli worktree awareness', () => {
 
   it('treats --worktree all as explicit global orchestration run scope', async () => {
     process.env.ORCA_TERMINAL_HANDLE = 'term_coord'
-    queueFixtures(callMock, okFixture('req_run', { runId: 'run_1', status: 'running' }))
+    queueFixtures(
+      callMock,
+      okFixture('req_terminal', { terminal: { handle: 'term_coord' } }),
+      okFixture('req_run', { runId: 'run_1', status: 'running' })
+    )
     vi.spyOn(console, 'log').mockImplementation(() => {})
 
     await main(
@@ -3402,8 +3406,10 @@ describe('orca cli worktree awareness', () => {
       '/tmp/repo/feature/src'
     )
 
-    expect(callMock).toHaveBeenCalledTimes(1)
-    expect(callMock).toHaveBeenCalledWith('orchestration.run', {
+    expect(callMock).toHaveBeenNthCalledWith(1, 'terminal.show', {
+      terminal: 'term_coord'
+    })
+    expect(callMock).toHaveBeenNthCalledWith(2, 'orchestration.run', {
       spec: 'ship it',
       from: 'term_coord',
       pollIntervalMs: undefined,

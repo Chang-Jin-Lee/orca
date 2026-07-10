@@ -63,12 +63,13 @@ const SHORT_POLL_MS = 5
 
 async function stopAndDrain(
   dispatcher: RpcDispatcher,
+  db: OrchestrationDb,
   worktrees: (string | undefined)[]
 ): Promise<void> {
   for (const worktree of worktrees) {
     await dispatcher.dispatch(makeRequest('orchestration.runStop', worktree ? { worktree } : {}))
   }
-  await new Promise((resolve) => setTimeout(resolve, SHORT_POLL_MS * 4))
+  await vi.waitFor(() => expect(db.listActiveCoordinatorRuns()).toHaveLength(0))
 }
 
 describe('orchestration start/stop guard scoping (#4389)', () => {
@@ -110,7 +111,7 @@ describe('orchestration start/stop guard scoping (#4389)', () => {
       expect(db.getActiveCoordinatorRun('worktree:wt_a')?.id).toBe(runAId)
       expect(db.getActiveCoordinatorRun('worktree:wt_b')?.id).toBe(runBId)
 
-      await stopAndDrain(dispatcher, ['worktree:wt_a', 'worktree:wt_b'])
+      await stopAndDrain(dispatcher, db, ['worktree:wt_a', 'worktree:wt_b'])
     } finally {
       db.close()
     }
@@ -150,7 +151,7 @@ describe('orchestration start/stop guard scoping (#4389)', () => {
         /Coordinator already running/
       )
 
-      await stopAndDrain(dispatcher, ['all'])
+      await stopAndDrain(dispatcher, db, ['all'])
     } finally {
       db.close()
     }
@@ -206,7 +207,7 @@ describe('orchestration start/stop guard scoping (#4389)', () => {
       )
       expectError(second, /Coordinator already running/)
 
-      await stopAndDrain(dispatcher, ['worktree:wt_a'])
+      await stopAndDrain(dispatcher, db, ['worktree:wt_a'])
     } finally {
       db.close()
     }
@@ -251,7 +252,7 @@ describe('orchestration start/stop guard scoping (#4389)', () => {
       // A's run must still be the active run for its workspace after stopping B.
       expect(db.getActiveCoordinatorRun('worktree:wt_a')?.id).toBe(runAId)
 
-      await stopAndDrain(dispatcher, ['worktree:wt_a'])
+      await stopAndDrain(dispatcher, db, ['worktree:wt_a'])
     } finally {
       db.close()
     }
@@ -279,8 +280,9 @@ describe('orchestration start/stop guard scoping (#4389)', () => {
       )
 
       expect((stopGlobal.result as { runId: string }).runId).toBe(globalRunId)
-      await new Promise((resolve) => setTimeout(resolve, SHORT_POLL_MS * 4))
-      expect(db.getCoordinatorRun(globalRunId)?.status).toBe('failed')
+      await vi.waitFor(() => {
+        expect(db.getCoordinatorRun(globalRunId)?.status).toBe('failed')
+      })
     } finally {
       db.close()
     }
@@ -311,7 +313,7 @@ describe('orchestration start/stop guard scoping (#4389)', () => {
       )
       expect(db.getActiveGlobalCoordinatorRun()?.id).toBe(globalRunId)
 
-      await stopAndDrain(dispatcher, ['all'])
+      await stopAndDrain(dispatcher, db, ['all'])
     } finally {
       db.close()
     }
@@ -337,8 +339,9 @@ describe('orchestration start/stop guard scoping (#4389)', () => {
       const stopOnlyRun = expectOk(await dispatcher.dispatch(makeRequest('orchestration.runStop')))
 
       expect((stopOnlyRun.result as { runId: string }).runId).toBe(runAId)
-      await new Promise((resolve) => setTimeout(resolve, SHORT_POLL_MS * 4))
-      expect(db.getCoordinatorRun(runAId)?.status).toBe('failed')
+      await vi.waitFor(() => {
+        expect(db.getCoordinatorRun(runAId)?.status).toBe('failed')
+      })
     } finally {
       db.close()
     }
@@ -379,7 +382,7 @@ describe('orchestration start/stop guard scoping (#4389)', () => {
       expect(db.getActiveCoordinatorRunForWorkspace('worktree:wt_a')?.id).toBe(runAId)
       expect(db.getActiveCoordinatorRunForWorkspace('worktree:wt_b')?.id).toBe(runBId)
 
-      await stopAndDrain(dispatcher, ['worktree:wt_a', 'worktree:wt_b'])
+      await stopAndDrain(dispatcher, db, ['worktree:wt_a', 'worktree:wt_b'])
     } finally {
       db.close()
     }

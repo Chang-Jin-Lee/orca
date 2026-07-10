@@ -170,7 +170,7 @@ export class OrchestrationDb {
       );
     `)
     this.createUndeliveredInboxIndexIfPossible()
-    this.createWorkspaceScopeIndexesIfPossible()
+    this.createOrchestrationScopeIndexesIfPossible()
   }
 
   // Why: `CREATE TABLE IF NOT EXISTS` is a no-op against an existing on-disk
@@ -290,7 +290,7 @@ export class OrchestrationDb {
         }
       }
       this.createUndeliveredInboxIndexIfPossible()
-      this.createWorkspaceScopeIndexesIfPossible()
+      this.createOrchestrationScopeIndexesIfPossible()
 
       this.db.pragma(`user_version = ${SCHEMA_VERSION}`)
       this.db.exec('COMMIT')
@@ -315,16 +315,18 @@ export class OrchestrationDb {
     `)
   }
 
-  // Why: the (workspace_key, status) indexes can only be created after the
+  // Why: the coordinator scope indexes can only be created after the
   // v5 → v6 ALTER adds the column to upgraded on-disk tables. createTables()
   // runs before migrate(), so attaching these indexes there would fail against
   // a pre-v6 schema; gating on the column keeps both the fresh-install and
   // upgrade paths idempotent.
-  private createWorkspaceScopeIndexesIfPossible(): void {
+  private createOrchestrationScopeIndexesIfPossible(): void {
     if (this.hasColumn('coordinator_runs', 'workspace_key')) {
       this.db.exec(`
         CREATE INDEX IF NOT EXISTS idx_coordinator_runs_workspace_status
-          ON coordinator_runs(workspace_key, status)
+          ON coordinator_runs(workspace_key, status);
+        CREATE INDEX IF NOT EXISTS idx_coordinator_runs_handle_status
+          ON coordinator_runs(coordinator_handle, status);
       `)
     }
     if (this.hasColumn('tasks', 'workspace_key')) {
@@ -980,6 +982,14 @@ export class OrchestrationDb {
         "SELECT * FROM coordinator_runs WHERE status = 'running' AND workspace_key IS NULL ORDER BY created_at DESC LIMIT 1"
       )
       .get() as CoordinatorRun | undefined
+  }
+
+  getActiveCoordinatorRunForHandle(handle: string): CoordinatorRun | undefined {
+    return this.db
+      .prepare(
+        "SELECT * FROM coordinator_runs WHERE coordinator_handle = ? AND status = 'running' ORDER BY created_at DESC LIMIT 1"
+      )
+      .get(handle) as CoordinatorRun | undefined
   }
 
   listActiveCoordinatorRuns(): CoordinatorRun[] {

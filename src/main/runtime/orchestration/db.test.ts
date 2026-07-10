@@ -558,6 +558,21 @@ describe('OrchestrationDb', () => {
       // Strict per-workspace lookup never crosses workspaces.
       expect(d.getActiveCoordinatorRunForWorkspace(KEY_A)?.id).toBe(runA.id)
       expect(d.getActiveCoordinatorRunForWorkspace(KEY_B)?.id).toBe(runB.id)
+      expect(d.getActiveCoordinatorRunForHandle('coord_a')?.id).toBe(runA.id)
+      expect(d.getActiveCoordinatorRunForHandle('coord_b')?.id).toBe(runB.id)
+      expect(d.getActiveCoordinatorRunForHandle('coord_missing')).toBeUndefined()
+    })
+
+    it('indexes active coordinator lookup by handle', () => {
+      const d = createDb()
+      const sqlite = (d as unknown as { db: Database.Database }).db
+      const indexes = sqlite
+        .prepare(
+          `SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'idx_coordinator_runs_handle_status'`
+        )
+        .all()
+
+      expect(indexes).toHaveLength(1)
     })
 
     it('a legacy (NULL) run is visible to every scoped lookup but a scoped run is not', () => {
