@@ -54,6 +54,12 @@ const ASSISTANT_MESSAGE_RETRY_MS = 50
 // '1'/'999'); anything longer is treated as absent.
 const MAX_HOOK_META_LEN = 64
 
+// Why: the WSL relay has no per-pane teardown signal (PTYs live on the
+// Windows host, so nothing calls clearPaneState), and the replay cache would
+// otherwise grow for the relay's lifetime. Recency-cap it; backstop for the
+// SSH relay too.
+const MAX_CACHED_PANES = 256
+
 function defaultEndpointDir(): string {
   return join(homedir(), RELAY_HOOKS_DIR_NAME, RELAY_HOOKS_SUBDIR)
 }
@@ -369,8 +375,19 @@ export class RelayAgentHookServer {
     if (event.payload.state !== 'done' || event.payload.lastAssistantMessage) {
       this.clearAssistantMessageRetry(event.paneKey)
     }
+    // Why: delete-then-set keeps Map insertion order equal to last-update
+    // recency, so the cache cap below always evicts the longest-idle pane.
+    this.state.lastStatusByPaneKey.delete(event.paneKey)
     this.state.lastStatusByPaneKey.set(event.paneKey, event)
+    this.lastEnvelopeMetaByPaneKey.delete(event.paneKey)
     this.lastEnvelopeMetaByPaneKey.set(event.paneKey, { source, env, version })
+    while (this.state.lastStatusByPaneKey.size > MAX_CACHED_PANES) {
+      const oldest = this.state.lastStatusByPaneKey.keys().next().value
+      if (oldest === undefined) {
+        break
+      }
+      this.clearPaneState(oldest)
+    }
     this.forwardEvent(event, source, env, version)
   }
 

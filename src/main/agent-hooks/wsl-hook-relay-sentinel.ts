@@ -38,9 +38,12 @@ export function waitForWslRelaySentinel(
     const dataCallbacks: ((data: Buffer) => void)[] = []
     const closeCallbacks: (() => void)[] = []
     // Why: post-sentinel chunks queue until the mux registers onData, then
-    // flush in order — a setImmediate handoff of only the trailing bytes
-    // could be overtaken by the next direct-dispatched chunk and desync the
-    // frame decoder.
+    // flush as a microtask — after the caller's synchronous wiring (the mux
+    // constructor registers onData before the manager can add notification
+    // handlers, so a synchronous flush could dispatch an early envelope to
+    // zero handlers) yet before any subsequent stdout IO event, so the frame
+    // decoder never sees chunks out of order. A setImmediate handoff would
+    // NOT preserve that: it is a macrotask the next 'data' event can beat.
     const pendingChunks: Buffer[] = []
     let closedNotified = false
 
@@ -129,10 +132,14 @@ export function waitForWslRelaySentinel(
         },
         onData: (cb) => {
           dataCallbacks.push(cb)
-          if (dataCallbacks.length === 1) {
-            for (const pending of pendingChunks.splice(0)) {
-              cb(pending)
-            }
+          if (dataCallbacks.length === 1 && pendingChunks.length > 0) {
+            queueMicrotask(() => {
+              for (const pending of pendingChunks.splice(0)) {
+                for (const dataCb of dataCallbacks) {
+                  dataCb(pending)
+                }
+              }
+            })
           }
         },
         onClose: (cb) => closeCallbacks.push(cb),

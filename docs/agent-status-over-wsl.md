@@ -150,7 +150,8 @@ Design notes from a survey of comparable WSL-capable tools (kept nameless per po
 - Guest-resident component + host-owned channel + guest-side installation, explicitly
   reusing the tool's SSH-remote machinery, **is the established pattern**. No surveyed
   tool makes guest processes dial back to a Windows-localhost listener — the merged OMP
-  curl.exe stopgap is the outlier and should retire once this lands.
+  curl.exe stopgap is the outlier as a primary path (but see the round-4 revised
+  stance below: it survives as the no-node fallback).
 - Prefer host-owned **stdio** over Windows→WSL localhost port forwarding (wslhost
   forwarding is known-flaky under load; one surveyed tool dials the distro vNIC IP just to
   avoid it — stdio sidesteps the question entirely).
@@ -277,14 +278,63 @@ Four independent review lenses over the full diff; confirmed findings fixed:
   map keys case-normalized, `disposeAll` wired to app `will-quit`, single-spawn Codex
   trust catch-up via a one-shot 60s reinstall timer.
 
-Accepted gaps (reviewed, deliberately not addressed here): guest relay per-pane cache
-count grows for the relay's lifetime and reconnect replays all of it (bounded bytes per
-entry; main-side suppression absorbs closed panes); old version-namespaced install dirs
-accrete across upgrades (~200KB each); the OMP curl.exe bridge coexists until the relay
-is validated (then retires); an outdated running daemon /p-translates the guest endpoint
-path until it restarts (hook scripts fall back to env coords, which same-port binding
-keeps correct); `wslDistroCache` caches a transient empty list for the app run
-(pre-existing semantics, now load-bearing for default-distro resolution).
+Accepted gaps (reviewed, deliberately not addressed here): old version-namespaced
+install dirs accrete across upgrades (~200KB each); an outdated running daemon
+/p-translates the guest endpoint path until it restarts (hook scripts fall back to env
+coords, which same-port binding keeps correct); `wslDistroCache` caches a transient
+empty list for the app run (pre-existing semantics, now load-bearing for default-distro
+resolution); default-distro resolution caches the first answer for the app run.
+
+## 2026-07-09 round-4 external adversarial review
+
+A second adversarial sweep (five independent lenses: guest relay + fs bridge, host
+lifecycle state machine, app integration + renderer gate, design-vs-alternatives, and a
+platform fact-check of every WSL claim). Design verdict: the guest-resident relay over
+host-owned stdio is the right architecture — the zero-per-client-change chokepoint is
+what the curl.exe alternative cannot match, and the lifecycle weight is inherent to any
+guest-resident helper. Confirmed findings, all fixed on this branch:
+
+- **`dropState` identity race (major)**: the recovery timer re-checked state identity
+  only BEFORE the async `wsl --list --running` probe; an ensure() landing during the
+  probe could get its fresh state deleted by key — orphaning a live relay child outside
+  the map (unkillable by `disposeAll`, duplicate relay on next ensure). Fixed: identity
+  re-check after the probe await + identity-guarded delete in the manager.
+- **Distro-running probe failed OPEN**: any probe error (including its 10s timeout)
+  reported "running", so recovery could `wsl -d` — and thereby BOOT — a distro the user
+  shut down, in exactly the wedged-wsl.exe failure mode where the probe errors. Now
+  fails closed: drop the state; the next WSL PTY spawn re-ensures.
+- **Spawn form hardened to `--exec`**: `wsl.exe -- <cmd>` routes through the distro's
+  default login shell (Microsoft docs: only `--exec` runs "without using the default
+  Linux shell"), so a fish/nushell chsh could mangle the launch; `--exec sh -c`/-`s`
+  bypasses it and passes argv verbatim (no `$`-preprocessing, escaping shim dropped) —
+  same form as the Codex WSL login spawn.
+- **Post-sentinel handoff microtask**: pending chunks flushed synchronously inside the
+  mux constructor, before the manager could register notification handlers — an
+  envelope arriving in the trailing bytes dispatched to zero handlers (recovered only
+  by the later replay request). Flush now rides a microtask: after the caller's
+  synchronous wiring, still ahead of any subsequent stdout IO event.
+- **Relay process posture**: the guest relay now mirrors the SSH relay's
+  `uncaughtException` (log + exit → manager respawns) / `unhandledRejection` (log +
+  survive) handlers.
+- **Replay cache recency cap**: the WSL relay has no per-pane teardown signal, so the
+  per-pane replay cache grew for the relay's lifetime; now capped at 256 panes,
+  evicting longest-idle first (meta map kept in lockstep). Backstop for SSH too.
+- Smaller: guest launch script derives the stale-exit code from the shared contract
+  constant (was a hardcoded 42 twin); one-shot reinstall timer refuses to arm after
+  dispose; fs-bridge scope comment states the lexical (symlink-following) bound
+  honestly. New oracles: sentinel unit suite (chunk splits, overflow kill, timeout,
+  microtask handoff), fs-bridge scoping suite, 403 + fallback endpoint-file rewrite,
+  cache-cap eviction, and the recovery/manager race regressions.
+
+**Revised stance on the OMP curl.exe bridge — keep it, do not retire.** The relay
+requires node ≥ 18 in the distro; a fresh WSL Ubuntu ships none, Codex CLI is a native
+binary that brings none, and Claude Code's native installer no longer implies a system
+node. A distro running only Codex would hit the no-node cooldown and stay dark — the
+exact GH `6907` shape. The interop bridge is the one delivery path with no guest
+runtime requirement, so it stays as the documented no-node fallback (currently wired
+for OMP; extending it to the shared shell-script builders is the tracked follow-up if
+no-node distros show up in telemetry). The relay remains the primary path: resident
+(no per-event spawn cost) and interop-independent.
 
 ## Implementation map
 

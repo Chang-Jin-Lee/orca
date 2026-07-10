@@ -16,12 +16,12 @@ import {
   type WslRelayStartupFailure
 } from './wsl-hook-relay-sentinel'
 import { addOrcaWslInteropEnv } from '../pty/wsl-orca-env'
-import { escapeWslShCommandForWindows } from '../../shared/wsl-login-shell-command'
 import {
   WSL_HOOK_RELAY_BUNDLE_NAME,
   WSL_HOOK_RELAY_DIR,
   WSL_HOOK_RELAY_INSTANCE_ENV,
   WSL_HOOK_RELAY_NO_NODE_EXIT_CODE,
+  WSL_HOOK_RELAY_STALE_EXIT_CODE,
   WSL_HOOK_RELAY_VERSION_ENV,
   WSL_HOOK_RELAY_VERSION_FILE
 } from '../../shared/wsl-hook-relay-contract'
@@ -81,7 +81,7 @@ export function buildGuestLaunchScript(version: string): string {
     '#!/bin/sh',
     `d="${dir}"`,
     `v="$(cat "$d/${WSL_HOOK_RELAY_VERSION_FILE}" 2>/dev/null || true)"`,
-    `[ -n "$${WSL_HOOK_RELAY_VERSION_ENV}" ] && [ "$v" = "$${WSL_HOOK_RELAY_VERSION_ENV}" ] || exit 42`,
+    `[ -n "$${WSL_HOOK_RELAY_VERSION_ENV}" ] && [ "$v" = "$${WSL_HOOK_RELAY_VERSION_ENV}" ] || exit ${WSL_HOOK_RELAY_STALE_EXIT_CODE}`,
     'n=""',
     'for c in "$(command -v node 2>/dev/null || true)" "$HOME/.nvm/versions/node"/*/bin/node /usr/local/bin/node /usr/bin/node "$HOME/.local/bin/node"; do',
     '  [ -n "$c" ] && [ -x "$c" ] || continue',
@@ -127,10 +127,13 @@ export function spawnWslRelayProcess(
   env: NodeJS.ProcessEnv,
   version: string
 ): ChildProcessWithoutNullStreams {
-  // Why: escapeWslShCommandForWindows — wsl.exe preprocesses unescaped `$`
-  // in Windows argv; every sh -c site in the repo routes through it.
-  const command = escapeWslShCommandForWindows(`exec sh "${guestRelayDirExpr(version)}/launch.sh"`)
-  return spawn('wsl.exe', ['-d', distro, '--', 'sh', '-c', command], {
+  // Why: --exec bypasses the distro's default login shell — a bare `--`
+  // routes through it (a fish/nushell chsh could mangle the command) and
+  // triggers wsl.exe's `$`-preprocessing of Windows argv. --exec passes argv
+  // verbatim (same form as the Codex WSL login spawn), so `$HOME` reaches
+  // sh unescaped and expands guest-side.
+  const command = `exec sh "${guestRelayDirExpr(version)}/launch.sh"`
+  return spawn('wsl.exe', ['-d', distro, '--exec', 'sh', '-c', command], {
     env,
     stdio: ['pipe', 'pipe', 'pipe'],
     windowsHide: true
@@ -140,8 +143,10 @@ export function spawnWslRelayProcess(
 /** True when the distro shows in `wsl --list --running`. Listing does NOT
  *  boot anything — unlike `wsl -d`, which starts a stopped distro. The
  *  restart timer must check this so relay recovery never resurrects a VM the
- *  user shut down with `wsl --shutdown`. Fails open (true) on probe errors so
- *  a flaky wsl.exe cannot block recovery. */
+ *  user shut down with `wsl --shutdown`. Fails CLOSED (false) on probe
+ *  errors: booting a VM the user shut down is worse than a skipped restart
+ *  (the next WSL PTY spawn re-ensures), and a wsl.exe too wedged to list
+ *  distros would not have launched the relay anyway. */
 export function isWslDistroRunning(distro: string): Promise<boolean> {
   return new Promise((resolve) => {
     execFile(
@@ -152,7 +157,7 @@ export function isWslDistroRunning(distro: string): Promise<boolean> {
       { env: { ...process.env, WSL_UTF8: '1' }, timeout: 10_000, windowsHide: true },
       (err, stdout) => {
         if (err) {
-          resolve(true)
+          resolve(false)
           return
         }
         const wanted = distro.trim().toLowerCase()
@@ -172,7 +177,9 @@ export function runWslInstallProcess(
   env: NodeJS.ProcessEnv
 ): Promise<{ code: number | null; stderr: string }> {
   return new Promise((resolve, reject) => {
-    const child = spawn('wsl.exe', ['-d', distro, '--', 'sh', '-s'], {
+    // Why: --exec skips the default login shell; the script rides stdin so
+    // no quoting crosses the wsl.exe boundary at all.
+    const child = spawn('wsl.exe', ['-d', distro, '--exec', 'sh', '-s'], {
       env,
       stdio: ['pipe', 'pipe', 'pipe'],
       windowsHide: true

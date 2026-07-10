@@ -94,6 +94,17 @@ async function main(): Promise<void> {
   process.stdout.on('error', shutdown)
   process.on('SIGTERM', shutdown)
   process.on('SIGINT', shutdown)
+  // Why: same posture as the SSH relay — an uncaught exception may leave
+  // broken invariants, so exit and let the host manager respawn a clean
+  // relay; a stray rejection is logged and survived (hook delivery must not
+  // die for a non-fatal async error).
+  process.on('uncaughtException', (err) => {
+    process.stderr.write(`[wsl-hook-relay] uncaught exception: ${err.message}\n`)
+    process.exit(1)
+  })
+  process.on('unhandledRejection', (reason) => {
+    process.stderr.write(`[wsl-hook-relay] unhandled rejection: ${String(reason)}\n`)
+  })
 
   // Signal readiness — the host watches for this exact string before
   // sending framed data (same contract as the SSH relay).

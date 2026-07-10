@@ -37,6 +37,9 @@ export class WslRelayRecovery {
   }
 
   scheduleOneShotReinstall(state: WslRelayRecoveryState, delayMs: number, run: () => void): void {
+    if (this.io.isDisposed()) {
+      return
+    }
     state.reinstallTimer = setTimeout(() => {
       state.reinstallTimer = undefined
       run()
@@ -59,9 +62,16 @@ export class WslRelayRecovery {
     if (this.io.isDisposed() || !this.io.isCurrent(state)) {
       return
     }
-    if (!(await this.io.isDistroRunning(state.distro))) {
+    const running = await this.io.isDistroRunning(state.distro)
+    // Why: a fresh ensure() may have replaced this state during the probe
+    // await — dropping/restarting here would then act on the replacement,
+    // orphaning its live relay child outside the manager's map.
+    if (this.io.isDisposed() || !this.io.isCurrent(state)) {
+      return
+    }
+    if (!running) {
       this.io.warn(
-        `[agent-hooks] WSL hook relay (${state.distro}): distro not running; restart skipped (next WSL terminal re-ensures)`
+        `[agent-hooks] WSL hook relay (${state.distro}): distro not running (or probe failed); restart skipped (next WSL terminal re-ensures)`
       )
       this.io.dropState(state)
       return

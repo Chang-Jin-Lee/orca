@@ -67,6 +67,70 @@ describe('WslRelayRecovery', () => {
     expect(restart).not.toHaveBeenCalled()
   })
 
+  it('does not drop or restart when the state was replaced mid-probe (probe false)', async () => {
+    let current = true
+    let resolveProbe: ((running: boolean) => void) | undefined
+    const probe = vi.fn(() => new Promise<boolean>((resolve) => (resolveProbe = resolve)))
+    const restart = vi.fn()
+    const dropState = vi.fn()
+    const recovery = new WslRelayRecovery({
+      isDistroRunning: probe,
+      warn: vi.fn(),
+      isDisposed: () => false,
+      isCurrent: () => current,
+      restart,
+      dropState
+    })
+    const state = makeState()
+    recovery.scheduleRestart(state)
+    await waitFor(() => probe.mock.calls.length === 1)
+    // A fresh ensure() replaces this state while the probe is in flight.
+    current = false
+    resolveProbe?.(false)
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    expect(dropState).not.toHaveBeenCalled()
+    expect(restart).not.toHaveBeenCalled()
+  })
+
+  it('does not restart when the state was replaced mid-probe (probe true)', async () => {
+    let current = true
+    let resolveProbe: ((running: boolean) => void) | undefined
+    const probe = vi.fn(() => new Promise<boolean>((resolve) => (resolveProbe = resolve)))
+    const restart = vi.fn()
+    const recovery = new WslRelayRecovery({
+      isDistroRunning: probe,
+      warn: vi.fn(),
+      isDisposed: () => false,
+      isCurrent: () => current,
+      restart,
+      dropState: vi.fn()
+    })
+    const state = makeState()
+    recovery.scheduleRestart(state)
+    await waitFor(() => probe.mock.calls.length === 1)
+    current = false
+    resolveProbe?.(true)
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    expect(restart).not.toHaveBeenCalled()
+  })
+
+  it('scheduleOneShotReinstall is a no-op once disposed', async () => {
+    const run = vi.fn()
+    const recovery = new WslRelayRecovery({
+      isDistroRunning: async () => true,
+      warn: vi.fn(),
+      isDisposed: () => true,
+      isCurrent: () => true,
+      restart: vi.fn(),
+      dropState: vi.fn()
+    })
+    const state = makeState()
+    recovery.scheduleOneShotReinstall(state, 10, run)
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    expect(run).not.toHaveBeenCalled()
+    expect(state.reinstallTimer).toBeUndefined()
+  })
+
   it('clearTimers cancels both pending timers', async () => {
     const restart = vi.fn()
     const recovery = new WslRelayRecovery({

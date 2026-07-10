@@ -14,7 +14,7 @@ import { SshChannelMultiplexer, type MultiplexerTransport } from '../ssh/ssh-cha
 import { createWslHookSftpAdapter } from './wsl-hook-fs-adapter'
 import { installRemoteManagedAgentHooks } from './remote-managed-hook-installers'
 import { WslHookRelayManager } from './wsl-hook-relay-manager'
-import type { WslHookRelayManagerDeps } from './wsl-hook-relay-deps'
+import { FAILURE_COOLDOWN_BASE_MS, type WslHookRelayManagerDeps } from './wsl-hook-relay-deps'
 import {
   AGENT_HOOK_NOTIFICATION_METHOD,
   AGENT_HOOK_REQUEST_REPLAY_METHOD
@@ -334,5 +334,56 @@ describe('WslHookRelayManager', () => {
     const { manager } = createManager({})
     expect(manager.getGuestEndpointFilePath('Ubuntu')).toBeNull()
     expect(manager.getGuestEndpointFilePath(null)).toBeNull()
+  })
+
+  it('keeps a fresh state that replaced a failed one while its restart probe was in flight', async () => {
+    // Drain microtasks under fake timers (queueMicrotask is not a faked timer).
+    const flush = async (): Promise<void> => {
+      for (let i = 0; i < 25; i++) {
+        await Promise.resolve()
+      }
+    }
+    let resolveProbe: ((running: boolean) => void) | undefined
+    const isDistroRunning = vi.fn(() => new Promise<boolean>((resolve) => (resolveProbe = resolve)))
+    const spawnRelay = vi.fn(() => fakeChild())
+    // First launch fails outright; the replacement launch never reaches the
+    // sentinel, so its state stays 'starting' with no live mux to clean up.
+    const waitForSentinel = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('relay died before sentinel'))
+      .mockReturnValueOnce(new Promise<never>(() => {}))
+    const { manager, deps } = createManager({ isDistroRunning, spawnRelay, waitForSentinel })
+
+    vi.useFakeTimers()
+    try {
+      manager.ensureForDistro('Ubuntu')
+      await flush()
+      expect(spawnRelay).toHaveBeenCalledTimes(1)
+      expect(deps.warn).toHaveBeenCalledWith(expect.stringContaining('relay died before sentinel'))
+
+      // Fire the restart timer; recovery blocks awaiting the distro-running probe.
+      await vi.advanceTimersByTimeAsync(FAILURE_COOLDOWN_BASE_MS + 300)
+      expect(isDistroRunning).toHaveBeenCalledTimes(1)
+
+      // A new WSL PTY spawn re-ensures past the elapsed cooldown, replacing the
+      // failed state in the map while the old state's probe is still pending.
+      manager.ensureForDistro('Ubuntu')
+      await flush()
+      expect(spawnRelay).toHaveBeenCalledTimes(2)
+
+      // Probe resolves 'not running' after the swap: the drop must be skipped so
+      // the replacement's live relay is not orphaned.
+      resolveProbe?.(false)
+      await flush()
+      expect(deps.warn).not.toHaveBeenCalledWith(expect.stringContaining('distro not running'))
+
+      // Fresh state survived: a further ensure dedupes instead of spawning again.
+      manager.ensureForDistro('Ubuntu')
+      await flush()
+      expect(spawnRelay).toHaveBeenCalledTimes(2)
+    } finally {
+      manager.disposeAll()
+      vi.useRealTimers()
+    }
   })
 })

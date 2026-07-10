@@ -62,7 +62,14 @@ export class WslHookRelayManager {
       isDisposed: () => this.disposed,
       isCurrent: (state) => this.states.get(distroKey(state.distro)) === state,
       restart: (distro) => this.ensureForDistro(distro),
-      dropState: (state) => void this.states.delete(distroKey(state.distro))
+      dropState: (state) => {
+        // Why: identity-guarded — a fresh ensure() may own this key by now;
+        // deleting by key alone would orphan its live relay child.
+        const key = distroKey(state.distro)
+        if (this.states.get(key) === state) {
+          this.states.delete(key)
+        }
+      }
     })
   }
 

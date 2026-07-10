@@ -28,6 +28,9 @@ export function registerWslHookFsHandlers(
   // Why: the bridge exists solely to write agent hook configs into the guest
   // user's home. Refusing paths outside it bounds the blast radius of a
   // compromised host-side caller to what hook installation touches anyway.
+  // The bound is lexical (symlinks inside home are followed) — acceptable
+  // because the only caller is the host-owned stdio channel, never an
+  // agent-reachable surface.
   const homeRoot = posix.resolve(home)
   const resolveRaw = (rawPath: unknown): string => {
     if (typeof rawPath !== 'string' || rawPath.length === 0) {
