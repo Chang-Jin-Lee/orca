@@ -9,6 +9,7 @@ import {
 import { MobileDictationPendingAudioBudget } from './mobile-dictation-pending-audio-budget'
 import { enqueueMobileDictationAudioChunk } from './mobile-dictation-audio-chunk'
 import { createMobileDictationKeepAwakeOwner } from './mobile-dictation-keep-awake'
+import { useMobileDictationForegroundKeepAwake } from './mobile-dictation-foreground-keep-awake'
 import {
   DICTATION_FINISH_TIMEOUT_MS,
   createMobileDictationId,
@@ -60,7 +61,13 @@ export function useMobileDictation(options: UseMobileDictationOptions): UseMobil
       acceptingChunksRef.current = false
       pendingChunksRef.current.clear()
       pendingAudioBudgetRef.current.reset()
-      toggleRecording(false)
+      try {
+        toggleRecording(false)
+      } catch (err) {
+        // Cleanup must keep going when native recording shutdown throws, or
+        // the wake tag and dictation state would leak.
+        console.error('Failed to stop microphone recording', err)
+      }
       void keepAwakeOwner.release(dictationId ?? undefined).catch(() => undefined)
     },
     [keepAwakeOwner]
@@ -186,9 +193,10 @@ export function useMobileDictation(options: UseMobileDictationOptions): UseMobil
     finishingIdRef.current = dictationId
     setStatus('processing')
     acceptingChunksRef.current = false
-    toggleRecording(false)
-    void keepAwakeOwner.release(dictationId).catch(() => undefined)
     try {
+      // Inside the try so a throwing native shutdown still runs the finally
+      // release and error cleanup.
+      toggleRecording(false)
       await Promise.allSettled(Array.from(pendingChunksRef.current))
       if (
         !isCurrentMobileDictationFinish(
@@ -237,6 +245,9 @@ export function useMobileDictation(options: UseMobileDictationOptions): UseMobil
     } catch (err) {
       failActiveDictation(dictationId, err)
     } finally {
+      // Hold the wake tag through chunk drain and the finish RPC: a screen
+      // lock mid-processing suspends the app and loses the transcript.
+      void keepAwakeOwner.release(dictationId).catch(() => undefined)
       if (finishingIdRef.current === dictationId) {
         finishingIdRef.current = null
       }
@@ -256,6 +267,8 @@ export function useMobileDictation(options: UseMobileDictationOptions): UseMobil
     setStatus('idle')
     setError(null)
   }, [closeDictationAudio])
+
+  useMobileDictationForegroundKeepAwake(keepAwakeOwner, activeIdRef)
 
   useEffect(() => {
     const sub = addExpoTwoWayAudioEventListener('onAudioInterruption', (event) => {

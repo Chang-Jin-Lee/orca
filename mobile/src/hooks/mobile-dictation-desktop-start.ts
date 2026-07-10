@@ -1,4 +1,7 @@
-import { isCurrentMobileDictationStart } from './mobile-dictation-session-state'
+import {
+  MOBILE_DICTATION_KEEP_AWAKE_STARTUP_BUDGET_MS,
+  isCurrentMobileDictationStart
+} from './mobile-dictation-session-state'
 import type { MobileDictationKeepAwakeOwner } from './mobile-dictation-keep-awake'
 import type { RpcClient } from '../transport/rpc-client'
 
@@ -67,24 +70,23 @@ export async function startMobileDictationDesktopSession(
     return false
   }
 
-  try {
-    // Keep-awake is acquired only after the desktop session exists, so stale
-    // mobile starts can be canceled without holding a screen-lock tag.
-    await keepAwakeOwner.acquire(dictationId)
-  } catch (err) {
-    if (!isCurrentStart(options)) {
-      setIdleIfGenerationCurrent(options)
-      return false
-    }
-    options.clearActiveId(dictationId)
-    await client.sendRequest('speech.dictation.cancel', { dictationId }).catch(() => undefined)
-    const shouldReport = canReportStartFailure(options)
-    setIdleIfGenerationCurrent(options)
-    if (!shouldReport) {
-      return false
-    }
-    throw err
-  }
+  // Keep-awake is acquired only after the desktop session exists, so stale
+  // mobile starts can be canceled without holding a screen-lock tag. It is
+  // best-effort: Android throws with no current Activity, and a screen-lock
+  // nicety must not abort an otherwise viable dictation — nor delay recording
+  // past a small budget when native calls hang. A late acquisition finishes in
+  // the background; the serialized keep-awake queue orders any later release
+  // after it.
+  await new Promise<void>((resolve) => {
+    const budgetTimer = setTimeout(resolve, MOBILE_DICTATION_KEEP_AWAKE_STARTUP_BUDGET_MS)
+    keepAwakeOwner
+      .acquire(dictationId)
+      .catch((err: unknown) => console.error('Keep-awake activation failed', err))
+      .finally(() => {
+        clearTimeout(budgetTimer)
+        resolve()
+      })
+  })
 
   if (!isCurrentStart(options)) {
     await keepAwakeOwner.release(dictationId).catch(() => undefined)

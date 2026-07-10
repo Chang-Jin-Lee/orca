@@ -18,6 +18,10 @@ const sessionStateSource = readFileSync(
   new URL('./mobile-dictation-session-state.ts', import.meta.url),
   'utf8'
 )
+const foregroundKeepAwakeSource = readFileSync(
+  new URL('./mobile-dictation-foreground-keep-awake.ts', import.meta.url),
+  'utf8'
+)
 
 function sliceSource(sourceText: string, startPattern: string, endPattern: string): string {
   const start = sourceText.indexOf(startPattern)
@@ -87,8 +91,8 @@ describe('useMobileDictation source invariants', () => {
   })
 
   it('keeps mobile dictation keep-awake ownership beside the hook', () => {
-    expect(source).toContain(
-      "import { createMobileDictationKeepAwakeOwner } from './mobile-dictation-keep-awake'"
+    expect(source).toMatch(
+      /import \{[^}]*createMobileDictationKeepAwakeOwner[^}]*\} from '\.\/mobile-dictation-keep-awake'/
     )
     expect(source).toContain(
       'const keepAwakeOwner = useMemo(createMobileDictationKeepAwakeOwner, [])'
@@ -107,7 +111,7 @@ describe('useMobileDictation source invariants', () => {
     const desktopStartIndex = startBody.indexOf(
       "client.sendRequest('speech.dictation.start', { dictationId })"
     )
-    const acquireIndex = startBody.indexOf('await keepAwakeOwner.acquire(dictationId)')
+    const acquireIndex = startBody.indexOf('.acquire(dictationId)')
     const desktopSessionIndex = hookStartBody.indexOf('await startMobileDictationDesktopSession')
     const toggleRecordingIndex = hookStartBody.indexOf('toggleRecording(true)')
 
@@ -133,7 +137,7 @@ describe('useMobileDictation source invariants', () => {
       'export async function startMobileDictationDesktopSession',
       '  return true'
     )
-    const acquireIndex = startBody.indexOf('await keepAwakeOwner.acquire(dictationId)')
+    const acquireIndex = startBody.indexOf('.acquire(dictationId)')
     const returnStartedIndex = startBody.indexOf('return true')
     const afterAcquire = startBody.slice(acquireIndex, returnStartedIndex)
 
@@ -147,25 +151,20 @@ describe('useMobileDictation source invariants', () => {
     expect(afterAcquire).toContain("client.sendRequest('speech.dictation.cancel', { dictationId })")
   })
 
-  it('only reports keep-awake acquisition failures for the current start', () => {
+  it('treats keep-awake acquisition as best-effort for the desktop session', () => {
     const startBody = sliceDesktopStartBetween(
       'export async function startMobileDictationDesktopSession',
       '  return true'
     )
-    const acquireIndex = startBody.indexOf('await keepAwakeOwner.acquire(dictationId)')
-    const catchIndex = startBody.indexOf('} catch (err)', acquireIndex)
-    const staleCleanupIndex = startBody.indexOf('await keepAwakeOwner.release', catchIndex)
-    expect(catchIndex).toBeGreaterThan(acquireIndex)
-    expect(staleCleanupIndex).toBeGreaterThan(catchIndex)
-    const acquireFailurePath = startBody.slice(catchIndex, staleCleanupIndex)
+    const acquireIndex = startBody.indexOf('.acquire(dictationId)')
+    expect(acquireIndex).toBeGreaterThanOrEqual(0)
+    const staleCheckIndex = startBody.indexOf('isCurrentStart(options)', acquireIndex)
+    expect(staleCheckIndex).toBeGreaterThan(acquireIndex)
 
-    expect(acquireFailurePath).toContain('catch (err)')
-    expect(acquireFailurePath).toContain('isCurrentStart(options)')
-    expect(acquireFailurePath).toContain('return')
-    expect(acquireFailurePath).toContain('options.clearActiveId(dictationId)')
-    expect(acquireFailurePath).toContain('setIdleIfGenerationCurrent(options)')
-    expect(acquireFailurePath).toContain('throw err')
-    expect(acquireFailurePath).not.toContain('keepAwakeOwner.release')
+    // An acquisition failure must not cancel the dictation or surface an error.
+    const acquireChain = startBody.slice(acquireIndex, staleCheckIndex)
+    expect(acquireChain).toContain('.catch(')
+    expect(acquireChain).not.toContain('throw')
   })
 
   it('releases keep-awake on all dictation cleanup paths without delaying recording shutdown', () => {
@@ -190,14 +189,60 @@ describe('useMobileDictation source invariants', () => {
 
     const stopBody = sliceBetween('const stop = useCallback(async () => {', 'const cancel =')
     expect(stopBody.indexOf('toggleRecording(false)')).toBeLessThan(
-      stopBody.indexOf('void keepAwakeOwner.release')
-    )
-    expect(stopBody.indexOf('void keepAwakeOwner.release')).toBeLessThan(
       stopBody.indexOf('await Promise.allSettled')
     )
-    expect(stopBody.indexOf('void keepAwakeOwner.release')).toBeLessThan(
-      stopBody.indexOf('speech.dictation.finish')
+    // The wake tag must be held through chunk drain and the finish RPC so a
+    // screen lock cannot suspend the app before the transcript arrives.
+    expect(stopBody.indexOf('speech.dictation.finish')).toBeLessThan(
+      stopBody.indexOf('void keepAwakeOwner.release')
     )
+    expect(stopBody.indexOf('} finally {')).toBeLessThan(
+      stopBody.indexOf('void keepAwakeOwner.release')
+    )
+  })
+
+  it('reacquires the wake tag when Android returns to the foreground mid-dictation', () => {
+    expect(source).toContain('useMobileDictationForegroundKeepAwake(keepAwakeOwner, activeIdRef)')
+    expect(foregroundKeepAwakeSource).toContain("Platform.OS !== 'android'")
+    expect(foregroundKeepAwakeSource).toContain('keepAwakeOwner.reacquire(dictationId)')
+    // A transiently failing refresh retries while the dictation is live.
+    expect(foregroundKeepAwakeSource).toContain('REACQUIRE_RETRY_DELAYS_MS[attempt]')
+    expect(foregroundKeepAwakeSource).toContain('activeIdRef.current === dictationId')
+    // Stale-tag retries survive hook unmount via a module-level listener.
+    expect(foregroundKeepAwakeSource).toContain('installGlobalStaleTagForegroundDrain()')
+    expect(foregroundKeepAwakeSource).toContain('drainMobileDictationKeepAwakeCleanup()')
+
+    // Native activate skips re-applying the window flag while any tag remains,
+    // so reacquire must deactivate before activating.
+    const reacquireBody = sliceSource(
+      keepAwakeSource,
+      'reacquire(dictationId: string)',
+      'release(dictationId?: string)'
+    )
+    expect(reacquireBody.indexOf('await activateTrackedTag(tag,')).toBeGreaterThanOrEqual(0)
+    expect(reacquireBody.indexOf('deactivateTrackedTag(tag)')).toBeGreaterThanOrEqual(0)
+    expect(reacquireBody.indexOf('deactivateTrackedTag(tag)')).toBeLessThan(
+      reacquireBody.indexOf('await activateTrackedTag(tag,')
+    )
+  })
+
+  it('keeps cleanup going when native recording shutdown throws', () => {
+    const closeAudio = sliceBetween(
+      'const closeDictationAudio = useCallback(',
+      'const failActiveDictation ='
+    )
+    const toggleIndex = closeAudio.indexOf('toggleRecording(false)')
+    const catchIndex = closeAudio.indexOf('} catch', toggleIndex)
+    const releaseIndex = closeAudio.indexOf('void keepAwakeOwner.release')
+    expect(toggleIndex).toBeGreaterThanOrEqual(0)
+    expect(catchIndex).toBeGreaterThan(toggleIndex)
+    expect(catchIndex).toBeLessThan(releaseIndex)
+
+    // stop()'s recording shutdown sits inside the try so a native throw still
+    // runs the finally release and error cleanup.
+    const stopBody = sliceBetween('const stop = useCallback(async () => {', 'const cancel =')
+    expect(stopBody.indexOf('try {')).toBeGreaterThanOrEqual(0)
+    expect(stopBody.indexOf('try {')).toBeLessThan(stopBody.indexOf('toggleRecording(false)'))
   })
 
   it('routes disabled state and audio interruptions through cancel cleanup', () => {
