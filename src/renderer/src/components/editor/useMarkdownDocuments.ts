@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { MarkdownDocument } from '../../../../shared/types'
 import { useAppStore } from '@/store'
 import { getConnectionId } from '@/lib/connection-context'
-import { listRuntimeMarkdownDocuments, statRuntimePath } from '@/runtime/runtime-file-client'
+import { statRuntimePath } from '@/runtime/runtime-file-client'
 import { settingsForRuntimeOwner } from '@/runtime/runtime-rpc-client'
 import type { MarkdownViewMode, OpenFile } from '@/store/slices/editor'
 import {
@@ -11,6 +11,7 @@ import {
   resolveMarkdownDocLink
 } from './markdown-doc-links'
 import { selectMarkdownDocumentWorktreePath } from './markdown-document-worktree-path-selector'
+import { requestSharedMarkdownDocumentList } from './markdown-document-list-request'
 
 type OpenMarkdownDocumentOptions = {
   anchor?: string | null
@@ -60,7 +61,7 @@ export function useMarkdownDocuments(
     const requestId = requestRef.current + 1
     requestRef.current = requestId
     try {
-      const documents = await listRuntimeMarkdownDocuments(
+      const documents = await requestSharedMarkdownDocumentList(
         {
           settings: settingsForRuntimeOwner(
             useAppStore.getState().settings,
