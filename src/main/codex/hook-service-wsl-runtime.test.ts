@@ -122,6 +122,45 @@ describe('Codex WSL runtime hook install', () => {
     expect(plan?.configPath).toBe(pathWin32.join(runtimeHome, 'hooks.json'))
   })
 
+  it('removes managed trust when the WSL canonical path changes', () => {
+    const plan = createTestPlan()
+    writeFileSync(plan.configPath, '{"hooks":{}}\n', 'utf-8')
+    writeFileSync(plan.tomlPath, '', 'utf-8')
+
+    const oldPlan = {
+      ...plan,
+      commandScriptPath: '/old/home/.orca/agent-hooks/codex-hook.sh',
+      trustConfigPath: '/old/home/hooks.json'
+    }
+    expect(_internals.installManagedHooksIntoWslRuntime(oldPlan).state).toBe('installed')
+    const oldCommand = `if [ -r '${oldPlan.commandScriptPath}' ]; then /bin/sh '${oldPlan.commandScriptPath}'; fi`
+    const oldKey = computeTrustKey(getManagedTrustEntry(oldPlan, oldCommand))
+
+    const newPlan = {
+      ...plan,
+      commandScriptPath: '/new/home/.orca/agent-hooks/codex-hook.sh',
+      trustConfigPath: '/new/home/hooks.json'
+    }
+    expect(_internals.installManagedHooksIntoWslRuntime(newPlan).state).toBe('installed')
+    const newCommand = `if [ -r '${newPlan.commandScriptPath}' ]; then /bin/sh '${newPlan.commandScriptPath}'; fi`
+    const newKey = computeTrustKey(getManagedTrustEntry(newPlan, newCommand))
+    const trustEntries = readHookTrustEntries(plan.tomlPath)
+
+    expect(trustEntries.has(oldKey)).toBe(false)
+    expect(trustEntries.has(newKey)).toBe(true)
+  })
+
+  it('revokes managed trust when WSL canonicalization later fails', () => {
+    const plan = createTestPlan()
+    writeFileSync(plan.configPath, '{"hooks":{}}\n', 'utf-8')
+    writeFileSync(plan.tomlPath, '', 'utf-8')
+    expect(_internals.installManagedHooksIntoWslRuntime(plan).state).toBe('installed')
+
+    _internals.removeStaleWslRuntimeManagedHookTrustEntries(plan.tomlPath, [])
+
+    expect(readHookTrustEntries(plan.tomlPath).size).toBe(0)
+  })
+
   it('generates a POSIX hook that bridges WSL loopback failures through Windows curl', () => {
     const script = _internals.getManagedScript('posix')
     expect(script).toContain('load_hook_endpoint()')
