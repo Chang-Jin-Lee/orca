@@ -28,7 +28,6 @@ export type AgentHookInstallSkipReason =
   | 'cli_presence_unknown'
   | 'hooks_disabled'
   | 'remote_presence_unavailable'
-  | 'unsupported_remote_platform'
   | 'remote_hook_unsupported'
 
 export type AgentHookInstallStatus = {

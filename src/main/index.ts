@@ -36,6 +36,7 @@ import {
   removeManagedAgentHooks
 } from './agent-hooks/managed-agent-hook-controls'
 import { recordManagedHookInstallFailure } from './agent-hooks/install-telemetry'
+import type { AgentHookInstallStatus } from '../shared/agent-hook-types'
 import { initCohortClassifier } from './telemetry/cohort-classifier'
 import { initOnboardingCohortClassifier } from './telemetry/onboarding-cohort-classifier'
 import { resolveConsent } from './telemetry/consent'
@@ -122,6 +123,7 @@ import {
 } from './codex-accounts/runtime-selection'
 import { normalizeClaudeRuntimeSelection } from './claude-accounts/runtime-selection'
 import { codexHookService } from './codex/hook-service'
+import { codexLaunchNeedsDirectApprovalPromotion } from './codex/codex-launch-hook-upkeep'
 import { ClaudeAccountService } from './claude-accounts/service'
 import { ClaudeRuntimeAuthService } from './claude-accounts/runtime-auth-service'
 import {
@@ -699,20 +701,29 @@ async function startServeAgentHookServer(): Promise<void> {
 async function maintainCodexLaunchHooks(): Promise<void> {
   const hooksEnabled = isAgentStatusHooksEnabled(store?.getSettings())
   try {
-    const statuses = hooksEnabled
-      ? await installManagedAgentHooks(store?.getSettings(), {
-          shouldHydrateShellPath: app.isPackaged && process.platform !== 'win32',
-          onInstallError: recordManagedHookInstallFailure,
-          agents: ['codex']
-        })
-      : [codexHookService.refreshRuntimeUserHooks()]
-    const failedStatus = statuses.find((status) => status.state === 'error')
-    if (failedStatus) {
+    let launchStatus: AgentHookInstallStatus | undefined
+    if (hooksEnabled) {
+      const statuses = await installManagedAgentHooks(store?.getSettings(), {
+        shouldHydrateShellPath: app.isPackaged && process.platform !== 'win32',
+        onInstallError: recordManagedHookInstallFailure,
+        agents: ['codex']
+      })
+      launchStatus = statuses.find((status) => status.agent === 'codex')
+      // Why: presence-gating can skip the managed install; #7896 approval
+      // promotion must still run on every Codex launch, so promote directly when
+      // install() itself never ran (a completed install() already promoted).
+      if (codexLaunchNeedsDirectApprovalPromotion(launchStatus)) {
+        codexHookService.promoteRuntimeHookApprovals()
+      }
+    } else {
+      launchStatus = codexHookService.refreshRuntimeUserHooks()
+    }
+    if (launchStatus?.state === 'error') {
       console.warn(
         `[codex-hook-service] failed to ${
           hooksEnabled ? 'refresh' : 'refresh user'
         } runtime hooks before launch`,
-        failedStatus.detail
+        launchStatus.detail
       )
     }
   } catch (error) {

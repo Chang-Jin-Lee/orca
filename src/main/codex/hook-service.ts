@@ -838,6 +838,14 @@ export class CodexHookService {
     return { agent: 'codex', state, configPath, managedHooksPresent, detail }
   }
 
+  // Why: exposes only the #7896 approval-promotion side effect so the per-launch
+  // path can guarantee it runs even when presence-gating skips the managed
+  // install. Promotion is idempotent, so callers that also run install() (which
+  // promotes internally) stay correct without double work.
+  promoteRuntimeHookApprovals(): void {
+    promoteCodexRuntimeHookApprovalsToSystem()
+  }
+
   install(): AgentHookInstallStatus {
     const configPath = getConfigPath()
     const scriptPath = getManagedScriptPath()

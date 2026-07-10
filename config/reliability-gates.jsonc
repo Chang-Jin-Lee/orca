@@ -2596,7 +2596,7 @@
       "invariant": "Startup, Settings, runtime RPC, offline CLI, and SSH enable paths must not mutate third-party managed hook config without positive CLI presence or a resolvable explicit command override; disabling hooks remains ungated so stale Orca-managed hooks can be removed.",
       "oracle": "Presence-gated install calls only installers with found local or remote CLI evidence; missing or unknown CLIs return skipped statuses and do not write config; status reads remain config-authoritative; SSH all-missing/unknown presence avoids opening SFTP.",
       "commands": [
-        "pnpm exec vitest run --config config/vitest.config.ts src/main/agent-hooks/managed-agent-hook-manifest.test.ts src/main/agent-hooks/local-agent-cli-presence.test.ts src/main/agent-hooks/managed-agent-hook-controls.test.ts src/main/agent-hooks/install-telemetry.test.ts src/main/agent-hooks/remote-managed-hook-installers.test.ts src/main/ssh/ssh-relay-session-agent-hook-presence.test.ts src/relay/agent-hook-cli-presence.test.ts src/relay/agent-hook-cli-presence-timeout.test.ts src/cli/handlers/agent-hooks.test.ts src/main/runtime/rpc/methods/client-ui.test.ts src/main/runtime/orca-runtime.test.ts"
+        "pnpm exec vitest run --config config/vitest.config.ts src/main/agent-hooks/managed-agent-hook-manifest.test.ts src/main/agent-hooks/local-agent-cli-presence.test.ts src/main/agent-hooks/managed-agent-hook-controls.test.ts src/main/agent-hooks/install-telemetry.test.ts src/main/agent-hooks/remote-managed-hook-installers.test.ts src/main/ssh/ssh-relay-session-agent-hook-presence.test.ts src/relay/agent-hook-cli-presence.test.ts src/relay/agent-hook-cli-presence-timeout.test.ts src/cli/handlers/agent-hooks.test.ts src/main/runtime/rpc/methods/client-ui.test.ts src/main/runtime/orca-runtime.test.ts src/main/codex/codex-launch-hook-upkeep.test.ts"
       ],
       "testFiles": [
         "src/main/agent-hooks/managed-agent-hook-manifest.test.ts",
@@ -2609,7 +2609,8 @@
         "src/relay/agent-hook-cli-presence-timeout.test.ts",
         "src/cli/handlers/agent-hooks.test.ts",
         "src/main/runtime/rpc/methods/client-ui.test.ts",
-        "src/main/runtime/orca-runtime.test.ts"
+        "src/main/runtime/orca-runtime.test.ts",
+        "src/main/codex/codex-launch-hook-upkeep.test.ts"
       ],
       "assertionRefs": [
         {
@@ -2642,7 +2643,7 @@
           "date": "2026-07-05",
           "runner": "local",
           "platform": "macos",
-          "command": "pnpm exec vitest run --config config/vitest.config.ts src/main/agent-hooks/managed-agent-hook-manifest.test.ts src/main/agent-hooks/local-agent-cli-presence.test.ts src/main/agent-hooks/managed-agent-hook-controls.test.ts src/main/agent-hooks/install-telemetry.test.ts src/main/agent-hooks/remote-managed-hook-installers.test.ts src/main/ssh/ssh-relay-session-agent-hook-presence.test.ts src/relay/agent-hook-cli-presence.test.ts src/relay/agent-hook-cli-presence-timeout.test.ts src/cli/handlers/agent-hooks.test.ts src/main/runtime/rpc/methods/client-ui.test.ts src/main/runtime/orca-runtime.test.ts",
+          "command": "pnpm exec vitest run --config config/vitest.config.ts src/main/agent-hooks/managed-agent-hook-manifest.test.ts src/main/agent-hooks/local-agent-cli-presence.test.ts src/main/agent-hooks/managed-agent-hook-controls.test.ts src/main/agent-hooks/install-telemetry.test.ts src/main/agent-hooks/remote-managed-hook-installers.test.ts src/main/ssh/ssh-relay-session-agent-hook-presence.test.ts src/relay/agent-hook-cli-presence.test.ts src/relay/agent-hook-cli-presence-timeout.test.ts src/cli/handlers/agent-hooks.test.ts src/main/runtime/rpc/methods/client-ui.test.ts src/main/runtime/orca-runtime.test.ts src/main/codex/codex-launch-hook-upkeep.test.ts",
           "result": "passed",
           "durationSeconds": 12,
           "summary": "11 test files passed, 639 tests passed locally for managed hook CLI presence gating."

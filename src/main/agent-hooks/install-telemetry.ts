@@ -1,11 +1,10 @@
-// Per-agent managed-hook installer with fail-open semantics and PostHog
-// attribution. Lifted out of `src/main/index.ts` so the loop is unit-testable
-// without standing up the full Electron startup graph — the catch site needs
-// the agent label to fire `agent_hook_install_failed`, and the previous
-// closure-style loop lost it.
+// PostHog attribution for managed-hook install failures. Kept out of the
+// CLI-safe `managed-agent-hook-controls` module (and out of `src/main/index.ts`)
+// because `track` pulls in the Electron telemetry client: main-process callers
+// inject `recordManagedHookInstallFailure` into the installer loop, while the
+// offline CLI path leaves it unset so it never imports Electron.
 
 import type { HookInstallAgent } from '../../shared/telemetry-events'
-import type { AgentHookInstallStatus } from '../../shared/agent-hook-types'
 import { track } from '../telemetry/client'
 
 // Why: install errors are about config-file shape (malformed JSON, ACL
@@ -15,7 +14,6 @@ import { track } from '../telemetry/client'
 // so truncation must happen here at the call site.
 const ERROR_MESSAGE_MAX_LEN = 200
 
-export type ManagedHookInstaller = readonly [HookInstallAgent, () => AgentHookInstallStatus]
 export type ManagedHookInstallErrorRecorder = (agent: HookInstallAgent, error: unknown) => void
 
 function describeError(error: unknown): string {
@@ -33,20 +31,10 @@ function describeError(error: unknown): string {
   }
 }
 
-function errorStatus(agent: HookInstallAgent, error: unknown): AgentHookInstallStatus {
-  return {
-    agent,
-    state: 'error',
-    configPath: '',
-    managedHooksPresent: false,
-    detail: describeError(error)
-  }
-}
-
 export function recordManagedHookInstallFailure(agent: HookInstallAgent, error: unknown): void {
   // Why: telemetry must not break fail-open. A throw inside `track` (e.g.
   // a corrupted settings store the resolveConsent path reads from) would
-  // otherwise abort the for-loop and skip later agents' installers.
+  // otherwise abort the installer loop and skip later agents' installers.
   try {
     track('agent_hook_install_failed', {
       agent,
@@ -55,25 +43,4 @@ export function recordManagedHookInstallFailure(agent: HookInstallAgent, error: 
   } catch (telemetryError) {
     console.error('[agent-hooks] Failed to record install-failure telemetry:', telemetryError)
   }
-}
-
-export function runManagedHookInstallers(
-  installers: readonly ManagedHookInstaller[],
-  onInstallError: ManagedHookInstallErrorRecorder = recordManagedHookInstallFailure
-): AgentHookInstallStatus[] {
-  const results: AgentHookInstallStatus[] = []
-  for (const [agent, install] of installers) {
-    try {
-      results.push(install())
-    } catch (error) {
-      console.error(`[agent-hooks] Failed to install ${agent} managed hooks:`, error)
-      try {
-        onInstallError(agent, error)
-      } catch (telemetryError) {
-        console.error('[agent-hooks] Failed to record install-failure telemetry:', telemetryError)
-      }
-      results.push(errorStatus(agent, error))
-    }
-  }
-  return results
 }

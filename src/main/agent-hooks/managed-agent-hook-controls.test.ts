@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const { installCodex, installClaude, removeCodex, removeClaude, statusCodex, statusClaude } =
   vi.hoisted(() => ({
@@ -47,6 +47,8 @@ import {
 describe('managed agent hook controls', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    // Fail-open paths log to console.error on install failure; keep test output clean.
+    vi.spyOn(console, 'error').mockImplementation(() => {})
     installCodex.mockReturnValue({
       agent: 'codex',
       state: 'installed',
@@ -89,6 +91,10 @@ describe('managed agent hook controls', () => {
       managedHooksPresent: false,
       detail: null
     })
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
   })
 
   it('installs only agents with launchable CLIs and returns skipped attempt results', async () => {
@@ -153,6 +159,47 @@ describe('managed agent hook controls', () => {
     expect(installCodex).toHaveBeenCalledTimes(1)
     expect(installClaude).not.toHaveBeenCalled()
     expect(results).toEqual([expect.objectContaining({ agent: 'codex', state: 'installed' })])
+  })
+
+  it('is fail-open: an installer that throws still runs the others and reports an error status', async () => {
+    detectLocalManagedAgentCliPresenceMock.mockResolvedValue({
+      codex: { state: 'found' },
+      claude: { state: 'found' }
+    })
+    installCodex.mockImplementation(() => {
+      throw new Error('codex config malformed')
+    })
+    const onInstallError = vi.fn()
+
+    const results = await installManagedAgentHooks({ agentCmdOverrides: {} }, { onInstallError })
+
+    expect(installClaude).toHaveBeenCalledTimes(1)
+    expect(onInstallError).toHaveBeenCalledWith('codex', expect.any(Error))
+    expect(results).toEqual([
+      expect.objectContaining({ agent: 'codex', state: 'error', detail: 'codex config malformed' }),
+      expect.objectContaining({ agent: 'claude', state: 'installed' })
+    ])
+  })
+
+  it('keeps installing later agents even when the error recorder itself throws', async () => {
+    detectLocalManagedAgentCliPresenceMock.mockResolvedValue({
+      codex: { state: 'found' },
+      claude: { state: 'found' }
+    })
+    installCodex.mockImplementation(() => {
+      throw new Error('codex failed')
+    })
+    const onInstallError = vi.fn(() => {
+      throw new Error('telemetry blew up')
+    })
+
+    await expect(
+      installManagedAgentHooks({ agentCmdOverrides: {} }, { onInstallError })
+    ).resolves.toEqual([
+      expect.objectContaining({ agent: 'codex', state: 'error' }),
+      expect.objectContaining({ agent: 'claude', state: 'installed' })
+    ])
+    expect(installClaude).toHaveBeenCalledTimes(1)
   })
 
   it('keeps status reads config-authoritative instead of returning skipped states', () => {

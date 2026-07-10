@@ -1,7 +1,7 @@
-// Pins the contract between `runManagedHookInstallers` and the
-// `agent_hook_install_failed` telemetry event: each catch must fire `track`
-// with the correct agent label and a truncated error_message, and one
-// installer's failure must not stop the others (fail-open semantics).
+// Pins the contract of `recordManagedHookInstallFailure`: it fires the
+// `agent_hook_install_failed` telemetry event with the correct agent label and a
+// truncated error_message, and it swallows any throw from `track` so a broken
+// telemetry client can never break the fail-open installer loop that calls it.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -9,9 +9,9 @@ const { trackMock } = vi.hoisted(() => ({ trackMock: vi.fn() }))
 
 vi.mock('../telemetry/client', () => ({ track: trackMock }))
 
-import { runManagedHookInstallers } from './install-telemetry'
+import { recordManagedHookInstallFailure } from './install-telemetry'
 
-describe('runManagedHookInstallers', () => {
+describe('recordManagedHookInstallFailure', () => {
   beforeEach(() => {
     trackMock.mockReset()
     vi.spyOn(console, 'error').mockImplementation(() => {})
@@ -20,27 +20,8 @@ describe('runManagedHookInstallers', () => {
     vi.restoreAllMocks()
   })
 
-  it('runs every installer when none throw and never calls track', () => {
-    const claude = vi.fn()
-    const codex = vi.fn()
-    runManagedHookInstallers([
-      ['claude', claude],
-      ['codex', codex]
-    ])
-    expect(claude).toHaveBeenCalledTimes(1)
-    expect(codex).toHaveBeenCalledTimes(1)
-    expect(trackMock).not.toHaveBeenCalled()
-  })
-
-  it('fires agent_hook_install_failed with the correct agent label when an installer throws', () => {
-    runManagedHookInstallers([
-      [
-        'codex',
-        () => {
-          throw new Error('codex config malformed')
-        }
-      ]
-    ])
+  it('fires agent_hook_install_failed with the correct agent label', () => {
+    recordManagedHookInstallFailure('codex', new Error('codex config malformed'))
 
     expect(trackMock).toHaveBeenCalledTimes(1)
     expect(trackMock).toHaveBeenCalledWith('agent_hook_install_failed', {
@@ -49,52 +30,17 @@ describe('runManagedHookInstallers', () => {
     })
   })
 
-  it('continues running later installers after an earlier one throws (fail-open)', () => {
-    const codex = vi.fn()
-    const gemini = vi.fn()
-    runManagedHookInstallers([
-      [
-        'claude',
-        () => {
-          throw new Error('claude failed')
-        }
-      ],
-      ['codex', codex],
-      ['gemini', gemini]
-    ])
-    expect(codex).toHaveBeenCalledTimes(1)
-    expect(gemini).toHaveBeenCalledTimes(1)
-    expect(trackMock).toHaveBeenCalledTimes(1)
-    expect(trackMock).toHaveBeenCalledWith(
-      'agent_hook_install_failed',
-      expect.objectContaining({ agent: 'claude' })
-    )
-  })
-
   it('truncates error_message to 200 chars', () => {
-    const longMessage = 'x'.repeat(500)
-    runManagedHookInstallers([
-      [
-        'gemini',
-        () => {
-          throw new Error(longMessage)
-        }
-      ]
-    ])
+    recordManagedHookInstallFailure('gemini', new Error('x'.repeat(500)))
+
     expect(trackMock).toHaveBeenCalledTimes(1)
     const [, props] = trackMock.mock.calls[0] as [string, { error_message: string }]
     expect(props.error_message.length).toBe(200)
   })
 
   it('handles non-Error throws', () => {
-    runManagedHookInstallers([
-      [
-        'cursor',
-        () => {
-          throw 'cursor string failure'
-        }
-      ]
-    ])
+    recordManagedHookInstallFailure('cursor', 'cursor string failure')
+
     expect(trackMock).toHaveBeenCalledWith('agent_hook_install_failed', {
       agent: 'cursor',
       error_message: 'cursor string failure'
@@ -102,14 +48,8 @@ describe('runManagedHookInstallers', () => {
   })
 
   it('serializes thrown objects through JSON.stringify', () => {
-    runManagedHookInstallers([
-      [
-        'cursor',
-        () => {
-          throw { code: 'EACCES', path: '/tmp' }
-        }
-      ]
-    ])
+    recordManagedHookInstallFailure('cursor', { code: 'EACCES', path: '/tmp' })
+
     expect(trackMock).toHaveBeenCalledTimes(1)
     expect(trackMock).toHaveBeenCalledWith('agent_hook_install_failed', {
       agent: 'cursor',
@@ -117,39 +57,20 @@ describe('runManagedHookInstallers', () => {
     })
   })
 
-  it('does not throw when an installer throws undefined (regression for JSON.stringify undefined return)', () => {
-    expect(() =>
-      runManagedHookInstallers([
-        [
-          'cursor',
-          () => {
-            throw undefined
-          }
-        ]
-      ])
-    ).not.toThrow()
+  it('does not throw on an undefined error (regression for JSON.stringify undefined)', () => {
+    expect(() => recordManagedHookInstallFailure('cursor', undefined)).not.toThrow()
     expect(trackMock).toHaveBeenCalledTimes(1)
     const [eventName, props] = trackMock.mock.calls[0] as [string, { error_message: string }]
     expect(eventName).toBe('agent_hook_install_failed')
     expect(typeof props.error_message).toBe('string')
   })
 
-  it('continues running later installers when track itself throws (telemetry must not break fail-open)', () => {
-    const codex = vi.fn()
+  it('swallows a throw from track so the caller stays fail-open', () => {
     trackMock.mockImplementationOnce(() => {
       throw new Error('telemetry blew up')
     })
     expect(() =>
-      runManagedHookInstallers([
-        [
-          'claude',
-          () => {
-            throw new Error('claude failed')
-          }
-        ],
-        ['codex', codex]
-      ])
+      recordManagedHookInstallFailure('claude', new Error('claude failed'))
     ).not.toThrow()
-    expect(codex).toHaveBeenCalledTimes(1)
   })
 })

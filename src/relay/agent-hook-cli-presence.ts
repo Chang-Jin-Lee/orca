@@ -217,8 +217,13 @@ export async function detectAgentHookCliPresence(
   const request = parseRequest(params)
   const presence: AgentHookCliPresenceResponse['presence'] = {}
   if (process.platform === 'win32') {
+    // Why: the probe below is POSIX-only (login-shell PATH + X_OK), so on a
+    // Windows relay we can't determine presence — report 'unknown' rather than a
+    // false 'missing', which would wrongly claim the CLI is absent. Callers still
+    // skip install (only positive 'found' installs). Reachable only defensively:
+    // SSH sessions short-circuit Windows remotes before requesting presence.
     for (const agent of request.agents) {
-      presence[agent] = { state: 'missing' }
+      presence[agent] = { state: 'unknown' }
     }
     return { presence }
   }
