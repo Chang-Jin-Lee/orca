@@ -5,6 +5,7 @@ import {
   clearRecentRuntimeCompatibilityFailure,
   clearRuntimeCompatibilityCacheForTests,
   getActiveRuntimeTarget,
+  runtimeEnvironmentSupportsCapability,
   RuntimeRpcCallError,
   unwrapRuntimeRpcResult
 } from './runtime-rpc-client'
@@ -454,6 +455,48 @@ describe('runtime RPC client routing', () => {
         'Project setup is unavailable.'
       )
     ).resolves.toBeUndefined()
+  })
+
+  it('re-probes capability support after a failed compatibility cache entry', async () => {
+    let statusCalls = 0
+    runtimeEnvironmentCall.mockImplementation(({ method }: { method: string }) => {
+      if (method === 'status.get') {
+        statusCalls += 1
+        if (statusCalls === 1) {
+          return Promise.resolve({
+            id: 'status',
+            ok: false,
+            error: { code: 'runtime_unavailable', message: 'offline' },
+            _meta: { runtimeId: 'remote-runtime' }
+          })
+        }
+        return Promise.resolve({
+          id: 'status',
+          ok: true,
+          result: {
+            runtimeId: 'remote-runtime',
+            graphStatus: 'ready',
+            runtimeProtocolVersion: RUNTIME_PROTOCOL_VERSION,
+            minCompatibleRuntimeClientVersion: MIN_COMPATIBLE_RUNTIME_CLIENT_VERSION,
+            capabilities: ['linear.issue-attribute-filter.v1']
+          },
+          _meta: { runtimeId: 'remote-runtime' }
+        })
+      }
+      return Promise.resolve({
+        id: method,
+        ok: true,
+        result: { ok: true },
+        _meta: { runtimeId: 'remote-runtime' }
+      })
+    })
+    const target = { kind: 'environment', environmentId: 'env-cap-recover' } as const
+
+    await expect(callRuntimeRpc(target, 'repo.list')).rejects.toThrow('offline')
+    await expect(
+      runtimeEnvironmentSupportsCapability('env-cap-recover', 'linear.issue-attribute-filter.v1')
+    ).resolves.toBe(true)
+    expect(statusCalls).toBe(2)
   })
 
   it('rejects missing advertised runtime capabilities with the caller message', async () => {

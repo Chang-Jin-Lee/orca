@@ -42,6 +42,22 @@ export type RuntimeLinearSettings =
   | null
   | undefined
 
+// Why: mixed-version remotes must not look like an empty filtered result. The
+// Linear store swallows most read failures; this typed error is rethrown so UI
+// can show an upgrade message instead of "no matching issues".
+export class LinearIssueAttributeFilterUnsupportedError extends Error {
+  constructor(message = 'This remote runtime must be updated to filter Linear issues.') {
+    super(message)
+    this.name = 'LinearIssueAttributeFilterUnsupportedError'
+  }
+}
+
+export function isLinearIssueAttributeFilterUnsupportedError(
+  error: unknown
+): error is LinearIssueAttributeFilterUnsupportedError {
+  return error instanceof LinearIssueAttributeFilterUnsupportedError
+}
+
 export type LinearIssueFilter = 'assigned' | 'created' | 'all' | 'completed'
 export type LinearConnectResult = { ok: true; viewer: LinearViewer } | { ok: false; error: string }
 export type LinearCreateIssueResult =
@@ -224,7 +240,7 @@ export async function linearListIssues(
   ) {
     // Why: older runtimes silently strip unknown RPC params; rejecting here
     // prevents their unfiltered rows from being presented or cached as filtered.
-    throw new Error('This remote runtime must be updated to filter Linear issues.')
+    throw new LinearIssueAttributeFilterUnsupportedError()
   }
   const result =
     target.kind === 'environment'

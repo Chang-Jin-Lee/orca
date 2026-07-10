@@ -368,7 +368,10 @@ describe('runtime linear client', () => {
         assignee: null,
         labelIds: []
       })
-    ).rejects.toThrow('This remote runtime must be updated to filter Linear issues.')
+    ).rejects.toMatchObject({
+      name: 'LinearIssueAttributeFilterUnsupportedError',
+      message: 'This remote runtime must be updated to filter Linear issues.'
+    })
 
     expect(runtimeEnvironmentTransportCall).toHaveBeenCalledTimes(1)
     expect(runtimeEnvironmentCall).not.toHaveBeenCalled()

@@ -248,10 +248,17 @@ export async function runtimeEnvironmentSupportsCapability(
 ): Promise<boolean> {
   const trimmed = environmentId.trim()
   const cached = runtimeCompatibilityChecks.get(trimmed)
-  if (cached) {
-    await cached.check
-    if (cached.status) {
-      return cached.status.capabilities?.includes(capability) === true
+  // Why: callRuntimeRpc re-probes after failed status checks by default. Capability
+  // lookups must not pin to a rejected cache promise or they block recovery for
+  // the full failure TTL even though the next RPC would re-probe successfully.
+  if (cached && cached.failedAt === null) {
+    try {
+      await cached.check
+      if (cached.status) {
+        return cached.status.capabilities?.includes(capability) === true
+      }
+    } catch {
+      // Fall through to a fresh status.get that refreshes the cache.
     }
   }
   const status = await getRuntimeEnvironmentStatus(trimmed, timeoutMs)
