@@ -24,6 +24,7 @@ import {
   isWslShellName,
   resolveLocalWindowsTerminalRuntimeOptions
 } from '../../shared/local-windows-terminal-runtime'
+import { applyTerminalGitCredentialPromptGuard } from './terminal-git-credential-guard'
 import { openCodeHookService } from '../opencode/hook-service'
 import { mimoCodeHookService } from '../mimo/hook-service'
 import {
@@ -510,6 +511,10 @@ export type BuildPtyHostEnvOptions = {
   isWsl?: boolean
   agentStatusHooksEnabled: boolean
   networkProxySettings?: NetworkProxySettings
+  /** When true (the default at the call sites), a user terminal's git cannot
+   *  pop the OS credential helper's interactive OAuth window (issue #7652).
+   *  Agent terminals are always guarded regardless of this flag. */
+  suppressUserTerminalGitCredentialPrompt?: boolean
 }
 
 function readInheritedPath(baseEnv: Record<string, string>): string {
@@ -799,6 +804,15 @@ export function buildPtyHostEnv(
   const piAgentKind = detectPiAgentKindFromCommand(launchCommandHint)
   const hasLaunchCommand =
     typeof launchCommandHint === 'string' && launchCommandHint.trim().length > 0
+
+  // Why: git a terminal runs inherits this env; guard it so a GitHub auth
+  // request can't pop the OS credential helper's OAuth window and loop when an
+  // agent retries git in a network-restricted intranet (issue #7652).
+  applyTerminalGitCredentialPromptGuard(baseEnv, {
+    launchCommand: launchCommandHint,
+    suppressUserTerminalPrompt: opts.suppressUserTerminalGitCredentialPrompt !== false
+  })
+
   const shouldPrepareOmpShadow = piAgentKind === 'omp' || !hasLaunchCommand
   // Why: source shadows are agent-scoped. Trusting the other kind's source
   // would reintroduce the exact Pi/OMP extension-state shadowing this PR fixes.
@@ -1328,7 +1342,9 @@ export function registerPtyHandlers(
           shellPath: ctx?.shellPath,
           isWsl: ctx?.isWsl,
           agentStatusHooksEnabled: isAgentStatusHooksEnabled(getSettings?.()),
-          networkProxySettings: getSettings?.()
+          networkProxySettings: getSettings?.(),
+          suppressUserTerminalGitCredentialPrompt:
+            getSettings?.()?.terminalSuppressGitCredentialPrompt ?? true
         })
         // Why: agents need their own terminal handle at process start so they
         // can self-identify in orchestration messages without an extra RPC.
@@ -2188,7 +2204,9 @@ export function registerPtyHandlers(
           shellPath: daemonShellOverride ?? process.env.COMSPEC,
           isWsl: shouldSkipCodexHomeEnvForWindowsShell(daemonShellOverride, cwd),
           agentStatusHooksEnabled: isAgentStatusHooksEnabled(getSettings?.()),
-          networkProxySettings: getSettings?.()
+          networkProxySettings: getSettings?.(),
+          suppressUserTerminalGitCredentialPrompt:
+            getSettings?.()?.terminalSuppressGitCredentialPrompt ?? true
         })
         promoteAgentTeamsShimPath(env, requestedAgentTeamsPath)
       }
@@ -2961,7 +2979,9 @@ export function registerPtyHandlers(
             shellPath: effectiveShellOverride ?? process.env.COMSPEC,
             isWsl: shouldSkipCodexHomeEnvForWindowsShell(effectiveShellOverride, cwd),
             agentStatusHooksEnabled: isAgentStatusHooksEnabled(getSettings?.()),
-            networkProxySettings: getSettings?.()
+            networkProxySettings: getSettings?.(),
+            suppressUserTerminalGitCredentialPrompt:
+              getSettings?.()?.terminalSuppressGitCredentialPrompt ?? true
           })
           promoteAgentTeamsShimPath(env, requestedAgentTeamsPath)
         } catch (err) {

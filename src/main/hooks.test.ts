@@ -1,5 +1,6 @@
 /* eslint-disable max-lines -- Why: hook parsing, shell selection, and execution-path regressions are tightly coupled, so these cases stay in one file to preserve the behavior matrix across platforms. */
 import type { Repo } from '../shared/types'
+import type * as GitRunner from './git/runner'
 
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
@@ -29,7 +30,8 @@ vi.mock('child_process', () => ({
   spawn: vi.fn()
 }))
 
-vi.mock('./git/runner', () => ({
+vi.mock('./git/runner', async () => ({
+  ...(await vi.importActual<typeof GitRunner>('./git/runner')),
   gitExecFileSync: gitExecFileSyncMock
 }))
 
@@ -892,7 +894,13 @@ describe('runHook', () => {
         'echo hello',
         expect.objectContaining({
           cwd: '/repo/worktree',
-          shell: '/bin/bash'
+          shell: '/bin/bash',
+          // Setup hooks run unattended: git in them must not pop the OS
+          // credential helper's OAuth window and loop it (issue #7652).
+          env: expect.objectContaining({
+            GIT_TERMINAL_PROMPT: '0',
+            GCM_INTERACTIVE: 'never'
+          })
         }),
         expect.any(Function)
       )

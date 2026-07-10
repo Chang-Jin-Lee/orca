@@ -2554,6 +2554,13 @@ export type GlobalSettings = {
   terminalPaddingX?: number
   terminalPaddingY?: number
   terminalMouseHideWhileTyping?: boolean
+  /** When on (default), git run in a user terminal cannot pop the OS credential
+   *  helper's interactive OAuth window (e.g. Git Credential Manager's "Connect
+   *  to GitHub" popup) — it uses cached credentials or fails fast instead of
+   *  looping in network-restricted environments (issue #7652). Agent terminals
+   *  and Orca-run setup scripts are always guarded regardless of this setting.
+   *  Turn off to let your interactive terminal prompt via the OS helper. */
+  terminalSuppressGitCredentialPrompt?: boolean
   terminalWordSeparator?: string
   terminalCursorOpacity?: number
   terminalQuickCommands?: TerminalQuickCommand[]
