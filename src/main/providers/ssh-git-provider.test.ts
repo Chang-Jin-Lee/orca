@@ -1211,10 +1211,11 @@ describe('SshGitProvider', () => {
   })
 
   it('removeWorktree sends git.removeWorktree request', async () => {
-    await provider.removeWorktree('/home/user/feat', true)
+    await provider.removeWorktree('/home/user/feat', true, { overrideLock: true })
     expect(mux.request).toHaveBeenCalledWith('git.removeWorktree', {
       worktreePath: '/home/user/feat',
-      force: true
+      force: true,
+      overrideLock: true
     })
   })
 

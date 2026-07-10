@@ -66,6 +66,10 @@ import {
   worktreeWorkspaceKey
 } from '../../../../shared/workspace-scope'
 import { folderWorkspaceToWorktree } from '../../../../shared/folder-workspace-worktree'
+import {
+  classifyWorktreeForceDeleteReason,
+  getLockedWorktreeRemovalReason
+} from '../../../../shared/worktree-removal'
 export type { WorktreeSlice, WorktreeDeleteState } from './worktree-helpers'
 
 // Why: old runtime servers only have `worktree.list`; preserve the large-list
@@ -288,31 +292,6 @@ function toVisibleTabType(contentType: string): WorkspaceVisibleTabType {
     return contentType
   }
   return 'editor'
-}
-
-const FORCE_RETRYABLE_WORKTREE_REMOVAL_MESSAGES = [
-  'Worktree has uncommitted or untracked changes',
-  'contains modified or untracked files',
-  'cannot remove a locked working tree',
-  'Worktree is no longer registered with Git but its directory remains',
-  'Worktree is no longer registered with Git and its directory is already gone'
-] as const
-
-// Why: local preflight formatting can surface raw git porcelain instead of the
-// friendly dirty-worktree message; only those status prefixes are forceable.
-const FORMATTED_DIRTY_WORKTREE_REMOVAL_PATTERN =
-  /Failed to delete worktree at [^\n]*\.\s*(?:(?:[MADRCUT][ MADRCUT]| [MADRCUT]|\?\?)\s+\S)/
-
-function canRetryWorktreeRemovalWithForce(error: string, force: boolean | undefined): boolean {
-  if (force) {
-    return false
-  }
-  // Why: force only helps backend safety refusals that are explicitly safe to
-  // retry with user confirmation; transport/provider errors need recovery first.
-  return (
-    FORCE_RETRYABLE_WORKTREE_REMOVAL_MESSAGES.some((message) => error.includes(message)) ||
-    FORMATTED_DIRTY_WORKTREE_REMOVAL_PATTERN.test(error)
-  )
 }
 
 type WorktreeWithLineage = Worktree & {
@@ -3153,7 +3132,8 @@ export const createWorktreeSlice: StateCreator<AppState, [], [], WorktreeSlice> 
         [worktreeId]: {
           isDeleting: true,
           error: null,
-          canForceDelete: false
+          canForceDelete: false,
+          forceDeleteReason: null
         }
       }
     }))
@@ -3176,11 +3156,21 @@ export const createWorktreeSlice: StateCreator<AppState, [], [], WorktreeSlice> 
       const removalResult = await (forgetLocalOnly
         ? window.api.worktrees.forgetLocal({ worktreeId })
         : target.kind === 'local'
-          ? window.api.worktrees.remove({ worktreeId, force, skipArchive })
+          ? window.api.worktrees.remove({
+              worktreeId,
+              force,
+              overrideLock: options?.overrideLock,
+              skipArchive
+            })
           : callRuntimeRpc<RemoveWorktreeResult>(
               target,
               'worktree.rm',
-              { worktree: toRuntimeWorktreeSelector(worktreeId), force, runHooks: !skipArchive },
+              {
+                worktree: toRuntimeWorktreeSelector(worktreeId),
+                force,
+                overrideLock: options?.overrideLock,
+                runHooks: !skipArchive
+              },
               { timeoutMs: 60_000 }
             ))
 
@@ -3521,13 +3511,22 @@ export const createWorktreeSlice: StateCreator<AppState, [], [], WorktreeSlice> 
       // handled user decision point surfaced by the delete toast, not an app error.
       console.warn('Failed to remove worktree:', err)
       const error = err instanceof Error ? err.message : String(err)
+      const forceDeleteReason = classifyWorktreeForceDeleteReason(
+        error,
+        force,
+        options?.overrideLock === true
+      )
       set((s) => ({
         deleteStateByWorktreeId: {
           ...s.deleteStateByWorktreeId,
           [worktreeId]: {
             isDeleting: false,
             error,
-            canForceDelete: canRetryWorktreeRemovalWithForce(error, force)
+            canForceDelete: forceDeleteReason !== null,
+            forceDeleteReason,
+            ...(forceDeleteReason === 'locked'
+              ? { lockReason: getLockedWorktreeRemovalReason(error) }
+              : {})
           }
         }
       }))
@@ -3550,7 +3549,8 @@ export const createWorktreeSlice: StateCreator<AppState, [], [], WorktreeSlice> 
         nextDeleteState[worktreeId] = {
           isDeleting: true,
           error: null,
-          canForceDelete: false
+          canForceDelete: false,
+          forceDeleteReason: null
         }
         changed = true
       }

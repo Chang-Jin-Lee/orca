@@ -1396,11 +1396,13 @@ function createWorktreesApi(): NonNullable<Partial<PreloadApi>['worktrees']> {
         targetBranch,
         isCrossRepository
       }),
-    remove: async ({ worktreeId, force }) => {
+    remove: async ({ worktreeId, force, overrideLock, skipArchive }) => {
       invalidateRuntimeWorktreeCaches()
       return callRuntimeResult<RemoveWorktreeResult>('worktree.rm', {
         worktree: toRuntimeWorktreeSelector(worktreeId),
-        force
+        force,
+        overrideLock,
+        runHooks: skipArchive !== true
       })
     },
     // Why: forget-locally clears a workspace pinned to a disconnected/removed

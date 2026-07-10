@@ -130,7 +130,12 @@ describe('removeWorktree cascade', () => {
         tab2: makeLayout()
       },
       deleteStateByWorktreeId: {
-        [worktreeId]: { isDeleting: false, error: null, canForceDelete: false }
+        [worktreeId]: {
+          isDeleting: false,
+          error: null,
+          canForceDelete: false,
+          forceDeleteReason: null
+        }
       },
       fileSearchStateByWorktree: {
         [worktreeId]: {
@@ -241,7 +246,8 @@ describe('removeWorktree cascade', () => {
     expect(s.deleteStateByWorktreeId[worktreeId]).toEqual({
       isDeleting: false,
       error,
-      canForceDelete: true
+      canForceDelete: true,
+      forceDeleteReason: 'dirty'
     })
     // State NOT cleaned up
     expect(s.worktreesByRepo['repo1']).toHaveLength(1)
@@ -258,7 +264,12 @@ describe('removeWorktree cascade', () => {
 
     seedStore(store, {
       deleteStateByWorktreeId: {
-        [first]: { isDeleting: false, error: 'old failure', canForceDelete: true }
+        [first]: {
+          isDeleting: false,
+          error: 'old failure',
+          canForceDelete: true,
+          forceDeleteReason: 'dirty'
+        }
       }
     })
 
@@ -293,7 +304,8 @@ describe('removeWorktree cascade', () => {
     expect(store.getState().deleteStateByWorktreeId[worktreeId]).toEqual({
       isDeleting: false,
       error,
-      canForceDelete: true
+      canForceDelete: true,
+      forceDeleteReason: 'dirty'
     })
   })
 
@@ -320,7 +332,8 @@ describe('removeWorktree cascade', () => {
     expect(store.getState().deleteStateByWorktreeId[worktreeId]).toEqual({
       isDeleting: false,
       error,
-      canForceDelete: true
+      canForceDelete: true,
+      forceDeleteReason: 'dirty'
     })
   })
 
@@ -347,7 +360,9 @@ describe('removeWorktree cascade', () => {
     expect(store.getState().deleteStateByWorktreeId[worktreeId]).toEqual({
       isDeleting: false,
       error,
-      canForceDelete: true
+      canForceDelete: true,
+      forceDeleteReason: 'locked',
+      lockReason: null
     })
   })
 
@@ -374,7 +389,8 @@ describe('removeWorktree cascade', () => {
     expect(store.getState().deleteStateByWorktreeId[worktreeId]).toEqual({
       isDeleting: false,
       error,
-      canForceDelete: true
+      canForceDelete: true,
+      forceDeleteReason: 'missing-registration'
     })
   })
 
@@ -400,7 +416,8 @@ describe('removeWorktree cascade', () => {
     expect(s.deleteStateByWorktreeId[worktreeId]).toEqual({
       isDeleting: false,
       error: 'fatal error',
-      canForceDelete: false
+      canForceDelete: false,
+      forceDeleteReason: null
     })
   })
 
@@ -434,7 +451,8 @@ describe('removeWorktree cascade', () => {
       isDeleting: false,
       error:
         'Refusing to delete worktree because it contains another registered worktree: /path/wt1/child',
-      canForceDelete: false
+      canForceDelete: false,
+      forceDeleteReason: null
     })
   })
 
@@ -486,7 +504,8 @@ describe('removeWorktree cascade', () => {
     expect(store.getState().deleteStateByWorktreeId[worktreeId]).toEqual({
       isDeleting: false,
       error,
-      canForceDelete: false
+      canForceDelete: false,
+      forceDeleteReason: null
     })
   })
 
@@ -533,7 +552,8 @@ describe('removeWorktree cascade', () => {
       expect(store.getState().deleteStateByWorktreeId[worktreeId]).toEqual({
         isDeleting: false,
         error,
-        canForceDelete: false
+        canForceDelete: false,
+        forceDeleteReason: null
       })
       expect(mockApi.worktrees.remove).not.toHaveBeenCalled()
     }

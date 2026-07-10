@@ -19,7 +19,16 @@ const mocks = vi.hoisted(() => {
     settings: null,
     gitStatusByWorktree: {} as Record<string, { path: string; status: 'modified' }[]>,
     setGitStatus: vi.fn(),
-    deleteStateByWorktreeId: {}
+    deleteStateByWorktreeId: {} as Record<
+      string,
+      {
+        isDeleting: boolean
+        error: string | null
+        canForceDelete: boolean
+        forceDeleteReason: 'dirty' | 'locked' | 'orphan-directory' | 'missing-registration' | null
+        lockReason?: string | null
+      }
+    >
   }
   return { state, buttonProps: [] as Record<string, unknown>[] }
 })
@@ -72,6 +81,10 @@ vi.mock('sonner', () => ({
 
 vi.mock('./delete-worktree-flow', () => ({
   runWorktreeDeletesInParallel: vi.fn()
+}))
+
+vi.mock('./active-worktree-focus-after-delete', () => ({
+  prepareActiveWorktreeFocusAfterDelete: () => vi.fn()
 }))
 
 import { runWorktreeDeletesInParallel } from './delete-worktree-flow'
@@ -247,6 +260,41 @@ describe('DeleteWorktreeDialog lineage copy', () => {
     expect(markup).toContain('2 uncommitted or untracked changes')
     expect(markup).toContain('Deleting this workspace permanently removes these changes from disk.')
     expect(markup).not.toContain('Also delete local branch')
+  })
+
+  it('shows locked and known dirty details and overrides the lock only on recovery', async () => {
+    const workspace = makeWorktree('Locked workspace', '/workspaces/locked')
+    mocks.state.modalData = { worktreeId: workspace.id }
+    mocks.state.allWorktrees.mockReturnValue([workspace])
+    mocks.state.gitStatusByWorktree = {
+      [workspace.id]: [{ path: 'src/file.ts', status: 'modified' }]
+    }
+    mocks.state.deleteStateByWorktreeId = {
+      [workspace.id]: {
+        isDeleting: false,
+        error: 'Worktree is locked by Git. Lock reason: active agent session.',
+        canForceDelete: true,
+        forceDeleteReason: 'locked',
+        lockReason: 'active agent session'
+      }
+    }
+
+    const { default: DeleteWorktreeDialog } = await import('./DeleteWorktreeDialog')
+    const markup = renderToStaticMarkup(<DeleteWorktreeDialog />)
+
+    expect(markup).toContain('Worktree is locked by Git. Lock reason: active agent session.')
+    expect(markup).toContain('Force Delete')
+    expect(markup).toContain('1 uncommitted or untracked change')
+
+    mocks.state.removeWorktree.mockResolvedValue({ ok: true })
+    const forceButton = mocks.buttonProps.find((props) =>
+      buttonText(props).includes('Force Delete')
+    )
+    ;(forceButton as { onClick?: () => void } | undefined)?.onClick?.()
+
+    expect(mocks.state.removeWorktree).toHaveBeenCalledWith(workspace.id, true, {
+      overrideLock: true
+    })
   })
 
   it('notifies the dialog caller after a toast force delete succeeds', async () => {

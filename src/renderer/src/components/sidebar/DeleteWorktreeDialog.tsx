@@ -21,6 +21,7 @@ import { DeleteWorktreeDialogDescription } from './DeleteWorktreeDialogDescripti
 import { DeleteWorktreeTargetPreview } from './DeleteWorktreeTargetPreview'
 import { DeleteWorktreeWarningPanels } from './DeleteWorktreeWarningPanels'
 import { persistDeleteWorktreeConfirmSkipPreference } from './delete-worktree-preference-toast'
+import { getDeleteWorktreeDirtyChangeCounts } from './delete-worktree-dirty-change-counts'
 import {
   countFolderWorkspaceDeletes,
   getDeleteWorktreeDialogCopy,
@@ -137,19 +138,12 @@ const DeleteWorktreeDialog = React.memo(function DeleteWorktreeDialog() {
     [canDeleteAllLineage, lineageDelete.deleteAllTargets, worktrees]
   )
   const dirtyChangeCountsByWorktreeId = useMemo(() => {
-    const result = new Map<string, number>()
-    for (const item of deleteTargets) {
-      if (item.isMainWorktree || getIsFolderWorkspaceDelete(repoMap, item)) {
-        continue
-      }
-      const statusEntries = gitStatusByWorktree[item.id]
-      if ((statusEntries?.length ?? 0) > 0) {
-        result.set(item.id, statusEntries?.length ?? 0)
-      } else if (deleteStateByWorktreeId[item.id]?.canForceDelete) {
-        result.set(item.id, 0)
-      }
-    }
-    return result
+    return getDeleteWorktreeDirtyChangeCounts({
+      deleteTargets,
+      deleteStateByWorktreeId,
+      gitStatusByWorktree,
+      repoMap
+    })
   }, [deleteStateByWorktreeId, deleteTargets, gitStatusByWorktree, repoMap])
 
   if (!isOpen && dontAskAgain) {
@@ -272,7 +266,10 @@ const DeleteWorktreeDialog = React.memo(function DeleteWorktreeDialog() {
         // the shared toast wrapper. Close immediately because workspace cards
         // already show the deleting state while the retry runs.
         const commitFocus = prepareActiveWorktreeFocusAfterDelete(worktreeId)
-        const deletePromise = removeWorktree(worktreeId, true)
+        const deletePromise =
+          deleteState?.forceDeleteReason === 'locked'
+            ? removeWorktree(worktreeId, true, { overrideLock: true })
+            : removeWorktree(worktreeId, true)
         closeModal()
         deletePromise
           .then((result) => {
@@ -328,6 +325,7 @@ const DeleteWorktreeDialog = React.memo(function DeleteWorktreeDialog() {
       onDeleted,
       persistDontAskAgainPreference,
       removeWorktree,
+      deleteState?.forceDeleteReason,
       worktreeIds.length,
       worktreeId,
       worktrees

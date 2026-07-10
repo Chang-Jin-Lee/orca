@@ -29,6 +29,7 @@ import type {
   Worktree,
   WorktreeMeta
 } from '../../shared/types'
+import { assertWorktreeUnlockedForRemoval } from '../../shared/worktree-removal'
 import {
   buildKnownOrcaWorkspaceLayouts,
   isLegacyRepoForExternalWorktreeVisibility,
@@ -130,7 +131,7 @@ import {
   toLocalWorktreeRuntimePath
 } from '../local-worktree-filesystem'
 import {
-  pruneStaleLocalWorktreeRegistrationAfterFilesystemRemoval,
+  removeStaleLocalWorktreeRegistrationAfterFilesystemRemoval,
   recoverLocalWindowsLongPathWorktreeRemoval
 } from '../local-worktree-removal-recovery'
 
@@ -294,10 +295,15 @@ function gitStatusErrorMeansNotRepository(error: unknown): boolean {
   return /not a git repository/i.test(`${message}\n${stderr}`)
 }
 
-function getWorktreeRemovalOptionsKey(args: { force?: boolean; skipArchive?: boolean }): string {
+function getWorktreeRemovalOptionsKey(args: {
+  force?: boolean
+  overrideLock?: boolean
+  skipArchive?: boolean
+}): string {
   const forceKey = args.force === true ? 'force' : 'normal'
+  const lockKey = args.overrideLock === true ? 'override-lock' : 'respect-lock'
   const archiveKey = args.skipArchive === true ? 'skip-archive' : 'run-archive'
-  return `${forceKey}:${archiveKey}`
+  return `${forceKey}:${lockKey}:${archiveKey}`
 }
 
 async function getArchiveHooksForRemoval(repo: Repo): Promise<OrcaHooks | null> {
@@ -1345,7 +1351,15 @@ export function registerWorktreeHandlers(
 
   ipcMain.handle(
     'worktrees:remove',
-    async (_event, args: { worktreeId: string; force?: boolean; skipArchive?: boolean }) => {
+    async (
+      _event,
+      args: {
+        worktreeId: string
+        force?: boolean
+        overrideLock?: boolean
+        skipArchive?: boolean
+      }
+    ) => {
       const optionsKey = getWorktreeRemovalOptionsKey(args)
       const inFlightRemoval = worktreeRemovalsInFlight.get(args.worktreeId)
       if (inFlightRemoval) {
@@ -1545,8 +1559,18 @@ export function registerWorktreeHandlers(
         const canonicalWorktreePath = registeredWorktree.path
         const deleteBranch = removedMeta?.preserveBranchOnDelete !== true
 
+        // Why: a Git lock must block before archive hooks or linked-path cleanup
+        // mutate the workspace; dirty-file force is a separate permission.
+        try {
+          assertWorktreeUnlockedForRemoval(registeredWorktree, args.overrideLock ?? false)
+        } catch (error) {
+          throw new Error(
+            formatWorktreeRemovalError(error, canonicalWorktreePath, args.force ?? false)
+          )
+        }
+
         // Why: a prior forced Windows recovery can delete the directory but leave
-        // Git's stale registration; retry by pruning instead of removing a missing path.
+        // Git's stale registration; recover and verify it before clearing metadata.
         if (
           !repo.connectionId &&
           args.force === true &&
@@ -1556,12 +1580,13 @@ export function registerWorktreeHandlers(
           removedMeta &&
           (await isAlreadyRemovedWorktreePath(repo, canonicalWorktreePath, localWorktreeGitOptions))
         ) {
-          const removalResult = await pruneStaleLocalWorktreeRegistrationAfterFilesystemRemoval({
+          const removalResult = await removeStaleLocalWorktreeRegistrationAfterFilesystemRemoval({
             canonicalWorktreePath,
             repoPath: repo.path,
             localWorktreeGitOptions,
             registeredWorktree,
-            deleteBranch
+            deleteBranch,
+            overrideLock: args.overrideLock === true
           })
           await cleanupUnusedWorktreePushTargetRemote(
             repo.path,
@@ -1617,9 +1642,13 @@ export function registerWorktreeHandlers(
             }
           }
 
-          const rawRemovalResult = await (deleteBranch
-            ? provider!.removeWorktree(canonicalWorktreePath, args.force)
-            : provider!.removeWorktree(canonicalWorktreePath, args.force, { deleteBranch }))
+          const remoteRemoveOptions = {
+            ...(!deleteBranch ? { deleteBranch } : {}),
+            ...(args.overrideLock ? { overrideLock: true } : {})
+          }
+          const rawRemovalResult = await (Object.keys(remoteRemoveOptions).length > 0
+            ? provider!.removeWorktree(canonicalWorktreePath, args.force, remoteRemoveOptions)
+            : provider!.removeWorktree(canonicalWorktreePath, args.force))
           const removalResult = preserveBranchHeadFallback(
             rawRemovalResult,
             registeredWorktree.head
@@ -1641,6 +1670,29 @@ export function registerWorktreeHandlers(
           removeWorktreeMetadataAndTransientState(store, args.worktreeId)
           notifyWorktreesChanged(mainWindow, repoId)
           return removalResult ?? {}
+        }
+
+        const refreshedWorktrees = hasLocalWorktreeGitOptions
+          ? await listGitWorktreesStrict(repo.path, localWorktreeGitOptions)
+          : await listGitWorktreesStrict(repo.path)
+        const refreshedRegisteredWorktree = findRegisteredDeletableWorktree(
+          repo.path,
+          canonicalWorktreePath,
+          refreshedWorktrees
+        )
+        if (!refreshedRegisteredWorktree) {
+          throw new Error(
+            `Worktree registration changed during deletion: ${canonicalWorktreePath}. Retry deletion.`
+          )
+        }
+        try {
+          // Why: an archive hook can race another Git client that locks the row;
+          // recheck before linked-path, watcher, or terminal teardown side effects.
+          assertWorktreeUnlockedForRemoval(refreshedRegisteredWorktree, args.overrideLock ?? false)
+        } catch (error) {
+          throw new Error(
+            formatWorktreeRemovalError(error, canonicalWorktreePath, args.force ?? false)
+          )
         }
 
         // Why: `git worktree remove` (non-force) refuses to delete a worktree
@@ -1697,10 +1749,11 @@ export function registerWorktreeHandlers(
         try {
           const removeOptions = {
             ...(!deleteBranch ? { deleteBranch } : {}),
+            ...(args.overrideLock ? { overrideLock: true } : {}),
             // Why: this handler already paid for an authoritative worktree
             // list to validate the target; reuse it instead of rescanning
             // every sibling worktree during the hot delete path.
-            knownRemovedWorktree: registeredWorktree,
+            knownRemovedWorktree: refreshedRegisteredWorktree,
             ...(hasLocalWorktreeGitOptions ? localWorktreeGitOptions : {})
           }
           removalResult = preserveBranchHeadFallback(
@@ -1710,7 +1763,7 @@ export function registerWorktreeHandlers(
               args.force ?? false,
               removeOptions
             ),
-            registeredWorktree.head
+            refreshedRegisteredWorktree.head
           )
         } catch (error) {
           // Why: Git for Windows can fail long-path directory deletion after
@@ -1721,8 +1774,9 @@ export function registerWorktreeHandlers(
             canonicalWorktreePath,
             repoPath: repo.path,
             localWorktreeGitOptions,
-            registeredWorktree,
+            registeredWorktree: refreshedRegisteredWorktree,
             deleteBranch,
+            overrideLock: args.overrideLock === true,
             closeWatcher: closeLocalWatcherForRemoval
           })
           if (recoveredRemovalResult) {
@@ -1787,7 +1841,7 @@ export function registerWorktreeHandlers(
         rememberPreservedBranchCleanupTarget(
           args.worktreeId,
           removalResult,
-          registeredWorktree.head,
+          refreshedRegisteredWorktree.head,
           removedPushTarget
         )
         runtime.clearOptimisticReconcileToken(args.worktreeId)

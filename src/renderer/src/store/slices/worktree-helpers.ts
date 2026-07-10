@@ -20,6 +20,7 @@ import type {
   WorktreeMeta,
   WorkspaceKey
 } from '../../../../shared/types'
+import type { WorktreeForceDeleteReason } from '../../../../shared/worktree-removal'
 import type { TerminalGitHubPRLink } from '@/lib/terminal-github-pr-link-detector'
 import type {
   PendingWorktreeCreation,
@@ -32,6 +33,8 @@ export type WorktreeDeleteState = {
   isDeleting: boolean
   error: string | null
   canForceDelete: boolean
+  forceDeleteReason: WorktreeForceDeleteReason | null
+  lockReason?: string | null
 }
 
 export type WorktreeMetaUpdateGuard = (worktree: Worktree | DetectedWorktree | undefined) => boolean
@@ -181,7 +184,7 @@ export type WorktreeSlice = {
     // 'forget-local' drops the workspace from Orca only (no remote Git/FS work)
     // for workspaces pinned to a removed/disconnected SSH host. Reuses the same
     // renderer-side teardown/purge as a normal remove.
-    options?: { mode?: 'remove' | 'forget-local' }
+    options?: { mode?: 'remove' | 'forget-local'; overrideLock?: boolean }
   ) => Promise<({ ok: true } & RemoveWorktreeResult) | { ok: false; error: string }>
   markWorktreesDeleting: (worktreeIds: readonly string[]) => void
   forceDeletePreservedBranch: (

@@ -13,6 +13,8 @@ import type {
   LocalBaseRefUpdateSuggestion,
   RemoveWorktreeResult
 } from '../../shared/types'
+import { assertWorktreeUnlockedForRemoval } from '../../shared/worktree-removal'
+import { decodeGitCQuotedPath } from '../../shared/git-cquoted-path'
 import { parseGitRevListAheadBehindCounts } from '../../shared/git-rev-list-output'
 import { parseWslUncPath } from '../../shared/wsl-paths'
 import { gitExecFileAsync, translateWslOutputPaths } from './runner'
@@ -46,7 +48,8 @@ export type AddWorktreeOptions = GitWorktreeExecOptions & {
 export type RemoveWorktreeOptions = GitWorktreeExecOptions & {
   deleteBranch?: boolean
   forceBranchDelete?: boolean
-  knownRemovedWorktree?: Pick<GitWorktreeInfo, 'branch' | 'head'>
+  overrideLock?: boolean
+  knownRemovedWorktree?: Pick<GitWorktreeInfo, 'branch' | 'head' | 'locked' | 'lockReason'>
 }
 
 type LocalBaseRefRefreshability =
@@ -487,6 +490,8 @@ export function parseWorktreeList(
     let branch = ''
     let isBare = false
     let isSparse = false
+    let locked = false
+    let lockReason = ''
 
     for (const line of lines) {
       if (line.startsWith('worktree ')) {
@@ -499,6 +504,10 @@ export function parseWorktreeList(
         isBare = true
       } else if (line === 'sparse') {
         isSparse = true
+      } else if (line === 'locked' || line.startsWith('locked ')) {
+        locked = true
+        const rawReason = line.slice('locked'.length).trim()
+        lockReason = options.nulDelimited ? rawReason : decodeGitCQuotedPath(rawReason)
       }
     }
 
@@ -510,6 +519,8 @@ export function parseWorktreeList(
         branch,
         isBare,
         ...(isSparse ? { isSparse } : {}),
+        ...(locked ? { locked: true } : {}),
+        ...(lockReason ? { lockReason } : {}),
         isMainWorktree: worktrees.length === 0
       })
     }
@@ -1074,11 +1085,17 @@ async function performRemoveWorktree(
   const branchName = normalizeLocalBranchRef(removedWorktree?.branch ?? '')
   const branchHead = removedWorktree?.head ?? ''
 
+  // Why: callers outside the IPC/runtime preflight must not bypass Git's lock
+  // contract or depend on localized stderr to discover it after side effects.
+  assertWorktreeUnlockedForRemoval(removedWorktree, options.overrideLock)
+
   const args = ['worktree', 'remove']
-  if (force) {
-    // Why: Git requires force twice to remove a locked worktree; Orca's
-    // force path already passed the explicit destructive confirmation gate.
+  if (options.overrideLock) {
+    // Why: Git reserves the second force for explicitly overriding a lock;
+    // ordinary dirty-file confirmation must not silently break that lock.
     args.push('--force', '--force')
+  } else if (force) {
+    args.push('--force')
   }
   args.push(worktreePath)
   await gitExecFileAsync(args, gitExecOptions(repoPath, options))

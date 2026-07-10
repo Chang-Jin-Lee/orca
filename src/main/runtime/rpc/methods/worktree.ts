@@ -227,7 +227,8 @@ export const WORKTREE_METHODS: RpcMethod[] = [
       const result = await runtime.removeManagedWorktree(
         params.worktree,
         params.force === true,
-        params.runHooks === true
+        params.runHooks === true,
+        params.overrideLock === true
       )
       return { removed: true, ...result }
     }

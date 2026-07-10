@@ -105,7 +105,9 @@ describe('git worktree paths', () => {
   it('force-removes a locked worktree whose directory was deleted manually', async () => {
     const { repoPath, worktreePath } = await createRepoWithLockedDeletedWorktree()
 
-    await expect(removeWorktree(repoPath, worktreePath, true)).resolves.toEqual({})
+    await expect(
+      removeWorktree(repoPath, worktreePath, true, { overrideLock: true })
+    ).resolves.toEqual({})
 
     expect(git(repoPath, ['worktree', 'list', '--porcelain'])).not.toContain(worktreePath)
     expect(branchExists(repoPath, 'feature/locked-delete')).toBe(false)

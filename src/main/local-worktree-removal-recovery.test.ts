@@ -1,8 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { gitExecFileAsyncMock, removeLocalWorktreePathMock } = vi.hoisted(() => ({
+const {
+  gitExecFileAsyncMock,
+  listWorktreesStrictMock,
+  removeLocalWorktreePathMock,
+  removeWorktreeMock
+} = vi.hoisted(() => ({
   gitExecFileAsyncMock: vi.fn(),
-  removeLocalWorktreePathMock: vi.fn()
+  listWorktreesStrictMock: vi.fn(),
+  removeLocalWorktreePathMock: vi.fn(),
+  removeWorktreeMock: vi.fn()
 }))
 
 vi.mock('./git/runner', () => ({
@@ -13,7 +20,15 @@ vi.mock('./local-worktree-filesystem', () => ({
   removeLocalWorktreePath: removeLocalWorktreePathMock
 }))
 
-import { recoverLocalWindowsLongPathWorktreeRemoval } from './local-worktree-removal-recovery'
+vi.mock('./git/worktree', () => ({
+  listWorktreesStrict: listWorktreesStrictMock,
+  removeWorktree: removeWorktreeMock
+}))
+
+import {
+  recoverLocalWindowsLongPathWorktreeRemoval,
+  removeStaleLocalWorktreeRegistrationAfterFilesystemRemoval
+} from './local-worktree-removal-recovery'
 
 async function withPlatform<T>(platform: NodeJS.Platform, fn: () => Promise<T>): Promise<T> {
   const original = process.platform
@@ -28,9 +43,13 @@ async function withPlatform<T>(platform: NodeJS.Platform, fn: () => Promise<T>):
 describe('recoverLocalWindowsLongPathWorktreeRemoval', () => {
   beforeEach(() => {
     gitExecFileAsyncMock.mockReset()
+    listWorktreesStrictMock.mockReset()
     removeLocalWorktreePathMock.mockReset()
+    removeWorktreeMock.mockReset()
     gitExecFileAsyncMock.mockResolvedValue({ stdout: '', stderr: '' })
+    listWorktreesStrictMock.mockResolvedValue([])
     removeLocalWorktreePathMock.mockResolvedValue(undefined)
+    removeWorktreeMock.mockResolvedValue({})
   })
 
   afterEach(() => {
@@ -51,6 +70,7 @@ describe('recoverLocalWindowsLongPathWorktreeRemoval', () => {
         localWorktreeGitOptions: {},
         registeredWorktree: { branch: 'refs/heads/delete-e2e-held-cwd', head: 'abc123' },
         deleteBranch: true,
+        overrideLock: false,
         closeWatcher: vi.fn().mockResolvedValue(undefined)
       })
 
@@ -85,10 +105,127 @@ describe('recoverLocalWindowsLongPathWorktreeRemoval', () => {
           localWorktreeGitOptions: {},
           registeredWorktree: { branch: 'refs/heads/delete-e2e-held-cwd', head: 'abc123' },
           deleteBranch: true,
+          overrideLock: false,
           closeWatcher: vi.fn().mockResolvedValue(undefined)
         })
       ).resolves.toBeUndefined()
       expect(removeLocalWorktreePathMock).not.toHaveBeenCalled()
     })
+  })
+
+  it('uses explicit lock override when long-path cleanup leaves a locked registration', async () => {
+    await withPlatform('win32', async () => {
+      const registeredWorktree = {
+        branch: 'refs/heads/feature',
+        head: 'abc123',
+        locked: true,
+        lockReason: 'active agent'
+      }
+
+      await recoverLocalWindowsLongPathWorktreeRemoval({
+        error: Object.assign(new Error('git worktree remove failed'), {
+          stderr: 'error: failed to delete deep/file.txt: Filename too long'
+        }),
+        force: true,
+        canonicalWorktreePath: 'C:/workspaces/feature',
+        repoPath: 'C:/repo',
+        localWorktreeGitOptions: {},
+        registeredWorktree,
+        deleteBranch: true,
+        overrideLock: true,
+        closeWatcher: vi.fn().mockResolvedValue(undefined)
+      })
+
+      expect(removeWorktreeMock).toHaveBeenCalledWith(
+        'C:/repo',
+        'C:/workspaces/feature',
+        true,
+        expect.objectContaining({
+          overrideLock: true,
+          knownRemovedWorktree: registeredWorktree
+        })
+      )
+    })
+  })
+})
+
+describe('removeStaleLocalWorktreeRegistrationAfterFilesystemRemoval', () => {
+  beforeEach(() => {
+    gitExecFileAsyncMock.mockReset()
+    listWorktreesStrictMock.mockReset()
+    removeWorktreeMock.mockReset()
+    gitExecFileAsyncMock.mockResolvedValue({ stdout: '', stderr: '' })
+    listWorktreesStrictMock.mockResolvedValue([])
+    removeWorktreeMock.mockResolvedValue({})
+  })
+
+  it('uses explicit double-force removal for a locked missing registration', async () => {
+    const registeredWorktree = {
+      branch: 'refs/heads/feature',
+      head: 'abc123',
+      locked: true,
+      lockReason: 'active agent'
+    }
+
+    await removeStaleLocalWorktreeRegistrationAfterFilesystemRemoval({
+      canonicalWorktreePath: 'C:/workspaces/feature',
+      repoPath: 'C:/repo',
+      localWorktreeGitOptions: {},
+      registeredWorktree,
+      deleteBranch: false,
+      overrideLock: true
+    })
+
+    expect(gitExecFileAsyncMock).not.toHaveBeenCalledWith(['worktree', 'prune'], expect.anything())
+    expect(removeWorktreeMock).toHaveBeenCalledWith('C:/repo', 'C:/workspaces/feature', true, {
+      deleteBranch: false,
+      overrideLock: true,
+      knownRemovedWorktree: registeredWorktree
+    })
+    expect(listWorktreesStrictMock).toHaveBeenCalledWith('C:/repo', {})
+  })
+
+  it('does not override a locked missing registration without explicit permission', async () => {
+    await expect(
+      removeStaleLocalWorktreeRegistrationAfterFilesystemRemoval({
+        canonicalWorktreePath: 'C:/workspaces/feature',
+        repoPath: 'C:/repo',
+        localWorktreeGitOptions: {},
+        registeredWorktree: {
+          branch: 'refs/heads/feature',
+          head: 'abc123',
+          locked: true,
+          lockReason: 'active agent'
+        },
+        deleteBranch: true,
+        overrideLock: false
+      })
+    ).rejects.toThrow('Worktree is locked by Git')
+
+    expect(removeWorktreeMock).not.toHaveBeenCalled()
+    expect(gitExecFileAsyncMock).not.toHaveBeenCalled()
+  })
+
+  it('does not report success when prune leaves the registration behind', async () => {
+    listWorktreesStrictMock.mockResolvedValue([
+      {
+        path: 'C:/workspaces/feature',
+        head: 'abc123',
+        branch: 'refs/heads/feature',
+        isBare: false,
+        isMainWorktree: false
+      }
+    ])
+
+    await expect(
+      removeStaleLocalWorktreeRegistrationAfterFilesystemRemoval({
+        canonicalWorktreePath: 'C:/workspaces/feature',
+        repoPath: 'C:/repo',
+        localWorktreeGitOptions: {},
+        registeredWorktree: { branch: 'refs/heads/feature', head: 'abc123' },
+        deleteBranch: true,
+        overrideLock: false
+      })
+    ).rejects.toThrow('Git still has stale worktree registration')
   })
 })

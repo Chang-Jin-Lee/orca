@@ -1121,6 +1121,7 @@ export type PreloadApi = {
     remove: (args: {
       worktreeId: string
       force?: boolean
+      overrideLock?: boolean
       skipArchive?: boolean
     }) => Promise<RemoveWorktreeResult>
     // Forget a workspace from Orca only — no remote Git/filesystem work. Used

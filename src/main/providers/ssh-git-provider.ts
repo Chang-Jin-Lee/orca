@@ -656,7 +656,7 @@ export class SshGitProvider implements IGitProvider {
   async removeWorktree(
     worktreePath: string,
     force?: boolean,
-    options?: { deleteBranch?: boolean; forceBranchDelete?: boolean }
+    options?: { deleteBranch?: boolean; forceBranchDelete?: boolean; overrideLock?: boolean }
   ): Promise<RemoveWorktreeResult> {
     return this.runWithDiffDedupeClear(
       async () =>

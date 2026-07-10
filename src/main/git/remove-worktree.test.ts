@@ -247,7 +247,7 @@ branch refs/heads/main
     ])
   })
 
-  it('passes double --force before the worktree path when forced removal is requested', async () => {
+  it('passes one --force before the worktree path for dirty-file removal', async () => {
     mockGitCommands({
       'git worktree list --porcelain': {
         stdout: `worktree /repo
@@ -269,7 +269,75 @@ branch refs/heads/main
 
     await removeWorktree('/repo', '/repo-feature', true)
 
+    expect(getGitCalls()).toContain('git worktree remove --force /repo-feature')
+  })
+
+  it('passes double --force only for explicit lock override', async () => {
+    mockGitCommands({
+      'git worktree list --porcelain': {
+        stdout: `worktree /repo
+HEAD abc123
+branch refs/heads/main
+
+worktree /repo-feature
+HEAD def456
+branch refs/heads/feature/test
+locked active agent session
+`
+      },
+      'git worktree list --porcelain#2': {
+        stdout: `worktree /repo
+HEAD abc123
+branch refs/heads/main
+`
+      }
+    })
+
+    await removeWorktree('/repo', '/repo-feature', true, { overrideLock: true })
+
     expect(getGitCalls()).toContain('git worktree remove --force --force /repo-feature')
+  })
+
+  it('rejects a locked worktree with stable app-owned copy before invoking remove', async () => {
+    mockGitCommands({
+      'git worktree list --porcelain': {
+        stdout: `worktree /repo
+HEAD abc123
+branch refs/heads/main
+
+worktree /repo-feature
+HEAD def456
+branch refs/heads/feature/test
+locked active agent session
+`
+      }
+    })
+
+    await expect(removeWorktree('/repo', '/repo-feature')).rejects.toThrow(
+      'Worktree is locked by Git. Lock reason: active agent session.'
+    )
+    expect(getGitCalls()).not.toContain('git worktree remove /repo-feature')
+  })
+
+  it('does not treat dirty-file force as permission to override a lock', async () => {
+    mockGitCommands({
+      'git worktree list --porcelain': {
+        stdout: `worktree /repo
+HEAD abc123
+branch refs/heads/main
+
+worktree /repo-feature
+HEAD def456
+branch refs/heads/feature/test
+locked active agent session
+`
+      }
+    })
+
+    await expect(removeWorktree('/repo', '/repo-feature', true)).rejects.toThrow(
+      'Worktree is locked by Git. Lock reason: active agent session.'
+    )
+    expect(getGitCalls()).not.toContain('git worktree remove --force /repo-feature')
   })
 
   it('matches Windows worktree paths before deleting the branch', async () => {
@@ -1070,7 +1138,7 @@ branch refs/heads/main
         'git sparse-checkout init --cone',
         'git sparse-checkout set -- packages/web',
         'git config --local --unset-all branch.feature/test.base',
-        'git worktree remove --force --force /repo-feature',
+        'git worktree remove --force /repo-feature',
         'git branch -D -- feature/test'
       ])
     )
@@ -1078,11 +1146,11 @@ branch refs/heads/main
     expectGitCallOrder(
       calls,
       'git sparse-checkout set -- packages/web',
-      'git worktree remove --force --force /repo-feature'
+      'git worktree remove --force /repo-feature'
     )
     expectGitCallOrder(
       calls,
-      'git worktree remove --force --force /repo-feature',
+      'git worktree remove --force /repo-feature',
       'git branch -D -- feature/test'
     )
   })

@@ -42,6 +42,26 @@ describe('worktree RPC methods', () => {
     })
   })
 
+  it('routes an explicit lock override separately from dirty-file force', async () => {
+    const runtime = {
+      getRuntimeId: () => 'test-runtime',
+      removeManagedWorktree: vi.fn().mockResolvedValue({})
+    } as unknown as OrcaRuntimeService
+    const dispatcher = new RpcDispatcher({ runtime, methods: WORKTREE_METHODS })
+
+    const response = await dispatcher.dispatch(
+      makeRequest('worktree.rm', {
+        worktree: 'id:wt-1',
+        force: true,
+        overrideLock: true,
+        runHooks: false
+      })
+    )
+
+    expect(runtime.removeManagedWorktree).toHaveBeenCalledWith('id:wt-1', true, false, true)
+    expect(response).toMatchObject({ ok: true, result: { removed: true } })
+  })
+
   it('routes create options to the runtime server', async () => {
     const runtime = {
       getRuntimeId: () => 'test-runtime',
