@@ -1,14 +1,16 @@
 import { spawn } from 'node:child_process'
 import { StringDecoder } from 'node:string_decoder'
 import type { Event as WatcherEvent } from '@parcel/watcher'
-import { buildWslNativeWatcherScript } from './filesystem-watcher-wsl-native-script'
+import {
+  subscribeViaWslWatcherHost,
+  type WslHostSubscription
+} from './filesystem-watcher-wsl-host-client'
 import {
   buildSnapshotScript,
   diffSnapshots,
   parseSnapshotFrame,
   SNAPSHOT_END,
   SNAPSHOT_START,
-  toWslUncPath,
   type WslSnapshot
 } from './filesystem-watcher-wsl-snapshot'
 
@@ -27,7 +29,6 @@ export type WslEngineContext = {
   onOverflow: () => void
 }
 
-const NATIVE_STARTUP_TIMEOUT_MS = 10_000
 const SNAPSHOT_STARTUP_TIMEOUT_MS = 30_000
 const MAX_STREAM_BUFFER_CHARS = 10 * 1024 * 1024
 
@@ -128,85 +129,52 @@ function createChildEngine(
   return { ready, stopped, stop }
 }
 
-type NativeMessage =
-  | { type: 'ready' }
-  | { type: 'overflow' }
-  | { type: 'error'; message?: unknown }
-  | { type: 'events'; events?: unknown }
-
-function nativeEvents(message: NativeMessage, context: WslEngineContext): WatcherEvent[] {
-  if (message.type !== 'events' || !Array.isArray(message.events)) {
-    return []
-  }
-  const rootPrefix = context.linuxPath === '/' ? '/' : `${context.linuxPath.replace(/\/+$/, '')}/`
-  const events: WatcherEvent[] = []
-  for (const item of message.events) {
-    if (
-      Array.isArray(item) &&
-      (item[0] === 'create' || item[0] === 'update' || item[0] === 'delete') &&
-      typeof item[1] === 'string' &&
-      (item[1] === context.linuxPath || item[1].startsWith(rootPrefix))
-    ) {
-      events.push({ type: item[0], path: toWslUncPath(item[1], context.distro) })
+export function createWslNativeEngine(context: WslEngineContext): WslWatchEngine {
+  let subscription: WslHostSubscription | null = null
+  const abortController = new AbortController()
+  let disposed = false
+  let stoppedSettled = false
+  let resolveStopped!: () => void
+  const stopped = new Promise<void>((resolve) => {
+    resolveStopped = resolve
+  })
+  const settleStopped = (): void => {
+    if (!stoppedSettled) {
+      stoppedSettled = true
+      resolveStopped()
     }
   }
-  return events
-}
-
-export function createWslNativeEngine(context: WslEngineContext): WslWatchEngine {
-  let streamBuffer = ''
-  const decoder = new StringDecoder('utf8')
-  const args = [
-    '-d',
-    context.distro,
-    '--',
-    'python3',
-    '-u',
-    '-',
-    context.linuxPath,
-    ...context.ignoreDirs
-  ]
-  return createChildEngine(
-    args,
-    buildWslNativeWatcherScript(),
-    NATIVE_STARTUP_TIMEOUT_MS,
-    context.worktreePath,
-    (chunk, settleReady, stop) => {
-      streamBuffer += decoder.write(chunk)
-      if (streamBuffer.length > MAX_STREAM_BUFFER_CHARS) {
-        context.onOverflow()
-        stop()
+  const ready = subscribeViaWslWatcherHost(
+    {
+      distro: context.distro,
+      linuxPath: context.linuxPath,
+      ignoreDirs: context.ignoreDirs,
+      onEvents: context.onEvents,
+      onOverflow: context.onOverflow,
+      onStopped: settleStopped
+    },
+    abortController.signal
+  ).then((created) => {
+    if (disposed) {
+      created.unsubscribe()
+    } else {
+      subscription = created
+    }
+  })
+  return {
+    ready,
+    stopped,
+    stop: () => {
+      if (disposed) {
         return
       }
-      let newline = streamBuffer.indexOf('\n')
-      while (newline !== -1) {
-        const line = streamBuffer.slice(0, newline)
-        streamBuffer = streamBuffer.slice(newline + 1)
-        try {
-          const message = JSON.parse(line) as NativeMessage
-          if (message.type === 'ready') {
-            settleReady()
-          } else if (message.type === 'overflow') {
-            context.onOverflow()
-          } else if (message.type === 'error') {
-            settleReady(new Error(String(message.message ?? 'native WSL watcher failed')))
-            stop()
-          } else {
-            const events = nativeEvents(message, context)
-            if (events.length > 0) {
-              context.onEvents(events)
-            }
-          }
-        } catch (error) {
-          context.onOverflow()
-          settleReady(error instanceof Error ? error : new Error(String(error)))
-          stop()
-          return
-        }
-        newline = streamBuffer.indexOf('\n')
-      }
+      disposed = true
+      abortController.abort()
+      subscription?.unsubscribe()
+      subscription = null
+      settleStopped()
     }
-  )
+  }
 }
 
 export function createWslSnapshotEngine(context: WslEngineContext): WslWatchEngine {

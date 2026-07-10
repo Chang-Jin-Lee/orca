@@ -8,6 +8,7 @@ import {
   type WslEngineContext,
   type WslWatchEngine
 } from './filesystem-watcher-wsl-engine'
+import { isWslDistroRunning } from './filesystem-watcher-wsl-runtime'
 import { parseWslUncPath } from '../../shared/wsl-paths'
 
 export type WatcherSubscription = {
@@ -34,6 +35,7 @@ export type WslWatcherDeps = {
 
 const RESTART_DELAYS_MS = [500, 1_000, 2_000, 5_000, 10_000] as const
 const STABLE_ENGINE_MS = 30_000
+const STOPPED_DISTRO_RECHECK_MS = 5_000
 
 function markOverflow(root: WatchedRoot): void {
   if (root.batch.timer) {
@@ -117,10 +119,21 @@ export async function createWslWatcher(
   const scheduleRestart = (delay: number): void => {
     restartTimer = setTimeout(() => {
       restartTimer = null
-      void installEngine().catch(() => {
-        if (!disposed) {
-          scheduleRestart(maximumRestartDelay)
+      void isWslDistroRunning(wsl.distro).then((running) => {
+        if (disposed) {
+          return
         }
+        if (!running) {
+          // Why: restarting a watcher through `wsl.exe -d` would undo an
+          // intentional WSL shutdown; the running-distro query does not wake it.
+          scheduleRestart(STOPPED_DISTRO_RECHECK_MS)
+          return
+        }
+        void installEngine().catch(() => {
+          if (!disposed) {
+            scheduleRestart(maximumRestartDelay)
+          }
+        })
       })
     }, delay)
   }

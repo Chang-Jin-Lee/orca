@@ -6,7 +6,8 @@ import { describe, expect, it } from 'vitest'
 
 const require = createRequire(import.meta.url)
 const electronBuilderConfig = require('../electron-builder.config.cjs')
-const electronBuilderNativeRebuild = require('./electron-builder-native-rebuild.cjs')
+const electronBuilderBeforeBuild = require('./electron-builder-before-build.cjs')
+const { buildWslRuntimePreparationArgs } = electronBuilderBeforeBuild
 const {
   createPackagedRuntimeNodeModuleResources,
   findAsarEntry,
@@ -31,7 +32,9 @@ describe('electron-builder config', () => {
         '!tests{,/**/*}',
         '!Casks{,/**/*}',
         '!{AGENTS.md,CLAUDE.md,DEVELOPING.md,bundle-size-progress.md}',
-        '!out/**/*.test.js'
+        '!out/**/*.test.js',
+        '!out/main/wsl-watcher-host.js',
+        '!out/wsl-watcher{,/**/*}'
       ])
     )
   })
@@ -58,6 +61,10 @@ describe('electron-builder config', () => {
         expect.objectContaining({
           from: 'native/computer-use-windows/runtime.ps1',
           to: 'computer-use-windows/runtime.ps1'
+        }),
+        expect.objectContaining({
+          from: 'out/wsl-watcher',
+          to: 'wsl-watcher'
         })
       ])
     )
@@ -131,9 +138,17 @@ describe('electron-builder config', () => {
     }
   })
 
-  it('uses Orca native rebuild hook instead of electron-builder default rebuild', () => {
-    expect(electronBuilderConfig.beforeBuild).toBe(electronBuilderNativeRebuild)
+  it('uses Orca build preparation instead of electron-builder default rebuild', () => {
+    expect(electronBuilderConfig.beforeBuild).toBe(electronBuilderBeforeBuild)
     expect(electronBuilderConfig.npmRebuild).toBe(true)
+  })
+
+  it('prepares the managed WSL runtime only for Windows artifacts', () => {
+    expect(buildWslRuntimePreparationArgs({ platform: { nodeName: 'win32' } })).toEqual([
+      'config/scripts/prepare-wsl-watcher-runtime.mjs'
+    ])
+    expect(buildWslRuntimePreparationArgs({ platform: { nodeName: 'darwin' } })).toBeNull()
+    expect(buildWslRuntimePreparationArgs({ platform: { nodeName: 'linux' } })).toBeNull()
   })
 
   it('verifies packaged main runtime deps from Windows-style asar entries', async () => {

@@ -1,7 +1,7 @@
 const { chmodSync, existsSync, readdirSync } = require('node:fs')
 const { execFileSync } = require('node:child_process')
 const { join, resolve } = require('node:path')
-const electronBuilderNativeRebuild = require('./scripts/electron-builder-native-rebuild.cjs')
+const electronBuilderBeforeBuild = require('./scripts/electron-builder-before-build.cjs')
 const {
   assertPackagedDaemonEntryExists,
   verifyPackagedDaemonEntryBoots
@@ -66,6 +66,10 @@ module.exports = {
     '!Casks{,/**/*}',
     '!{AGENTS.md,CLAUDE.md,DEVELOPING.md,bundle-size-progress.md}',
     '!out/**/*.test.js',
+    // Why: these Linux-host artifacts are staged as a Windows-only external
+    // resource; including either copy in app.asar would duplicate ~62 MB.
+    '!out/main/wsl-watcher-host.js',
+    '!out/wsl-watcher{,/**/*}',
     '!electron.vite.config.{js,ts,mjs,cjs}',
     '!{.eslintcache,eslint.config.mjs,.prettierignore,.prettierrc.yaml,CHANGELOG.md,README.md}',
     '!{.env,.env.*,.npmrc,pnpm-lock.yaml}',
@@ -192,6 +196,10 @@ module.exports = {
       {
         from: 'native/computer-use-windows/runtime.ps1',
         to: 'computer-use-windows/runtime.ps1'
+      },
+      {
+        from: 'out/wsl-watcher',
+        to: 'wsl-watcher'
       },
       featureWallResources
     ]
@@ -363,7 +371,7 @@ module.exports = {
     afterInstall: 'resources/linux/packaging/after-install.sh',
     afterRemove: 'resources/linux/packaging/after-remove.sh'
   },
-  beforeBuild: electronBuilderNativeRebuild,
+  beforeBuild: electronBuilderBeforeBuild,
   // Why: must be true so that electron-builder rebuilds native modules
   // (node-pty) for each target architecture when producing dual-arch macOS
   // builds (x64 + arm64). With npmRebuild disabled, CI on an arm64 runner

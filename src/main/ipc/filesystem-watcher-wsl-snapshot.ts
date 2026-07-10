@@ -1,7 +1,7 @@
 import type { Event as WatcherEvent } from '@parcel/watcher'
-import { validateWslWatcherIgnoreDirs } from './filesystem-watcher-wsl-native-script'
 
 const POLL_INTERVAL_SECONDS = 5
+const SAFE_IGNORE_NAME = /^[A-Za-z0-9_.-]+$/
 export const SNAPSHOT_START = '\x1e'
 export const SNAPSHOT_END = '\x1f'
 
@@ -12,6 +12,14 @@ type WslSnapshotEntry = {
 }
 
 export type WslSnapshot = Map<string, WslSnapshotEntry>
+
+export function validateWslWatcherIgnoreDirs(ignoreDirs: readonly string[]): void {
+  for (const name of ignoreDirs) {
+    if (!SAFE_IGNORE_NAME.test(name)) {
+      throw new Error(`Unsupported WSL watcher ignore name: ${name}`)
+    }
+  }
+}
 
 export function toWslUncPath(linuxPath: string, distro: string): string {
   return `\\\\wsl.localhost\\${distro}${linuxPath.replace(/\//g, '\\')}`
