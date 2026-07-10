@@ -49,10 +49,6 @@ import {
   prepareSystemConfigForFreshRuntimeMirror,
   syncSystemConfigIntoManagedCodexHome
 } from '../codex/codex-config-mirror'
-import {
-  promoteCodexRuntimeSettingsToSystem,
-  snapshotCodexRuntimeSettingsBaseline
-} from '../codex/config-settings-promotion'
 import { parseWslUncPath } from '../../shared/wsl-paths'
 import {
   getWslSelectionKey,
@@ -144,7 +140,7 @@ export class CodexRuntimeHomeService {
     if (target?.runtime === 'wsl') {
       const wslTarget = this.resolveWslDefaultTarget(target)
       const syncedRuntimeHomePath = this.syncWslRuntimeForCurrentSelection(wslTarget)
-      this.syncWslConfigSettingsPromotion(wslTarget, syncedRuntimeHomePath)
+      this.syncWslConfigSettingsForLaunch(wslTarget, syncedRuntimeHomePath)
       const runtimeHomePath = syncedRuntimeHomePath ?? this.getWslSystemCodexHomePath(wslTarget)
       this.startWslSessionBridgeForLaunch(wslTarget, runtimeHomePath)
       return runtimeHomePath
@@ -226,13 +222,10 @@ export class CodexRuntimeHomeService {
     return home ? this.joinWslPath(home, '.codex') : null
   }
 
-  // Why: WSL runtime homes are seeded once and never re-mirrored, so /model
-  // and /approvals changes Codex writes there would otherwise stay split from
-  // the distro's real ~/.codex forever. Promote them with a per-distro
-  // baseline stored inside that runtime home. Only runs against a materialized
-  // runtime home — never against the system home fallback, which would drop
-  // an Orca baseline file into the user's real ~/.codex.
-  private syncWslConfigSettingsPromotion(
+  // Why: WSL needs the same promote-then-mirror transaction as host. It keeps
+  // in-Orca changes while reconciling a newer external ~/.codex edit before
+  // advancing the per-distro baseline. Only runs on a materialized runtime.
+  private syncWslConfigSettingsForLaunch(
     target: CodexAccountSelectionTarget,
     runtimeHomePath: string | null
   ): void {
@@ -248,15 +241,13 @@ export class CodexRuntimeHomeService {
     if (!systemHomePath || systemHomePath === runtimeHomePath) {
       return
     }
-    promoteCodexRuntimeSettingsToSystem({ runtimeHomePath, systemHomePath })
-    snapshotCodexRuntimeSettingsBaseline(runtimeHomePath)
+    syncSystemConfigIntoManagedCodexHome({ runtimeHomePath, systemHomePath })
   }
 
   prepareForRateLimitFetch(target?: CodexAccountSelectionTarget): string | null {
     if (target?.runtime === 'wsl') {
       const wslTarget = this.resolveWslDefaultTarget(target)
-      const syncedRuntimeHomePath = this.syncWslRuntimeForCurrentSelection(wslTarget)
-      this.syncWslConfigSettingsPromotion(wslTarget, syncedRuntimeHomePath)
+      const syncedRuntimeHomePath = this.getPreparedWslRateLimitHomePath(wslTarget)
       return syncedRuntimeHomePath ?? this.getWslSystemCodexHomePath(wslTarget)
     }
     this.syncForCurrentSelection()
@@ -530,6 +521,32 @@ export class CodexRuntimeHomeService {
       return account.managedHomePath
     }
     return parseWslUncPath(account.managedHomePath) ? account.managedHomePath : null
+  }
+
+  private getPreparedWslRateLimitHomePath(target: CodexAccountSelectionTarget): string | null {
+    const distro = target.wslDistro?.trim()
+    if (distro) {
+      const settings = this.store.getSettings()
+      const selectedAccountId = getSelectedCodexAccountIdForTarget(settings, target)
+      if (selectedAccountId === null) {
+        // Why: the system-default account changes outside Orca (login, logout,
+        // token refresh). Read its real home directly so a cached runtime copy
+        // cannot stay stale; filesystem probing in the fetcher is asynchronous.
+        return this.getWslSystemCodexHomePath(target)
+      }
+      const cachedRuntimeHomePath = this.wslRuntimeHomePathByDistro.get(distro)
+      if (
+        cachedRuntimeHomePath &&
+        this.lastSyncedWslAccountIdByDistro.has(distro) &&
+        this.lastSyncedWslAccountIdByDistro.get(distro) === selectedAccountId
+      ) {
+        // Why: RateLimitService resolves provenance twice per poll. Account
+        // changes sync explicitly, so repeated resolution must stay path-only
+        // instead of blocking main on UNC reads and a wsl.exe migration probe.
+        return cachedRuntimeHomePath
+      }
+    }
+    return this.syncWslRuntimeForCurrentSelection(target)
   }
 
   private syncWslRuntimeForCurrentSelection(target: CodexAccountSelectionTarget): string | null {

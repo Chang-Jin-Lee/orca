@@ -533,9 +533,12 @@ describe('CodexRuntimeHomeService', () => {
     }
   })
 
-  it('promotes WSL in-Codex setting changes into the distro ~/.codex config', async () => {
+  it('promotes WSL in-Codex setting changes on the next Codex launch', async () => {
     const originalPlatform = Object.getOwnPropertyDescriptor(process, 'platform')
     Object.defineProperty(process, 'platform', { configurable: true, value: 'win32' })
+    vi.doMock('../codex/wsl-codex-session-bridge', () => ({
+      startWslCodexSessionBridgeInBackground: vi.fn(() => Promise.resolve())
+    }))
     const wslHome = join(testState.userDataDir, 'wsl-home')
     vi.doMock('../wsl', () => ({
       getDefaultWslDistro: () => 'Ubuntu',
@@ -563,26 +566,34 @@ describe('CodexRuntimeHomeService', () => {
         'home'
       )
 
-      // First fetch seeds the runtime config and records the per-distro baseline.
-      expect(service.prepareForRateLimitFetch({ runtime: 'wsl', wslDistro: 'Ubuntu' })).toBe(
+      // First launch seeds the runtime config and records the per-distro baseline.
+      expect(service.prepareForCodexLaunch({ runtime: 'wsl', wslDistro: 'Ubuntu' })).toBe(
         wslRuntimeHomePath
       )
       const baselinePath = join(wslRuntimeHomePath, '.orca-config-settings-baseline.json')
       expect(existsSync(baselinePath)).toBe(true)
 
-      // Codex persists a /model change into the WSL runtime config.
+      // A direct WSL Codex edit wins and is mirrored into Orca's runtime before
+      // the baseline advances, so later in-Orca changes remain promotable.
       const runtimeConfigPath = join(wslRuntimeHomePath, 'config.toml')
+      writeFileSync(wslSystemConfigPath, 'model = "outside-edit"\n', 'utf-8')
+      service.prepareForCodexLaunch({ runtime: 'wsl', wslDistro: 'Ubuntu' })
+      expect(readFileSync(runtimeConfigPath, 'utf-8')).toBe('model = "outside-edit"\n')
+      expect(readFileSync(baselinePath, 'utf-8')).toContain('"model": "\\"outside-edit\\""')
+
+      // Codex now persists a /model change inside Orca's reconciled runtime.
       writeFileSync(
         runtimeConfigPath,
-        readFileSync(runtimeConfigPath, 'utf-8').replace('model = "gpt-5"', 'model = "o4"'),
+        readFileSync(runtimeConfigPath, 'utf-8').replace('model = "outside-edit"', 'model = "o4"'),
         'utf-8'
       )
 
-      service.prepareForRateLimitFetch({ runtime: 'wsl', wslDistro: 'Ubuntu' })
+      service.prepareForCodexLaunch({ runtime: 'wsl', wslDistro: 'Ubuntu' })
       expect(readFileSync(wslSystemConfigPath, 'utf-8')).toBe('model = "o4"\n')
       // Baseline advances so the promoted value is not re-promoted forever.
       expect(readFileSync(baselinePath, 'utf-8')).toContain('"model": "\\"o4\\""')
     } finally {
+      vi.doUnmock('../codex/wsl-codex-session-bridge')
       vi.doUnmock('../wsl')
       if (originalPlatform) {
         Object.defineProperty(process, 'platform', originalPlatform)
@@ -1949,7 +1960,7 @@ describe('CodexRuntimeHomeService', () => {
     }
   })
 
-  it('uses the stable WSL runtime home for WSL system-default rate-limit fetches', async () => {
+  it('reads WSL system-default rate limits from the live system home without materializing', async () => {
     const originalPlatform = Object.getOwnPropertyDescriptor(process, 'platform')
     Object.defineProperty(process, 'platform', { configurable: true, value: 'win32' })
     const wslHome = join(testState.userDataDir, 'wsl-home')
@@ -1967,10 +1978,21 @@ describe('CodexRuntimeHomeService', () => {
     try {
       const { CodexRuntimeHomeService } = await import('./runtime-home-service')
       const service = new CodexRuntimeHomeService(store as never)
-
-      expect(service.prepareForRateLimitFetch({ runtime: 'wsl', wslDistro: 'Ubuntu' })).toBe(
-        join(wslHome, '.local', 'share', 'orca', 'codex-runtime-home', 'home')
+      const syncWslRuntime = vi.spyOn(
+        service as unknown as {
+          syncWslRuntimeForCurrentSelection: (target: {
+            runtime: 'wsl'
+            wslDistro?: string | null
+          }) => string | null
+        },
+        'syncWslRuntimeForCurrentSelection'
       )
+      const target = { runtime: 'wsl' as const, wslDistro: 'Ubuntu' }
+      const expectedHome = join(wslHome, '.codex')
+
+      expect(service.prepareForRateLimitFetch(target)).toBe(expectedHome)
+      expect(service.prepareForRateLimitFetch(target)).toBe(expectedHome)
+      expect(syncWslRuntime).not.toHaveBeenCalled()
     } finally {
       if (originalPlatform) {
         Object.defineProperty(process, 'platform', originalPlatform)
@@ -2098,20 +2120,23 @@ describe('CodexRuntimeHomeService', () => {
     try {
       const { CodexRuntimeHomeService } = await import('./runtime-home-service')
       const service = new CodexRuntimeHomeService(store as never)
-      const wslRuntimeHomePath = join(
-        wslHome,
-        '.local',
-        'share',
-        'orca',
-        'codex-runtime-home',
-        'home'
-      )
-
       expect(service.prepareForRateLimitFetch({ runtime: 'wsl', wslDistro: 'Ubuntu' })).toBe(
-        wslRuntimeHomePath
+        systemCodexHomePath
       )
       expect(readFileSync(join(managedHomePath, 'auth.json'), 'utf-8')).toBe(managedAuth)
-      expect(readFileSync(join(wslRuntimeHomePath, 'auth.json'), 'utf-8')).toBe(systemDefaultAuth)
+      const externallyRefreshedAuth = createCodexAuthJson(
+        'wsl@example.com',
+        'acct-wsl',
+        'system-refreshed',
+        3_000
+      )
+      writeFileSync(join(systemCodexHomePath, 'auth.json'), externallyRefreshedAuth, 'utf-8')
+      expect(service.prepareForRateLimitFetch({ runtime: 'wsl', wslDistro: 'Ubuntu' })).toBe(
+        systemCodexHomePath
+      )
+      expect(readFileSync(join(systemCodexHomePath, 'auth.json'), 'utf-8')).toBe(
+        externallyRefreshedAuth
+      )
     } finally {
       if (originalPlatform) {
         Object.defineProperty(process, 'platform', originalPlatform)

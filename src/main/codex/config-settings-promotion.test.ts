@@ -15,9 +15,11 @@ import {
 import { homedir, tmpdir } from 'node:os'
 import type * as Os from 'node:os'
 import { join } from 'node:path'
+import type * as CodexFsUtils from '../codex-accounts/fs-utils'
 
-const { homedirMock } = vi.hoisted(() => ({
-  homedirMock: vi.fn<() => string>()
+const { homedirMock, promotionTestState } = vi.hoisted(() => ({
+  homedirMock: vi.fn<() => string>(),
+  promotionTestState: { failAtomicWrite: false }
 }))
 
 vi.mock('node:os', async (importOriginal) => {
@@ -25,6 +27,19 @@ vi.mock('node:os', async (importOriginal) => {
   return {
     ...actual,
     homedir: homedirMock
+  }
+})
+
+vi.mock('../codex-accounts/fs-utils', async (importOriginal) => {
+  const actual = await importOriginal<typeof CodexFsUtils>()
+  return {
+    ...actual,
+    writeFileAtomically: (...args: Parameters<typeof actual.writeFileAtomically>) => {
+      if (promotionTestState.failAtomicWrite) {
+        throw new Error('injected atomic write failure')
+      }
+      return actual.writeFileAtomically(...args)
+    }
   }
 })
 
@@ -41,6 +56,7 @@ beforeEach(() => {
   previousUserDataPath = process.env.ORCA_USER_DATA_PATH
   process.env.ORCA_USER_DATA_PATH = userDataDir
   homedirMock.mockReturnValue(tmpHome)
+  promotionTestState.failAtomicWrite = false
   // Why: promotion writes into homedir()/.codex — if the mock ever fails to
   // intercept, these tests would rewrite the developer's real Codex config.
   if (homedir() !== tmpHome) {
@@ -325,6 +341,23 @@ describe('codex settings write-back promotion', () => {
     }
   )
 
+  it.skipIf(process.platform === 'win32')(
+    'preserves a dangling config.toml symlink and creates its target',
+    () => {
+      mkdirSync(join(tmpHome, '.codex'), { recursive: true })
+      const realConfigPath = join(tmpHome, 'dotfiles', 'config.toml')
+      mkdirSync(join(tmpHome, 'dotfiles'), { recursive: true })
+      symlinkSync(realConfigPath, systemConfigPath())
+      syncSystemConfigIntoManagedCodexHome()
+
+      simulateCodexSettingWrite('model', '"o4"')
+      syncSystemConfigIntoManagedCodexHome()
+
+      expect(lstatSync(systemConfigPath()).isSymbolicLink()).toBe(true)
+      expect(readFileSync(realConfigPath, 'utf-8')).toBe('model = "o4"\n')
+    }
+  )
+
   it('inserts a missing key into a CRLF config with CRLF endings', () => {
     writeSystemConfig('model = "gpt-5"\r\n\r\n[features]\r\nhooks = true\r\n')
     syncSystemConfigIntoManagedCodexHome()
@@ -346,6 +379,24 @@ describe('codex settings write-back promotion', () => {
     syncSystemConfigIntoManagedCodexHome()
 
     expect(statSync(baselinePath()).mtimeMs).toBeLessThan(Date.now() - 60_000)
+  })
+
+  it('keeps the old baseline and retries after a transient promotion failure', () => {
+    writeSystemConfig('model = "gpt-5"\n')
+    syncSystemConfigIntoManagedCodexHome()
+    const baselineBeforeFailure = readFileSync(baselinePath(), 'utf-8')
+    simulateCodexSettingWrite('model', '"o4"')
+
+    promotionTestState.failAtomicWrite = true
+    syncSystemConfigIntoManagedCodexHome()
+
+    expect(readSystemConfig()).toBe('model = "gpt-5"\n')
+    expect(readRuntimeConfig()).toBe('model = "o4"\n')
+    expect(readFileSync(baselinePath(), 'utf-8')).toBe(baselineBeforeFailure)
+
+    promotionTestState.failAtomicWrite = false
+    syncSystemConfigIntoManagedCodexHome()
+    expect(readSystemConfig()).toBe('model = "o4"\n')
   })
 })
 

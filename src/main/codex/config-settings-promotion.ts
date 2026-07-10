@@ -1,5 +1,14 @@
-import { existsSync, mkdirSync, readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs'
-import { join, resolve } from 'node:path'
+import {
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  readFileSync,
+  readlinkSync,
+  realpathSync,
+  statSync,
+  writeFileSync
+} from 'node:fs'
+import { dirname, join, resolve } from 'node:path'
 import { writeFileAtomically } from '../codex-accounts/fs-utils'
 import { getOrcaManagedCodexHomePath, getSystemCodexHomePath } from './codex-home-paths'
 import {
@@ -120,8 +129,8 @@ export function snapshotCodexRuntimeSettingsBaseline(
     const file: SettingsBaselineFile = { version: 1, settings }
     const baselinePath = getSettingsBaselinePath(runtimeHomePath)
     const serialized = `${JSON.stringify(file, null, 2)}\n`
-    // Why: this runs on every background quota poll; skip byte-identical
-    // rewrites so an unchanged refresh cycle does no disk writes.
+    // Why: launch preparation can run repeatedly; skip byte-identical rewrites
+    // so an unchanged pass does no disk writes.
     if (existsSync(baselinePath) && readFileSync(baselinePath, 'utf-8') === serialized) {
       return
     }
@@ -153,13 +162,15 @@ function getHostPromotionHomes(): CodexSettingsPromotionHomes {
  * pass instead of reverting. WSL callers pass explicit per-distro homes; the
  * default is the host runtime home and host ~/.codex.
  */
-export function promoteCodexRuntimeSettingsToSystem(homes?: CodexSettingsPromotionHomes): void {
+export function promoteCodexRuntimeSettingsToSystem(homes?: CodexSettingsPromotionHomes): boolean {
   try {
     promoteCodexRuntimeSettingsToSystemUnsafe(homes ?? getHostPromotionHomes())
+    return true
   } catch (error) {
-    // Why: promotion is best-effort launch prep; a malformed runtime file
-    // must not block the config mirror or the Codex launch itself.
+    // Why: promotion is best-effort launch prep; callers preserve the runtime
+    // for retry, while a malformed file must not block Codex launch itself.
     console.warn('[codex-settings-promotion] failed to promote runtime settings', error)
+    return false
   }
 }
 
@@ -228,8 +239,36 @@ function resolvePromotionWriteTarget(systemTomlPath: string): { path: string; mo
     const realPath = realpathSync(systemTomlPath)
     return { path: realPath, mode: statSync(realPath).mode & 0o777 }
   } catch {
-    return { path: systemTomlPath, mode: 0o600 }
+    // Continue below: realpath also fails for a valid dangling dotfile link.
   }
+  try {
+    if (lstatSync(systemTomlPath).isSymbolicLink()) {
+      const targetPath = resolveDanglingSymlinkTarget(systemTomlPath)
+      return { path: targetPath, mode: 0o600 }
+    }
+  } catch {
+    // Missing non-link targets are created owner-only at the requested path.
+  }
+  return { path: systemTomlPath, mode: 0o600 }
+}
+
+function resolveDanglingSymlinkTarget(linkPath: string): string {
+  let currentPath = linkPath
+  const visited = new Set<string>()
+  while (!visited.has(currentPath)) {
+    visited.add(currentPath)
+    try {
+      if (!lstatSync(currentPath).isSymbolicLink()) {
+        return currentPath
+      }
+      currentPath = resolve(dirname(currentPath), readlinkSync(currentPath))
+    } catch {
+      return currentPath
+    }
+  }
+  // Why: replacing any link in a cycle would destroy dotfile-manager state;
+  // abort promotion and leave the runtime/baseline intact for manual repair.
+  throw new Error(`Codex config symlink cycle at ${linkPath}`)
 }
 
 export function upsertTopLevelSettingsInContent(

@@ -2125,7 +2125,7 @@ describe('useIpcEvents updater integration', () => {
     expect(dispatchEvent).toHaveBeenCalledWith(
       expect.objectContaining({
         type: 'orca-background-mount-terminal-worktree',
-        detail: { worktreeId: 'wt-3' }
+        detail: { worktreeId: 'wt-3', tabIds: ['tab-new'] }
       })
     )
     expect(setTabCustomTitle).toHaveBeenCalledWith('tab-new', 'Shell', {
@@ -2188,7 +2188,7 @@ describe('useIpcEvents updater integration', () => {
     expect(dispatchEvent).toHaveBeenCalledWith(
       expect.objectContaining({
         type: 'orca-background-mount-terminal-worktree',
-        detail: { worktreeId: 'wt-2' }
+        detail: { worktreeId: 'wt-2', tabIds: ['tab-new'] }
       })
     )
     expect(setTabCustomTitle).toHaveBeenCalledWith('tab-new', 'Codex', {
