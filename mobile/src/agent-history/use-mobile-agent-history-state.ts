@@ -74,7 +74,12 @@ export function useMobileAgentHistoryState(params: MobileAgentHistoryStateParams
 
       if (!client || connState !== 'connected') {
         if (isCurrent()) {
-          setScreenState({ kind: 'error', message: 'Waiting for host…' })
+          // Why: keep the stale list visible through transient reconnects
+          // (connState flips re-run the load effect) instead of tearing it
+          // down to a full-screen error, matching the host list screen.
+          setScreenState((prev) =>
+            prev.kind === 'ready' ? prev : { kind: 'error', message: 'Waiting for host…' }
+          )
         }
         return
       }

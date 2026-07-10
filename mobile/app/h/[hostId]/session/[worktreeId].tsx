@@ -78,6 +78,7 @@ import { useMobilePrBranchContext } from '../../../../src/session/use-mobile-pr-
 import { SessionDockColumn } from '../../../../src/session/SessionDockColumn'
 import { MobileSessionHeaderIconButton } from '../../../../src/session/MobileSessionHeaderIconButton'
 import { MobileSessionHeaderMoreActionsSheet } from '../../../../src/session/MobileSessionHeaderMoreActionsSheet'
+import { MOBILE_AI_VAULT_CAPABILITY } from '../../../../src/agent-history/agent-history-capability'
 import type { ConnectionState, RpcFailure, RpcSuccess } from '../../../../src/transport/types'
 import { useMobileDictation } from '../../../../src/hooks/use-mobile-dictation'
 import {
@@ -1104,6 +1105,12 @@ export default function SessionScreen() {
     activeSessionTab?.type !== 'browser'
   const liveInputEnabled = activeHandle ? liveInputTerminalHandles.has(activeHandle) : false
   const [browserScreencastSupported, setBrowserScreencastSupported] = useState<boolean | null>(null)
+  // Why: hosts without aiVault.v1 reject aiVault.listSessions, so the header
+  // entry stays hidden there (mirrors the gated host-list action) instead of
+  // opening a dead-end "update this host" panel.
+  const [agentSessionHistorySupported, setAgentSessionHistorySupported] = useState<boolean | null>(
+    null
+  )
   // Why: stable callbacks (handleFileTap) read the live value via this ref, since
   // the capability probe resolves after the callbacks are created.
   const browserScreencastSupportedRef = useRef(browserScreencastSupported)
@@ -2419,6 +2426,7 @@ export default function SessionScreen() {
   useEffect(() => {
     if (!client || connState !== 'connected') {
       setBrowserScreencastSupported(null)
+      setAgentSessionHistorySupported(null)
       return
     }
     let stale = false
@@ -2432,10 +2440,14 @@ export default function SessionScreen() {
         setBrowserScreencastSupported(
           status.capabilities?.includes('browser.screencast.v1') === true
         )
+        setAgentSessionHistorySupported(
+          status.capabilities?.includes(MOBILE_AI_VAULT_CAPABILITY) === true
+        )
       })
       .catch(() => {
         if (!stale) {
           setBrowserScreencastSupported(false)
+          setAgentSessionHistorySupported(false)
         }
       })
     return () => {
@@ -4451,8 +4463,13 @@ export default function SessionScreen() {
     const params = new URLSearchParams({ name: worktreeName || '' })
     router.push(`/h/${hostId}/agent-history/${encodeURIComponent(worktreeId)}?${params.toString()}`)
   }
-  const showAgentSessionHistoryAction = !isFolderWorkspaceRoute
-  const showChecksAction = shouldShowSessionHeaderChecksAction({ isFolderWorkspaceRoute })
+  const showAgentSessionHistoryAction =
+    !isFolderWorkspaceRoute && agentSessionHistorySupported === true
+  const showChecksAction = shouldShowSessionHeaderChecksAction({
+    isFolderWorkspaceRoute,
+    repoContextLoaded: prRepoContextLoaded,
+    hostedChecksSupported: prIsGithubRepo
+  })
   const showHeaderMoreButton = showAgentSessionHistoryAction || showChecksAction
 
   return (

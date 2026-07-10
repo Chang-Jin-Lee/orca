@@ -9682,7 +9682,10 @@ export class OrcaRuntimeService {
         linkedPR = { number: meta.linkedPR, state: 'unknown' }
       }
       const terminalPlatform = repo ? this.getAgentLaunchPlatformForRepo(repo) : process.platform
-      const lineage = this.store?.getWorktreeLineage?.(worktree.id)
+      // Why: use the instance-validated lineage from attachLineageToResolvedWorktrees,
+      // not the raw store entry — shipped mobile clients trust parentWorktreeId as-is,
+      // so a stale same-path entry would nest replacement checkouts under old parents.
+      const lineage = worktree.lineage
       summaries.set(worktree.id, {
         // Why: mobile mirrors desktop workspace grouping/order from persisted
         // metadata, while older runtimes may not have hydrated every field yet.
@@ -9704,7 +9707,7 @@ export class OrcaRuntimeService {
         ...(lineage?.parentWorktreeInstanceId !== undefined
           ? { parentWorktreeInstanceId: lineage.parentWorktreeInstanceId }
           : {}),
-        parentWorktreeId: lineage?.parentWorktreeId ?? worktree.parentWorktreeId,
+        parentWorktreeId: worktree.parentWorktreeId,
         childWorktreeIds: worktree.childWorktreeIds,
         displayName: worktree.displayName,
         workspaceStatus: meta?.workspaceStatus ?? DEFAULT_WORKSPACE_STATUS_ID,

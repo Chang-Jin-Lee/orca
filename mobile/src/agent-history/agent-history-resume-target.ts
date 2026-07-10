@@ -47,7 +47,7 @@ export type MobileAiVaultSessionResumeTarget =
   | {
       status: 'ready'
       worktreeId: string
-      targetStatus: 'local' | 'ssh'
+      targetStatus: 'local'
       workspacePath: string | null
       terminalPlatform: NodeJS.Platform | null
     }
@@ -96,8 +96,10 @@ export function getMobileAiVaultResumeWorktreeTargetStatus(args: {
 
 export function isSupportedMobileAiVaultResumeTargetStatus(
   status: MobileAiVaultResumeTargetStatus
-): status is 'local' | 'ssh' {
-  return status === 'local' || status === 'ssh'
+): status is 'local' {
+  // Why: mobile sessions come from the host-local transcript scan, so an SSH
+  // workspace cannot see the transcript file (mirror of desktop #6270).
+  return status === 'local'
 }
 
 export function mobileAiVaultResumeTargetBlockMessage(
@@ -106,7 +108,10 @@ export function mobileAiVaultResumeTargetBlockMessage(
   if (status === 'runtime') {
     return 'Resume from history is not available in runtime-hosted workspaces.'
   }
-  return 'Open a local or SSH workspace before resuming a session.'
+  if (status === 'ssh') {
+    return 'This session is stored on the host machine, so it cannot be resumed in an SSH workspace. Open a local workspace for this project.'
+  }
+  return 'Open a local workspace before resuming a session.'
 }
 
 export function resolveMobileAiVaultSessionResumeTarget(args: {

@@ -15,6 +15,7 @@ import {
   readMobileRuntimeTerminalWindowsShell,
   resolveMobileAiVaultResumePlatform,
   resumeAiVaultSessionInTerminal,
+  RESUME_RPC_TIMEOUT_MS,
   type MobileAiVaultResumeSettings
 } from '../session/ai-vault-resume-launch'
 import { triggerError, triggerSuccess } from '../platform/haptics'
@@ -361,6 +362,8 @@ async function loadMobileResumeMetadata(client: Pick<RpcClient, 'sendRequest'>):
 }> {
   // Why: repo.list can enrich repo remote identities, so fetch resume-only
   // metadata after explicit user intent instead of delaying history browsing.
+  // timeoutMs: without it a socket drop parks these on the reconnect waiter
+  // for minutes, pinning the resume spinner (see RESUME_RPC_TIMEOUT_MS).
   const [
     repoResponse,
     folderWorkspaceResponse,
@@ -368,11 +371,19 @@ async function loadMobileResumeMetadata(client: Pick<RpcClient, 'sendRequest'>):
     settingsResponse,
     worktreeResponse
   ] = await Promise.all([
-    client.sendRequest('repo.list'),
-    client.sendRequest('folderWorkspace.list').catch(() => null),
-    client.sendRequest('projectGroup.list').catch(() => null),
-    client.sendRequest('settings.get').catch(() => null),
-    client.sendRequest('worktree.ps', { limit: 10000 }).catch(() => null)
+    client.sendRequest('repo.list', undefined, { timeoutMs: RESUME_RPC_TIMEOUT_MS }),
+    client
+      .sendRequest('folderWorkspace.list', undefined, { timeoutMs: RESUME_RPC_TIMEOUT_MS })
+      .catch(() => null),
+    client
+      .sendRequest('projectGroup.list', undefined, { timeoutMs: RESUME_RPC_TIMEOUT_MS })
+      .catch(() => null),
+    client
+      .sendRequest('settings.get', undefined, { timeoutMs: RESUME_RPC_TIMEOUT_MS })
+      .catch(() => null),
+    client
+      .sendRequest('worktree.ps', { limit: 10000 }, { timeoutMs: RESUME_RPC_TIMEOUT_MS })
+      .catch(() => null)
   ])
   if (!repoResponse.ok) {
     throw new Error(repoResponse.error?.message || 'Unable to load workspace metadata.')

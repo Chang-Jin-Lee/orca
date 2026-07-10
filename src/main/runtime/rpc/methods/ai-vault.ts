@@ -34,7 +34,10 @@ export const AiVaultListSessionsParams = z.object({
   force: OptionalBoolean,
   scopePaths: z
     .array(z.string().min(1).max(AI_VAULT_SCOPE_PATH_MAX_LENGTH))
-    .max(AI_VAULT_SCOPE_PATHS_MAX_COUNT)
+    // Why: clamp instead of reject — scope paths only ever widen discovery, and
+    // rejecting would hard-break older/uncapped producers (web client, pre-cap
+    // desktop parents) that send more than the bound.
+    .transform((paths) => paths.slice(0, AI_VAULT_SCOPE_PATHS_MAX_COUNT))
     .optional(),
   // Why: desktop/web callers name the runtime host they are addressing; mobile
   // omits it. The scan itself is host-local either way, so the id must never

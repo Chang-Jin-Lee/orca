@@ -20023,6 +20023,76 @@ describe('OrcaRuntimeService', () => {
     })
   })
 
+  it('emits only instance-validated lineage parents in mobile summaries', async () => {
+    // Regression: shipped mobile clients trust parentWorktreeId without instance
+    // checks, so worktree.ps must not emit stale same-path lineage from the store.
+    const parentPath = '/tmp/worktree-parent'
+    const validChildPath = '/tmp/worktree-child-valid'
+    const staleChildPath = '/tmp/worktree-child-stale'
+    const parentId = `${TEST_REPO_ID}::${parentPath}`
+    const validChildId = `${TEST_REPO_ID}::${validChildPath}`
+    const staleChildId = `${TEST_REPO_ID}::${staleChildPath}`
+    const metaById: Record<string, WorktreeMeta> = {
+      [parentId]: makeWorktreeMeta({ instanceId: 'parent-instance' }),
+      [validChildId]: makeWorktreeMeta({ instanceId: 'child-instance' }),
+      // The stale child path was reused by a replacement checkout.
+      [staleChildId]: makeWorktreeMeta({ instanceId: 'replacement-instance' })
+    }
+    const makeLineage = (childId: string, worktreeInstanceId: string): WorktreeLineage => ({
+      worktreeId: childId,
+      worktreeInstanceId,
+      parentWorktreeId: parentId,
+      parentWorktreeInstanceId: 'parent-instance',
+      origin: 'manual',
+      capture: { source: 'manual-action', confidence: 'explicit' },
+      createdAt: 1
+    })
+    const lineageById: Record<string, WorktreeLineage> = {
+      [validChildId]: makeLineage(validChildId, 'child-instance'),
+      [staleChildId]: makeLineage(staleChildId, 'old-child-instance')
+    }
+    const runtimeStore = {
+      ...store,
+      getAllWorktreeMeta: () => metaById,
+      getWorktreeMeta: (worktreeId: string) => metaById[worktreeId],
+      setWorktreeMeta: (worktreeId: string, meta: Partial<WorktreeMeta>) => {
+        metaById[worktreeId] = { ...(metaById[worktreeId] ?? makeWorktreeMeta()), ...meta }
+        return metaById[worktreeId]
+      },
+      getAllWorktreeLineage: () => lineageById,
+      getWorktreeLineage: (worktreeId: string) => lineageById[worktreeId]
+    }
+    vi.mocked(listWorktrees).mockResolvedValue(
+      [parentPath, validChildPath, staleChildPath].map((path) => ({
+        path,
+        head: 'abc',
+        branch: `feature/${path.split('/').pop()}`,
+        isBare: false,
+        isMainWorktree: false
+      }))
+    )
+    const runtime = new OrcaRuntimeService(runtimeStore as never)
+
+    const { worktrees } = await runtime.getWorktreePs()
+
+    expect(worktrees.find((worktree) => worktree.worktreeId === validChildId)).toMatchObject({
+      parentWorktreeId: parentId,
+      worktreeInstanceId: 'child-instance',
+      lineageWorktreeInstanceId: 'child-instance',
+      parentWorktreeInstanceId: 'parent-instance'
+    })
+    const staleSummary = worktrees.find((worktree) => worktree.worktreeId === staleChildId)
+    expect(staleSummary).toMatchObject({
+      parentWorktreeId: null,
+      worktreeInstanceId: 'replacement-instance'
+    })
+    expect(staleSummary?.lineageWorktreeInstanceId).toBeUndefined()
+    expect(staleSummary?.parentWorktreeInstanceId).toBeUndefined()
+    expect(worktrees.find((worktree) => worktree.worktreeId === parentId)).toMatchObject({
+      childWorktreeIds: [validChildId]
+    })
+  })
+
   it('reports the resolved terminal platform for WSL project mobile summaries', async () => {
     await withPlatform('win32', async () => {
       const runtime = new OrcaRuntimeService({

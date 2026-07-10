@@ -80,11 +80,13 @@ describe('aiVault.listSessions params schema', () => {
     expect(parsed.success).toBe(false)
   })
 
-  it('rejects too many scopePaths', () => {
-    const parsed = AiVaultListSessionsParams.safeParse({
-      scopePaths: Array.from({ length: 65 }, (_, index) => `/p/${index}`)
-    })
-    expect(parsed.success).toBe(false)
+  it('clamps scopePaths past the cap instead of rejecting', () => {
+    // Why: uncapped producers (web client, pre-cap desktop parents) may exceed
+    // the bound; scope paths only widen discovery, so truncation is safe.
+    const scopePaths = Array.from({ length: 65 }, (_, index) => `/p/${index}`)
+    const parsed = AiVaultListSessionsParams.safeParse({ scopePaths })
+    expect(parsed.success).toBe(true)
+    expect(parsed.data?.scopePaths).toEqual(scopePaths.slice(0, 64))
   })
 
   it('rejects an over-long scopePath', () => {
@@ -118,6 +120,16 @@ describe('aiVault.listSessions handler + shared cache', () => {
     const dispatcher = makeDispatcher()
     const response = await dispatcher.dispatch(makeRequest('aiVault.listSessions', { limit: 500 }))
     expect(response).toMatchObject({ ok: true, result: makeResult() })
+  })
+
+  it('passes only the first 64 scopePaths to the scanner when a request exceeds the cap', async () => {
+    const dispatcher = makeDispatcher()
+    const scopePaths = Array.from({ length: 65 }, (_, index) => `/p/${index}`)
+    const response = await dispatcher.dispatch(makeRequest('aiVault.listSessions', { scopePaths }))
+    expect(response).toMatchObject({ ok: true })
+    expect(scanAiVaultSessions.mock.calls[0]?.[0]).toMatchObject({
+      scopePaths: scopePaths.slice(0, 64)
+    })
   })
 
   it('shares one cache between the IPC entry point and the RPC method', async () => {

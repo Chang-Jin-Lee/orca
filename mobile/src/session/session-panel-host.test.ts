@@ -79,12 +79,44 @@ describe('canDockSessionPanel', () => {
 })
 
 describe('shouldShowSessionHeaderChecksAction', () => {
-  it('shows Checks immediately for git worktree session routes', () => {
-    expect(shouldShowSessionHeaderChecksAction({ isFolderWorkspaceRoute: false })).toBe(true)
+  it('shows Checks on git worktree routes once a checks-capable provider is confirmed', () => {
+    expect(
+      shouldShowSessionHeaderChecksAction({
+        isFolderWorkspaceRoute: false,
+        repoContextLoaded: true,
+        hostedChecksSupported: true
+      })
+    ).toBe(true)
+  })
+
+  it('hides Checks for providers without hosted checks (pr-panel guard would no-op it)', () => {
+    expect(
+      shouldShowSessionHeaderChecksAction({
+        isFolderWorkspaceRoute: false,
+        repoContextLoaded: true,
+        hostedChecksSupported: false
+      })
+    ).toBe(false)
+  })
+
+  it('hides Checks until the provider probe resolves', () => {
+    expect(
+      shouldShowSessionHeaderChecksAction({
+        isFolderWorkspaceRoute: false,
+        repoContextLoaded: false,
+        hostedChecksSupported: false
+      })
+    ).toBe(false)
   })
 
   it('hides Checks on folder workspace session routes', () => {
-    expect(shouldShowSessionHeaderChecksAction({ isFolderWorkspaceRoute: true })).toBe(false)
+    expect(
+      shouldShowSessionHeaderChecksAction({
+        isFolderWorkspaceRoute: true,
+        repoContextLoaded: true,
+        hostedChecksSupported: true
+      })
+    ).toBe(false)
   })
 })
 
