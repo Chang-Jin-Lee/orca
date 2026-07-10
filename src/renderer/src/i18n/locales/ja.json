@@ -562,10 +562,10 @@
         "wslDefault": "WSL 既定"
       },
       "sidebarWorktreeActivation": {
-        "wakeEphemeralVmFailed": "Failed to wake ephemeral VM workspace"
+        "wakeEphemeralVmFailed": "一時的なVMワークスペースの起動に失敗しました"
       },
       "ephemeralVmWorkspaceTarget": {
-        "projectRootRegistrationFailed": "Failed to register the recipe-created project root on the runtime."
+        "projectRootRegistrationFailed": "ランタイム上でのレシピ作成プロジェクトルートの登録に失敗しました"
       },
       "blocked": {
         "notification": {
@@ -591,8 +591,8 @@
         "chooseOrAddProjectBeforeWorkspace": "ワークスペースを作成する前に、プロジェクトを選択または追加。",
         "folderWorkspaceCreateFailedTitle": "フォルダーワークスペースを作成できませんでした",
         "folderWorkspaceCreateFailedMessage": "フォルダーワークスペースを作成できませんでした。上のエラー詳細を確認して、もう一度お試しください。",
-        "setupAgentStartupPolicySaveFailed": "Failed to save setup startup behavior.",
-        "5f3d2c8a1b": "Failed to resolve MR base."
+        "setupAgentStartupPolicySaveFailed": "セットアップの起動動作の保存に失敗しました",
+        "5f3d2c8a1b": "MRベースの解決に失敗しました"
       },
       "useGlobalFileDrop": {
         "38c9f034ff": "ドロップされたファイルのアップロードに失敗しました。",
@@ -680,10 +680,10 @@
         "f70ac54d38": "AI プロバイダー アカウント",
         "4121f7a0a2": "AI agents を管理し、デフォルトを設定し、コマンドをカスタマイズします。",
         "b49abbd2f7": "エージェント",
-        "dev": "Dev Tools",
-        "devDescription": "Dev-only tools for exercising UI states.",
+        "dev": "開発者ツール",
+        "devDescription": "UI状態を操作するための開発者専用ツール。",
         "devBadge": "Dev",
-        "devSearchNotificationPlayground": "Notification playground",
+        "devSearchNotificationPlayground": "通知プレイグラウンド",
         "devSearchNotificationPlaygroundDescription": "代表的なトーストと通知の UI 状態をトリガーします。",
         "devSearchKeywordDev": "dev",
         "devSearchKeywordToast": "toast",
@@ -896,22 +896,22 @@
         "5c1c973855": "レビュアーを削除",
         "commentTooLarge": "コメントが大きすぎるため安全に送信できません。",
         "timeline": {
-          "completed": "as completed",
-          "notPlanned": "as not planned",
+          "completed": "を完了として",
+          "notPlanned": "未計画として",
           "someone": "someone",
           "assigned": "assigned",
           "unassigned": "unassigned",
-          "mentioned": "mentioned this",
+          "mentioned": "がこのイシューをメンションしました",
           "in": "in",
-          "closed": "closed this",
-          "reopened": "reopened this",
-          "moved": "moved this",
+          "closed": "がこのイシューをクローズしました",
+          "reopened": "がこのイシューを再オープンしました",
+          "moved": "がこのイシューを移動しました",
           "from": "from",
           "to": "to",
           "activity": "アクティビティ",
-          "noActivity": "No activity yet."
+          "noActivity": "まだアクティビティはありません。"
         },
-        "checkActionRequiredHint": "This check needs a manual action on GitHub (for example, approving the workflow run) before merging is unblocked."
+        "checkActionRequiredHint": "マージを解除するには、このチェックにGitHub上で手動アクション（例：ワークフロー実行の承認）が必要です。"
       },
       "GitLabItemDialog": {
         "65e784c1f1": "再度開く",
@@ -1381,7 +1381,7 @@
         "8ff5ae8866": "担当者",
         "82c87eceb9": "担当者を編集",
         "1ff5d979df": "担当者なし",
-        "checkActionRequiredHint": "This check needs a manual action on GitHub (for example, approving the workflow run) before merging is unblocked.",
+        "checkActionRequiredHint": "マージを解除するには、このチェックにGitHub上で手動アクション（例：ワークフロー実行の承認）が必要です。",
         "dd5d9a4f17": "{{value0}}に更新",
         "71a3c0f9d2": "ワークスペースを開始"
       },
@@ -1732,9 +1732,9 @@
         "useIssueNumber": "Issue #{{value0}} を使用",
         "noMatchingIssuesLoaded": "一致する issue は読み込まれていません。",
         "editReviewersWithCurrent": "レビュアーを編集: {{value0}}",
-        "linearEmptyAttributeFilter": "No issues match the selected filters. Clear a filter or try different criteria.",
-        "linearEmptyUnfilteredScope": "No issues in this workspace scope. Try searching or adjusting teams.",
-        "linearFetchMore": "Fetch more"
+        "linearEmptyAttributeFilter": "選択したフィルターに一致するイシューがありません。フィルターを解除するか、異なる条件を試してください。",
+        "linearEmptyUnfilteredScope": "このワークスペーススコープにイシューがありません。検索するか、チームを調整してください。",
+        "linearFetchMore": "さらに読み込む"
       },
       "Terminal": {
         "73768427cf": "閉じる",
@@ -2543,7 +2543,7 @@
             "c2f0b72b8d": "入れる",
             "925f49f210": "ペインを展開する",
             "df766809e0": "ペインを折りたたむ",
-            "cff67afad1": "Copy Context"
+            "cff67afad1": "コンテキストをコピー"
           },
           "TerminalErrorToast": {
             "e4aa243f8c": "デーモンを再起動します",
@@ -2594,9 +2594,9 @@
                   "f867385bb5": "このフォークのソース ワークスペースが見つかりませんでした。",
                   "046e8d853c": "フォークする terminal コンテキストがありません",
                   "c00421d320": "フォークコンテキストがコピーされました。agent を起動し、貼り付けてフォークを開始します。",
-                  "f62b40e2c7": "No terminal context to copy",
-                  "373a3103e7": "Context copied",
-                  "3fc568a49d": "Failed to copy context."
+                  "f62b40e2c7": "コピーするターミナルコンテキストがありません",
+                  "373a3103e7": "コンテキストをコピーしました",
+                  "3fc568a49d": "コンテキストのコピーに失敗しました"
                 }
               }
             },
@@ -2651,9 +2651,9 @@
             "title": "SSH 接続が必要です",
             "connectingButton": "接続中...",
             "connectButton": "接続",
-            "removedTitle": "SSH host removed",
-            "removedBody": "The SSH host for this workspace was removed, so it can no longer connect. Remove the workspace to clear it — remote files are left untouched.",
-            "removeWorkspaceButton": "Remove workspace"
+            "removedTitle": "SSHホストが削除されました",
+            "removedBody": "このワークスペースのSSHホストが削除されたため、接続できません。ワークスペースを削除してクリアしてください — リモートファイルはそのまま残ります。",
+            "removeWorkspaceButton": "ワークスペースを削除"
           }
         }
       },
@@ -2679,7 +2679,7 @@
             "localWorkspacesOnly": "履歴からの再開はローカルワークスペースでのみ利用できます。",
             "openLocalWorkspace": "セッションを再開する前にローカルワークスペースを開いてください。",
             "sessionQueued": "セッションをキューに追加しました",
-            "openSupportedWorkspace": "Open a workspace before resuming a session.",
+            "openSupportedWorkspace": "セッションを再開する前にワークスペースを開いてください。",
             "localSessionSshWorkspaceUnsupported": "このセッションの履歴はこのマシンに保存されているため、SSH ワークスペースでは再開できません。代わりにローカルワークスペースにドロップしてください。",
             "sessionHostMismatchUnsupported": "このセッションは別のホストに属しています。同じホスト上のワークスペースにドロップしてください。"
           },
@@ -2863,7 +2863,7 @@
             "a768f428f1": "タブを閉じる"
           },
           "TerminalTabSplitMenuSection": {
-            "splitTerminal": "Split terminal"
+            "splitTerminal": "ターミナルを分割"
           }
         }
       },
@@ -3405,7 +3405,7 @@
         "share": {
           "card": {
             "utils": {
-              "19f4b4dc75": "github.com/stableai/orca",
+              "19f4b4dc75": "github.com/stablyai/orca",
               "d864fc5f98": "出力",
               "5d66fdd7c2": "入力",
               "7080aeaebb": "推論",
@@ -4179,7 +4179,7 @@
           "hostDisconnected": "切断済み",
           "failedNestWorkspace": "ワークスペースをネストできませんでした",
           "sidebarRowMissing": "対象はもう存在しません",
-          "failedUnnestWorkspace": "Failed to unnest workspace"
+          "failedUnnestWorkspace": "ワークスペースの展開に失敗しました"
         },
         "WorktreeMetaDialog": {
           "3db0a2a593": "キャンセル",
@@ -4495,14 +4495,14 @@
           "7a8b9c0d1e": "Open settings",
           "8b9c0d1e2f": "ホストを削除",
           "workspacesFailed": "Could not remove {{count}} of this host’s workspaces. The host was kept so you can retry.",
-          "oneWorkspace": "1 workspace",
+          "oneWorkspace": "1つのワークスペース",
           "manyWorkspaces": "{{count}} workspaces",
           "hostHasWorkspacesDefault": "Removes {{value0}} and its credentials from this computer. Its {{value1}} stay in Orca — remote files are not touched.",
           "alsoDeleteRemote": "Also delete these {{value0}} on {{value1}}",
           "alsoForgetLocal": "Also remove these {{value0}} from Orca",
           "advanced": "Advanced",
-          "alsoDeleteRemoteHint": "Permanently deletes the remote Git worktrees and their branches. Cannot be undone.",
-          "alsoForgetLocalHint": "Clears them from Orca only. Remote files, worktrees, and branches are left untouched."
+          "alsoDeleteRemoteHint": "リモートGitワークスペースとそのブランチを完全に削除します。この操作は取り消せません。",
+          "alsoForgetLocalHint": "Orcaからのみクリアします。リモートファイル、ワークスペース、ブランチはそのまま残ります。"
         },
         "HostRenameDialog": {
           "1a2b3c4d5e": "Rename host",
@@ -4617,14 +4617,14 @@
           "sshPersistenceDefault": "このホスト上のリモートターミナルは、終了するかリレーをリセットするまで動作し続けます。"
         },
         "ForgetSshWorkspaceDialog": {
-          "reconnectFailed": "Reconnection failed",
+          "reconnectFailed": "再接続に失敗しました",
           "forgetBody": "Removes this workspace from Orca only. Files, the Git worktree, and branches on {{host}} are left untouched.",
           "title": "Delete “{{name}}”?",
-          "disconnectedBody": "The SSH host for this workspace is not connected. Reconnect to delete it on the remote too, or remove it from Orca only.",
+          "disconnectedBody": "このワークスペースのSSHホストが接続されていません。再接続してリモートでも削除するか、Orcaからのみ削除してください。",
           "ghostBody": "{{host}} is no longer a saved SSH host, so this workspace is no longer connected to a live host. It can only be removed from Orca — files and branches on the remote are left untouched.",
           "cancel": "Cancel",
-          "forget": "Remove from Orca",
-          "reconnectAndDelete": "Reconnect & Delete"
+          "forget": "Orcaから削除",
+          "reconnectAndDelete": "再接続して削除"
         }
       },
       "shared": {
@@ -4647,15 +4647,15 @@
           "63520148e2": "{{value0}} 個のセッションが終了を拒否しました。",
           "cc0a26cb14": "{{value0}} 個のセッションが終了を拒否しました。",
           "71a8d342b0": "Terminal tabs absent: {{value0}}/{{value1}}. Failed close attempts: {{value2}}. Exact PTY shutdown requests accepted: {{value3}}; failed: {{value4}}.",
-          "2e57c1a940": "The daemon shutdown result is unverified because its management request failed.",
-          "993af6052c": "Daemon management reported exited: {{value0}}/{{value1}}; still present before exact cleanup: {{value2}}.",
-          "1f0d8ac762": "Terminal cleanup finished with errors.",
-          "80b6ea14cf": "Terminal cleanup finished with warnings.",
-          "47cd2a50e9": "No sessions or terminal tabs were reported.",
-          "c34fb1098d": "Terminal tabs closed and shutdown requested.",
-          "d9657ac204": "Terminal session shutdown requested.",
-          "e8f25bd903": "Couldn’t finish terminal cleanup.",
-          "a702d4196e": "This closes every terminal tab across all workspaces and requests shutdown for its current terminal sessions. Any unsaved terminal work is lost. The daemon itself keeps running, and new terminals can be opened immediately. This can't be undone."
+          "2e57c1a940": "管理リクエストが失敗したため、デーモンのシャットダウン結果が検証されていません。",
+          "993af6052c": "デーモン管理が終了を報告：{{value0}}/{{value1}}；正確なクリーンアップ前にまだ存在：{{value2}}。",
+          "1f0d8ac762": "ターミナルクリーンアップがエラーで完了しました。",
+          "80b6ea14cf": "ターミナルクリーンアップが警告付きで完了しました。",
+          "47cd2a50e9": "セッションまたはターミナルタブが報告されていません。",
+          "c34fb1098d": "ターミナルタブが閉じられ、シャットダウンリクエストが送信されました。",
+          "d9657ac204": "ターミナルセッションのシャットダウンリクエストが送信されました。",
+          "e8f25bd903": "ターミナルクリーンアップを完了できませんでした。",
+          "a702d4196e": "これにより、すべてのワークスペースのターミナルタブが閉じられ、現在のターミナルセッションのシャットダウンがリクエストされます。保存されていないターミナル作業は失われます。デーモン自体は実行を続け、新しいターミナルはすぐに開けます。この操作は取り消せません。"
         }
       },
       "setup": {
@@ -4875,9 +4875,9 @@
           "agentPermissionsYolo": "Yolo",
           "agentPermissionsManual": "手動",
           "3f1bdf3cb4": "環境テキストが大きすぎるため安全に解析できません。",
-          "codexSessionSource": "Codex home to import from",
-          "codexSessionSourceInfo": "About importing Codex history",
-          "codexSessionSourceTooltip": "Orca runs Codex in an isolated home. Point this at your existing Codex home to import that session history. Empty uses ~/.codex."
+          "codexSessionSource": "インポートするCodexホーム",
+          "codexSessionSourceInfo": "Codex履歴のインポートについて",
+          "codexSessionSourceTooltip": "Orcaは分離されたホームでCodexを実行します。既存のCodexホームを指定してセッション履歴をインポートします。空の場合、~/.codexを使用します。"
         },
         "AppIconSelector": {
           "d5a112dc9b": "次へのアイコン",
@@ -8506,7 +8506,7 @@
                   "supportedAgents": "このレシピでサポートされている agent: {{value0}}。",
                   "unsupportedSavedAgent": "{{value0}} はこのテキスト生成レシピを実行できません。以下からサポートされている agent のいずれかを選択してください。",
                   "resolveComments": "選択した未解決の PR または MR コメントから agent を開始します。",
-                  "fixPushFailure": "Start an agent when a pre-push hook or git push fails."
+                  "fixPushFailure": "pre-pushフックまたはgit pushが失敗したときにエージェントを起動します。"
                 }
               }
             }
@@ -8845,12 +8845,12 @@
           "notificationPlaygroundDescription": "Dev-only triggers for checking toast layout, recovery actions, and long-copy wrapping.",
           "devOnly": "Dev only",
           "orcaCloud": "Orca Cloud",
-          "orcaCloudDescription": "Dev-only preview of first-party cloud sign-in. Hidden in production; in dev it also appears in the sidebar account switcher once ORCA_CLOUD_API_URL and ORCA_CLOUD_CLIENT_ID are set.",
-          "orcaCloudStatus": "Status",
-          "orcaCloudSignOut": "Sign out",
-          "orcaCloudConnect": "Connect profile",
-          "orcaCloudRefresh": "Refresh status",
-          "orcaCloudNotConfigured": "Set ORCA_CLOUD_API_URL and ORCA_CLOUD_CLIENT_ID to preview Orca Cloud sign-in in this dev build."
+          "orcaCloudDescription": "第一方クラウドサインインの開発者限定プレビュー。本番環境では非表示。開発環境では、ORCA_CLOUD_API_URLとORCA_CLOUD_CLIENT_IDを設定するとサイドバーのアカウント切替にも表示されます。",
+          "orcaCloudStatus": "ステータス",
+          "orcaCloudSignOut": "サインアウト",
+          "orcaCloudConnect": "プロファイルを接続",
+          "orcaCloudRefresh": "ステータスを更新",
+          "orcaCloudNotConfigured": "ORCA_CLOUD_API_URLとORCA_CLOUD_CLIENT_IDを設定して、この開発ビルドでOrca Cloudのサインインをプレビューします。"
         },
         "EphemeralVmRecipeRow": {
           "useInWorkspace": "ワークスペースでの使用"
@@ -8906,32 +8906,32 @@
           "toggleLabel": "ワークスペースごとの環境を切り替える"
         },
         "SourceControlActionRepoOverrideNote": {
-          "agent": "Agent",
-          "agentArgs": "CLI arguments",
-          "commandTemplate": "Command template",
-          "more": "+{{count}} more",
-          "plural": "Global saves won't change {{count}} repositories with their own recipes.",
-          "recipe": "Recipe",
-          "review": "Review",
-          "reviewFirst": "Review first",
-          "singular": "Global saves won't change 1 repository with its own recipe.",
-          "tooltipTitle": "Repository overrides"
+          "agent": "エージェント",
+          "agentArgs": "CLI引数",
+          "commandTemplate": "コマンドテンプレート",
+          "more": "+{{count}} 件",
+          "plural": "グローバルの保存は、独自のレシピを持つ{{count}}個のリポジトリを変更しません。",
+          "recipe": "レシピ",
+          "review": "レビュー",
+          "reviewFirst": "最初にレビュー",
+          "singular": "グローバルの保存は、独自のレシピを持つ1つのリポジトリを変更しません。",
+          "tooltipTitle": "リポジトリのオーバーライド"
         },
         "linear": {
           "agent": {
             "skill": {
               "install": {
                 "cta": {
-                  "copiedCommand": "Copied command.",
-                  "copyFailed": "Failed to copy command.",
-                  "skillLabel": "Agent skill:",
-                  "checking": "Checking...",
-                  "installed": "Installed",
-                  "notInstalled": "Not installed",
-                  "recheck": "Re-check",
-                  "installedDescription": "Agent skill installed. To update it, run:",
-                  "description": "Let your agents read and edit Linear tasks.",
-                  "copyCommand": "Copy command"
+                  "copiedCommand": "コマンドをコピーしました。",
+                  "copyFailed": "コマンドのコピーに失敗しました。",
+                  "skillLabel": "エージェントスキル：",
+                  "checking": "確認中...",
+                  "installed": "インストール済み",
+                  "notInstalled": "未インストール",
+                  "recheck": "再確認",
+                  "installedDescription": "エージェントスキルがインストールされました。更新するには以下を実行してください：",
+                  "description": "エージェントにLinearタスクの読み取りと編集を許可します。",
+                  "copyCommand": "コマンドをコピー"
                 }
               }
             }
@@ -9404,22 +9404,22 @@
             "c1a8f3e204": "{{value0}}より1commit 遅れています",
             "d2b9g4f315": "{{value1}}より{{value0}}commits 遅れています",
             "e9c2a5d416": "{{value0}}と同じ状態",
-            "4b4a7de138": "Open review page in browser",
-            "createPrIntentCommitBlockedSummary": "Commit blocked: {{value0}} Fix the issue, then retry Create PR.",
+            "4b4a7de138": "ブラウザでレビューページを開く",
+            "createPrIntentCommitBlockedSummary": "コミットがブロックされました：{{value0}} イシューを修正して、PR作成を再試行してください。",
             "pushRecovery": {
-              "4b37ae99b0": "Start the default AI agent to fix this push failure",
-              "30b8d4f181": "Fix push failure with AI",
-              "dd43c47089": "Choose an agent for this push failure",
-              "ec7bfced55": "Choose agent to fix push failure",
-              "9e5ccd00aa": "Push failure context unavailable",
-              "054ead86b1": "Fix Push Failure With AI",
-              "15b7f210d7": "Choose the agent and edit the full command input before launch.",
-              "011f9713fc": "Push blocked",
-              "60bd988f0b": "AI Fix",
-              "03d238218c": "Details",
-              "a9bf7c171a": "Push Failed",
-              "834cb3f23d": "Fix with AI",
-              "783a808870": "Close"
+              "4b37ae99b0": "デフォルトのAIエージェントを起動してこのプッシュ失敗を修正",
+              "30b8d4f181": "AIでプッシュ失敗を修正",
+              "dd43c47089": "このプッシュ失敗用のエージェントを選択",
+              "ec7bfced55": "プッシュ失敗の修正用エージェントを選択",
+              "9e5ccd00aa": "プッシュ失敗のコンテキストが利用できません",
+              "054ead86b1": "AIでプッシュ失敗を修正",
+              "15b7f210d7": "エージェントを選択し、起動前にコマンド入力を編集してください。",
+              "011f9713fc": "プッシュがブロックされました",
+              "60bd988f0b": "AI修正",
+              "03d238218c": "詳細",
+              "a9bf7c171a": "プッシュ失敗",
+              "834cb3f23d": "AIで修正",
+              "783a808870": "閉じる"
             }
           },
           "SourceControlAgentActionDialog": {
@@ -9673,30 +9673,30 @@
                 "push": {
                   "failure": {
                     "launch": {
-                      "216f762bd7": "Unable to resolve the workspace connection.",
-                      "4f4e0418a0": "Could not build the agent prompt.",
-                      "f2b47026e8": "Push failure prompt is empty. Update Source Control AI settings.",
-                      "d481ab22f9": "Saved AI agent is unavailable. Use Customize launch to choose another agent.",
-                      "9bbd9077a2": "No enabled AI agents. Configure agents in Settings.",
-                      "5540ff50cc": "Could not build the agent launch command.",
-                      "a8b97d2318": "Started an AI agent for the push failure."
+                      "216f762bd7": "ワークスペースの接続を解決できません。",
+                      "4f4e0418a0": "エージェントプロンプトを構築できませんでした。",
+                      "f2b47026e8": "プッシュ失敗プロンプトが空です。ソースコントロールAI設定を更新してください。",
+                      "d481ab22f9": "保存されたAIエージェントが利用できません。「カスタマイズ起動」で別のエージェントを選択してください。",
+                      "9bbd9077a2": "有効なAIエージェントがありません。設定でエージェントを構成してください。",
+                      "5540ff50cc": "エージェント起動コマンドを構築できませんでした。",
+                      "a8b97d2318": "プッシュ失敗用のAIエージェントを起動しました。"
                     }
                   }
                 },
                 "recovery": {
                   "launch": {
-                    "4f4e0418a0": "Could not build the agent prompt.",
+                    "4f4e0418a0": "エージェントプロンプトを構築できませんでした。",
                     "push": {
-                      "empty": "Push failure prompt is empty. Update Source Control AI settings."
+                      "empty": "プッシュ失敗プロンプトが空です。ソースコントロールAI設定を更新してください。"
                     },
                     "commit": {
-                      "empty": "Commit failure prompt is empty. Update Source Control AI settings."
+                      "empty": "コミット失敗プロンプトが空です。ソースコントロールAI設定を更新してください。"
                     },
-                    "d481ab22f9": "Saved AI agent is unavailable. Use Customize launch to choose another agent.",
-                    "9bbd9077a2": "No enabled AI agents. Configure agents in Settings.",
-                    "5540ff50cc": "Could not build the agent launch command.",
-                    "216f762bd7": "Unable to resolve the workspace connection.",
-                    "success": "Started an AI agent for the {{value0}} failure."
+                    "d481ab22f9": "保存されたAIエージェントが利用できません。「カスタマイズ起動」で別のエージェントを選択してください。",
+                    "9bbd9077a2": "有効なAIエージェントがありません。設定でエージェントを構成してください。",
+                    "5540ff50cc": "エージェント起動コマンドを構築できませんでした。",
+                    "216f762bd7": "ワークスペースの接続を解決できません。",
+                    "success": "{{value0}}の失敗に対してAIエージェントを起動しました。"
                   }
                 }
               },
@@ -9881,7 +9881,7 @@
             "currentProjectLower": "現在のプロジェクト",
             "project": "プロジェクト",
             "hostScopeAriaLabel": "Session History host: {{value0}}",
-            "host": "Host"
+            "host": "ホスト"
           },
           "AiVaultSessionDetails": {
             "updated": "更新日時",
@@ -10585,7 +10585,7 @@
           },
           "FloatingTerminalToggleButton": {
             "3b04b065b5": "フローティングワークスペースを表示",
-            "4cb418b991": "Show floating workspace, new activity",
+            "4cb418b991": "フローティングワークスペースを表示、新しいアクティビティ",
             "5785dd9148": "フローティングワークスペースを最小限に抑える",
             "bfe7809a70": "{{value0}} フローティング ワークスペース ({{value1}})"
           },
@@ -11749,22 +11749,22 @@
           "5a8e1d4f23": " · "
         },
         "ExternalFileChangeBanner": {
-          "7c41e90d12": "This file changed on disk while you have unsaved edits. Saving will overwrite the newer disk content.",
-          "3fa2b8d417": "Reload from Disk",
-          "a95d02c644": "Keep My Edits",
-          "5c02de9b31": "Reloaded from disk",
-          "d1e830fa22": "Undo",
-          "90b2ce7d43": "Compare"
+          "7c41e90d12": "未保存の編集中にこのファイルがディスク上で変更されました。保存すると新しいディスク内容に上書きされます。",
+          "3fa2b8d417": "ディスクから再読み込み",
+          "a95d02c644": "編集内容を保持",
+          "5c02de9b31": "ディスクから再読み込みしました",
+          "d1e830fa22": "取り消す",
+          "90b2ce7d43": "比較"
         },
         "ExternalFileChangeCompareDialog": {
-          "4b8de20a11": "File changed on disk",
-          "90cc31e4d7": "Disk version on the left, your unsaved edits on the right.",
-          "8fe30ab254": "Reading file from disk...",
-          "e2b1cd0393": "Could not read the file from disk: {{value0}}",
-          "b6cf20d514": "The file on disk is binary — no text comparison available.",
-          "3fa2b8d417": "Reload from Disk",
-          "a95d02c644": "Keep My Edits",
-          "2c8f1e07b9": "Loading comparison..."
+          "4b8de20a11": "ファイルがディスク上で変更されました",
+          "90cc31e4d7": "左がディスクバージョン、右が未保存の編集です。",
+          "8fe30ab254": "ディスクからファイルを読み込み中...",
+          "e2b1cd0393": "ディスクからファイルを読み取れませんでした：{{value0}}",
+          "b6cf20d514": "ディスク上のファイルはバイナリです — テキスト比較は利用できません。",
+          "3fa2b8d417": "ディスクから再読み込み",
+          "a95d02c644": "編集内容を保持",
+          "2c8f1e07b9": "比較を読み込み中..."
         }
       },
       "diff": {
@@ -12453,7 +12453,7 @@
             "fdd26d81cc": "Atlassian account settings",
             "8090504a3e": "Create a token in",
             "7b3967c12f": "Atlassian API token",
-            "3d81bf3ab3": "API token",
+            "3d81bf3ab3": "APIトークン",
             "e91b9a4073": "you@example.com",
             "2849ddb295": "Atlassian email",
             "70fcd360c4": "https://example.atlassian.net",
@@ -12769,27 +12769,27 @@
         }
       },
       "linear-issue-attribute-filter-dropdowns": {
-        "removeFilter": "Remove {{value0}} filter",
-        "teamRequired": "Select a team to load status, assignees, and labels for this workspace.",
-        "filters": "Filters",
-        "allWorkspacesTitle": "Select one workspace",
-        "allWorkspacesBody": "Status, assignee, and label filters use ids from a single Linear workspace. Choose one workspace to filter by those attributes.",
-        "optionsFromTeam": "Options from {{team}}",
-        "clearAll": "Clear all filters"
+        "removeFilter": "{{value0}}フィルターを解除",
+        "teamRequired": "このワークスペースのステータス、担当者、ラベルを読み込むにはチームを選択してください。",
+        "filters": "フィルター",
+        "allWorkspacesTitle": "ワークスペースを選択",
+        "allWorkspacesBody": "ステータス、担当者、ラベルのフィルターは単一のLinearワークスペースのIDを使用します。フィルタリングするワークスペースを選択してください。",
+        "optionsFromTeam": "{{team}}からのオプション",
+        "clearAll": "すべてのフィルターをクリア"
       },
       "linear-issue-attribute-filter-sections": {
-        "status": "Status",
-        "priority": "Priority",
-        "assignee": "Assignee",
-        "unassigned": "Unassigned",
-        "labels": "Labels",
-        "countSelected": "{{count}} selected",
-        "selected": "selected",
-        "searchPriority": "Filter priority…",
-        "searchStatus": "Filter status…",
-        "searchLabels": "Filter labels…",
-        "searchAssignee": "Filter assignee…",
-        "back": "Back"
+        "status": "ステータス",
+        "priority": "優先度",
+        "assignee": "担当者",
+        "unassigned": "未割当",
+        "labels": "ラベル",
+        "countSelected": "{{count}}件選択中",
+        "selected": "選択中",
+        "searchPriority": "優先度をフィルター…",
+        "searchStatus": "ステータスをフィルター…",
+        "searchLabels": "ラベルをフィルター…",
+        "searchAssignee": "担当者をフィルター…",
+        "back": "戻る"
       }
     },
     "i18n": {
@@ -12823,9 +12823,9 @@
         "localAttachmentUnsupported": "ローカル添付ファイルはリモート セッションでは使用できません。",
         "removeAttachment": "添付ファイルを削除する",
         "pastedImageLabel": "貼り付けた画像",
-        "imagePasteFailed": "Image paste failed.",
-        "worktreeNotReady": "Worktree not ready — try again in a moment.",
-        "uploadingAttachments": "Uploading {{value0}} file{{value1}} to remote…"
+        "imagePasteFailed": "画像の貼り付けに失敗しました。",
+        "worktreeNotReady": "Worktreeが準備できていません — しばらくしてから再試行してください。",
+        "uploadingAttachments": "{{value0}}個のファイルをリモートにアップロード中…"
       },
       "tool": {
         "running": "実行中…",
@@ -12878,7 +12878,7 @@
         "allow": "許可する",
         "deny": "拒否"
       },
-      "launchPromptNotDelivered": "Not delivered — check the terminal"
+      "launchPromptNotDelivered": "配信されませんでした — ターミナルを確認してください"
     },
     "tab": {
       "bar": {
