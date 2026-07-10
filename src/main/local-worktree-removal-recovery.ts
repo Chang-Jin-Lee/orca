@@ -1,10 +1,6 @@
 import type { GitWorktreeInfo, RemoveWorktreeResult } from '../shared/types'
 import { assertWorktreeUnlockedForRemoval } from '../shared/worktree-removal'
-import {
-  areWorktreePathsEqual,
-  formatWorktreeRemovalError,
-  isWindowsLongPathWorktreeRemovalError
-} from './ipc/worktree-logic'
+import { areWorktreePathsEqual, formatWorktreeRemovalError } from './ipc/worktree-logic'
 import { gitExecFileAsync } from './git/runner'
 import { listWorktreesStrict, type GitWorktreeExecOptions } from './git/worktree'
 import { removeLocalWorktreePath } from './local-worktree-filesystem'
@@ -114,6 +110,10 @@ async function removeRequiredGitWorktreeRegistration(
 export async function recoverLocalWindowsWorktreeRemoval(
   args: LocalWindowsRemovalRecoveryArgs
 ): Promise<RemoveWorktreeResult | undefined> {
+  // Why: recovery can recursively delete the remaining directory, so a Git
+  // lock must reject the attempt before classification or any side effects.
+  assertWorktreeUnlockedForRemoval(args.registeredWorktree)
+
   if (!(await isRecoverableWindowsFilesystemRemovalFailure(args))) {
     return undefined
   }
@@ -132,32 +132,14 @@ export async function recoverLocalWindowsWorktreeRemoval(
 async function isRecoverableWindowsFilesystemRemovalFailure(
   args: LocalWindowsRemovalRecoveryArgs
 ): Promise<boolean> {
-  if (isWindowsLongPathWorktreeRemovalError(args.error)) {
-    return true
-  }
   if (process.platform !== 'win32' || typeof args.error !== 'object' || args.error === null) {
     return false
-  }
-  const errorWithDetails = args.error as {
-    message?: unknown
-    stderr?: unknown
-    stdout?: unknown
-  }
-  const details = [errorWithDetails.stderr, errorWithDetails.stdout, errorWithDetails.message]
-    .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
-    .join('\n')
-  if (
-    /failed to delete .*(?:directory not empty|permission denied|access is denied|being used by another process)|(?:directory not empty|permission denied|access is denied|being used by another process).*failed to delete/i.test(
-      details
-    )
-  ) {
-    return true
   }
 
   try {
     const worktrees = await listWorktreesStrict(args.repoPath, args.localWorktreeGitOptions)
-    // Why: Git can localize ENOTEMPTY prose, but a missing registration proves
-    // it already accepted removal and only Windows filesystem cleanup remains.
+    // Why: error prose can be localized or ambiguous. Only a missing Git row
+    // proves removal started and makes recursive Windows cleanup safe.
     return !worktrees.some((worktree) =>
       areWorktreePathsEqual(worktree.path, args.canonicalWorktreePath)
     )

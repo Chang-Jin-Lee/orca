@@ -8,8 +8,8 @@ export function createLockedWorktreeRemovalError(lockReason?: string): Error {
   const reason = lockReason?.trim()
   return new Error(
     reason
-      ? `${LOCKED_WORKTREE_REMOVAL_PREFIX} Lock reason: ${reason}. Unlock it manually with git worktree unlock before deleting it.`
-      : `${LOCKED_WORKTREE_REMOVAL_PREFIX} Unlock it manually with git worktree unlock before deleting it.`
+      ? `${LOCKED_WORKTREE_REMOVAL_PREFIX} Lock reason: ${reason}. Run git worktree unlock <worktree-path> from its repository, then retry deletion.`
+      : `${LOCKED_WORKTREE_REMOVAL_PREFIX} Run git worktree unlock <worktree-path> from its repository, then retry deletion.`
   )
 }
 
@@ -34,7 +34,8 @@ export function getLockedWorktreeRemovalReason(error: string): string | null {
     return null
   }
   const reasonStart = prefixIndex + `${LOCKED_WORKTREE_REMOVAL_PREFIX} Lock reason: `.length
-  const recoverySuffix = '. Unlock it manually with git worktree unlock before deleting it.'
+  const recoverySuffix =
+    '. Run git worktree unlock <worktree-path> from its repository, then retry deletion.'
   const suffixIndex = error.indexOf(recoverySuffix, reasonStart)
   const reason = error.slice(reasonStart, suffixIndex === -1 ? undefined : suffixIndex).trim()
   return reason || null

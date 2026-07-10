@@ -196,6 +196,7 @@ describe('recoverLocalWindowsWorktreeRemoval', () => {
         locked: true,
         lockReason: 'active agent'
       }
+      const closeWatcher = vi.fn().mockResolvedValue(undefined)
 
       await expect(
         recoverLocalWindowsWorktreeRemoval({
@@ -208,11 +209,77 @@ describe('recoverLocalWindowsWorktreeRemoval', () => {
           localWorktreeGitOptions: {},
           registeredWorktree,
           deleteBranch: true,
-          closeWatcher: vi.fn().mockResolvedValue(undefined)
+          closeWatcher
         })
       ).rejects.toThrow('Worktree is locked by Git. Lock reason: active agent')
 
+      expect(closeWatcher).not.toHaveBeenCalled()
+      expect(removeLocalWorktreePathMock).not.toHaveBeenCalled()
+      expect(listWorktreesStrictMock).not.toHaveBeenCalled()
       expect(gitExecFileAsyncMock).not.toHaveBeenCalled()
+    })
+  })
+
+  it.each([
+    "error: failed to delete 'C:/repo/worktree/feature': Directory not empty",
+    'error: failed to delete deep/file.txt: Filename too long'
+  ])(
+    'does not recover a recognized Windows failure while Git still owns the row: %s',
+    async (stderr) => {
+      await withPlatform('win32', async () => {
+        listWorktreesStrictMock.mockResolvedValue([
+          {
+            path: 'C:/repo/worktree/feature',
+            head: 'abc123',
+            branch: 'refs/heads/feature',
+            isBare: false,
+            isMainWorktree: false
+          }
+        ])
+        const closeWatcher = vi.fn().mockResolvedValue(undefined)
+
+        await expect(
+          recoverLocalWindowsWorktreeRemoval({
+            error: Object.assign(new Error('git worktree remove failed'), { stderr }),
+            force: true,
+            canonicalWorktreePath: 'C:/repo/worktree/feature',
+            repoPath: 'C:/repo',
+            localWorktreeGitOptions: { wslDistro: 'Ubuntu' },
+            registeredWorktree: { branch: 'refs/heads/feature', head: 'abc123' },
+            deleteBranch: true,
+            closeWatcher
+          })
+        ).resolves.toBeUndefined()
+
+        expect(listWorktreesStrictMock).toHaveBeenCalledWith('C:/repo', { wslDistro: 'Ubuntu' })
+        expect(closeWatcher).not.toHaveBeenCalled()
+        expect(removeLocalWorktreePathMock).not.toHaveBeenCalled()
+      })
+    }
+  )
+
+  it('does not recover when structural registration verification fails', async () => {
+    await withPlatform('win32', async () => {
+      listWorktreesStrictMock.mockRejectedValue(new Error('git list failed'))
+      const closeWatcher = vi.fn().mockResolvedValue(undefined)
+
+      await expect(
+        recoverLocalWindowsWorktreeRemoval({
+          error: Object.assign(new Error('git worktree remove failed'), {
+            stderr: "error: failed to delete 'C:/repo/worktree/feature': Directory not empty"
+          }),
+          force: true,
+          canonicalWorktreePath: 'C:/repo/worktree/feature',
+          repoPath: 'C:/repo',
+          localWorktreeGitOptions: {},
+          registeredWorktree: { branch: 'refs/heads/feature', head: 'abc123' },
+          deleteBranch: true,
+          closeWatcher
+        })
+      ).resolves.toBeUndefined()
+
+      expect(closeWatcher).not.toHaveBeenCalled()
+      expect(removeLocalWorktreePathMock).not.toHaveBeenCalled()
     })
   })
 })

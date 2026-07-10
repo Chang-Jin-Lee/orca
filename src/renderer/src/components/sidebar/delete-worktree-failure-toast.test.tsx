@@ -134,7 +134,9 @@ describe('showDeleteWorktreeFailureToast', () => {
 
     const body = renderToastBody('info')
     expect(body.textContent).toContain('This workspace is locked by Git.')
-    expect(body.textContent).toContain('Unlock it manually with git worktree unlock')
+    expect(body.textContent).toContain(
+      'Run git worktree unlock <worktree-path> from its repository, then retry deletion'
+    )
     expect(body.textContent).not.toContain('Force Delete')
     expect(body.textContent).not.toContain('View')
     expect(onViewChanges).not.toHaveBeenCalled()

@@ -51,7 +51,7 @@ describe('getDeleteWorktreeToastCopy', () => {
     expect(getDeleteWorktreeToastCopy('feature/foo', null, 'Worktree is locked by Git.')).toEqual({
       title: 'Failed to delete workspace feature/foo',
       description:
-        'This workspace is locked by Git. Unlock it manually with git worktree unlock before deleting it.',
+        'This workspace is locked by Git. Run git worktree unlock <worktree-path> from its repository, then retry deletion.',
       isDestructive: false
     })
   })
@@ -67,7 +67,7 @@ describe('getDeleteWorktreeToastCopy', () => {
     ).toEqual({
       title: 'Failed to delete workspace feature/foo',
       description:
-        'This workspace is locked by Git. Git reported: active agent session. Unlock it manually with git worktree unlock before deleting it.',
+        'This workspace is locked by Git. Git reported: active agent session. Run git worktree unlock <worktree-path> from its repository, then retry deletion.',
       isDestructive: false
     })
   })

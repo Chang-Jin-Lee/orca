@@ -25,12 +25,12 @@ export function getDeleteWorktreeToastCopy(
       description: lockReason
         ? translate(
             'auto.components.sidebar.delete.worktree.toast.lockedReason',
-            'This workspace is locked by Git. Git reported: {{value0}}. Unlock it manually with git worktree unlock before deleting it.',
+            'This workspace is locked by Git. Git reported: {{value0}}. Run git worktree unlock <worktree-path> from its repository, then retry deletion.',
             { value0: lockReason }
           )
         : translate(
             'auto.components.sidebar.delete.worktree.toast.locked',
-            'This workspace is locked by Git. Unlock it manually with git worktree unlock before deleting it.'
+            'This workspace is locked by Git. Run git worktree unlock <worktree-path> from its repository, then retry deletion.'
           ),
       isDestructive: false
     }
