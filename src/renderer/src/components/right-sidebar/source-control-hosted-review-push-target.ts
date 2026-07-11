@@ -1,6 +1,7 @@
 import type { GitPushTarget, GitUpstreamStatus } from '../../../../shared/types'
 import type { HostedReviewState } from '../../../../shared/hosted-review'
 import { getPublishTargetDisplayName } from '../../../../shared/git-publish-target-status'
+import { gitRefTargetsBranchName } from '../../../../shared/git-remote-branch-name'
 
 export function hasUsableHostedReviewPushTarget(args: {
   pushTarget?: GitPushTarget
@@ -17,25 +18,16 @@ export function hasUsableHostedReviewPushTarget(args: {
   if (args.hasResolvableHostedReviewPushTargetLink) {
     // Why: a same-repo review's head is the checked-out branch, so a real
     // upstream tracking it is safe before the resolver hydrates. Fork/cross-repo
-    // heads differ, so a mismatched or missing upstream stays blocked.
+    // heads differ, so a mismatched or missing upstream stays blocked. The
+    // review's remote is unknown pre-hydration, so this can only match the
+    // branch leaf; the strict remote+branch check above takes over once known.
     return (
       args.upstreamStatus?.hasUpstream === true &&
-      upstreamTracksBranch(args.upstreamStatus.upstreamName, args.branchName)
+      args.branchName !== undefined &&
+      gitRefTargetsBranchName(args.upstreamStatus.upstreamName, args.branchName)
     )
   }
   return args.upstreamStatus?.hasConfiguredPushTarget === true
-}
-
-function upstreamTracksBranch(
-  upstreamName: string | undefined,
-  branchName: string | undefined
-): boolean {
-  if (!upstreamName || !branchName) {
-    return false
-  }
-  // Why: `<remote>/<branch>`; remote has no `/`, so the branch is the rest.
-  const separatorIndex = upstreamName.indexOf('/')
-  return separatorIndex >= 0 && upstreamName.slice(separatorIndex + 1) === branchName
 }
 
 function isResolvableHostedReviewNumber(value: unknown): value is number {
