@@ -1390,9 +1390,6 @@ export default function MarkdownPreview({
           if (target.protocol !== 'file:') {
             return
           }
-          if (sourceOwner.kind === 'unknown') {
-            return
-          }
 
           const classified = resolveMarkdownLinkTarget(href, filePath, worktreeRoot)
           const classifiedFileTarget =
@@ -1406,8 +1403,16 @@ export default function MarkdownPreview({
               ? { line: classifiedFileTarget.line, column: classifiedFileTarget.column }
               : parseLineTarget(target.hash)
 
+          // Why: same-file anchors need no ownership/filesystem resolution (e.g.
+          // `./README.md#heading` when this file is README.md). Run before the
+          // unknown-ownership guard so ambiguous folder-workspace ownership still
+          // scrolls within the open document.
           if (absolutePath === filePath && target.hash && !lineTarget) {
             void scrollToAnchor(target.hash.slice(1))
+            return
+          }
+
+          if (sourceOwner.kind === 'unknown') {
             return
           }
 

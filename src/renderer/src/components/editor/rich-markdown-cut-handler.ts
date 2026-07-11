@@ -1,9 +1,9 @@
 import { TextSelection } from '@tiptap/pm/state'
 import type { EditorView } from '@tiptap/pm/view'
+import { writeRichMarkdownSliceToClipboard } from './rich-markdown-clipboard-write'
 import { cutVisualLine, getVisualLineRange } from './rich-markdown-visual-line'
 import { createRichMarkdownVisibleTextMap } from './rich-markdown-visible-text-map'
 import { inspectRichMarkdownSourceOwningSlice } from './rich-markdown-source-owning-slice'
-import { serializeRichMarkdownSliceForClipboard } from './rich-markdown-clipboard-serialization'
 import { showRichMarkdownSourceOwningCutLimitError } from './rich-markdown-source-owning-cut-feedback'
 
 function deleteBlockAndRestoreSelection(view: EditorView, from: number, to: number): void {
@@ -97,19 +97,7 @@ export function handleRichMarkdownCut(view: EditorView, event: ClipboardEvent): 
   event.preventDefault()
 
   const slice = view.state.doc.slice($from.before(cutDepth), $from.after(cutDepth))
-  const status = inspectRichMarkdownSourceOwningSlice(slice)
-  if (status.containsSourceOwningNode && !status.canPreserve) {
-    showRichMarkdownSourceOwningCutLimitError()
-    return true
-  }
-  const serialized = serializeRichMarkdownSliceForClipboard(view, slice)
-  event.clipboardData.setData('text/html', serialized.html)
-  event.clipboardData.setData('text/plain', text)
-  if (
-    typeof event.clipboardData.getData === 'function' &&
-    (event.clipboardData.getData('text/html') !== serialized.html ||
-      event.clipboardData.getData('text/plain') !== text)
-  ) {
+  if (!writeRichMarkdownSliceToClipboard(event.clipboardData, view, slice, text)) {
     return true
   }
 

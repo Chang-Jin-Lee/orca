@@ -185,6 +185,7 @@ export function createRichMarkdownEditorConfig(params: EditorConfigParams): UseE
         flushPendingSerialization,
         openSearchRef,
         linkBubbleOwnerId: codec.transport.key,
+        htmlSuperscriptLinkContext,
         setIsEditingLink,
         setLinkBubble,
         setSelectedCommandIndex,

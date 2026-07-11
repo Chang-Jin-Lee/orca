@@ -41,6 +41,8 @@ export function handleRichMarkdownPaste({
   const sourceOwningStatus = slice ? inspectRichMarkdownSourceOwningSlice(slice) : null
   if (sourceOwningStatus?.containsSourceOwningNode && slice && view) {
     if (sourceOwningStatus.canPreserve) {
+      // Why: dispatch directly so the transaction can carry paste/uiEvent
+      // metadata that editor.commands.insertContent would omit.
       view.dispatch(
         view.state.tr
           .replaceSelection(slice)

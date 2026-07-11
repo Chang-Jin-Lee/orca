@@ -19,6 +19,7 @@ import {
 } from './rich-markdown-list-continuation'
 import { deleteAdjacentEmptyParagraph } from './rich-markdown-empty-paragraph-delete'
 import { handleRichMarkdownCitationKey } from './rich-markdown-citation-keyboard'
+import type { RichMarkdownHtmlSuperscriptLinkContext } from './rich-markdown-html-superscript-link-context'
 import { handleRichMarkdownLinkShortcut } from './rich-markdown-link-shortcut'
 
 export type KeyHandlerContext = {
@@ -48,6 +49,7 @@ export type KeyHandlerContext = {
   setDocLinkMenu: (menu: DocLinkMenuState | null) => void
   openSelectedHtmlSuperscriptLink?: () => boolean
   linkBubbleOwnerId: string
+  htmlSuperscriptLinkContext: RichMarkdownHtmlSuperscriptLinkContext
 }
 
 function isComposingMarkdownInput(event: KeyboardEvent, editor: Editor | null): boolean {
@@ -149,6 +151,7 @@ export function createRichMarkdownKeyHandler(
       handleRichMarkdownLinkShortcut({
         editor: ctx.editorRef.current,
         event,
+        htmlSuperscriptLinkContext: ctx.htmlSuperscriptLinkContext,
         isEditing: ctx.isEditingLinkRef.current,
         isMac: ctx.isMac,
         root: ctx.rootRef.current,

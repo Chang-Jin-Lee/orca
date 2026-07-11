@@ -1,5 +1,8 @@
 import type { Slice } from '@tiptap/pm/model'
-import { getRichMarkdownLeafVisibleText } from './rich-markdown-visible-text-map'
+import {
+  getRichMarkdownLeafVisibleText,
+  isRichMarkdownVisibleBlockStart
+} from './rich-markdown-visible-text-map'
 
 export const RICH_MARKDOWN_SOURCE_OWNING_PASTE_LIMIT = 256 * 1024
 export const RICH_MARKDOWN_SOURCE_OWNING_NODE_LIMIT = 256
@@ -20,7 +23,7 @@ export function inspectRichMarkdownSourceOwningSlice(
   let sawVisibleBlock = false
 
   slice.content.descendants((node, pos, parent, index) => {
-    const startsVisibleBlock = node.isTextblock || (node.isBlock && node.isLeaf)
+    const startsVisibleBlock = isRichMarkdownVisibleBlockStart(node)
     if (canPreserve && startsVisibleBlock) {
       if (sawVisibleBlock) {
         const separator = addUtf8BytesWithinLimit(

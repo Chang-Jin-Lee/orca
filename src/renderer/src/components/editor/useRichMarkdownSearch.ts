@@ -66,7 +66,6 @@ export function useRichMarkdownSearch({
   }, [editor, isSearchOpen, searchRequestQuery, searchRevision, matchCase, wholeWord])
 
   const matchCount = matches.length
-  const replaceDisabled = matches.some((match) => match.touchesReadOnlyAtom)
 
   const getLiveMatches = useCallback(() => {
     if (
@@ -84,6 +83,11 @@ export function useRichMarkdownSearch({
       wholeWord
     })
   }, [editor, isSearchOpen, matchCase, searchQuery, wholeWord])
+
+  // Why: mirror the guard used by replaceCurrentMatch/replaceAllMatches so the
+  // disabled state never disagrees with what a click will actually do during the
+  // debounce window when live matches diverge from the highlight set.
+  const replaceDisabled = getLiveMatches().some((match) => match.touchesReadOnlyAtom)
 
   // Clamp the user-controlled index to the valid range on every render.
   // No state update needed — this is a pure derivation.

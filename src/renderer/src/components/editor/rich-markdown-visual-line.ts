@@ -1,9 +1,7 @@
 import { TextSelection } from '@tiptap/pm/state'
 import type { EditorView } from '@tiptap/pm/view'
+import { writeRichMarkdownSliceToClipboard } from './rich-markdown-clipboard-write'
 import { createRichMarkdownVisibleTextMap } from './rich-markdown-visible-text-map'
-import { inspectRichMarkdownSourceOwningSlice } from './rich-markdown-source-owning-slice'
-import { serializeRichMarkdownSliceForClipboard } from './rich-markdown-clipboard-serialization'
-import { showRichMarkdownSourceOwningCutLimitError } from './rich-markdown-source-owning-cut-feedback'
 
 /**
  * Why: a paragraph that word-wraps across multiple screen lines should be cut
@@ -94,19 +92,7 @@ export function cutVisualLine(
     lineRange.to
   ).text
   const slice = view.state.doc.slice(lineRange.from, lineRange.to)
-  const status = inspectRichMarkdownSourceOwningSlice(slice)
-  if (status.containsSourceOwningNode && !status.canPreserve) {
-    showRichMarkdownSourceOwningCutLimitError()
-    return true
-  }
-  const serialized = serializeRichMarkdownSliceForClipboard(view, slice)
-  clipboardEvent.clipboardData.setData('text/html', serialized.html)
-  clipboardEvent.clipboardData.setData('text/plain', lineText)
-  if (
-    typeof clipboardEvent.clipboardData.getData === 'function' &&
-    (clipboardEvent.clipboardData.getData('text/html') !== serialized.html ||
-      clipboardEvent.clipboardData.getData('text/plain') !== lineText)
-  ) {
+  if (!writeRichMarkdownSliceToClipboard(clipboardEvent.clipboardData, view, slice, lineText)) {
     return true
   }
 

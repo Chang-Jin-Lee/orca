@@ -6,17 +6,17 @@ import TaskItem from '@tiptap/extension-task-item'
 import { createIsolatedMarkdownExtensionForTests } from './isolated-markdown-extension-for-tests'
 import { createRichMarkdownKeyHandler, type KeyHandlerContext } from './rich-markdown-key-handler'
 
-const extensions = [
-  StarterKit,
-  TaskList,
-  TaskItem.configure({ nested: true }),
-  createIsolatedMarkdownExtensionForTests()
-]
-
 function createEditor(content: object): Editor {
+  // Why: each Editor needs its own marked registry; sharing one module-scoped
+  // extension accumulates tokenizer state across tests.
   return new Editor({
     element: null,
-    extensions,
+    extensions: [
+      StarterKit,
+      TaskList,
+      TaskItem.configure({ nested: true }),
+      createIsolatedMarkdownExtensionForTests()
+    ],
     content
   })
 }
@@ -75,6 +75,17 @@ function createContext(editor: Editor): KeyHandlerContext {
     flushPendingSerialization: vi.fn(),
     openSearchRef: { current: vi.fn() },
     linkBubbleOwnerId: 'test-owner',
+    htmlSuperscriptLinkContext: {
+      getSnapshot: () => ({
+        sourceFilePath: '/repo/README.md',
+        worktreeId: 'worktree-1',
+        worktreeRoot: '/repo',
+        sourceOwner: { kind: 'local' as const },
+        version: 0
+      }),
+      subscribe: () => () => {},
+      update: () => {}
+    },
     setIsEditingLink: vi.fn(),
     setLinkBubble: vi.fn(),
     setSelectedCommandIndex: vi.fn(),

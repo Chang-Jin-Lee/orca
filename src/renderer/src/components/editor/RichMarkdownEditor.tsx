@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { Editor } from '@tiptap/react'
+import { useEditorState, type Editor } from '@tiptap/react'
 import type { DiffComment, MarkdownDocument } from '../../../../shared/types'
 import { useAppStore } from '@/store'
 import { selectWorktreeDiffComments } from '@/store/worktree-diff-comments-selector'
@@ -248,10 +248,13 @@ export default function RichMarkdownEditor({
     setSlashMenu: menu.setSlashMenu,
     setDocLinkMenu: menu.setDocLinkMenu
   })
-  const selectedCitationStatus = getSelectedHtmlSuperscriptLinkStatus(
+  // Why: useEditor defaults shouldRerenderOnTransaction to false, so selection-only
+  // citation NodeSelections would leave aria status stale without useEditorState.
+  const selectedCitationStatus = useEditorState({
     editor,
-    htmlSuperscriptLinkContext
-  )
+    selector: (snapshot) =>
+      getSelectedHtmlSuperscriptLinkStatus(snapshot.editor, htmlSuperscriptLinkContext)
+  })
   useRichMarkdownSpellcheckAttribute(editor, richMarkdownSpellcheckEnabled)
 
   // Why: use useLayoutEffect (synchronous cleanup) so the pending serialization

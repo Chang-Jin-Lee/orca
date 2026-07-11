@@ -1,9 +1,16 @@
 import type { Editor } from '@tiptap/react'
-import { getLinkBubblePosition, type LinkBubbleState } from './RichMarkdownLinkBubble'
+import { getLinkBubblePosition } from './RichMarkdownLinkBubble'
+import type { LinkBubbleState } from './RichMarkdownLinkBubble'
+import type { RichMarkdownHtmlSuperscriptLinkContext } from './rich-markdown-html-superscript-link-context'
+import {
+  createEditableMarkdownLinkBubble,
+  getRichMarkdownSelectionLinkBubble
+} from './rich-markdown-selected-link-actions'
 
 export function handleRichMarkdownLinkShortcut({
   editor,
   event,
+  htmlSuperscriptLinkContext,
   isEditing,
   isMac,
   root,
@@ -12,6 +19,7 @@ export function handleRichMarkdownLinkShortcut({
 }: {
   editor: Editor | null
   event: KeyboardEvent
+  htmlSuperscriptLinkContext: RichMarkdownHtmlSuperscriptLinkContext
   isEditing: boolean
   isMac: boolean
   root: HTMLElement | null
@@ -34,16 +42,22 @@ export function handleRichMarkdownLinkShortcut({
     editor.commands.focus()
     return true
   }
+  // Why: NodeSelection on an HTML citation still has a bubble position, but
+  // markdown setLink/unsetLink cannot edit that atom — open the citation
+  // action bubble instead of the markdown edit field.
+  const selectionBubble = getRichMarkdownSelectionLinkBubble(
+    editor,
+    root,
+    htmlSuperscriptLinkContext
+  )
+  if (selectionBubble) {
+    setLinkBubble(selectionBubble)
+    setEditing(selectionBubble.kind === 'markdown')
+    return true
+  }
   const position = getLinkBubblePosition(editor, root)
   if (position) {
-    const href = editor.isActive('link') ? String(editor.getAttributes('link').href ?? '') : ''
-    setLinkBubble({
-      kind: 'markdown',
-      href,
-      openEnabled: Boolean(href),
-      copyEnabled: Boolean(href),
-      ...position
-    })
+    setLinkBubble(createEditableMarkdownLinkBubble('', position))
     setEditing(true)
   }
   return true

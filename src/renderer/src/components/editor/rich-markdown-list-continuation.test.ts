@@ -10,12 +10,12 @@ import {
   isSingleEmptyTopLevelOrderedList
 } from './rich-markdown-list-continuation'
 
-const extensions = [StarterKit, createIsolatedMarkdownExtensionForTests()]
-
 function createEditor(content: object): Editor {
+  // Why: each Editor needs its own marked registry; sharing one module-scoped
+  // extension accumulates tokenizer state across tests.
   return new Editor({
     element: null,
-    extensions,
+    extensions: [StarterKit, createIsolatedMarkdownExtensionForTests()],
     content
   })
 }

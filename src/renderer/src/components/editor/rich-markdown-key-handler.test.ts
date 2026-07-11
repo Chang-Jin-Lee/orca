@@ -68,6 +68,17 @@ function createContext(editor: Editor, typedMarker: boolean): KeyHandlerContext 
     flushPendingSerialization: vi.fn(),
     openSearchRef: { current: vi.fn() },
     linkBubbleOwnerId: 'test-owner',
+    htmlSuperscriptLinkContext: {
+      getSnapshot: () => ({
+        sourceFilePath: '/repo/README.md',
+        worktreeId: 'worktree-1',
+        worktreeRoot: '/repo',
+        sourceOwner: { kind: 'local' as const },
+        version: 0
+      }),
+      subscribe: () => () => {},
+      update: () => {}
+    },
     setIsEditingLink: vi.fn(),
     setLinkBubble: vi.fn(),
     setSelectedCommandIndex: vi.fn(),

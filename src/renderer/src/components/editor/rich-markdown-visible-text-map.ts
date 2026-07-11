@@ -47,6 +47,11 @@ export function getRichMarkdownSelectionVisibleText(state: {
   return getRichMarkdownVisibleText(state.doc, state.selection.from, state.selection.to).trim()
 }
 
+/** Why: shared block-boundary heuristic for visible-text maps and slice byte limits. */
+export function isRichMarkdownVisibleBlockStart(node: ProseMirrorNode): boolean {
+  return node.isTextblock || (node.isBlock && node.isLeaf)
+}
+
 export function forEachRichMarkdownVisibleTextSegment(
   doc: RichMarkdownVisibleTextContainer,
   from: number,
@@ -64,7 +69,7 @@ export function forEachRichMarkdownVisibleTextSegment(
     if (stopped) {
       return false
     }
-    const startsVisibleBlock = node.isTextblock || (node.isBlock && node.isLeaf)
+    const startsVisibleBlock = isRichMarkdownVisibleBlockStart(node)
     if (startsVisibleBlock) {
       if (sawVisibleBlock) {
         stopped = !visit({ kind: 'separator', text: '\n', from: pos, to: pos })
