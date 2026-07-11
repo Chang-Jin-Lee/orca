@@ -591,7 +591,9 @@ function parseHookStateHeaderKey(line: string): string | null {
 }
 
 export function parseCodexProjectHeaderPath(line: string): string | null {
-  const trimmed = line.trimStart()
+  // Why: mirror section headers come from split CRLF files and retain the
+  // terminal carriage return, while direct upserts scan CR-stripped lines.
+  const trimmed = line.replace(/\r$/, '').trimStart()
   const prefixMatch = /^\[[ \t]*projects[ \t]*\.[ \t]*/.exec(trimmed)
   if (!prefixMatch) {
     return null
