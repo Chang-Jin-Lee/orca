@@ -1206,6 +1206,7 @@ type RuntimePtyController = {
   stopAndWait?(ptyId: string, opts?: { keepHistory?: boolean }): Promise<boolean>
   getCwd?(ptyId: string): Promise<string | null>
   getForegroundProcess(ptyId: string): Promise<string | null>
+  confirmForegroundProcess?(ptyId: string): Promise<string | null>
   hasChildProcesses?(ptyId: string): Promise<boolean>
   clearBuffer?(ptyId: string): Promise<void>
   resize?(ptyId: string, cols: number, rows: number): boolean
@@ -10227,7 +10228,8 @@ export class OrcaRuntimeService {
   }
 
   async getTerminalAgentStatus(handle: string): Promise<RuntimeTerminalAgentStatus> {
-    const terminal = this.getTerminalAgentStatusSnapshot(handle)
+    const ptyId = this.getTerminalAgentStatusPtyId(handle)
+    const terminal = this.getTerminalAgentStatusSnapshot(handle, ptyId)
     const explicitStatus = this.getFreshExplicitAgentStatusForHandle(handle)
     const blockedByWaitText = detectTerminalWaitBlockedReason(terminal.waitText)
     const liveTitleClearsBlockedText =
@@ -10251,7 +10253,7 @@ export class OrcaRuntimeService {
       // Fresh hook state is tighter, but current shell/management evidence wins.
       const isRunningAgent =
         !terminalTitleBlocksExplicitAgentStatus(terminal.title) &&
-        !(await this.terminalHasShellForegroundProcess(handle))
+        !(await this.terminalHasShellForegroundProcess(handle, ptyId))
       return {
         handle,
         isRunningAgent,
@@ -10262,14 +10264,45 @@ export class OrcaRuntimeService {
       return { handle, isRunningAgent: true, status: terminal.titleStatus }
     }
 
-    return {
-      handle,
-      isRunningAgent: await this.isTerminalRunningAgent(handle),
-      status: null
-    }
+    const isRunningAgent = await this.isTerminalRunningAgent(handle)
+    this.assertTerminalAgentStatusPtyBinding(handle, ptyId)
+    return { handle, isRunningAgent, status: null }
   }
 
-  private getTerminalAgentStatusSnapshot(handle: string): {
+  private getTerminalAgentStatusPtyId(handle: string): string {
+    const pty = this.getLivePtyForHandle(handle)
+    if (pty) {
+      if (!pty.pty.connected) {
+        throw new Error('terminal_gone')
+      }
+      return pty.pty.ptyId
+    }
+    const { leaf } = this.getLiveLeafForHandle(handle)
+    if (getTerminalState(leaf) !== 'running') {
+      throw new Error('terminal_exited')
+    }
+    if (!leaf.ptyId) {
+      throw new Error('terminal_gone')
+    }
+    return leaf.ptyId
+  }
+
+  private assertTerminalAgentStatusPtyBinding(handle: string, expectedPtyId: string): void {
+    try {
+      if (this.getTerminalAgentStatusPtyId(handle) === expectedPtyId) {
+        return
+      }
+    } catch {
+      // Fall through to the stable binding error below.
+    }
+    // Why: delayed process evidence belongs only to the PTY that started the read.
+    throw new Error('terminal_not_writable')
+  }
+
+  private getTerminalAgentStatusSnapshot(
+    handle: string,
+    expectedPtyId: string
+  ): {
     waitText: string
     waitBlockedAt: number | null
     title: string | null
@@ -10278,8 +10311,8 @@ export class OrcaRuntimeService {
   } {
     const pty = this.getLivePtyForHandle(handle)
     if (pty) {
-      if (!pty.pty.connected) {
-        throw new Error('terminal_gone')
+      if (!pty.pty.connected || pty.pty.ptyId !== expectedPtyId) {
+        throw new Error('terminal_not_writable')
       }
       const leaf = this.getPrimaryLeafForPty(pty.pty.ptyId)
       const leafTitle = leaf
@@ -10317,6 +10350,9 @@ export class OrcaRuntimeService {
     if (!leaf.ptyId) {
       throw new Error('terminal_gone')
     }
+    if (leaf.ptyId !== expectedPtyId) {
+      throw new Error('terminal_not_writable')
+    }
     const title = getLatestAgentCandidateTitleInfo(
       { title: leaf.paneTitle, updatedAt: leaf.paneTitleUpdatedAt },
       { title: leaf.lastOscTitle, updatedAt: leaf.lastOscTitleAt },
@@ -10331,21 +10367,36 @@ export class OrcaRuntimeService {
     }
   }
 
-  private async terminalHasShellForegroundProcess(handle: string): Promise<boolean> {
+  private async terminalHasShellForegroundProcess(handle: string, ptyId: string): Promise<boolean> {
     if (!this.ptyController) {
       return false
     }
+    let foregroundProcess: string | null
     try {
-      const pty = this.getLivePtyForHandle(handle)
-      const ptyId = pty?.pty.ptyId ?? this.getLiveLeafForHandle(handle).leaf.ptyId
-      if (!ptyId) {
-        return false
-      }
-      const foregroundProcess = await this.ptyController.getForegroundProcess(ptyId)
-      return foregroundProcess !== null && isShellProcess(foregroundProcess)
+      foregroundProcess = await this.ptyController.getForegroundProcess(ptyId)
     } catch {
+      this.assertTerminalAgentStatusPtyBinding(handle, ptyId)
       return false
     }
+    this.assertTerminalAgentStatusPtyBinding(handle, ptyId)
+    if (!foregroundProcess || !isShellProcess(foregroundProcess)) {
+      return false
+    }
+    const confirmForegroundProcess = this.ptyController.confirmForegroundProcess
+    if (!confirmForegroundProcess) {
+      return true
+    }
+    let confirmedProcess: string | null
+    try {
+      confirmedProcess = await confirmForegroundProcess(ptyId)
+    } catch {
+      this.assertTerminalAgentStatusPtyBinding(handle, ptyId)
+      return true
+    }
+    this.assertTerminalAgentStatusPtyBinding(handle, ptyId)
+    // Why: hook identity is generic; strong provider evidence only needs to
+    // prove that some recognized agent still owns this exact PTY.
+    return recognizeAgentProcess(confirmedProcess) === null
   }
 
   private shouldDelayPtyBackedMobileSnapshotForForegroundAgent(
@@ -20881,7 +20932,8 @@ export class OrcaRuntimeService {
   // status without throwing on stale handles, so this returns null on any error.
   getAgentStatusForHandle(handle: string): string | null {
     try {
-      return this.getTerminalAgentStatusSnapshot(handle).titleStatus
+      const ptyId = this.getTerminalAgentStatusPtyId(handle)
+      return this.getTerminalAgentStatusSnapshot(handle, ptyId).titleStatus
     } catch {
       return null
     }
