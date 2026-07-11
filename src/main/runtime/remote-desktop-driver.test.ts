@@ -68,17 +68,23 @@ const store = {
   })
 }
 
-function createRuntime() {
-  const runtime = new OrcaRuntimeService(store)
+function createRuntime(mobileAutoRestoreFitMs: number | null = 5_000) {
+  const runtime = new OrcaRuntimeService({
+    ...store,
+    getSettings: () => ({ ...store.getSettings(), mobileAutoRestoreFitMs })
+  })
   const ptySizes = new Map<string, { cols: number; rows: number }>([
     ['pty-1', { cols: 150, rows: 40 }]
   ])
+  const resizeCalls: { ptyId: string; cols: number; rows: number }[] = []
   const driverEvents: { ptyId: string; driver: { kind: string; clientId?: string } }[] = []
+  const fitOverrideEvents: { ptyId: string; mode: string; cols: number; rows: number }[] = []
   runtime.setPtyController({
     write: () => true,
     kill: () => true,
     getForegroundProcess: async () => null,
     resize: (ptyId, cols, rows) => {
+      resizeCalls.push({ ptyId, cols, rows })
       ptySizes.set(ptyId, { cols, rows })
       return true
     },
@@ -94,12 +100,19 @@ function createRuntime() {
     focusTerminal: vi.fn(),
     closeTerminal: vi.fn(),
     sleepWorktree: vi.fn(),
-    terminalFitOverrideChanged: vi.fn(),
+    terminalFitOverrideChanged: (ptyId, mode, cols, rows) => {
+      fitOverrideEvents.push({ ptyId, mode, cols, rows })
+    },
     terminalDriverChanged: (ptyId, driver) => {
       driverEvents.push({ ptyId, driver: { ...driver } })
     }
   })
-  return { runtime, driverEvents }
+  return {
+    runtime,
+    driverEvents,
+    fitOverrideEvents,
+    resizeCalls
+  }
 }
 
 describe('remote desktop viewer width driver', () => {
@@ -120,21 +133,20 @@ describe('remote desktop viewer width driver', () => {
     expect(driverEvents).toHaveLength(0)
   })
 
-  it('sizes the PTY to the SMALLEST attached viewer (smallest client wins)', async () => {
+  it('sizes the PTY to the latest active desktop viewer', async () => {
     const { runtime } = createRuntime()
     await runtime.updateRemoteDesktopViewer('pty-1', 'sub-A', 'viewer-A', 100, 40)
     expect(runtime.getTerminalSize('pty-1')).toEqual({ cols: 100, rows: 40 })
 
-    // A narrower viewer joins — the PTY shrinks so its wider frames never
-    // overflow the narrow grid.
+    // Activity on the narrower viewer transfers ownership to it.
     await runtime.updateRemoteDesktopViewer('pty-1', 'sub-B', 'viewer-B', 80, 30)
     expect(runtime.getTerminalSize('pty-1')).toEqual({ cols: 80, rows: 30 })
 
-    // The wide viewer growing does not widen the PTY past the narrow viewer.
+    // Later activity on the wide viewer transfers ownership back.
     await runtime.updateRemoteDesktopViewer('pty-1', 'sub-A', 'viewer-A', 140, 50)
-    expect(runtime.getTerminalSize('pty-1')).toEqual({ cols: 80, rows: 30 })
+    expect(runtime.getTerminalSize('pty-1')).toEqual({ cols: 140, rows: 50 })
 
-    // The narrow viewer leaves — the PTY re-fits to the survivor's width.
+    // A passive peer leaving cannot disturb the active owner.
     await runtime.unregisterRemoteDesktopViewer('pty-1', 'sub-B')
     expect(runtime.getTerminalSize('pty-1')).toEqual({ cols: 140, rows: 50 })
   })
@@ -155,7 +167,7 @@ describe('remote desktop viewer width driver', () => {
   })
 
   it('coexists with a mobile driver and outlives it (host stays suppressed)', async () => {
-    const { runtime } = createRuntime()
+    const { runtime, fitOverrideEvents } = createRuntime()
     await runtime.handleMobileSubscribe('pty-1', 'phone-A', { cols: 45, rows: 20 })
     expect(runtime.getDriver('pty-1')).toEqual({ kind: 'mobile', clientId: 'phone-A' })
 
@@ -170,6 +182,16 @@ describe('remote desktop viewer width driver', () => {
     vi.advanceTimersByTime(10_000)
     expect(runtime.getDriver('pty-1').kind).not.toBe('mobile')
     expect(runtime.isPtyResizeDrivenRemotely('pty-1')).toBe(true)
+    expect(runtime.getTerminalSize('pty-1')).toEqual({ cols: 100, rows: 40 })
+    expect(fitOverrideEvents.at(-1)).toMatchObject({
+      ptyId: 'pty-1',
+      mode: 'remote-desktop-fit',
+      cols: 100,
+      rows: 40
+    })
+
+    await runtime.unregisterRemoteDesktopViewer('pty-1', 'sub-A')
+    expect(runtime.getTerminalSize('pty-1')).toEqual({ cols: 150, rows: 40 })
   })
 
   it('isPtyResizeDrivenRemotely is false for idle and desktop drivers', async () => {
@@ -180,18 +202,188 @@ describe('remote desktop viewer width driver', () => {
     expect(runtime.isPtyResizeDrivenRemotely('pty-1')).toBe(false)
   })
 
+  it('does not let passive attachment or hydration steal host ownership', async () => {
+    const { runtime, resizeCalls } = createRuntime()
+
+    await runtime.updateRemoteDesktopViewer('pty-1', 'sub-A', 'viewer-A', 80, 24, false)
+    await runtime.updateRemoteDesktopViewer('pty-1', 'sub-A', 'viewer-A', 90, 30, false)
+
+    expect(runtime.isPtyResizeDrivenRemotely('pty-1')).toBe(false)
+    expect(runtime.getTerminalSize('pty-1')).toEqual({ cols: 150, rows: 40 })
+    expect(resizeCalls).toHaveLength(0)
+  })
+
+  it('lets host activity automatically reclaim from a remote owner', async () => {
+    const { runtime } = createRuntime()
+    await runtime.updateRemoteDesktopViewer('pty-1', 'sub-A', 'viewer-A', 80, 24)
+
+    await runtime.claimRemoteDesktopHost('pty-1', 132, 42)
+
+    expect(runtime.isPtyResizeDrivenRemotely('pty-1')).toBe(false)
+    expect(runtime.getTerminalSize('pty-1')).toEqual({ cols: 132, rows: 42 })
+    expect(runtime.getRemoteDesktopFitHold('pty-1', 'sub-A')).toMatchObject({
+      mode: 'remote-desktop-fit',
+      cols: 132,
+      rows: 42
+    })
+  })
+
+  it('does not emit resize churn for repeated activity from the current owner', async () => {
+    const { runtime, resizeCalls, fitOverrideEvents } = createRuntime()
+    await runtime.updateRemoteDesktopViewer('pty-1', 'sub-A', 'viewer-A', 100, 30)
+    resizeCalls.splice(0)
+    fitOverrideEvents.splice(0)
+
+    await runtime.updateRemoteDesktopViewer('pty-1', 'sub-A', 'viewer-A', 100, 30)
+
+    expect(resizeCalls).toHaveLength(0)
+    expect(fitOverrideEvents).toHaveLength(0)
+  })
+
   it('reclaims the host width when the last viewer detaches', async () => {
     const { runtime } = createRuntime()
-    // The host renderer reports its own 120-wide geometry (pty:reportGeometry).
-    runtime.recordRemoteDesktopHostReclaimTarget('pty-1', 120, 40)
     // The viewer drives the source PTY to its own 80-wide viewport.
     await runtime.updateRemoteDesktopViewer('pty-1', 'sub-A', 'viewer-A', 80, 40)
     expect(runtime.getTerminalSize('pty-1')).toEqual({ cols: 80, rows: 40 })
+    // While the viewer owns width, the blocked host fit records the host's
+    // latest reclaim geometry.
+    runtime.recordRemoteDesktopHostReclaimTarget('pty-1', 120, 40)
 
     // Detaching the last viewer must actively resize the PTY back to the host's
     // OWN width (120), not the departed viewer's polluted 80.
     await runtime.unregisterRemoteDesktopViewer('pty-1', 'sub-A')
     expect(runtime.getTerminalSize('pty-1')).toEqual({ cols: 120, rows: 40 })
+  })
+
+  it('does not retain a remote reclaim target when only a phone suppresses host resize', async () => {
+    const { runtime } = createRuntime()
+    await runtime.handleMobileSubscribe('pty-1', 'phone-A', { cols: 45, rows: 20 })
+
+    // pty:resize is suppressed for mobile too, but this measurement must not
+    // seed the separate remote-viewer cache when no desktop viewer exists.
+    runtime.recordRemoteDesktopHostReclaimTarget('pty-1', 120, 35)
+    runtime.onClientDisconnected('phone-A')
+    await vi.advanceTimersByTimeAsync(10_000)
+
+    await runtime.updateRemoteDesktopViewer('pty-1', 'sub-A', 'viewer-A', 80, 24)
+    await runtime.unregisterRemoteDesktopViewer('pty-1', 'sub-A')
+
+    expect(runtime.getTerminalSize('pty-1')).toEqual({ cols: 150, rows: 40 })
+  })
+
+  it('restores and consumes the host target when the last viewer leaves during phone-fit', async () => {
+    const { runtime } = createRuntime()
+    await runtime.updateRemoteDesktopViewer('pty-1', 'sub-A', 'viewer-A', 100, 30)
+    await runtime.handleMobileSubscribe('pty-1', 'phone-A', { cols: 45, rows: 20 })
+    await runtime.unregisterRemoteDesktopViewer('pty-1', 'sub-A')
+    // The host pane can change after remote ownership ends while phone-fit
+    // remains active; its trusted measurement becomes the deferred target.
+    runtime.recordRendererGeometry('pty-1', 140, 38)
+
+    runtime.onClientDisconnected('phone-A')
+    await vi.advanceTimersByTimeAsync(10_000)
+    expect(runtime.getTerminalSize('pty-1')).toEqual({ cols: 140, rows: 38 })
+
+    // A later viewer must capture the new host geometry, not reuse the prior
+    // session's already-consumed 140-column reclaim target.
+    runtime.onExternalPtyResize('pty-1', 130, 36)
+    await runtime.updateRemoteDesktopViewer('pty-1', 'sub-B', 'viewer-B', 80, 24)
+    await runtime.unregisterRemoteDesktopViewer('pty-1', 'sub-B')
+    expect(runtime.getTerminalSize('pty-1')).toEqual({ cols: 130, rows: 36 })
+  })
+
+  it('preserves indefinite phone-fit after the last desktop viewer leaves', async () => {
+    const { runtime } = createRuntime(null)
+    await runtime.updateRemoteDesktopViewer('pty-1', 'sub-A', 'viewer-A', 100, 30)
+    await runtime.handleMobileSubscribe('pty-1', 'phone-A', { cols: 45, rows: 20 })
+    await runtime.unregisterRemoteDesktopViewer('pty-1', 'sub-A')
+
+    runtime.onClientDisconnected('phone-A')
+    await vi.advanceTimersByTimeAsync(10_000)
+
+    expect(runtime.getTerminalSize('pty-1')).toEqual({ cols: 45, rows: 20 })
+    expect(runtime.getTerminalFitOverride('pty-1')).toMatchObject({ mode: 'mobile-fit' })
+
+    await expect(runtime.reclaimTerminalForDesktop('pty-1')).resolves.toBe(true)
+    expect(runtime.getTerminalSize('pty-1')).toEqual({ cols: 150, rows: 40 })
+    expect(runtime.getTerminalFitOverride('pty-1')).toBeNull()
+  })
+
+  it('does not let an older host reclaim consume a newer viewer cycle target', async () => {
+    const { runtime } = createRuntime()
+    await runtime.updateRemoteDesktopViewer('pty-1', 'sub-A', 'viewer-A', 80, 24)
+
+    // Do not await the reclaim before the next viewer joins. The serialized
+    // host resize can finish after sub-B has established a newer viewer cycle.
+    const firstReclaim = runtime.unregisterRemoteDesktopViewer('pty-1', 'sub-A')
+    const secondAttach = runtime.updateRemoteDesktopViewer('pty-1', 'sub-B', 'viewer-B', 90, 30)
+    await Promise.all([firstReclaim, secondAttach])
+
+    await runtime.unregisterRemoteDesktopViewer('pty-1', 'sub-B')
+    expect(runtime.getTerminalSize('pty-1')).toEqual({ cols: 150, rows: 40 })
+  })
+
+  it('does not coalesce queued claims from different desktop owners', async () => {
+    const { runtime } = createRuntime()
+    await runtime.updateRemoteDesktopViewer('pty-1', 'sub-A', 'viewer-A', 100, 30)
+    await runtime.updateRemoteDesktopViewer('pty-1', 'sub-B', 'viewer-B', 80, 24, false)
+    const layoutQueues = Reflect.get(runtime, 'layoutQueues') as Map<
+      string,
+      { running: Promise<unknown>; pending: { target: { ownerSubscriptionKey?: string } }[] }
+    >
+    layoutQueues.set('pty-1', { running: new Promise(() => {}), pending: [] })
+
+    void runtime.updateRemoteDesktopViewer('pty-1', 'sub-A', 'viewer-A', 90, 28)
+    void runtime.claimRemoteDesktopViewer('pty-1', 'sub-B')
+
+    expect(
+      layoutQueues.get('pty-1')?.pending.map(({ target }) => target.ownerSubscriptionKey)
+    ).toEqual(['sub-A', 'sub-B'])
+    layoutQueues.delete('pty-1')
+  })
+
+  it('makes a host claim join a pending disconnect reclaim', async () => {
+    const { runtime } = createRuntime()
+    await runtime.updateRemoteDesktopViewer('pty-1', 'sub-A', 'viewer-A', 80, 24)
+    const layoutQueues = Reflect.get(runtime, 'layoutQueues') as Map<
+      string,
+      { running: Promise<unknown>; pending: { waiters: unknown[] }[] }
+    >
+    layoutQueues.set('pty-1', { running: new Promise(() => {}), pending: [] })
+
+    void runtime.unregisterRemoteDesktopViewer('pty-1', 'sub-A')
+    void runtime.claimRemoteDesktopHost('pty-1', 150, 40)
+
+    expect(layoutQueues.get('pty-1')?.pending).toHaveLength(1)
+    expect(layoutQueues.get('pty-1')?.pending[0]?.waiters).toHaveLength(2)
+    layoutQueues.delete('pty-1')
+  })
+
+  it('removes same-PTY viewer floors with one bounded reclaim', async () => {
+    const { runtime, resizeCalls } = createRuntime()
+    const subscriptionKeys: string[] = []
+    for (let index = 0; index < 100; index += 1) {
+      const key = `sub-${index}`
+      subscriptionKeys.push(key)
+      await runtime.updateRemoteDesktopViewer('pty-1', key, `viewer-${index}`, 100, 30)
+    }
+    resizeCalls.splice(0)
+
+    await runtime.unregisterRemoteDesktopViewers('pty-1', subscriptionKeys)
+
+    expect(resizeCalls).toEqual([{ ptyId: 'pty-1', cols: 150, rows: 40 }])
+  })
+
+  it('applies the latest viewer width when the host takes back from a phone', async () => {
+    const { runtime } = createRuntime()
+    await runtime.updateRemoteDesktopViewer('pty-1', 'sub-A', 'viewer-A', 100, 30)
+    await runtime.handleMobileSubscribe('pty-1', 'phone-A', { cols: 45, rows: 20 })
+    await runtime.updateRemoteDesktopViewer('pty-1', 'sub-A', 'viewer-A', 80, 24)
+
+    await expect(runtime.reclaimTerminalForDesktop('pty-1')).resolves.toBe(true)
+
+    expect(runtime.getTerminalSize('pty-1')).toEqual({ cols: 80, rows: 24 })
+    expect(runtime.isPtyResizeDrivenRemotely('pty-1')).toBe(true)
   })
 
   it('refresh never creates a floor (one-shot viewport cannot leak host suppression)', async () => {
@@ -223,6 +415,17 @@ describe('remote desktop viewer width driver', () => {
     expect(runtime.isPtyResizeDrivenRemotely('pty-1')).toBe(false)
   })
 
+  it('captures host geometry when a passive stream is first claimed by terminal.send', async () => {
+    const { runtime } = createRuntime()
+    await runtime.updateRemoteDesktopViewer('pty-1', 'stream:1', 'viewer-A', 100, 30, false)
+
+    await runtime.refreshRemoteDesktopViewer('pty-1', 'viewer-A', 80, 24, true)
+    expect(runtime.getTerminalSize('pty-1')).toEqual({ cols: 80, rows: 24 })
+    await runtime.unregisterRemoteDesktopViewer('pty-1', 'stream:1')
+
+    expect(runtime.getTerminalSize('pty-1')).toEqual({ cols: 150, rows: 40 })
+  })
+
   it('keeps the host reclaim target when the reclaim resize fails', async () => {
     const { runtime } = createRuntime()
     const ptySizes = new Map<string, { cols: number; rows: number }>([
@@ -243,9 +446,10 @@ describe('remote desktop viewer width driver', () => {
       getSize: (ptyId) => ptySizes.get(ptyId) ?? null
     })
 
-    // Host reports its own 120-wide geometry; a viewer drives the PTY to 80.
-    runtime.recordRemoteDesktopHostReclaimTarget('pty-1', 120, 40)
+    // A viewer drives the PTY to 80; while it owns width, the host reports its
+    // own 120-wide reclaim geometry.
     await runtime.updateRemoteDesktopViewer('pty-1', 'sub-A', 'viewer-A', 80, 40)
+    runtime.recordRemoteDesktopHostReclaimTarget('pty-1', 120, 40)
     expect(runtime.getTerminalSize('pty-1')).toEqual({ cols: 80, rows: 40 })
 
     // The last viewer leaves but the reclaim resize fails: the PTY is stuck at
@@ -260,6 +464,42 @@ describe('remote desktop viewer width driver', () => {
     await runtime.updateRemoteDesktopViewer('pty-1', 'sub-B', 'viewer-B', 80, 40)
     await runtime.unregisterRemoteDesktopViewer('pty-1', 'sub-B')
     expect(runtime.getTerminalSize('pty-1')).toEqual({ cols: 120, rows: 40 })
+  })
+
+  it('supersedes a failed reclaim target when the host later resizes successfully', async () => {
+    const { runtime } = createRuntime()
+    const ptySizes = new Map<string, { cols: number; rows: number }>([
+      ['pty-1', { cols: 150, rows: 40 }]
+    ])
+    let resizeSucceeds = true
+    runtime.setPtyController({
+      write: () => true,
+      kill: () => true,
+      getForegroundProcess: async () => null,
+      resize: (ptyId, cols, rows) => {
+        if (!resizeSucceeds) {
+          return false
+        }
+        ptySizes.set(ptyId, { cols, rows })
+        return true
+      },
+      getSize: (ptyId) => ptySizes.get(ptyId) ?? null
+    })
+
+    await runtime.updateRemoteDesktopViewer('pty-1', 'sub-A', 'viewer-A', 80, 40)
+    runtime.recordRemoteDesktopHostReclaimTarget('pty-1', 120, 40)
+    resizeSucceeds = false
+    await runtime.unregisterRemoteDesktopViewer('pty-1', 'sub-A')
+
+    // pty:resize has already resized the provider before this runtime mirror
+    // hook runs; that successful host geometry supersedes the retained 120.
+    resizeSucceeds = true
+    ptySizes.set('pty-1', { cols: 140, rows: 42 })
+    runtime.onExternalPtyResize('pty-1', 140, 42)
+
+    await runtime.updateRemoteDesktopViewer('pty-1', 'sub-B', 'viewer-B', 80, 30)
+    await runtime.unregisterRemoteDesktopViewer('pty-1', 'sub-B')
+    expect(runtime.getTerminalSize('pty-1')).toEqual({ cols: 140, rows: 42 })
   })
 
   it('PTY exit clears the remote-desktop registry', async () => {

@@ -38,6 +38,7 @@ describe('createRemoteRuntimePtyTransport', () => {
     terminal: string
     client: { id: string; type: string }
     viewport?: { cols: number; rows: number }
+    capabilities?: { desktopViewportClaims?: 1 }
   } {
     const frames = subscriptionSendBinary.mock.calls
       .map((call) => decodeTerminalStreamFrame(call[0]))
@@ -51,6 +52,7 @@ describe('createRemoteRuntimePtyTransport', () => {
       terminal: string
       client: { id: string; type: string }
       viewport?: { cols: number; rows: number }
+      capabilities?: { desktopViewportClaims?: 1 }
     }>(frame.payload)
     if (!payload) {
       throw new Error('invalid terminal subscribe payload')
@@ -166,6 +168,12 @@ describe('createRemoteRuntimePtyTransport', () => {
 
     expect(onError).not.toHaveBeenCalled()
     expect(transport.getPtyId()).toBe('remote:terminal-1')
+    await vi.waitFor(() =>
+      expect(latestSubscribePayload().capabilities).toEqual({
+        ackOutput: 1,
+        desktopViewportClaims: 1
+      })
+    )
     expect(runtimeSubscribe).toHaveBeenCalledWith(
       expect.objectContaining({
         selector: 'env-1',
@@ -177,9 +185,76 @@ describe('createRemoteRuntimePtyTransport', () => {
     await vi.waitFor(() => expect(subscriptionSendBinary).toHaveBeenCalled())
     expect(latestSubscribePayload()).toMatchObject({
       terminal: 'terminal-1',
-      client: { id: 'desktop:tab-1:pane:1', type: 'desktop' },
+      client: { id: expect.stringMatching(/^desktop:tab-1:pane:1:/), type: 'desktop' },
       viewport: { cols: 120, rows: 40 }
     })
+  })
+
+  it('parks passive peers when another remote desktop owns the grid', async () => {
+    const { createRemoteRuntimePtyTransport } = await import('./remote-runtime-pty-transport')
+    const { getFitOverrideForPty, setFitOverride } =
+      await import('@/lib/pane-manager/mobile-fit-overrides')
+    const transport = createRemoteRuntimePtyTransport('env-1', { worktreeId: 'wt-1' })
+    await transport.connect({ url: '', cols: 120, rows: 40, callbacks: {} })
+    const { streamId } = latestSubscribePayload()
+    const ptyId = transport.getPtyId()
+    expect(ptyId).not.toBeNull()
+
+    subscriptionCallbacks?.onResponse({
+      ok: true,
+      result: {
+        type: 'fit-override-changed',
+        streamId,
+        mode: 'remote-desktop-fit',
+        cols: 96,
+        rows: 32
+      }
+    })
+
+    expect(ptyId ? getFitOverrideForPty(ptyId) : null).toEqual({
+      mode: 'remote-desktop-fit',
+      cols: 96,
+      rows: 32
+    })
+    if (ptyId) {
+      setFitOverride(ptyId, 'desktop-fit', 0, 0)
+    }
+  })
+
+  it('gives separate paired viewers of the same host pane distinct refresh identities', async () => {
+    const { createRemoteRuntimePtyTransport } = await import('./remote-runtime-pty-transport')
+    const first = createRemoteRuntimePtyTransport('env-1', {
+      worktreeId: 'wt-1',
+      tabId: 'tab-1',
+      leafId: 'pane:1'
+    })
+    const second = createRemoteRuntimePtyTransport('env-1', {
+      worktreeId: 'wt-1',
+      tabId: 'tab-1',
+      leafId: 'pane:1'
+    })
+
+    first.attach({ existingPtyId: 'remote:terminal-1', cols: 80, rows: 24, callbacks: {} })
+    second.attach({ existingPtyId: 'remote:terminal-1', cols: 120, rows: 40, callbacks: {} })
+
+    await vi.waitFor(() => {
+      const subscribeFrames = subscriptionSendBinary.mock.calls
+        .map((call) => decodeTerminalStreamFrame(call[0]))
+        .filter((frame) => frame?.opcode === TerminalStreamOpcode.Subscribe)
+      expect(subscribeFrames).toHaveLength(2)
+      const clientIds = subscribeFrames.map((frame) => {
+        const payload = frame
+          ? decodeTerminalStreamJson<{ client: { id: string } }>(frame.payload)
+          : null
+        return payload?.client.id
+      })
+      expect(clientIds[0]).toMatch(/^desktop:tab-1:pane:1:/)
+      expect(clientIds[1]).toMatch(/^desktop:tab-1:pane:1:/)
+      expect(clientIds[0]).not.toBe(clientIds[1])
+    })
+
+    first.destroy?.()
+    second.destroy?.()
   })
 
   it('routes encoded restored terminal ids to their owning runtime environment', async () => {
@@ -593,7 +668,9 @@ describe('createRemoteRuntimePtyTransport', () => {
         params: {
           terminal: 'terminal-new',
           text: 'x',
-          client: { id: 'desktop:tab-1:pane:1', type: 'desktop' }
+          client: { id: expect.stringMatching(/^desktop:tab-1:pane:1:/), type: 'desktop' },
+          viewport: { cols: 80, rows: 24 },
+          claimViewport: true
         },
         timeoutMs: 15_000
       })
@@ -1363,6 +1440,63 @@ describe('createRemoteRuntimePtyTransport', () => {
     await vi.waitFor(() => expect(runtimeSubscribe).toHaveBeenCalledTimes(2))
   })
 
+  it('releases pending claimed input when reconnect subscription fails', async () => {
+    const { createRemoteRuntimePtyTransport } = await import('./remote-runtime-pty-transport')
+    const onError = vi.fn()
+    const transport = createRemoteRuntimePtyTransport('env-1', {
+      worktreeId: 'wt-1',
+      tabId: 'tab-1',
+      leafId: 'pane:1'
+    })
+    await transport.connect({ url: '', callbacks: { onError } })
+    let rejectReconnect = (_error: Error): void => {}
+    runtimeSubscribe.mockImplementationOnce(
+      () =>
+        new Promise((_, reject) => {
+          rejectReconnect = reject
+        })
+    )
+
+    subscriptionCallbacks?.onClose?.()
+    await vi.waitFor(() => expect(runtimeSubscribe).toHaveBeenCalledTimes(2))
+    expect(transport.claimViewport?.(101, 33)).toBe(true)
+    const accepted = transport.sendInputAccepted?.('\x03')
+    await Promise.resolve()
+    rejectReconnect(new Error('reconnect failed'))
+
+    await expect(accepted).resolves.toBe(false)
+    expect(onError).toHaveBeenCalledWith('reconnect failed')
+  })
+
+  it('retries when a replacement transport closes before its stream installs', async () => {
+    const transportCallbacks: NonNullable<typeof subscriptionCallbacks>[] = []
+    runtimeSubscribe.mockImplementation(
+      async (_args: unknown, callbacks: NonNullable<typeof subscriptionCallbacks>) => {
+        transportCallbacks.push(callbacks)
+        subscriptionCallbacks = callbacks
+        return { unsubscribe: vi.fn(), sendBinary: subscriptionSendBinary }
+      }
+    )
+    const { createRemoteRuntimePtyTransport } = await import('./remote-runtime-pty-transport')
+    const transport = createRemoteRuntimePtyTransport('env-1', {
+      worktreeId: 'wt-1',
+      tabId: 'tab-1',
+      leafId: 'pane:1'
+    })
+    const connected = transport.connect({ url: '', callbacks: {} })
+    await vi.waitFor(() => expect(transportCallbacks).toHaveLength(1))
+    transportCallbacks[0].onResponse({ ok: true, result: { type: 'ready' } })
+    await connected
+
+    transportCallbacks[0].onClose?.()
+    await vi.waitFor(() => expect(transportCallbacks).toHaveLength(2))
+    transportCallbacks[1].onResponse({ ok: true, result: { type: 'ready' } })
+    transportCallbacks[1].onClose?.()
+
+    await vi.waitFor(() => expect(transportCallbacks).toHaveLength(3))
+    transport.destroy?.()
+  })
+
   it('resubscribes with the latest pane viewport after the remote stream closes', async () => {
     const { createRemoteRuntimePtyTransport } = await import('./remote-runtime-pty-transport')
     const transport = createRemoteRuntimePtyTransport('env-1', {
@@ -1438,6 +1572,54 @@ describe('createRemoteRuntimePtyTransport', () => {
     })
 
     transport.destroy?.()
+  })
+
+  it('replays a claim before input typed during the subscribe round-trip', async () => {
+    vi.useFakeTimers()
+    try {
+      runtimeSubscribe.mockImplementation(
+        async (_args: unknown, callbacks: typeof subscriptionCallbacks) => {
+          subscriptionCallbacks = callbacks
+          return { unsubscribe: vi.fn(), sendBinary: subscriptionSendBinary }
+        }
+      )
+      const { createRemoteRuntimePtyTransport } = await import('./remote-runtime-pty-transport')
+      const transport = createRemoteRuntimePtyTransport('env-1', {
+        worktreeId: 'wt-1',
+        tabId: 'tab-1',
+        leafId: 'pane:1'
+      })
+
+      transport.attach({
+        existingPtyId: 'remote:terminal-1',
+        cols: 80,
+        rows: 24,
+        callbacks: {}
+      })
+      await vi.waitFor(() => expect(runtimeSubscribe).toHaveBeenCalled())
+      expect(transport.claimViewport?.(101, 33)).toBe(true)
+      expect(transport.sendInput('x')).toBe(true)
+      await vi.advanceTimersByTimeAsync(8)
+      expect(runtimeCall).not.toHaveBeenCalledWith(
+        expect.objectContaining({ method: 'terminal.send' })
+      )
+
+      emitMultiplexReady()
+      await vi.waitFor(() => {
+        const opcodes = subscriptionSendBinary.mock.calls
+          .map((call) => decodeTerminalStreamFrame(call[0])?.opcode)
+          .filter((opcode) => opcode !== undefined)
+        expect(opcodes).toEqual([
+          TerminalStreamOpcode.Subscribe,
+          TerminalStreamOpcode.ClaimViewport,
+          TerminalStreamOpcode.Resize,
+          TerminalStreamOpcode.Input
+        ])
+      })
+      transport.destroy?.()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('coalesces rapid remote terminal input before sending it to the runtime', async () => {
@@ -1568,7 +1750,9 @@ describe('createRemoteRuntimePtyTransport', () => {
       params: {
         terminal: 'terminal-1',
         text: '\x03',
-        client: { id: 'desktop:tab-1:pane:1', type: 'desktop' }
+        client: { id: expect.stringMatching(/^desktop:tab-1:pane:1:/), type: 'desktop' },
+        viewport: { cols: 80, rows: 24 },
+        claimViewport: true
       },
       timeoutMs: 15_000
     })
@@ -1609,7 +1793,9 @@ describe('createRemoteRuntimePtyTransport', () => {
         params: {
           terminal: 'terminal-1',
           text: 'a\x03',
-          client: { id: 'desktop:tab-1:pane:1', type: 'desktop' }
+          client: { id: expect.stringMatching(/^desktop:tab-1:pane:1:/), type: 'desktop' },
+          viewport: { cols: 80, rows: 24 },
+          claimViewport: true
         },
         timeoutMs: 15_000
       })
@@ -1851,6 +2037,42 @@ describe('createRemoteRuntimePtyTransport', () => {
       expect(frame ? decodeTerminalStreamJson(frame.payload) : null).toEqual({
         cols: 120,
         rows: 40
+      })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('sends an activity claim before the user input it sizes', async () => {
+    vi.useFakeTimers()
+    try {
+      const { createRemoteRuntimePtyTransport } = await import('./remote-runtime-pty-transport')
+      const transport = createRemoteRuntimePtyTransport('env-1', {
+        worktreeId: 'wt-1',
+        tabId: 'tab-1',
+        leafId: 'pane:1'
+      })
+
+      await transport.connect({ url: '', callbacks: {} })
+      const { streamId } = latestSubscribePayload()
+      subscriptionSendBinary.mockClear()
+
+      expect(transport.claimViewport?.(101, 33)).toBe(true)
+      expect(transport.sendInput('x')).toBe(true)
+      await vi.runOnlyPendingTimersAsync()
+
+      const frames = subscriptionSendBinary.mock.calls.map((call) =>
+        decodeTerminalStreamFrame(call[0])
+      )
+      expect(frames.map((frame) => frame?.opcode)).toEqual([
+        TerminalStreamOpcode.ClaimViewport,
+        TerminalStreamOpcode.Resize,
+        TerminalStreamOpcode.Input
+      ])
+      expect(frames[0]?.streamId).toBe(streamId)
+      expect(frames[0] ? decodeTerminalStreamJson(frames[0].payload) : null).toEqual({
+        cols: 101,
+        rows: 33
       })
     } finally {
       vi.useRealTimers()

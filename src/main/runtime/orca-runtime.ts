@@ -1378,7 +1378,7 @@ type RuntimeNotifier = {
   resumeSleepingAgents?(worktreeId: string): void
   terminalFitOverrideChanged(
     ptyId: string,
-    mode: 'mobile-fit' | 'desktop-fit',
+    mode: 'mobile-fit' | 'remote-desktop-fit' | 'desktop-fit',
     cols: number,
     rows: number
   ): void
@@ -2062,7 +2062,7 @@ export type DriverState = RuntimeTerminalDriverState
 export type PtyLayoutTarget =
   | { kind: 'desktop'; cols: number; rows: number }
   | { kind: 'phone'; cols: number; rows: number; ownerClientId: string }
-  | { kind: 'remote-desktop'; cols: number; rows: number }
+  | { kind: 'remote-desktop'; cols: number; rows: number; ownerSubscriptionKey: string }
 
 // Why: authoritative layout state with monotonic seq. Bumped on every
 // applyLayout success; emitted on mobile subscribe-stream events so clients
@@ -2181,7 +2181,13 @@ export class OrcaRuntimeService {
   // invoked from resizeForClient and onClientDisconnected/onPtyExit.
   private fitOverrideListeners = new Map<
     string,
-    Set<(event: { mode: 'mobile-fit' | 'desktop-fit'; cols: number; rows: number }) => void>
+    Set<
+      (event: {
+        mode: 'mobile-fit' | 'remote-desktop-fit' | 'desktop-fit'
+        cols: number
+        rows: number
+      }) => void
+    >
   >()
   private driverListeners = new Map<string, Set<(driver: DriverState) => void>>()
   private subscriptionCleanups = new Map<string, () => void>()
@@ -2335,9 +2341,14 @@ export class OrcaRuntimeService {
   // each stream must release only the width floor it registered.
   private remoteDesktopViewers = new Map<
     string,
-    Map<string, { clientId: string; cols: number; rows: number }>
+    Map<string, { clientId: string; cols: number; rows: number; activity: number }>
   >()
+  private remoteDesktopOwners = new Map<string, string>()
+  private remoteDesktopActivity = 0
   private remoteDesktopHostReclaimTargets = new Map<string, { cols: number; rows: number }>()
+  // Why: a completed host reclaim must not consume the cache if a newer
+  // viewer mutation landed while that serialized layout was in flight.
+  private remoteDesktopViewerRevisions = new Map<string, number>()
 
   // Why: resubscribe-grace window. When the last mobile subscriber for a
   // PTY unsubscribes, we hold the driver=mobile{clientId} state and the
@@ -6488,7 +6499,11 @@ export class OrcaRuntimeService {
 
   subscribeToFitOverrideChanges(
     ptyId: string,
-    listener: (event: { mode: 'mobile-fit' | 'desktop-fit'; cols: number; rows: number }) => void
+    listener: (event: {
+      mode: 'mobile-fit' | 'remote-desktop-fit' | 'desktop-fit'
+      cols: number
+      rows: number
+    }) => void
   ): () => void {
     return addListenerToMap(this.fitOverrideListeners, ptyId, listener)
   }
@@ -6499,7 +6514,7 @@ export class OrcaRuntimeService {
 
   private notifyFitOverrideListeners(
     ptyId: string,
-    mode: 'mobile-fit' | 'desktop-fit',
+    mode: 'mobile-fit' | 'remote-desktop-fit' | 'desktop-fit',
     cols: number,
     rows: number
   ): void {
@@ -7776,10 +7791,25 @@ export class OrcaRuntimeService {
     return this.terminalFitOverrides.get(ptyId) ?? null
   }
 
-  getAllTerminalFitOverrides(): Map<string, { mode: 'mobile-fit'; cols: number; rows: number }> {
-    const result = new Map<string, { mode: 'mobile-fit'; cols: number; rows: number }>()
+  getAllTerminalFitOverrides(): Map<
+    string,
+    { mode: 'mobile-fit' | 'remote-desktop-fit'; cols: number; rows: number }
+  > {
+    const result = new Map<
+      string,
+      { mode: 'mobile-fit' | 'remote-desktop-fit'; cols: number; rows: number }
+    >()
     for (const [ptyId, override] of this.terminalFitOverrides) {
       result.set(ptyId, { mode: override.mode, cols: override.cols, rows: override.rows })
+    }
+    for (const [ptyId] of this.remoteDesktopOwners) {
+      if (result.has(ptyId)) {
+        continue
+      }
+      const size = this.getTerminalSize(ptyId)
+      if (size) {
+        result.set(ptyId, { mode: 'remote-desktop-fit', ...size })
+      }
     }
     return result
   }
@@ -7866,6 +7896,11 @@ export class OrcaRuntimeService {
         void this.applyRemoteDesktopLayout(ptyId)
         continue
       } else if (cur?.kind === 'phone' && this.getAutoRestoreFitMs() != null) {
+        if (this.remoteDesktopHostReclaimTargets.has(ptyId)) {
+          this.setDriver(ptyId, { kind: 'idle' })
+          void this.applyRemoteDesktopLayout(ptyId)
+          continue
+        }
         // Use the soft-leaver's snapshot baseline as a hint, falling
         // through to resolveDesktopRestoreTarget for missing values.
         const fallback = this.resolveDesktopRestoreTarget(ptyId)
@@ -7909,6 +7944,11 @@ export class OrcaRuntimeService {
         void this.applyRemoteDesktopLayout(ptyId)
         continue
       } else if (cur?.kind === 'phone' && this.getAutoRestoreFitMs() != null) {
+        if (this.remoteDesktopHostReclaimTargets.has(ptyId)) {
+          this.setDriver(ptyId, { kind: 'idle' })
+          void this.applyRemoteDesktopLayout(ptyId)
+          continue
+        }
         const fallback = this.resolveDesktopRestoreTarget(ptyId)
         const cols = baseline?.cols ?? fallback.cols
         const rows = baseline?.rows ?? fallback.rows
@@ -8038,7 +8078,9 @@ export class OrcaRuntimeService {
       this.notifier?.terminalDriverChanged(ptyId, { kind: 'idle' })
     }
     this.remoteDesktopViewers.delete(ptyId)
+    this.remoteDesktopOwners.delete(ptyId)
     this.remoteDesktopHostReclaimTargets.delete(ptyId)
+    this.remoteDesktopViewerRevisions.delete(ptyId)
     this.disposeHeadlessTerminal(ptyId)
     this.agentDetector?.onExit(ptyId)
     const pty = this.ptysById.get(ptyId)
@@ -8097,10 +8139,10 @@ export class OrcaRuntimeService {
   // Why: the host's own fit cascade (window resize, split drag, tab reveal,
   // "+"-new-tab re-render) must not resize a PTY whose width a remote client
   // owns — that is the remote "porridge" bug. True while a phone (mobile driver)
-  // OR a remote desktop viewer holds the PTY. Input is deliberately NOT gated
+  // OR an active remote desktop viewer owns the PTY. Input is deliberately NOT gated
   // here (see the `writePtyInput` mobile-only checks): shared-control desktop
   // viewers may still type alongside the host.
-  // Note: this is intentionally NOT a driver kind. A remote desktop viewer needs
+  // Note: this is intentionally NOT a driver kind. An active remote viewer needs
   // only resize suppression, not the mobile driver machinery (input lock,
   // phone-fit, driver-change banners), so it lives in its own registry and does
   // not perturb the presence-lock state machine. It also coexists with mobile:
@@ -8110,7 +8152,28 @@ export class OrcaRuntimeService {
     if (this.getDriver(ptyId).kind === 'mobile') {
       return true
     }
-    return this.hasRemoteDesktopViewers(ptyId)
+    return this.isRemoteDesktopResizeDriven(ptyId)
+  }
+
+  isRemoteDesktopResizeDriven(ptyId: string): boolean {
+    return this.remoteDesktopOwners.has(ptyId)
+  }
+
+  isRemoteDesktopViewerOwner(ptyId: string, subscriptionKey: string): boolean {
+    return this.remoteDesktopOwners.get(ptyId) === subscriptionKey
+  }
+
+  getRemoteDesktopFitHold(
+    ptyId: string,
+    subscriptionKey: string
+  ): { mode: 'remote-desktop-fit' | 'desktop-fit'; cols: number; rows: number } {
+    const size = this.getTerminalSize(ptyId) ?? { cols: 0, rows: 0 }
+    return {
+      mode: this.isRemoteDesktopViewerOwner(ptyId, subscriptionKey)
+        ? 'desktop-fit'
+        : 'remote-desktop-fit',
+      ...size
+    }
   }
 
   private hasRemoteDesktopViewers(ptyId: string): boolean {
@@ -8118,19 +8181,9 @@ export class OrcaRuntimeService {
     return viewers !== undefined && viewers.size > 0
   }
 
-  // Why: the smallest attached viewer wins (tmux model). A wider viewer showing
-  // a few unused columns is fine; a narrower viewer receiving host-width frames
-  // garbles, so the PTY must never exceed the narrowest grid.
-  private minRemoteDesktopViewport(
-    viewers: Map<string, { cols: number; rows: number }>
-  ): { cols: number; rows: number } | null {
-    let cols = Infinity
-    let rows = Infinity
-    for (const viewport of viewers.values()) {
-      cols = Math.min(cols, viewport.cols)
-      rows = Math.min(rows, viewport.rows)
-    }
-    return Number.isFinite(cols) && Number.isFinite(rows) ? { cols, rows } : null
+  private activeRemoteDesktopViewport(ptyId: string): { cols: number; rows: number } | null {
+    const owner = this.remoteDesktopOwners.get(ptyId)
+    return owner ? (this.remoteDesktopViewers.get(ptyId)?.get(owner) ?? null) : null
   }
 
   private resolveRemoteDesktopHostReclaimTarget(ptyId: string): { cols: number; rows: number } {
@@ -8138,15 +8191,10 @@ export class OrcaRuntimeService {
     if (target) {
       return target
     }
-    const renderer = this.lastRendererSizes.get(ptyId)
-    if (renderer) {
-      return { cols: renderer.cols, rows: renderer.rows }
-    }
-    const size = this.getTerminalSize(ptyId)
-    if (size) {
-      return { cols: size.cols, rows: size.rows }
-    }
-    return { cols: 80, rows: 24 }
+    // Why: a viewer can join while a phone owns the actual PTY size. The
+    // mobile restore chain retains the pre-phone desktop geometry; current
+    // PTY size alone would incorrectly capture the phone grid as host truth.
+    return this.resolveDesktopRestoreTarget(ptyId)
   }
 
   private ensureRemoteDesktopHostReclaimTarget(ptyId: string): void {
@@ -8159,21 +8207,38 @@ export class OrcaRuntimeService {
   }
 
   recordRemoteDesktopHostReclaimTarget(ptyId: string, cols: number, rows: number): void {
-    if (cols <= 0 || rows <= 0) {
+    // Why: phone presence also suppresses host resize, but must not seed the
+    // separate remote-viewer cache when no desktop stream owns a width floor.
+    if (!this.remoteDesktopOwners.has(ptyId) || cols <= 0 || rows <= 0) {
       return
     }
     this.remoteDesktopHostReclaimTargets.set(ptyId, { cols, rows })
+  }
+
+  private hasRemoteDesktopLayoutState(ptyId: string): boolean {
+    return this.remoteDesktopOwners.has(ptyId) || this.remoteDesktopHostReclaimTargets.has(ptyId)
+  }
+
+  private bumpRemoteDesktopViewerRevision(ptyId: string): number {
+    const revision = (this.remoteDesktopViewerRevisions.get(ptyId) ?? 0) + 1
+    this.remoteDesktopViewerRevisions.set(ptyId, revision)
+    return revision
   }
 
   async applyRemoteDesktopLayout(ptyId: string): Promise<boolean> {
     if (this.getDriver(ptyId).kind === 'mobile') {
       return true
     }
-    const viewers = this.remoteDesktopViewers.get(ptyId)
-    const target = viewers ? this.minRemoteDesktopViewport(viewers) : null
+    const target = this.activeRemoteDesktopViewport(ptyId)
     const reclaimingHost = !target
+    const viewerRevision = this.remoteDesktopViewerRevisions.get(ptyId) ?? 0
     const layoutTarget: PtyLayoutTarget = target
-      ? { kind: 'remote-desktop', cols: target.cols, rows: target.rows }
+      ? {
+          kind: 'remote-desktop',
+          cols: target.cols,
+          rows: target.rows,
+          ownerSubscriptionKey: this.remoteDesktopOwners.get(ptyId)!
+        }
       : { kind: 'desktop', ...this.resolveRemoteDesktopHostReclaimTarget(ptyId) }
     this.freshSubscribeGuard.add(ptyId)
     try {
@@ -8182,7 +8247,12 @@ export class OrcaRuntimeService {
       // landed. If it failed, the PTY is still at the remote-viewer width, so
       // keep the target for the next reclaim (otherwise it resolves via the
       // stale remote width and never restores true host geometry).
-      if (reclaimingHost && result.ok) {
+      if (
+        reclaimingHost &&
+        result.ok &&
+        !this.remoteDesktopOwners.has(ptyId) &&
+        this.remoteDesktopViewerRevisions.get(ptyId) === viewerRevision
+      ) {
         this.remoteDesktopHostReclaimTargets.delete(ptyId)
       }
       return result.ok
@@ -8191,38 +8261,125 @@ export class OrcaRuntimeService {
     }
   }
 
-  // Why: a remote (relay/shared-control) desktop viewer reporting a viewport
-  // takes/refreshes the width floor so the host's fit cascade stops fighting it.
-  // The source PTY is sized to the SMALLEST attached viewer so no viewer ever
-  // receives frames wider than its grid.
+  // Why: attachment only records geometry. Passive hydration/reconnect must not
+  // steal the shared PTY from the desktop where the user is actively working.
   async updateRemoteDesktopViewer(
     ptyId: string,
     subscriptionKey: string,
     clientId: string,
     cols: number,
-    rows: number
+    rows: number,
+    claim = true
   ): Promise<boolean> {
     const viewport = clampTerminalViewport(cols, rows)
-    this.ensureRemoteDesktopHostReclaimTarget(ptyId)
+    if (claim) {
+      this.ensureRemoteDesktopHostReclaimTarget(ptyId)
+    }
     let viewers = this.remoteDesktopViewers.get(ptyId)
     if (!viewers) {
-      viewers = new Map<string, { clientId: string; cols: number; rows: number }>()
+      viewers = new Map<
+        string,
+        { clientId: string; cols: number; rows: number; activity: number }
+      >()
       this.remoteDesktopViewers.set(ptyId, viewers)
     }
-    viewers.set(subscriptionKey, { clientId, cols: viewport.cols, rows: viewport.rows })
+    const prior = viewers.get(subscriptionKey)
+    if (
+      prior &&
+      prior.cols === viewport.cols &&
+      prior.rows === viewport.rows &&
+      (!claim || this.remoteDesktopOwners.get(ptyId) === subscriptionKey)
+    ) {
+      if (claim && this.remoteDesktopOwners.get(ptyId) === subscriptionKey) {
+        const size = this.getTerminalSize(ptyId)
+        if (size?.cols !== viewport.cols || size.rows !== viewport.rows) {
+          return this.applyRemoteDesktopLayout(ptyId)
+        }
+      }
+      return true
+    }
+    const activity = claim ? ++this.remoteDesktopActivity : (prior?.activity ?? 0)
+    viewers.set(subscriptionKey, { clientId, cols: viewport.cols, rows: viewport.rows, activity })
+    this.bumpRemoteDesktopViewerRevision(ptyId)
+    if (claim) {
+      this.remoteDesktopOwners.set(ptyId, subscriptionKey)
+      return this.applyRemoteDesktopLayout(ptyId)
+    }
+    return true
+  }
+
+  claimRemoteDesktopViewer(ptyId: string, subscriptionKey: string): Promise<boolean> {
+    const viewer = this.remoteDesktopViewers.get(ptyId)?.get(subscriptionKey)
+    if (!viewer) {
+      return Promise.resolve(false)
+    }
+    if (this.remoteDesktopOwners.get(ptyId) === subscriptionKey) {
+      const size = this.getTerminalSize(ptyId)
+      return size?.cols === viewer.cols && size.rows === viewer.rows
+        ? Promise.resolve(true)
+        : this.applyRemoteDesktopLayout(ptyId)
+    }
+    this.ensureRemoteDesktopHostReclaimTarget(ptyId)
+    viewer.activity = ++this.remoteDesktopActivity
+    this.remoteDesktopOwners.set(ptyId, subscriptionKey)
+    this.bumpRemoteDesktopViewerRevision(ptyId)
+    return this.applyRemoteDesktopLayout(ptyId)
+  }
+
+  claimRemoteDesktopHost(ptyId: string, cols: number, rows: number): Promise<boolean> {
+    if (!this.remoteDesktopOwners.has(ptyId)) {
+      // Why: disconnect can remove the owner before its queued host resize
+      // lands. A host input in that window must join the reclaim, not pass it.
+      return this.remoteDesktopHostReclaimTargets.has(ptyId)
+        ? this.applyRemoteDesktopLayout(ptyId)
+        : Promise.resolve(true)
+    }
+    const viewport = clampTerminalViewport(cols, rows)
+    this.remoteDesktopHostReclaimTargets.set(ptyId, viewport)
+    this.remoteDesktopOwners.delete(ptyId)
+    this.bumpRemoteDesktopViewerRevision(ptyId)
     return this.applyRemoteDesktopLayout(ptyId)
   }
 
   unregisterRemoteDesktopViewer(ptyId: string, subscriptionKey: string): Promise<boolean> {
+    return this.unregisterRemoteDesktopViewers(ptyId, [subscriptionKey])
+  }
+
+  unregisterRemoteDesktopViewers(
+    ptyId: string,
+    subscriptionKeys: Iterable<string>
+  ): Promise<boolean> {
     const viewers = this.remoteDesktopViewers.get(ptyId)
     if (!viewers) {
       return Promise.resolve(false)
     }
-    viewers.delete(subscriptionKey)
+    let changed = false
+    let removedOwner = false
+    for (const subscriptionKey of subscriptionKeys) {
+      removedOwner = this.remoteDesktopOwners.get(ptyId) === subscriptionKey || removedOwner
+      changed = viewers.delete(subscriptionKey) || changed
+    }
+    if (!changed) {
+      return Promise.resolve(false)
+    }
     if (viewers.size === 0) {
       this.remoteDesktopViewers.delete(ptyId)
     }
-    return this.applyRemoteDesktopLayout(ptyId)
+    if (removedOwner) {
+      let fallback: { key: string; activity: number } | null = null
+      for (const [key, viewer] of viewers) {
+        if (viewer.activity > 0 && (!fallback || viewer.activity > fallback.activity)) {
+          fallback = { key, activity: viewer.activity }
+        }
+      }
+      if (fallback) {
+        this.remoteDesktopOwners.set(ptyId, fallback.key)
+      } else {
+        this.remoteDesktopOwners.delete(ptyId)
+      }
+    }
+    this.bumpRemoteDesktopViewerRevision(ptyId)
+    return removedOwner ? this.applyRemoteDesktopLayout(ptyId) : Promise.resolve(true)
   }
 
   // Why: the one-shot `terminal.updateViewport` RPC has no disconnect hook, so
@@ -8237,24 +8394,42 @@ export class OrcaRuntimeService {
     ptyId: string,
     clientId: string,
     cols: number,
-    rows: number
+    rows: number,
+    claim = false
   ): Promise<boolean> {
     const viewers = this.remoteDesktopViewers.get(ptyId)
     if (!viewers) {
       return Promise.resolve(false)
     }
     const viewport = clampTerminalViewport(cols, rows)
+    if (claim) {
+      // Why: terminal.send may be the first activity while the stream is only
+      // passively registered. Snapshot host truth before this refresh owns it.
+      this.ensureRemoteDesktopHostReclaimTarget(ptyId)
+    }
     let changed = false
     for (const [subscriptionKey, viewer] of viewers) {
       if (viewer.clientId === clientId) {
-        viewers.set(subscriptionKey, { clientId, cols: viewport.cols, rows: viewport.rows })
+        const activity = claim ? ++this.remoteDesktopActivity : viewer.activity
+        viewers.set(subscriptionKey, {
+          ...viewer,
+          cols: viewport.cols,
+          rows: viewport.rows,
+          activity
+        })
+        if (claim) {
+          this.remoteDesktopOwners.set(ptyId, subscriptionKey)
+        }
         changed = true
       }
     }
     if (!changed) {
       return Promise.resolve(false)
     }
-    return this.applyRemoteDesktopLayout(ptyId)
+    this.bumpRemoteDesktopViewerRevision(ptyId)
+    return this.remoteDesktopOwners.has(ptyId)
+      ? this.applyRemoteDesktopLayout(ptyId)
+      : Promise.resolve(true)
   }
 
   async updateDesktopViewport(
@@ -8412,9 +8587,34 @@ export class OrcaRuntimeService {
       // the terminal tab on the phone) must default to phone-fit again, not stay
       // in passive desktop-watch mode.
       this.setMobileDisplayMode(ptyId, 'auto')
+      if (this.hasRemoteDesktopLayoutState(ptyId)) {
+        return this.applyRemoteDesktopLayout(ptyId)
+      }
       return true
     }
     const heldOverride = this.terminalFitOverrides.get(ptyId)
+    if (heldOverride && this.hasRemoteDesktopLayoutState(ptyId)) {
+      const pending = this.pendingRestoreTimers.get(ptyId)
+      if (pending) {
+        clearTimeout(pending.timer)
+        this.pendingRestoreTimers.delete(ptyId)
+      }
+      const softLeaver = this.pendingSoftLeavers.get(ptyId)
+      if (softLeaver) {
+        clearTimeout(softLeaver.timer)
+        this.pendingSoftLeavers.delete(ptyId)
+      }
+      const priorDriver = this.getDriver(ptyId)
+      this.setDriver(ptyId, { kind: 'idle' })
+      const converged = await this.applyRemoteDesktopLayout(ptyId)
+      if (!converged) {
+        this.setDriver(ptyId, priorDriver)
+        return false
+      }
+      this.setDriver(ptyId, { kind: 'desktop' })
+      this.setMobileDisplayMode(ptyId, 'auto')
+      return true
+    }
     if (heldOverride) {
       const pending = this.pendingRestoreTimers.get(ptyId)
       if (pending) {
@@ -8631,6 +8831,11 @@ export class OrcaRuntimeService {
     if (prev.kind === 'phone' && next.kind === 'phone') {
       return prev.ownerClientId === next.ownerClientId
     }
+    if (prev.kind === 'remote-desktop' && next.kind === 'remote-desktop') {
+      // Why: each owner's claim promise gates its following input. Sharing a
+      // waiter across owners could release A's input only after B's grid lands.
+      return prev.ownerSubscriptionKey === next.ownerSubscriptionKey
+    }
     return true
   }
 
@@ -8768,9 +8973,9 @@ export class OrcaRuntimeService {
       this.resizeHeadlessTerminal(ptyId, target.cols, target.rows)
     }
 
-    // Why: emit fit-override-changed when the *mode* flips. Layouts can
-    // change dims without flipping mode (keyboard show/hide while phone),
-    // and waking the renderer on every viewport tick is wasteful churn.
+    // Why: remote desktop ownership is a fit hold for the host and passive
+    // peer viewers. Emit every remote layout so owner changes at equal geometry
+    // still park/release the correct clients without relying on resize deltas.
     // Defense-in-depth (#7588): also emit when the override's presence
     // changed even without a kind flip. applyLayout is the sole writer and
     // keeps override presence in lockstep with layout kind, so overrideChanged
@@ -8778,7 +8983,7 @@ export class OrcaRuntimeService {
     // only if that invariant is ever violated, repairing the renderer instead
     // of stranding the held modal.
     const overrideChanged = (prevFitOverride != null) !== (target.kind === 'phone')
-    if (target.kind !== 'remote-desktop' && (modeChanged || overrideChanged)) {
+    if (target.kind === 'remote-desktop' || modeChanged || overrideChanged) {
       // Why: phone→desktop arms the renderer-cascade suppress window
       // before the collateral safeFit IPCs arrive. See "Renderer cascade
       // suppression".
@@ -8788,13 +8993,21 @@ export class OrcaRuntimeService {
       }
       this.notifier?.terminalFitOverrideChanged(
         ptyId,
-        target.kind === 'phone' ? 'mobile-fit' : 'desktop-fit',
+        target.kind === 'phone'
+          ? 'mobile-fit'
+          : target.kind === 'remote-desktop'
+            ? 'remote-desktop-fit'
+            : 'desktop-fit',
         target.cols,
         target.rows
       )
       this.notifyFitOverrideListeners(
         ptyId,
-        target.kind === 'phone' ? 'mobile-fit' : 'desktop-fit',
+        target.kind === 'phone'
+          ? 'mobile-fit'
+          : target.kind === 'remote-desktop'
+            ? 'remote-desktop-fit'
+            : 'desktop-fit',
         target.cols,
         target.rows
       )
@@ -9169,7 +9382,7 @@ export class OrcaRuntimeService {
           if (this.isMobileSubscriberActive(ptyId)) {
             return
           }
-          if (this.hasRemoteDesktopViewers(ptyId)) {
+          if (this.hasRemoteDesktopLayoutState(ptyId)) {
             void this.applyRemoteDesktopLayout(ptyId)
             return
           }
@@ -9308,6 +9521,11 @@ export class OrcaRuntimeService {
     if (activeOverride && activeOverride.cols === cols && activeOverride.rows === rows) {
       return
     }
+    // Why: a successful host resize supersedes any target retained after a
+    // failed viewer reclaim; a later viewer cycle must capture this new truth.
+    if (!this.hasRemoteDesktopViewers(ptyId)) {
+      this.remoteDesktopHostReclaimTargets.delete(ptyId)
+    }
     this.resizeHeadlessTerminal(ptyId, cols, rows)
     this.refreshRendererGeometry(ptyId, cols, rows)
   }
@@ -9327,6 +9545,11 @@ export class OrcaRuntimeService {
   recordRendererGeometry(ptyId: string, cols: number, rows: number): void {
     if (cols <= 0 || rows <= 0) {
       return
+    }
+    // Why: a viewer may leave while phone-fit still owns the PTY. Keep its
+    // deferred host reclaim cache aligned with later trusted pane measurements.
+    if (this.remoteDesktopHostReclaimTargets.has(ptyId)) {
+      this.remoteDesktopHostReclaimTargets.set(ptyId, { cols, rows })
     }
     this.refreshRendererGeometry(ptyId, cols, rows)
   }

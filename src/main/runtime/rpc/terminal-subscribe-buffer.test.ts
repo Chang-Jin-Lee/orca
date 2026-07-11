@@ -214,7 +214,14 @@ describe('terminal subscribe buffering', () => {
       expect(await outcomePromise).toBe('settled')
       expect(runtime.subscribeToTerminalData).not.toHaveBeenCalled()
       expect(runtime.subscribeToFitOverrideChanges).not.toHaveBeenCalled()
-      expect(runtime.registerSubscriptionCleanup).not.toHaveBeenCalled()
+      // Cleanup must exist before snapshot work so an abort cannot orphan a
+      // desktop width floor, but the abort must consume it before listeners start.
+      expect(runtime.registerSubscriptionCleanup).toHaveBeenCalledWith(
+        'terminal-1:desktop-1',
+        expect.any(Function),
+        'conn-legacy-json'
+      )
+      expect(runtime.cleanupSubscription).toHaveBeenCalledWith('terminal-1:desktop-1')
       expect(runtime.waitForTerminal).not.toHaveBeenCalled()
       expect(messages).toEqual([])
     } finally {
