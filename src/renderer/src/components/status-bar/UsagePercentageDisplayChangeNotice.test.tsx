@@ -173,4 +173,53 @@ describe('UsagePercentageDisplayChangeNotice', () => {
     })
     expect(storeState.dismissUsagePercentageDisplayChangeNotice).toHaveBeenCalled()
   })
+
+  it('dismisses from the X button', () => {
+    openNotice()
+
+    const dismissButton = document.querySelector(
+      '.status-bar-change-notice-card button[aria-label="Dismiss"]'
+    )
+    expect(dismissButton).toBeTruthy()
+    act(() => {
+      dismissButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(storeState.dismissUsagePercentageDisplayChangeNotice).toHaveBeenCalledTimes(1)
+  })
+
+  it('dismisses from Got it', () => {
+    openNotice()
+
+    const gotItButton = Array.from(
+      document.querySelectorAll('.status-bar-change-notice-card button')
+    ).find((button) => button.textContent === 'Got it')
+    expect(gotItButton).toBeTruthy()
+    act(() => {
+      gotItButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(storeState.dismissUsagePercentageDisplayChangeNotice).toHaveBeenCalledTimes(1)
+  })
+
+  it('dismisses on Escape', () => {
+    openNotice()
+
+    act(() => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    })
+    expect(storeState.dismissUsagePercentageDisplayChangeNotice).toHaveBeenCalledTimes(1)
+  })
+
+  function openNotice(): void {
+    act(() => {
+      root.render(
+        <UsagePercentageDisplayChangeNotice hasVisibleUsageMeters>
+          <span>usage-meters</span>
+        </UsagePercentageDisplayChangeNotice>
+      )
+    })
+    act(() => {
+      vi.advanceTimersByTime(1_800)
+    })
+    expect(document.querySelector('.status-bar-change-notice-card')).not.toBeNull()
+  }
 })

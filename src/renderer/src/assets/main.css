@@ -1210,46 +1210,14 @@
 }
 
 /* Why: one-shot status-bar callout is portaled fixed above the meters.
-   Opaque elevated surfaces (not glass) so titlebar/terminal chrome cannot
-   bleed through; light and dark use separate fills. */
+   Opaque popover surface (not glass) so titlebar/terminal chrome cannot
+   bleed through; use design tokens + the documented floating elevation. */
 .status-bar-change-notice-card {
-  border: 1px solid color-mix(in srgb, var(--foreground) 16%, var(--border));
-  background: var(--card);
-  color: var(--card-foreground);
-  box-shadow:
-    0 0 0 1px color-mix(in srgb, var(--foreground) 6%, transparent),
-    0 14px 36px color-mix(in srgb, var(--foreground) 14%, transparent),
-    0 2px 8px color-mix(in srgb, var(--foreground) 8%, transparent);
-}
-
-/* Light: pure paper above light chrome — lift with a cool edge, not gray fill. */
-:root:not(.dark) .status-bar-change-notice-card {
-  background: #ffffff;
-  border-color: #c4c9d2;
-  color: #0a0a0a;
-  box-shadow:
-    0 0 0 1px rgb(15 23 42 / 0.06),
-    0 16px 40px rgb(15 23 42 / 0.16),
-    0 3px 10px rgb(15 23 42 / 0.08);
-}
-
-:root:not(.dark) .status-bar-change-notice-card .text-muted-foreground {
-  color: #52525b;
-}
-
-/* Dark: lifted charcoal above #0a0a0a / #171717 — not translucent glass. */
-.dark .status-bar-change-notice-card {
-  background: #2a2a2e;
-  border-color: color-mix(in srgb, #ffffff 26%, transparent);
-  color: #fafafa;
-  box-shadow:
-    0 0 0 1px color-mix(in srgb, #ffffff 12%, transparent),
-    0 18px 44px rgb(0 0 0 / 0.62),
-    0 3px 12px rgb(0 0 0 / 0.4);
-}
-
-.dark .status-bar-change-notice-card .text-muted-foreground {
-  color: color-mix(in srgb, #fafafa 68%, transparent);
+  border: 1px solid var(--border);
+  background: var(--popover);
+  color: var(--popover-foreground);
+  /* STYLEGUIDE: floating elevation for popovers that escape the editor surface. */
+  box-shadow: 0 10px 24px rgb(0 0 0 / 0.18);
 }
 
 /* Why: caret points down at the usage meters this notice explains. */
@@ -1261,17 +1229,9 @@
   width: 12px;
   height: 12px;
   transform: rotate(45deg);
-  border-right: 1px solid #c4c9d2;
-  border-bottom: 1px solid #c4c9d2;
-  background: #ffffff;
-  box-shadow: 2px 2px 5px rgb(15 23 42 / 0.1);
-}
-
-.dark .status-bar-change-notice-card::after {
-  border-right-color: color-mix(in srgb, #ffffff 26%, transparent);
-  border-bottom-color: color-mix(in srgb, #ffffff 26%, transparent);
-  background: #2a2a2e;
-  box-shadow: 2px 2px 8px rgb(0 0 0 / 0.45);
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  background: var(--popover);
 }
 
 /* Why: the first-run Mobile Emulator intro sits directly under that menu row;
