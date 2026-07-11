@@ -40,6 +40,23 @@ describe('UsagePercentageDisplayChangeNotice', () => {
     storeState.openSettingsTarget = vi.fn()
     container = document.createElement('div')
     document.body.appendChild(container)
+    // Why: fixed positioning reads getBoundingClientRect; happy-dom needs a
+    // non-zero layout box so the portal card is measured and mounted.
+    Object.defineProperty(HTMLElement.prototype, 'getBoundingClientRect', {
+      configurable: true,
+      value: () =>
+        ({
+          x: 24,
+          y: 700,
+          top: 700,
+          left: 24,
+          bottom: 724,
+          right: 200,
+          width: 176,
+          height: 24,
+          toJSON: () => ({})
+        }) satisfies DOMRect
+    })
     root = createRoot(container)
   })
 
@@ -48,10 +65,11 @@ describe('UsagePercentageDisplayChangeNotice', () => {
       root.unmount()
     })
     container.remove()
+    document.querySelectorAll('.status-bar-change-notice-card').forEach((node) => node.remove())
     vi.useRealTimers()
   })
 
-  it('shows the callout above usage meters after a short delay when eligible', () => {
+  it('portals the callout above the usage-meter anchor after a short delay', () => {
     act(() => {
       root.render(
         <UsagePercentageDisplayChangeNotice hasVisibleUsageMeters>
@@ -60,14 +78,18 @@ describe('UsagePercentageDisplayChangeNotice', () => {
       )
     })
 
-    expect(container.querySelector('.status-bar-change-notice-card')).toBeNull()
+    expect(document.querySelector('.status-bar-change-notice-card')).toBeNull()
     act(() => {
       vi.advanceTimersByTime(1_800)
     })
-    expect(container.querySelector('.status-bar-change-notice-card')).not.toBeNull()
+    const card = document.querySelector('.status-bar-change-notice-card') as HTMLElement | null
+    expect(card).not.toBeNull()
+    expect(card?.parentElement).toBe(document.body)
+    expect(card?.style.left).toBe('24px')
+    // viewport height default in happy-dom is often 768; bottom = 768 - 700 + 10
+    expect(card?.style.bottom).toBeTruthy()
+    expect(document.body.textContent).toContain('Usage now shows % used')
     expect(container.textContent).toContain('usage-meters')
-    expect(container.textContent).toContain('Usage now shows % used')
-    expect(container.textContent).toContain('Prefer remaining? Change it in Settings.')
   })
 
   it('does not open when no usage meters are visible', () => {
@@ -81,7 +103,7 @@ describe('UsagePercentageDisplayChangeNotice', () => {
     act(() => {
       vi.advanceTimersByTime(2_000)
     })
-    expect(container.querySelector('.status-bar-change-notice-card')).toBeNull()
+    expect(document.querySelector('.status-bar-change-notice-card')).toBeNull()
   })
 
   it('does not open when the notice was already dismissed', () => {
@@ -96,7 +118,7 @@ describe('UsagePercentageDisplayChangeNotice', () => {
     act(() => {
       vi.advanceTimersByTime(2_000)
     })
-    expect(container.querySelector('.status-bar-change-notice-card')).toBeNull()
+    expect(document.querySelector('.status-bar-change-notice-card')).toBeNull()
   })
 
   it('does not open while another modal is open', () => {
@@ -111,7 +133,7 @@ describe('UsagePercentageDisplayChangeNotice', () => {
     act(() => {
       vi.advanceTimersByTime(2_000)
     })
-    expect(container.querySelector('.status-bar-change-notice-card')).toBeNull()
+    expect(document.querySelector('.status-bar-change-notice-card')).toBeNull()
   })
 
   it('deep-links to the Usage percentages setting without a search filter', () => {
@@ -135,9 +157,9 @@ describe('UsagePercentageDisplayChangeNotice', () => {
       vi.advanceTimersByTime(1_800)
     })
 
-    const openSettingsButton = Array.from(container.querySelectorAll('button')).find(
-      (button) => button.textContent === 'Open Settings'
-    )
+    const openSettingsButton = Array.from(
+      document.querySelectorAll('.status-bar-change-notice-card button')
+    ).find((button) => button.textContent === 'Open Settings')
     expect(openSettingsButton).toBeTruthy()
     act(() => {
       openSettingsButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))

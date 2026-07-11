@@ -1209,11 +1209,10 @@
   background: color-mix(in srgb, var(--worktree-sidebar-foreground) 14%, var(--worktree-sidebar));
 }
 
-/* Why: one-shot status-bar callout sits over same-luminance titlebar/terminal
-   chrome. Opaque elevated surfaces (not glass) so the surface cannot bleed
-   through; light and dark use separate token mixes. */
+/* Why: one-shot status-bar callout is portaled fixed above the meters.
+   Opaque elevated surfaces (not glass) so titlebar/terminal chrome cannot
+   bleed through; light and dark use separate fills. */
 .status-bar-change-notice-card {
-  position: relative;
   border: 1px solid color-mix(in srgb, var(--foreground) 16%, var(--border));
   background: var(--card);
   color: var(--card-foreground);

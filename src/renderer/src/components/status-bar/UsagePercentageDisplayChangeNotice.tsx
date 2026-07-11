@@ -1,4 +1,5 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import { BarChart3, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { translate } from '@/i18n/i18n'
@@ -8,6 +9,14 @@ import { USAGE_PERCENTAGE_DISPLAY_SETTING_ID } from '../settings/appearance-usag
 
 // Why: let startup modals settle before the status-bar callout competes for focus.
 const SHOW_DELAY_MS = 1_800
+// Why: gap between the top of the status-bar meters and the bottom of the card.
+const ANCHOR_GAP_PX = 10
+const CARD_WIDTH_PX = 320
+
+type AnchorPosition = {
+  bottom: number
+  left: number
+}
 
 function openUsagePercentageSettings(): void {
   const store = useAppStore.getState()
@@ -21,9 +30,23 @@ function openUsagePercentageSettings(): void {
   })
 }
 
+function measureAnchorPosition(anchor: HTMLElement): AnchorPosition {
+  const rect = anchor.getBoundingClientRect()
+  const maxLeft = Math.max(8, window.innerWidth - CARD_WIDTH_PX - 8)
+  return {
+    // Why: fixed + bottom keeps the card glued above the meters as the window
+    // resizes; CSS bottom is distance from the viewport bottom edge.
+    bottom: Math.max(8, window.innerHeight - rect.top + ANCHOR_GAP_PX),
+    left: Math.min(Math.max(8, rect.left), maxLeft)
+  }
+}
+
 /**
  * One-time elevated callout anchored above the status-bar usage meters after
  * the default flipped from remaining → used. Permanent dismiss only.
+ *
+ * Why fixed + portal: status-bar ancestors use overflow-hidden flex shells, so
+ * in-tree absolute positioning clips or attaches to the wrong containing block.
  */
 export function UsagePercentageDisplayChangeNotice({
   children,
@@ -40,6 +63,8 @@ export function UsagePercentageDisplayChangeNotice({
   const statusBarVisible = useAppStore((s) => s.statusBarVisible)
   const activeModal = useAppStore((s) => s.activeModal)
   const [delayElapsed, setDelayElapsed] = useState(false)
+  const anchorRef = useRef<HTMLDivElement>(null)
+  const [anchorPosition, setAnchorPosition] = useState<AnchorPosition | null>(null)
 
   const eligible = shouldShowUsagePercentageDisplayChangeNotice({
     persistedUIReady,
@@ -64,6 +89,32 @@ export function UsagePercentageDisplayChangeNotice({
 
   const open = eligible && delayElapsed
 
+  useLayoutEffect(() => {
+    if (!open) {
+      setAnchorPosition(null)
+      return
+    }
+    const anchor = anchorRef.current
+    if (!anchor) {
+      return
+    }
+
+    const update = (): void => {
+      setAnchorPosition(measureAnchorPosition(anchor))
+    }
+    update()
+
+    // Why: meters reflow when the status bar goes compact/icon-only or the
+    // window resizes; keep the fixed card locked to the live anchor box.
+    const observer = new ResizeObserver(update)
+    observer.observe(anchor)
+    window.addEventListener('resize', update)
+    return () => {
+      observer.disconnect()
+      window.removeEventListener('resize', update)
+    }
+  }, [open])
+
   useEffect(() => {
     if (!open) {
       return
@@ -85,66 +136,80 @@ export function UsagePercentageDisplayChangeNotice({
     openUsagePercentageSettings()
   }
 
-  return (
-    <div className="relative flex items-center gap-3">
-      {children}
-      {open ? (
-        <div
-          role="status"
-          className="status-bar-change-notice-card absolute bottom-full left-0 z-50 mb-2.5 w-[320px] max-w-[calc(100vw-24px)] rounded-lg p-3.5"
-        >
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0 space-y-1.5">
-              <div className="flex items-center gap-2">
-                <span
-                  className="flex size-6 shrink-0 items-center justify-center rounded-full border border-border bg-secondary text-foreground"
-                  aria-hidden="true"
-                >
-                  <BarChart3 className="size-3.5" />
-                </span>
-                <div className="text-sm font-semibold leading-snug">
-                  {translate(
-                    'auto.components.status.bar.UsagePercentageDisplayChangeNotice.title',
-                    'Usage now shows % used'
-                  )}
+  const card =
+    open && anchorPosition
+      ? createPortal(
+          <div
+            role="status"
+            // Why: dropdowns/context menus use z-[70]; this callout must sit
+            // under them so status-bar provider menus stay clickable.
+            className="status-bar-change-notice-card fixed z-[50] w-[320px] max-w-[calc(100vw-16px)] rounded-lg p-3.5"
+            style={{
+              bottom: anchorPosition.bottom,
+              left: anchorPosition.left
+            }}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0 space-y-1.5">
+                <div className="flex items-center gap-2">
+                  <span
+                    className="flex size-6 shrink-0 items-center justify-center rounded-full border border-border bg-secondary text-foreground"
+                    aria-hidden="true"
+                  >
+                    <BarChart3 className="size-3.5" />
+                  </span>
+                  <div className="text-sm font-semibold leading-snug">
+                    {translate(
+                      'auto.components.status.bar.UsagePercentageDisplayChangeNotice.title',
+                      'Usage now shows % used'
+                    )}
+                  </div>
                 </div>
+                <p className="text-sm leading-5 text-muted-foreground">
+                  {translate(
+                    'auto.components.status.bar.UsagePercentageDisplayChangeNotice.body',
+                    'Prefer remaining? Change it in Settings.'
+                  )}
+                </p>
               </div>
-              <p className="text-sm leading-5 text-muted-foreground">
-                {translate(
-                  'auto.components.status.bar.UsagePercentageDisplayChangeNotice.body',
-                  'Prefer remaining? Change it in Settings.'
+              <Button
+                variant="ghost"
+                size="icon"
+                className="size-7 shrink-0"
+                onClick={dismiss}
+                aria-label={translate(
+                  'auto.components.status.bar.UsagePercentageDisplayChangeNotice.dismiss',
+                  'Dismiss'
                 )}
-              </p>
+              >
+                <X className="size-3.5" />
+              </Button>
             </div>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="size-7 shrink-0"
-              onClick={dismiss}
-              aria-label={translate(
-                'auto.components.status.bar.UsagePercentageDisplayChangeNotice.dismiss',
-                'Dismiss'
-              )}
-            >
-              <X className="size-3.5" />
-            </Button>
-          </div>
-          <div className="mt-3 flex gap-2">
-            <Button variant="default" size="sm" className="min-w-0 flex-1" onClick={openSettings}>
-              {translate(
-                'auto.components.status.bar.UsagePercentageDisplayChangeNotice.openSettings',
-                'Open Settings'
-              )}
-            </Button>
-            <Button variant="secondary" size="sm" className="w-[84px]" onClick={dismiss}>
-              {translate(
-                'auto.components.status.bar.UsagePercentageDisplayChangeNotice.gotIt',
-                'Got it'
-              )}
-            </Button>
-          </div>
-        </div>
-      ) : null}
-    </div>
+            <div className="mt-3 flex gap-2">
+              <Button variant="default" size="sm" className="min-w-0 flex-1" onClick={openSettings}>
+                {translate(
+                  'auto.components.status.bar.UsagePercentageDisplayChangeNotice.openSettings',
+                  'Open Settings'
+                )}
+              </Button>
+              <Button variant="secondary" size="sm" className="w-[84px]" onClick={dismiss}>
+                {translate(
+                  'auto.components.status.bar.UsagePercentageDisplayChangeNotice.gotIt',
+                  'Got it'
+                )}
+              </Button>
+            </div>
+          </div>,
+          document.body
+        )
+      : null
+
+  return (
+    <>
+      <div ref={anchorRef} className="flex items-center gap-3">
+        {children}
+      </div>
+      {card}
+    </>
   )
 }
