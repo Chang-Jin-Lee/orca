@@ -4004,6 +4004,9 @@ export default function SessionScreen() {
               })
           }
         } else {
+          // Why: a prior pending handle must not outlive a create that returned
+          // no terminal; web-ready subscribe gates on this ref as active.
+          pendingActiveTerminalHandleRef.current = null
           activeHandleRef.current = null
           setActiveHandle(null)
         }
