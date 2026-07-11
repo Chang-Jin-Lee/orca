@@ -14,6 +14,13 @@ export type TrackedClaudeSubagent = {
   description?: string
   state: 'working' | 'idle'
   startedAt: number
+  /** The id came from background_tasks or a persisted snapshot, not live
+   *  lifecycle events, so a PRESENT list omitting it proves the task is gone
+   *  (a phantom seeded before restart would otherwise gate the pane 'working'
+   *  forever — teams sessions never send an empty list). Cleared once live
+   *  activity re-tracks the id, so a seeded-but-alive teammate is demoted at
+   *  most until its next tool event. */
+  backgroundTasksAuthoritative?: boolean
 }
 
 /** One agent entry from the `background_tasks` array Claude attaches to Stop
@@ -43,6 +50,10 @@ export function upsertWorkingClaudeSubagent(
     existing.state = 'working'
     existing.agentType = fields.agentType ?? existing.agentType
     existing.description = fields.description ?? existing.description
+    // Why: live activity proves the lifecycle stream owns this id again;
+    // background_tasks absence must stop demoting it (teammate ids never
+    // appear there). The fold re-tags its own recreations after this call.
+    existing.backgroundTasksAuthoritative = undefined
     return
   }
   if (roster.size >= AGENT_STATUS_MAX_SUBAGENTS && !evictOldestIdleClaudeSubagent(roster)) {
@@ -128,7 +139,10 @@ export function readClaudeBackgroundAgentTasks(hookPayload: Record<string, unkno
  *    task id) is trusted fully — description enrichment and run state;
  *  - an unmatched RUNNING non-teammate entry is a one-shot subagent this
  *    listener never saw start (Orca/relay restart mid-run) → recreate it so
- *    the pane doesn't read done while the child still runs. */
+ *    the pane doesn't read done while the child still runs;
+ *  - a roster entry whose id is KNOWN to be a task id
+ *    (backgroundTasksAuthoritative) but is missing from the present list is
+ *    finished → demote it to idle. */
 export function foldClaudeBackgroundTasksIntoRoster(
   roster: ClaudeSubagentRoster,
   tasks: ClaudeBackgroundAgentTask[],
@@ -138,7 +152,9 @@ export function foldClaudeBackgroundTasksIntoRoster(
     roster.clear()
     return
   }
+  const listedIds = new Set<string>()
   for (const task of tasks) {
+    listedIds.add(task.id)
     const existing = roster.get(task.id)
     if (existing) {
       existing.state = task.running ? 'working' : 'idle'
@@ -155,7 +171,25 @@ export function foldClaudeBackgroundTasksIntoRoster(
       { agentType: task.agentType, description: task.description },
       now
     )
+    const created = roster.get(task.id)
+    if (created) {
+      created.backgroundTasksAuthoritative = true
+    }
   }
+  for (const [id, tracked] of roster) {
+    if (tracked.backgroundTasksAuthoritative && tracked.state === 'working' && !listedIds.has(id)) {
+      tracked.state = 'idle'
+    }
+  }
+}
+
+/** Whether a lifecycle agent id belongs to the named teammate. Teammate ids
+ *  embed the name as `a<name>-<hex>`; requiring a hyphen-free suffix keeps
+ *  teammate "rev" from matching "rev-two"'s ids (`arev-two-<hex>`), while a
+ *  hyphenated name still matches its own ids exactly. */
+export function claudeTeammateIdMatchesName(id: string, name: string): boolean {
+  const prefix = `a${name}-`
+  return id.startsWith(prefix) && !id.slice(prefix.length).includes('-')
 }
 
 /** Mark a teammate idle from a TeammateIdle hook, which is keyed by name.
@@ -164,11 +198,10 @@ export function foldClaudeBackgroundTasksIntoRoster(
  *  matches, so a one-shot subagent whose agent_type happens to collide with a
  *  teammate's name isn't wrongly idled alongside it. */
 export function markClaudeTeammateIdleByName(roster: ClaudeSubagentRoster, name: string): boolean {
-  const idPrefix = `a${name}-`
   let matchedById = false
   let changed = false
   for (const [id, tracked] of roster) {
-    if (!id.startsWith(idPrefix)) {
+    if (!claudeTeammateIdMatchesName(id, name)) {
       continue
     }
     matchedById = true

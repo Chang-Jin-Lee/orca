@@ -3,6 +3,7 @@ import { AGENT_STATUS_MAX_SUBAGENTS } from './agent-status-types'
 import {
   claudeRosterHasWorkingSubagent,
   claudeRosterToSnapshots,
+  claudeTeammateIdMatchesName,
   foldClaudeBackgroundTasksIntoRoster,
   markClaudeSubagentIdle,
   markClaudeTeammateIdleByName,
@@ -171,6 +172,69 @@ describe('claude-subagent-roster', () => {
     upsertWorkingClaudeSubagent(roster, 'a1', {}, 100)
     foldClaudeBackgroundTasksIntoRoster(roster, [], 100)
     expect(roster.size).toBe(0)
+  })
+
+  it('demotes task-id-authoritative entries missing from a present list', () => {
+    const roster: ClaudeSubagentRoster = new Map()
+    // Why: seeded/bt-sourced ids ARE task ids; absence from a present list
+    // proves the task finished. Lifecycle-tracked ids (teammates) prove
+    // nothing by absence and must keep their state.
+    roster.set('a-phantom', {
+      state: 'working',
+      startedAt: 100,
+      backgroundTasksAuthoritative: true
+    })
+    upsertWorkingClaudeSubagent(roster, 'ateam-xyz', { agentType: 'reviewer' }, 150)
+
+    foldClaudeBackgroundTasksIntoRoster(
+      roster,
+      [
+        { id: 'other', agentType: undefined, description: undefined, running: true, teammate: true }
+      ],
+      200
+    )
+    expect(roster.get('a-phantom')).toMatchObject({ state: 'idle' })
+    expect(roster.get('ateam-xyz')).toMatchObject({ state: 'working' })
+  })
+
+  it('marks fold-recreated entries as task-id-authoritative for later folds', () => {
+    const roster: ClaudeSubagentRoster = new Map()
+    foldClaudeBackgroundTasksIntoRoster(
+      roster,
+      [{ id: 'a9', agentType: undefined, description: undefined, running: true, teammate: false }],
+      100
+    )
+    foldClaudeBackgroundTasksIntoRoster(
+      roster,
+      [
+        { id: 'other', agentType: undefined, description: undefined, running: true, teammate: true }
+      ],
+      200
+    )
+    expect(roster.get('a9')).toMatchObject({ state: 'idle' })
+  })
+
+  it('stops demoting an entry once live activity re-tracks it', () => {
+    const roster: ClaudeSubagentRoster = new Map()
+    roster.set('a-seeded', { state: 'working', startedAt: 100, backgroundTasksAuthoritative: true })
+    upsertWorkingClaudeSubagent(roster, 'a-seeded', {}, 150)
+
+    foldClaudeBackgroundTasksIntoRoster(
+      roster,
+      [
+        { id: 'other', agentType: undefined, description: undefined, running: true, teammate: true }
+      ],
+      200
+    )
+    expect(roster.get('a-seeded')).toMatchObject({ state: 'working' })
+  })
+
+  it('matches teammate ids by name only up to the hyphen-free suffix', () => {
+    expect(claudeTeammateIdMatchesName('aprobe1-6d3cb5b5', 'probe1')).toBe(true)
+    expect(claudeTeammateIdMatchesName('alane-hooks-6d3cb5b5', 'lane-hooks')).toBe(true)
+    expect(claudeTeammateIdMatchesName('alane-hooks-6d3cb5b5', 'lane')).toBe(false)
+    expect(claudeTeammateIdMatchesName('aprobe1-6d3cb5b5', 'probe')).toBe(false)
+    expect(claudeTeammateIdMatchesName('aprobe1', 'probe1')).toBe(false)
   })
 
   it('marks teammates idle by name via agent_type or agent_id prefix', () => {

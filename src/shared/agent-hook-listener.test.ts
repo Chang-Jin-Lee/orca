@@ -2415,6 +2415,140 @@ describe('shared agent-hook-listener', () => {
       expect(stopped?.payload.state).toBe('working')
     })
 
+    it('restores a finished lead to done after a child permission wait clears', () => {
+      claudeEvent({ hook_event_name: 'UserPromptSubmit', prompt: 'bg task' })
+      claudeEvent({
+        hook_event_name: 'SubagentStart',
+        agent_id: 'a1',
+        agent_type: 'general-purpose'
+      })
+      claudeEvent({
+        hook_event_name: 'Stop',
+        background_tasks: [{ id: 'a1', type: 'subagent', status: 'running' }]
+      })
+
+      const blocked = claudeEvent({
+        hook_event_name: 'PermissionRequest',
+        agent_id: 'a1',
+        tool_name: 'Bash',
+        tool_input: { command: 'rm -rf build' }
+      })
+      expect(blocked?.payload.state).toBe('waiting')
+
+      const approved = claudeEvent({
+        hook_event_name: 'PreToolUse',
+        agent_id: 'a1',
+        tool_name: 'Bash',
+        tool_input: { command: 'rm -rf build' }
+      })
+      expect(approved?.payload.state).toBe('working')
+
+      // Why: the lead already stopped before the wait; draining the child
+      // must resolve to done, not pin the pane on an invented 'working'.
+      const drained = claudeEvent({ hook_event_name: 'SubagentStop', agent_id: 'a1' })
+      expect(drained?.payload.state).toBe('done')
+    })
+
+    it('resolves to done when a blocked child dies after the lead finished', () => {
+      claudeEvent({ hook_event_name: 'UserPromptSubmit', prompt: 'bg task' })
+      claudeEvent({
+        hook_event_name: 'SubagentStart',
+        agent_id: 'a1',
+        agent_type: 'general-purpose'
+      })
+      claudeEvent({
+        hook_event_name: 'Stop',
+        background_tasks: [{ id: 'a1', type: 'subagent', status: 'running' }]
+      })
+      claudeEvent({
+        hook_event_name: 'PermissionRequest',
+        agent_id: 'a1',
+        tool_name: 'Bash',
+        tool_input: { command: 'sleep 999' }
+      })
+
+      const stopped = claudeEvent({ hook_event_name: 'SubagentStop', agent_id: 'a1' })
+      expect(stopped?.payload.state).toBe('done')
+    })
+
+    it('demotes a snapshot-seeded child missing from a present background_tasks list', () => {
+      seedClaudeSubagentRosterFromSnapshots(state, PANE_KEY, [
+        { id: 'a77', state: 'working', startedAt: 1000, agentType: 'general-purpose' }
+      ])
+      claudeEvent({ hook_event_name: 'UserPromptSubmit', prompt: 'after restart' })
+      // Why: teams sessions never send an EMPTY list — the alive teammate
+      // entry must not keep a phantom pre-restart child gating the pane.
+      const stop = claudeEvent({
+        hook_event_name: 'Stop',
+        background_tasks: [
+          { id: 'tlkjjs0jv', type: 'teammate', status: 'running', description: 'alive' }
+        ]
+      })
+      expect(stop?.payload.state).toBe('done')
+      expect(stop?.payload.subagents).toEqual([
+        expect.objectContaining({ id: 'a77', state: 'idle' })
+      ])
+    })
+
+    it('keeps a snapshot-seeded child working while background_tasks still lists it', () => {
+      seedClaudeSubagentRosterFromSnapshots(state, PANE_KEY, [
+        { id: 'a77', state: 'working', startedAt: 1000, agentType: 'general-purpose' }
+      ])
+      claudeEvent({ hook_event_name: 'UserPromptSubmit', prompt: 'after restart' })
+      const stop = claudeEvent({
+        hook_event_name: 'Stop',
+        background_tasks: [{ id: 'a77', type: 'subagent', status: 'running' }]
+      })
+      expect(stop?.payload.state).toBe('working')
+      expect(stop?.payload.subagents).toEqual([
+        expect.objectContaining({ id: 'a77', state: 'working' })
+      ])
+    })
+
+    it('does not adopt a known child turn-boundary event as the lead state', () => {
+      claudeEvent({ hook_event_name: 'UserPromptSubmit', prompt: 'go' })
+      claudeEvent({
+        hook_event_name: 'SubagentStart',
+        agent_id: 'a1',
+        agent_type: 'general-purpose'
+      })
+      // Why: a CLI that stops converting child Stops to SubagentStop must not
+      // retire the pane while the lead still works.
+      const childStop = claudeEvent({ hook_event_name: 'Stop', agent_id: 'a1' })
+      expect(childStop?.payload.state).toBe('working')
+      expect(childStop?.payload.prompt).toBe('go')
+
+      const leadStop = claudeEvent({ hook_event_name: 'Stop', background_tasks: [] })
+      expect(leadStop?.payload.state).toBe('done')
+    })
+
+    it('scopes TeammateIdle to the exact teammate name for hyphen-prefix names', () => {
+      claudeEvent({
+        hook_event_name: 'SubagentStart',
+        agent_id: 'alane-hooks-6d3cb5b5',
+        agent_type: 'lane-hooks'
+      })
+      // Why: teammate "lane" must not idle "lane-hooks"'s rows via the
+      // `a<name>-` prefix — the id suffix after the name is hyphen-free hex.
+      const idledOther = claudeEvent({
+        hook_event_name: 'TeammateIdle',
+        teammate_name: 'lane',
+        team_name: 'session-x'
+      })
+      expect(idledOther?.payload.subagents).toEqual([
+        expect.objectContaining({ id: 'alane-hooks-6d3cb5b5', state: 'working' })
+      ])
+
+      const idled = claudeEvent({
+        hook_event_name: 'TeammateIdle',
+        teammate_name: 'lane-hooks',
+        team_name: 'session-x'
+      })
+      expect(idled?.payload.subagents).toEqual([
+        expect.objectContaining({ id: 'alane-hooks-6d3cb5b5', state: 'idle' })
+      ])
+    })
+
     it('keeps an inferred interrupt terminal across later child lifecycle events', () => {
       claudeEvent({ hook_event_name: 'UserPromptSubmit', prompt: 'cancel me' })
       claudeEvent({

@@ -37,6 +37,7 @@ import {
 import {
   claudeRosterHasWorkingSubagent,
   claudeRosterToSnapshots,
+  claudeTeammateIdMatchesName,
   foldClaudeBackgroundTasksIntoRoster,
   markClaudeSubagentIdle,
   markClaudeTeammateIdleByName,
@@ -122,6 +123,11 @@ export type ClaudeLeadTurnState = {
    *  next tool activity may clear the wait — other children's churn must not
    *  dismiss a pending human-input card. */
   waitingAgentId?: string
+  /** The lead state a child-induced wait displaced. Restored when the wait
+   *  clears — the lead may have already finished its turn, and inventing
+   *  'working' would leave the pane spinning after the roster drains (the
+   *  done-gate only ever downgrades done → working, never back). */
+  stateBeforeWait?: Pick<ClaudeLeadTurnState, 'state' | 'interrupted'>
 }
 
 export function createHookListenerState(): HookListenerState {
@@ -2353,7 +2359,7 @@ function normalizeClaudeSubagentLifecycleEvent(
     }
     markClaudeTeammateIdleByName(roster, teammateName)
     clearClaudePendingWaitForAgent(state, paneKey, (waitingAgentId) =>
-      waitingAgentId.startsWith(`a${teammateName}-`)
+      claudeTeammateIdMatchesName(waitingAgentId, teammateName)
     )
   } else {
     const agentId = readString(hookPayload, 'agent_id')
@@ -2405,15 +2411,20 @@ export function seedClaudeSubagentRosterFromSnapshots(
       state: snapshot.state === 'working' ? 'working' : 'idle',
       startedAt: snapshot.startedAt,
       agentType: snapshot.agentType,
-      description: snapshot.description
+      description: snapshot.description,
+      // Why: the seed can be a phantom (child finished while Orca was down,
+      // its SubagentStop lost). Let a PRESENT background_tasks list that
+      // omits the id demote it instead of gating the pane 'working' forever.
+      backgroundTasksAuthoritative: true
     })
   }
 }
 
-/** Drop a child-owned waiting state when that child stops/idles. The lead's
- *  true state is unknown at this point (the waiting event overwrote it), so
- *  fall back to 'working' and let the next lead event or the child-working
- *  gate resolve it — a transient spinner beats a permanently stuck card. */
+/** Drop a child-owned waiting state when that child stops/idles, restoring
+ *  the lead state the wait displaced. Without a stash (the wait was the
+ *  pane's first observed lead event) fall back to 'working' and let the next
+ *  lead event resolve it — a transient spinner beats a permanently stuck
+ *  card. */
 function clearClaudePendingWaitForAgent(
   state: HookListenerState,
   paneKey: string,
@@ -2423,7 +2434,7 @@ function clearClaudePendingWaitForAgent(
   if (lead?.state !== 'waiting' || !lead.waitingAgentId || !ownsWait(lead.waitingAgentId)) {
     return
   }
-  state.claudeLeadStateByPaneKey.set(paneKey, { state: 'working' })
+  state.claudeLeadStateByPaneKey.set(paneKey, lead.stateBeforeWait ?? { state: 'working' })
 }
 
 /** Emit a pane status refresh driven by child activity (lifecycle events and
@@ -2517,10 +2528,37 @@ function normalizeClaudeEvent(
   }
   if (subagentOriginId) {
     const lead = state.claudeLeadStateByPaneKey.get(paneKey)
-    const clearsPendingWait = lead?.state === 'waiting' && lead.waitingAgentId === subagentOriginId
-    if (!clearsPendingWait) {
+    if (lead?.state !== 'waiting' || lead.waitingAgentId !== subagentOriginId) {
       return buildClaudeChildDrivenStatusPayload(state, eventName, paneKey, hookPayload)
     }
+    // Why: approval granted — update the tool snapshot exactly as the lead's
+    // own next tool event would (dropping the pending card), but restore the
+    // lead state the wait displaced instead of adopting this child event as
+    // the lead's 'working': the lead may already be done, and the done-gate
+    // never upgrades working back to done once the roster drains.
+    const restored = lead.stateBeforeWait ?? { state: 'working' as const }
+    state.claudeLeadStateByPaneKey.set(paneKey, restored)
+    const roster = state.claudeSubagentRosterByPaneKey.get(paneKey)
+    return buildClaudeStatusPayload(state, eventName, promptText, paneKey, hookPayload, {
+      stateName:
+        restored.state === 'done' && claudeRosterHasWorkingSubagent(roster)
+          ? 'working'
+          : restored.state,
+      updateToolSnapshot: true,
+      interrupted: restored.interrupted
+    })
+  }
+
+  // Why: lead events never carry agent_id, so a known child's id on a
+  // turn-boundary event (a CLI that stops converting child Stops to
+  // SubagentStop) must not retire or resurrect the pane as if the lead
+  // spoke — re-emit it as child activity instead.
+  if (
+    eventAgentId &&
+    !isWaitingInducing &&
+    state.claudeSubagentRosterByPaneKey.get(paneKey)?.has(eventAgentId)
+  ) {
+    return buildClaudeChildDrivenStatusPayload(state, eventName, paneKey, hookPayload)
   }
 
   if (eventName === 'Stop' || eventName === 'StopFailure') {
@@ -2540,10 +2578,25 @@ function normalizeClaudeEvent(
   }
   const interrupted =
     eventName === 'Stop' && hookPayload['is_interrupt'] === true ? true : undefined
+  // Why: a child-induced wait displaces the lead's own state; stash it so
+  // clearing the wait restores reality (the lead may already be done). A
+  // second child wait carries the ORIGINAL stash forward, not the
+  // intermediate waiting state.
+  const previousLead = state.claudeLeadStateByPaneKey.get(paneKey)
+  const stateBeforeWait =
+    isWaitingInducing && eventAgentId && previousLead
+      ? previousLead.state === 'waiting'
+        ? previousLead.stateBeforeWait
+        : {
+            state: previousLead.state,
+            ...(previousLead.interrupted ? { interrupted: true as const } : {})
+          }
+      : undefined
   state.claudeLeadStateByPaneKey.set(paneKey, {
     state: stateName,
     ...(interrupted ? { interrupted } : {}),
-    ...(isWaitingInducing && eventAgentId ? { waitingAgentId: eventAgentId } : {})
+    ...(isWaitingInducing && eventAgentId ? { waitingAgentId: eventAgentId } : {}),
+    ...(stateBeforeWait ? { stateBeforeWait } : {})
   })
 
   // Why: the lead ending its turn is not "done" while spawned subagents or
@@ -2585,8 +2638,10 @@ function buildClaudeStatusPayload(
   // while claudeLeadStateByPaneKey preserves it for the eventual done.
   return normalizeAgentStatusPayload({
     state: options.stateName,
+    // Why: only lead-origin events (updateToolSnapshot) may reset the prompt
+    // cache; a child-driven refresh must not blank the lead's prompt label.
     prompt: resolvePrompt(state, paneKey, promptText, {
-      resetOnNewTurn: isNewTurnEvent('claude', eventName)
+      resetOnNewTurn: options.updateToolSnapshot && isNewTurnEvent('claude', eventName)
     }),
     agentType: 'claude',
     toolName: snapshot.toolName,
