@@ -2362,7 +2362,9 @@
             "failed": "Workspaces not removed: {{value0}}",
             "error": "Workspace cleanup failed",
             "skippedAncestor": "Skipped because a nested workspace could not be removed.",
-            "timedOut": "Removing {{value0}} is taking longer than expected. It will keep running in the background."
+            "timedOut": "Removing {{value0}} is taking longer than expected. It will keep running in the background.",
+            "stillRemoving": "Still removing workspaces: {{value0}}",
+            "skippedPendingAncestor": "Skipped because a nested workspace has not finished removing."
           },
           "candidateRow": {
             "gitLabel": "Git",

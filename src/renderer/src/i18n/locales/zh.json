@@ -2362,7 +2362,9 @@
             "failed": "未删除工作区：{{value0}}",
             "error": "工作区清理失败",
             "skippedAncestor": "由于无法删除嵌套工作区，已跳过。",
-            "timedOut": "删除 {{value0}} 的时间比预期长。它将在后台继续运行。"
+            "timedOut": "删除 {{value0}} 的时间比预期长。它将在后台继续运行。",
+            "stillRemoving": "Still removing workspaces: {{value0}}",
+            "skippedPendingAncestor": "Skipped because a nested workspace has not finished removing."
           },
           "candidateRow": {
             "gitLabel": "Git",

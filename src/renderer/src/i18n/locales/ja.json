@@ -2362,7 +2362,9 @@
             "failed": "削除できなかったワークスペース: {{value0}}",
             "error": "ワークスペースのクリーンアップに失敗しました",
             "skippedAncestor": "ネストされたワークスペースを削除できなかったためスキップしました。",
-            "timedOut": "{{value0}} の削除に予想より時間がかかっています。バックグラウンドで継続されます。"
+            "timedOut": "{{value0}} の削除に予想より時間がかかっています。バックグラウンドで継続されます。",
+            "stillRemoving": "Still removing workspaces: {{value0}}",
+            "skippedPendingAncestor": "Skipped because a nested workspace has not finished removing."
           },
           "candidateRow": {
             "gitLabel": "Git",
