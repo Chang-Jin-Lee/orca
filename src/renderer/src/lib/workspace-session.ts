@@ -141,6 +141,7 @@ export function buildEditorSessionData(
       // Why: persist read-only only when true so pre-existing writable sessions
       // stay writable on restore (absence is the writable default).
       ...(f.readOnly === true ? { readOnly: true } : {}),
+      ...(f.readOnly === true && f.liveTail === true ? { liveTail: true } : {}),
       ...(dirtyDraftContent !== undefined ? { dirtyDraftContent } : {}),
       // Why: the edit baseline travels with the dirty draft so a restore can
       // re-derive a changed-on-disk conflict before autosave may overwrite an

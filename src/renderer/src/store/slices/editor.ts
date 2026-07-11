@@ -287,6 +287,9 @@ export type OpenFile = {
    *  so an agent-owned transcript cannot be mutated through editor write paths.
    *  Persisted only when true; absence is the writable default. */
   readOnly?: boolean
+  /** Why: live tail is explicit and only meaningful for a read-only local log;
+   *  ordinary editor tabs and read-only snapshots keep their existing behavior. */
+  liveTail?: boolean
   mode: 'edit' | 'diff' | 'conflict-review' | 'markdown-preview' | 'check-details'
 }
 
@@ -4378,6 +4381,7 @@ export const createEditorSlice: StateCreator<AppState, [], [], EditorSlice> = (s
             isPreview: pf.isPreview,
             runtimeEnvironmentId: pf.runtimeEnvironmentId,
             ...(isReadOnly ? { readOnly: true } : {}),
+            ...(isReadOnly && pf.liveTail === true ? { liveTail: true } : {}),
             lastKnownDiskSignature: isReadOnly ? undefined : pf.lastKnownDiskSignature,
             // Why: hard-suspends autosave until the restored-tab conflict scan
             // verifies disk against the baseline — an async race would let a

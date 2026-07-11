@@ -138,7 +138,8 @@ describe('workspace session editor drafts', () => {
             // Why: even if isDirty is somehow set, a read-only tab must not
             // persist a draft that a restore could write back to disk.
             isDirty: true,
-            readOnly: true
+            readOnly: true,
+            liveTail: true
           } as never
         ],
         editorDrafts: {
@@ -149,7 +150,11 @@ describe('workspace session editor drafts', () => {
 
     const persisted = payload.openFilesByWorktree?.['wt-1']?.[0]
     expect(persisted).toEqual(
-      expect.objectContaining({ filePath: '/home/user/.claude/log.jsonl', readOnly: true })
+      expect.objectContaining({
+        filePath: '/home/user/.claude/log.jsonl',
+        readOnly: true,
+        liveTail: true
+      })
     )
     expect(persisted).toEqual(
       expect.not.objectContaining({ dirtyDraftContent: expect.any(String) })

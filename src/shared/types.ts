@@ -1030,6 +1030,8 @@ export type PersistedOpenFile = {
   /** Why: a read-only tab (AI Vault View Log) must survive restart still
    *  read-only; persisted only when true so old sessions stay writable. */
   readOnly?: boolean
+  /** Opt-in streaming append for a read-only local log tab. */
+  liveTail?: boolean
 }
 
 export type WorkspaceSessionState = {

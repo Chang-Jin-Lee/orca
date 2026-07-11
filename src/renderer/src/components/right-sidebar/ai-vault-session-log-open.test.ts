@@ -73,7 +73,8 @@ describe('openAiVaultSessionLogInOrca', () => {
       runtimeEnvironmentId: null,
       language: 'jsonl',
       mode: 'edit',
-      readOnly: true
+      readOnly: true,
+      liveTail: true
     })
     expect(options).toEqual({
       preview: false,

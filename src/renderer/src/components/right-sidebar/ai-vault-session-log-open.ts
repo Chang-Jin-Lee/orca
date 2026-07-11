@@ -122,7 +122,8 @@ export async function openAiVaultSessionLogInOrca(session: AiVaultLogSession): P
         runtimeEnvironmentId: null,
         language: detectLanguage(filePath),
         mode: 'edit',
-        readOnly: true
+        readOnly: true,
+        liveTail: true
       },
       {
         preview: false,

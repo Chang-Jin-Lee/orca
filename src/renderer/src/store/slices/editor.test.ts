@@ -4561,6 +4561,7 @@ describe('read-only editor tabs (AI Vault View Log)', () => {
         language: 'jsonl',
         mode: 'edit',
         readOnly: true,
+        liveTail: true,
         runtimeEnvironmentId: null
       },
       { preview: false, forceContentReload: true, suppressActiveRuntimeFallback: true }
@@ -4575,6 +4576,7 @@ describe('read-only editor tabs (AI Vault View Log)', () => {
         filePath: LOG_PATH,
         mode: 'edit',
         readOnly: true,
+        liveTail: true,
         isPreview: undefined,
         runtimeEnvironmentId: null
       })
@@ -4651,6 +4653,7 @@ describe('read-only editor tabs (AI Vault View Log)', () => {
             worktreeId: 'wt-1',
             language: 'jsonl',
             readOnly: true,
+            liveTail: true,
             // Why: a corrupt/legacy session could carry a draft; hydrate must
             // hard-strip it so the restored log can never come back writable.
             dirtyDraftContent: 'should be ignored',
@@ -4662,7 +4665,7 @@ describe('read-only editor tabs (AI Vault View Log)', () => {
 
     const restored = store.getState().openFiles.find((f) => f.filePath === LOG_PATH)
     expect(restored).toEqual(
-      expect.objectContaining({ readOnly: true, isDirty: false, mode: 'edit' })
+      expect.objectContaining({ readOnly: true, liveTail: true, isDirty: false, mode: 'edit' })
     )
     expect(restored?.pendingDiskBaselineVerification).toBeUndefined()
     expect(store.getState().editorDrafts[LOG_PATH]).toBeUndefined()
