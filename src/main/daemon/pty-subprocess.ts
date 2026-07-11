@@ -14,6 +14,7 @@ import { isValidPtySize, normalizePtySize } from './daemon-pty-size'
 import {
   ensureNodePtySpawnHelperExecutable,
   getNodePtySpawnHelperCandidates,
+  resolveUnixShellPath,
   validateWorkingDirectory
 } from '../providers/local-pty-utils'
 import { wrapShellSpawnForMacosTccAttribution } from '../providers/macos-tcc-login-shell'
@@ -728,6 +729,14 @@ export function createPtySubprocess(opts: PtySubprocessOptions): SubprocessHandl
       addOrcaWslInteropEnv(env)
     }
   } else {
+    const preferredShellPath = shellPath
+    shellPath = resolveUnixShellPath(shellPath)
+    if (shellPath !== preferredShellPath) {
+      env.SHELL = shellPath
+      console.warn(
+        `[daemon/pty] Preferred shell "${preferredShellPath}" is unavailable, fell back to "${shellPath}"`
+      )
+    }
     // Why: relay-side launch modes can ask for host defaults to stay scrubbed
     // even after environment normalization above.
     for (const key of opts.envToDelete ?? []) {
