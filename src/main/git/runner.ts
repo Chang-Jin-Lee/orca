@@ -614,7 +614,10 @@ export function promptGuardGitEnv(
     // would never see the guard — and WSL setups commonly use the Windows
     // credential manager as git's helper, which pops the same OAuth window
     // (issue #7652). Askpass vars are deliberately not forwarded: a Windows
-    // askpass path is meaningless inside the distro.
+    // askpass path is meaningless inside the distro. GIT_CONFIG_* must be
+    // forwarded all-or-nothing (including caller-preexisting entries): a
+    // GIT_CONFIG_COUNT that crosses without every KEY_n/VALUE_n below it makes
+    // git error out on "bogus count".
     addWslEnvKeys(next, [
       'GIT_TERMINAL_PROMPT',
       'GCM_INTERACTIVE',

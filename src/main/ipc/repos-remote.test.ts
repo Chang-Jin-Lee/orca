@@ -9,6 +9,7 @@ import { existsSync } from 'node:fs'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import type * as GitRunner from '../git/runner'
 import type * as RepoModule from '../git/repo'
 import { DEFAULT_REPO_BADGE_COLOR } from '../../shared/constants'
 import { getGitRepoRoot, isGitRepo } from '../git/repo'
@@ -102,16 +103,12 @@ vi.mock('../git/repo', async () => {
   }
 })
 
-vi.mock('../git/runner', () => ({
+vi.mock('../git/runner', async () => ({
+  // Why: keep the real nonInteractiveGitEnv so the clone regression test
+  // (#7652) asserts the actual guard's markers, not a mock echoing itself.
+  ...(await vi.importActual<typeof GitRunner>('../git/runner')),
   gitExecFileAsync: vi.fn(),
-  gitSpawn: gitSpawnMock,
-  // Mirrors the real guard's credential-prompt markers so the clone regression
-  // test (#7652) can assert Git Credential Manager's OAuth popup is disabled.
-  nonInteractiveGitEnv: (env: NodeJS.ProcessEnv = process.env) => ({
-    ...env,
-    GIT_TERMINAL_PROMPT: '0',
-    GCM_INTERACTIVE: 'never'
-  })
+  gitSpawn: gitSpawnMock
 }))
 
 vi.mock('../git/worktree', () => ({

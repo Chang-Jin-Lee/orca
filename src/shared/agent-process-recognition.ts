@@ -286,17 +286,20 @@ export function recognizeAgentProcess(
   return { agent, processName: normalized }
 }
 export function recognizeAgentProcessFromCommandLine(
-  commandLine: string | null | undefined
+  commandLine: string | null | undefined,
+  // Why: TUI consumers (status hooks, shell shadows) filter out headless
+  // one-shots (`claude -p …`); non-interactivity guards include them — a
+  // one-shot agent can't answer a prompt either.
+  options?: { includeHeadlessOneShot?: boolean }
 ): RecognizedAgentProcess | null {
   if (!commandLine) {
     return null
   }
+  const keep = options?.includeHeadlessOneShot === true
   const tokens = tokenizeCommandLine(commandLine)
   const firstNormalized = normalizeProcessName(tokens[0])
-  const directRecognition = filterHeadlessOneShotAgentCommand(
-    recognizeAgentProcess(tokens[0]),
-    tokens
-  )
+  const direct = recognizeAgentProcess(tokens[0])
+  const directRecognition = keep ? direct : filterHeadlessOneShotAgentCommand(direct, tokens)
   if (directRecognition) {
     return directRecognition
   }
@@ -304,10 +307,10 @@ export function recognizeAgentProcessFromCommandLine(
   if (!entrypoint) {
     return null
   }
-  const entrypointRecognition = isPythonProcessName(firstNormalized)
+  const viaEntrypoint = isPythonProcessName(firstNormalized)
     ? recognizePythonEntrypoint(tokens, entrypoint)
     : (recognizeAgentProcess(entrypoint) ?? recognizeNodeScriptEntrypoint(entrypoint))
-  return filterHeadlessOneShotAgentCommand(entrypointRecognition, tokens)
+  return keep ? viaEntrypoint : filterHeadlessOneShotAgentCommand(viaEntrypoint, tokens)
 }
 export function isAgentForegroundWrapperProcess(processName: string | null | undefined): boolean {
   const normalized = normalizeProcessName(processName)

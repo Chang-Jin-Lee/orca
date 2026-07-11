@@ -956,7 +956,15 @@ describe('runHook', () => {
       expect(execFileMock).toHaveBeenCalledWith(
         'wsl.exe',
         ['-d', 'Ubuntu', '--', 'bash', '-c', "cd '/home/jin/feature' && echo hello"],
-        expect.any(Object),
+        // #7652 regression: the unattended WSL hook branch must carry the
+        // credential guard, and WSLENV is what carries it into the distro.
+        expect.objectContaining({
+          env: expect.objectContaining({
+            GIT_TERMINAL_PROMPT: '0',
+            GCM_INTERACTIVE: 'never',
+            WSLENV: expect.stringContaining('GIT_TERMINAL_PROMPT')
+          })
+        }),
         expect.any(Function)
       )
       expect(execMock).not.toHaveBeenCalled()

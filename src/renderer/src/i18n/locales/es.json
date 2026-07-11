@@ -8478,7 +8478,16 @@
               "713c4a2f92": "Elija el shell predeterminado para los nuevos paneles de terminal en Windows.",
               "13715f9d23": "Shell predeterminado",
               "8630676830": "Block Git Credential Popups",
-              "9d8b09bc09": "Stop git in terminals from opening Git Credential Manager sign-in windows."
+              "9d8b09bc09": "Stop git in terminals from opening Git Credential Manager sign-in windows.",
+              "ba9f11ecc3": "git",
+              "7c7c74ef60": "credential",
+              "8eff361700": "popup",
+              "7c82e855b0": "oauth",
+              "bf215181b5": "github",
+              "b19a25c6a0": "sign in",
+              "ef5acdb939": "gcm",
+              "4ae35dbb42": "prompt",
+              "27e4a4878d": "credential manager"
             }
           }
         },

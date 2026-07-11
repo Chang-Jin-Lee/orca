@@ -27,7 +27,11 @@ export function applyTerminalGitCredentialPromptGuard(
     platform?: NodeJS.Platform
   }
 ): void {
-  const isAgentTerminal = Boolean(recognizeAgentProcessFromCommandLine(opts.launchCommand))
+  // Why: include headless one-shots (`claude -p …`) — those can answer a
+  // credential prompt even less than a TUI agent can.
+  const isAgentTerminal = Boolean(
+    recognizeAgentProcessFromCommandLine(opts.launchCommand, { includeHeadlessOneShot: true })
+  )
   const platform = opts.platform ?? process.platform
   if (!isAgentTerminal && (!opts.suppressUserTerminalPrompt || platform !== 'win32')) {
     return
@@ -35,8 +39,16 @@ export function applyTerminalGitCredentialPromptGuard(
   // Why: the shell variant — a terminal env is the user's whole environment,
   // so the git-runner locale pins (issue #7808) must not leak into it.
   for (const [key, value] of Object.entries(promptGuardShellEnv(env, platform))) {
-    if (typeof value === 'string') {
-      env[key] = value
+    if (typeof value !== 'string') {
+      continue
     }
+    // Why: the guard materializes GIT_ASKPASS/SSH_ASKPASS='' when absent.
+    // Daemon spawns pass a sparse wire env here and merge process.env later —
+    // a materialized '' would clobber a daemon-inherited askpass that the
+    // preserve-when-set design (see nonInteractiveGitEnv docs) means to keep.
+    if ((key === 'GIT_ASKPASS' || key === 'SSH_ASKPASS') && !(key in env)) {
+      continue
+    }
+    env[key] = value
   }
 }

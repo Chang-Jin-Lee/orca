@@ -636,7 +636,11 @@ export function runHook(
           {
             timeout: HOOK_TIMEOUT,
             encoding: 'utf-8',
-            env: { ...process.env, ...wslEnv }
+            // Why: same unattended-git guard as the non-WSL branch below
+            // (issue #7652) — WSL repos are the likeliest to hit the GCM
+            // popup, and the guard's WSLENV registration is what carries it
+            // across the wsl.exe boundary into the distro.
+            env: promptGuardShellEnv({ ...process.env, ...wslEnv })
           },
           (error, stdout, stderr) => {
             finish(error ?? null, stdout, stderr)

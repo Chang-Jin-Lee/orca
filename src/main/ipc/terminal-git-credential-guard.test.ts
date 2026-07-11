@@ -50,6 +50,35 @@ describe('applyTerminalGitCredentialPromptGuard', () => {
     expect(wslenvKeys).not.toContain('SSH_ASKPASS')
   })
 
+  it('guards a headless one-shot agent launch — it can answer a prompt even less than a TUI', () => {
+    const env: Record<string, string> = { PATH: '/usr/bin' }
+    applyTerminalGitCredentialPromptGuard(env, {
+      launchCommand: 'claude -p "fix the tests"',
+      suppressUserTerminalPrompt: false,
+      platform: 'darwin'
+    })
+    expect(isGuarded(env)).toBe(true)
+  })
+
+  it('never materializes an empty askpass into a sparse daemon wire env, but keeps a caller-set one', () => {
+    const sparse: Record<string, string> = { PATH: '/usr/bin' }
+    applyTerminalGitCredentialPromptGuard(sparse, {
+      launchCommand: 'claude',
+      suppressUserTerminalPrompt: true,
+      platform: 'win32'
+    })
+    expect(sparse.GIT_ASKPASS).toBeUndefined()
+    expect(sparse.SSH_ASKPASS).toBeUndefined()
+
+    const withAskpass: Record<string, string> = { PATH: '/usr/bin', GIT_ASKPASS: 'C:\\feeder.exe' }
+    applyTerminalGitCredentialPromptGuard(withAskpass, {
+      launchCommand: 'claude',
+      suppressUserTerminalPrompt: true,
+      platform: 'win32'
+    })
+    expect(withAskpass.GIT_ASKPASS).toBe('C:\\feeder.exe')
+  })
+
   it('never rewrites the terminal locale — the git-runner locale pins must not leak into a shell', () => {
     const env: Record<string, string> = { PATH: '/usr/bin', LC_ALL: 'ja_JP.UTF-8' }
     applyTerminalGitCredentialPromptGuard(env, {
