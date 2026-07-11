@@ -892,7 +892,16 @@ function Settings(): React.JSX.Element {
     const scrollTargetId = pendingScrollTargetRef.current
     const pendingNavSectionId = pendingNavSectionRef.current
 
-    if (scrollTargetId && pendingNavSectionId && settingsSearchQuery.trim() !== '') {
+    // Why: subsection deep links (scrollTarget ≠ pane id) must not keep a
+    // leftover search filter that can hide the target row. Pane-level deep
+    // links may intentionally pair with a filter (e.g. Appearance + "Usage
+    // percentages") so accordion sections force-open to the matching control.
+    if (
+      scrollTargetId &&
+      pendingNavSectionId &&
+      scrollTargetId !== pendingNavSectionId &&
+      settingsSearchQuery.trim() !== ''
+    ) {
       setSettingsSearchQuery('')
       return
     }

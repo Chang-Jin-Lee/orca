@@ -827,6 +827,8 @@ export type UISlice = {
   dismissMobileEmulatorAgentSetup: () => void
   projectOrderManualDefaultNoticeDismissed: boolean
   dismissProjectOrderManualDefaultNotice: () => void
+  usagePercentageDisplayChangeNoticeDismissed: boolean
+  dismissUsagePercentageDisplayChangeNotice: () => void
   usageEmptyStateDismissed: boolean
   dismissUsageEmptyState: () => void
   groupBy: 'none' | 'workspace-status' | 'repo' | 'pr-status'
@@ -1922,6 +1924,17 @@ export const createUISlice: StateCreator<AppState, [], [], UISlice> = (set, get)
       window.api.ui.set({ projectOrderManualDefaultNoticeDismissed: true }).catch(console.error)
       return { projectOrderManualDefaultNoticeDismissed: true }
     }),
+  // Why: defaults true so pre-hydration / brand-new sessions never flash the
+  // change notice before persistence resolves eligibility.
+  usagePercentageDisplayChangeNoticeDismissed: true,
+  dismissUsagePercentageDisplayChangeNotice: () =>
+    set((s) => {
+      if (s.usagePercentageDisplayChangeNoticeDismissed) {
+        return s
+      }
+      window.api.ui.set({ usagePercentageDisplayChangeNoticeDismissed: true }).catch(console.error)
+      return { usagePercentageDisplayChangeNoticeDismissed: true }
+    }),
   usageEmptyStateDismissed: false,
   dismissUsageEmptyState: () =>
     set((s) => {
@@ -2122,8 +2135,18 @@ export const createUISlice: StateCreator<AppState, [], [], UISlice> = (set, get)
   usagePercentageDisplay: DEFAULT_USAGE_PERCENTAGE_DISPLAY,
   setUsagePercentageDisplay: (display) => {
     const normalized = normalizeUsagePercentageDisplay(display)
-    window.api.ui.set({ usagePercentageDisplay: normalized }).catch(console.error)
-    set({ usagePercentageDisplay: normalized })
+    // Why: changing the control is the discovery path; permanently dismiss the
+    // one-time change notice so it does not reappear after the user adapted.
+    window.api.ui
+      .set({
+        usagePercentageDisplay: normalized,
+        usagePercentageDisplayChangeNoticeDismissed: true
+      })
+      .catch(console.error)
+    set({
+      usagePercentageDisplay: normalized,
+      usagePercentageDisplayChangeNoticeDismissed: true
+    })
   },
   workspacePortScan: null,
   workspacePortScansByKey: {},
@@ -2467,6 +2490,10 @@ export const createUISlice: StateCreator<AppState, [], [], UISlice> = (set, get)
         mobileEmulatorAgentSetupDismissed: ui.mobileEmulatorAgentSetupDismissed === true,
         projectOrderManualDefaultNoticeDismissed:
           ui.projectOrderManualDefaultNoticeDismissed === true,
+        // Why: load() resolves this for existing vs new profiles; treat only
+        // explicit true as dismissed so a false from migration still surfaces.
+        usagePercentageDisplayChangeNoticeDismissed:
+          ui.usagePercentageDisplayChangeNoticeDismissed === true,
         // Why: default false when undefined so existing users still see the CTA;
         // only an explicit dismissal persists true.
         usageEmptyStateDismissed: ui.usageEmptyStateDismissed === true,

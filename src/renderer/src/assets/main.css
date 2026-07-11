@@ -1209,6 +1209,88 @@
   background: color-mix(in srgb, var(--worktree-sidebar-foreground) 14%, var(--worktree-sidebar));
 }
 
+/* Why: status-bar usage-display change callout sits over same-luminance
+   terminal/titlebar chrome. Light and dark use separate opaque palettes (not
+   translucent glass) so the surface behind cannot bleed through. */
+.status-bar-change-notice-popover {
+  position: relative;
+  overflow: visible;
+  z-index: 60;
+  /* Why: kill default PopoverContent glass; blur + alpha re-darkens the fill. */
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+/* ── Light mode ────────────────────────────────────────
+   Paper card over light chrome (#fff / #f5f5f5). White top + soft cool gray
+   bottom so it lifts off the titlebar without looking like a hole. */
+:root:not(.dark) .status-bar-change-notice-popover,
+:root:not(.dark) .status-bar-change-notice-popover[data-slot='popover-content'] {
+  background: linear-gradient(165deg, #ffffff 0%, #f7f7f8 52%, #eef0f3 100%) !important;
+  border-color: #c8cdd6 !important;
+  color: #0a0a0a !important;
+  box-shadow:
+    0 0 0 1px rgb(15 23 42 / 0.06),
+    0 18px 40px rgb(15 23 42 / 0.14),
+    0 4px 12px rgb(15 23 42 / 0.08),
+    inset 0 1px 0 #ffffff !important;
+}
+
+:root:not(.dark) .status-bar-change-notice-popover .text-muted-foreground {
+  color: #52525b !important;
+}
+
+:root:not(.dark) .status-bar-change-notice-popover::after {
+  content: '';
+  position: absolute;
+  left: 1.25rem;
+  bottom: -6px;
+  width: 12px;
+  height: 12px;
+  transform: rotate(45deg);
+  border-right: 1px solid #c8cdd6;
+  border-bottom: 1px solid #c8cdd6;
+  background: #eef0f3;
+  box-shadow: 2px 2px 5px rgb(15 23 42 / 0.1);
+}
+
+/* ── Dark mode ─────────────────────────────────────────
+   Lifted charcoal over near-black terminal/titlebar (#0a0a0a / #171717). */
+.dark .status-bar-change-notice-popover,
+.dark .status-bar-change-notice-popover[data-slot='popover-content'] {
+  background: linear-gradient(
+    165deg,
+    color-mix(in srgb, #ffffff 18%, #2a2a2e) 0%,
+    #252528 48%,
+    #1a1a1d 100%
+  ) !important;
+  border-color: color-mix(in srgb, #ffffff 28%, transparent) !important;
+  color: #fafafa !important;
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, #ffffff 14%, transparent),
+    0 20px 48px rgb(0 0 0 / 0.65),
+    0 4px 14px rgb(0 0 0 / 0.45),
+    inset 0 1px 0 color-mix(in srgb, #ffffff 16%, transparent) !important;
+}
+
+.dark .status-bar-change-notice-popover .text-muted-foreground {
+  color: color-mix(in srgb, #fafafa 68%, transparent) !important;
+}
+
+.dark .status-bar-change-notice-popover::after {
+  content: '';
+  position: absolute;
+  left: 1.25rem;
+  bottom: -6px;
+  width: 12px;
+  height: 12px;
+  transform: rotate(45deg);
+  border-right: 1px solid color-mix(in srgb, #ffffff 28%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, #ffffff 28%, transparent);
+  background: #1a1a1d;
+  box-shadow: 2px 2px 8px rgb(0 0 0 / 0.5);
+}
+
 /* Why: the first-run Mobile Emulator intro sits directly under that menu row;
    an upward caret aligned to the phone icon reads as a callout, not a footer. */
 .mobile-emulator-tab-intro-callout--menu {
