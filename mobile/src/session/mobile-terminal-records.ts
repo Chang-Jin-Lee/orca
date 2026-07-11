@@ -116,6 +116,20 @@ function mobileSessionTabEqual(
   }
 }
 
+// Reconcile a partial session snapshot against the last known record for the
+// same terminal. The snapshot owns live fields (title, activity); the known
+// theme only survives when the snapshot omits it, since lightweight snapshots
+// can drop it.
+function mergeTerminalSnapshotWithKnownRecord(
+  snapshot: TerminalRecord,
+  known: TerminalRecord
+): TerminalRecord {
+  return {
+    ...snapshot,
+    terminalTheme: snapshot.terminalTheme ?? known.terminalTheme
+  }
+}
+
 export function mergeTerminalRecordsByCurrentOrder(
   terminalTabs: TerminalRecord[],
   currentTerminals: TerminalRecord[]
@@ -128,15 +142,9 @@ export function mergeTerminalRecordsByCurrentOrder(
   return [
     ...currentTerminals.map((terminal) => {
       const snapshotTerminal = terminalTabsByHandle.get(terminal.handle)
-      if (!snapshotTerminal) {
-        return terminal
-      }
-      // Why: lightweight session snapshots can omit the theme; keep the last
-      // known value while still accepting current title/activity fields.
-      return {
-        ...snapshotTerminal,
-        terminalTheme: snapshotTerminal.terminalTheme ?? terminal.terminalTheme
-      }
+      return snapshotTerminal
+        ? mergeTerminalSnapshotWithKnownRecord(snapshotTerminal, terminal)
+        : terminal
     }),
     ...terminalTabs.filter((terminal) => !currentHandles.has(terminal.handle))
   ]
