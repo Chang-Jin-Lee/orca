@@ -2391,7 +2391,11 @@ export const TERMINAL_METHODS: RpcAnyMethod[] = [
         // See docs/mobile-terminal-layout-state-machine.md.
         const layoutSeq = runtime.getLayout(ptyId)?.seq
         const snapshotFrameSeq = serialized?.seq ?? layoutSeq
-        const snapshotOutputSeq = serialized?.seq
+        // Why: recovery snapshots advance output coverage past the initial
+        // snapshot seq; query replay and boundary trims must track the seq
+        // that actually covered the buffered chunks or a query absorbed by a
+        // recovery snapshot gets zero replies.
+        let snapshotOutputSeq = serialized?.seq
         emit({
           type: 'subscribed',
           streamId,
@@ -2478,6 +2482,7 @@ export const TERMINAL_METHODS: RpcAnyMethod[] = [
           const trimmed = trimPendingOutputCoveredBySnapshot(pendingOutput, recovery.seq)
           pendingOutput = trimmed.chunks
           pendingOutputBytes = trimmed.bytes
+          snapshotOutputSeq = recovery.seq
         }
         buffering = false
         const bufferedOutput = pendingOutput.splice(0)
