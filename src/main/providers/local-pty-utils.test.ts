@@ -138,6 +138,14 @@ describe('resolveUnixShellPath', () => {
       'No executable Unix shell found (tried: /missing/zsh, /bin/zsh, /bin/bash, /bin/sh)'
     )
   })
+
+  it('dedupes a preferred shell that is already a fallback candidate', () => {
+    existsSyncMock.mockImplementation((path) => path === '/bin/sh')
+    accessSyncMock.mockReturnValue(undefined)
+
+    expect(resolveUnixShellPath('/bin/sh')).toBe('/bin/sh')
+    expect(existsSyncMock.mock.calls.map(([path]) => path)).toEqual(['/bin/sh'])
+  })
 })
 
 describe('spawnShellWithFallback macOS TCC login wrapping', () => {

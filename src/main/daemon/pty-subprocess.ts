@@ -729,14 +729,6 @@ export function createPtySubprocess(opts: PtySubprocessOptions): SubprocessHandl
       addOrcaWslInteropEnv(env)
     }
   } else {
-    const preferredShellPath = shellPath
-    shellPath = resolveUnixShellPath(shellPath)
-    if (shellPath !== preferredShellPath) {
-      env.SHELL = shellPath
-      console.warn(
-        `[daemon/pty] Preferred shell "${preferredShellPath}" is unavailable, fell back to "${shellPath}"`
-      )
-    }
     // Why: relay-side launch modes can ask for host defaults to stay scrubbed
     // even after environment normalization above.
     for (const key of opts.envToDelete ?? []) {
@@ -744,6 +736,17 @@ export function createPtySubprocess(opts: PtySubprocessOptions): SubprocessHandl
     }
     if (opts.env?.TERM) {
       env.TERM = opts.env.TERM
+    }
+    // Why after the scrub: SHELL must reflect the shell that actually spawns,
+    // matching LocalPtyProvider; and before the launch-config derivation below
+    // so shell-ready wrappers target the resolved shell, not a missing one.
+    const preferredShellPath = shellPath
+    shellPath = resolveUnixShellPath(shellPath)
+    if (shellPath !== preferredShellPath) {
+      env.SHELL = shellPath
+      console.warn(
+        `[daemon/pty] Preferred shell "${preferredShellPath}" is unavailable, fell back to "${shellPath}"`
+      )
     }
     // Why: OpenCode/Codex path restoration and OMP's typed-command status
     // wrapper need shell-ready code after user startup files run.
@@ -1010,6 +1013,7 @@ export function createPtySubprocess(opts: PtySubprocessOptions): SubprocessHandl
 
   return {
     pid: proc.pid,
+    shellPath,
     ...(startupCommandDeliveredInShellArgs ? { startupCommandDeliveredInShellArgs: true } : {}),
     getForegroundProcess: () => {
       // Why: node-pty's `.process` getter reports the PTY's live foreground
