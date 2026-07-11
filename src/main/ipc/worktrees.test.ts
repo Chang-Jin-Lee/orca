@@ -6363,21 +6363,28 @@ describe('registerWorktreeHandlers', () => {
       })
     )
 
-    await expect(
-      handlers['worktrees:remove'](null, {
-        worktreeId: 'repo-1::/workspace/feature-wt',
-        force: true
-      })
-    ).rejects.toThrow(
-      'Failed to force delete worktree at /workspace/feature-wt. error: failed to delete deep/file.txt: Filename too long'
-    )
+    try {
+      await expect(
+        handlers['worktrees:remove'](null, {
+          worktreeId: 'repo-1::/workspace/feature-wt',
+          force: true
+        })
+      ).rejects.toThrow(
+        'Failed to force delete worktree at /workspace/feature-wt. error: failed to delete deep/file.txt: Filename too long'
+      )
 
-    expect(removePathSpy).not.toHaveBeenCalled()
-    expect(gitExecFileAsyncMock).not.toHaveBeenCalledWith(['worktree', 'prune'], expect.anything())
-    expect(store.removeWorktreeMeta).not.toHaveBeenCalled()
-    expect(mainWindow.webContents.send).not.toHaveBeenCalledWith('worktrees:changed', {
-      repoId: 'repo-1'
-    })
+      expect(removePathSpy).not.toHaveBeenCalled()
+      expect(gitExecFileAsyncMock).not.toHaveBeenCalledWith(
+        ['worktree', 'prune'],
+        expect.anything()
+      )
+      expect(store.removeWorktreeMeta).not.toHaveBeenCalled()
+      expect(mainWindow.webContents.send).not.toHaveBeenCalledWith('worktrees:changed', {
+        repoId: 'repo-1'
+      })
+    } finally {
+      removePathSpy.mockRestore()
+    }
   })
 
   it('retries stale Git registration cleanup after prior local filesystem recovery', async () => {

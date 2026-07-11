@@ -25948,6 +25948,7 @@ describe('OrcaRuntimeService', () => {
       expect(gitSpy).not.toHaveBeenCalledWith(['worktree', 'prune'], expect.anything())
       expect(removeWorktreeMeta).not.toHaveBeenCalled()
     } finally {
+      removePathSpy.mockRestore()
       gitSpy.mockRestore()
     }
   })
