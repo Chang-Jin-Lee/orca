@@ -425,7 +425,7 @@ describe('startWorkspaceCleanupBackgroundRemoval', () => {
     })
   })
 
-  it('reports an unresolved timeout and skips its parent', async () => {
+  it('reports a timeout, skips its parent, then reports the authoritative result', async () => {
     vi.useFakeTimers()
     const parent = makeCandidate({
       worktreeId: 'repo-1::/repo/parent',
@@ -439,20 +439,23 @@ describe('startWorkspaceCleanupBackgroundRemoval', () => {
       branch: 'child',
       path: '/repo/parent/child'
     })
+    let resolveChild: (result: { removedIds: string[]; failures: [] }) => void = () => {}
     const removeCandidates = vi.fn(
       () =>
-        new Promise<Awaited<ReturnType<WorkspaceCleanupBackgroundRemovalArgs['removeCandidates']>>>(
-          () => undefined
-        )
+        new Promise<{ removedIds: string[]; failures: [] }>((resolve) => {
+          resolveChild = resolve
+        })
     )
     const onProgress = vi.fn()
     const onResult = vi.fn()
+    const onLateResult = vi.fn()
 
     startWorkspaceCleanupBackgroundRemoval({
       candidates: [parent, child],
       removeCandidates,
       onProgress,
       onResult,
+      onLateResult,
       removalTimeoutMs: 5,
       removalSettlementGraceMs: 5
     })
@@ -485,6 +488,51 @@ describe('startWorkspaceCleanupBackgroundRemoval', () => {
         }
       ]
     })
+
+    resolveChild({ removedIds: [child.worktreeId], failures: [] })
+    await settleBackgroundRemoval()
+
+    expect(removeCandidates).toHaveBeenCalledTimes(1)
+    expect(onResult).toHaveBeenCalledTimes(1)
+    expect(onLateResult).toHaveBeenCalledWith({
+      removedIds: [child.worktreeId],
+      failures: []
+    })
+    expect(toast.success).toHaveBeenLastCalledWith('Removed workspaces: 1')
+  })
+
+  it('reports an authoritative rejection after the timeout result', async () => {
+    vi.useFakeTimers()
+    const candidate = makeCandidate()
+    let rejectRemoval: (error: Error) => void = () => {}
+    const onLateResult = vi.fn()
+
+    startWorkspaceCleanupBackgroundRemoval({
+      candidates: [candidate],
+      removeCandidates: vi.fn(
+        () =>
+          new Promise<{ removedIds: string[]; failures: [] }>((_resolve, reject) => {
+            rejectRemoval = reject
+          })
+      ),
+      onProgress: vi.fn(),
+      onLateResult,
+      removalTimeoutMs: 5,
+      removalSettlementGraceMs: 5
+    })
+
+    await vi.advanceTimersByTimeAsync(10)
+    rejectRemoval(new Error('remote removal failed'))
+    await settleBackgroundRemoval()
+
+    expect(onLateResult).toHaveBeenCalledWith({
+      removedIds: [],
+      failures: [expect.objectContaining({ message: 'remote removal failed' })]
+    })
+    expect(toast.error).toHaveBeenLastCalledWith(
+      'Workspaces not removed: 1',
+      expect.objectContaining({ description: 'remote removal failed' })
+    )
   })
 
   it('keeps removal outcome toasts when the result callback throws', async () => {
