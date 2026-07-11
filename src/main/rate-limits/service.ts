@@ -141,7 +141,8 @@ export class RateLimitService {
     'opencode-go': 0,
     kimi: 0,
     minimax: 0,
-    grok: 0
+    grok: 0,
+    antigravity: 0
   }
   private mainWindow: BrowserWindow | null = null
   private detachWindowListeners: (() => void) | null = null
@@ -726,7 +727,8 @@ export class RateLimitService {
       { provider: 'opencode-go', limits: this.state.opencodeGo },
       { provider: 'kimi', limits: this.state.kimi },
       { provider: 'minimax', limits: this.state.minimax },
-      { provider: 'grok', limits: this.state.grok }
+      { provider: 'grok', limits: this.state.grok },
+      { provider: 'antigravity', limits: this.state.antigravity }
     ]
   }
 
