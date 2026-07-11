@@ -1254,6 +1254,43 @@ describe('addWorktree', () => {
     ])
   })
 
+  it('skips advisory owner probes when the local base is already current', async () => {
+    gitExecFileAsyncMock
+      .mockResolvedValueOnce({ stdout: 'abc123\n' }) // resolve creation base
+      .mockResolvedValueOnce({ stdout: '0\t0\n' }) // local base is current
+      .mockResolvedValueOnce({ stdout: '' }) // worktree add
+      .mockResolvedValueOnce({ stdout: '' }) // persist branch base
+      .mockResolvedValueOnce({ stdout: 'true\n' }) // push.autoSetupRemote already set
+
+    await expect(
+      addWorktree('/repo', '/repo-feature', 'feature/test', 'origin/main', false, false, {
+        suggestLocalBaseRefUpdate: true
+      })
+    ).resolves.toEqual({})
+
+    expect(gitExecFileAsyncMock.mock.calls.map(([args]) => args)).toEqual([
+      ['rev-parse', '--verify', '--quiet', 'refs/remotes/origin/main^{commit}'],
+      ['rev-list', '--left-right', '--count', 'refs/heads/main...refs/remotes/origin/main'],
+      [
+        'worktree',
+        'add',
+        '--no-track',
+        '-b',
+        'feature/test',
+        '/repo-feature',
+        'refs/remotes/origin/main'
+      ],
+      [
+        'config',
+        '--local',
+        '--replace-all',
+        'branch.feature/test.base',
+        'refs/remotes/origin/main'
+      ],
+      ['config', '--get', 'push.autoSetupRemote']
+    ])
+  })
+
   it('uses normalized branch metadata for slash-containing remotes', async () => {
     const worktreeListOutput = 'worktree /repo\nHEAD abc123\nbranch refs/heads/main\n'
     gitExecFileAsyncMock

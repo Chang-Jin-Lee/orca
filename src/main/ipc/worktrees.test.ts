@@ -908,6 +908,13 @@ describe('registerWorktreeHandlers', () => {
   })
 
   it('uses branchNameOverride for the git branch while keeping the sanitized worktree path', async () => {
+    store.getSettings.mockReturnValue({
+      branchPrefix: 'git-username',
+      nestWorkspaces: false,
+      refreshLocalBaseRefOnWorktreeCreate: false,
+      workspaceDir: '/workspace'
+    })
+    resolveLocalGitUsernameMock.mockResolvedValue('unused-user')
     listWorktreesMock.mockResolvedValue([
       {
         path: '/workspace/feature-something',
@@ -935,6 +942,7 @@ describe('registerWorktreeHandlers', () => {
       'origin/main',
       false
     )
+    expect(resolveLocalGitUsernameMock).not.toHaveBeenCalled()
     expect(result).toMatchObject({
       worktree: expect.objectContaining({
         path: '/workspace/feature-something',
@@ -2810,13 +2818,21 @@ describe('registerWorktreeHandlers', () => {
       addWorktree: vi.fn().mockResolvedValue(undefined),
       listWorktrees: vi.fn().mockResolvedValue([
         {
+          path: '/remote/repo',
+          head: 'base123',
+          branch: 'refs/heads/main',
+          isBare: false,
+          isMainWorktree: true
+        },
+        {
           path: '/remote/improve-dashboard',
           head: 'abc123',
           branch: 'refs/heads/improve-dashboard',
           isBare: false,
           isMainWorktree: false
         }
-      ])
+      ]),
+      worktreeIsClean: vi.fn().mockResolvedValue({ clean: true })
     }
     const mux = {
       request: vi.fn().mockResolvedValue(undefined),
@@ -2838,6 +2854,16 @@ describe('registerWorktreeHandlers', () => {
       manualOrder: 123_456
     })
 
+    expect(provider.exec).not.toHaveBeenCalledWith(
+      ['config', '--get', 'github.user'],
+      '/remote/repo'
+    )
+    expect(provider.exec).not.toHaveBeenCalledWith(
+      ['config', '--get', 'user.username'],
+      '/remote/repo'
+    )
+    expect(provider.listWorktrees).toHaveBeenCalledTimes(1)
+    expect(provider.worktreeIsClean).not.toHaveBeenCalled()
     expect(store.setWorktreeMeta).toHaveBeenCalledWith(
       'repo-ssh::/remote/improve-dashboard',
       expect.objectContaining({
@@ -3798,18 +3824,15 @@ describe('registerWorktreeHandlers', () => {
       }),
       fetchRemoteTrackingRef: vi.fn().mockResolvedValue(undefined),
       addWorktree: vi.fn().mockResolvedValue(undefined),
-      listWorktrees: vi
-        .fn()
-        .mockResolvedValueOnce([])
-        .mockResolvedValueOnce([
-          {
-            path: '/remote/improve-dashboard',
-            head: 'abc123',
-            branch: 'refs/heads/improve-dashboard',
-            isBare: false,
-            isMainWorktree: false
-          }
-        ])
+      listWorktrees: vi.fn().mockResolvedValueOnce([
+        {
+          path: '/remote/improve-dashboard',
+          head: 'abc123',
+          branch: 'refs/heads/improve-dashboard',
+          isBare: false,
+          isMainWorktree: false
+        }
+      ])
     }
     const mux = {
       request: vi.fn().mockResolvedValue(undefined),
@@ -4019,7 +4042,6 @@ describe('registerWorktreeHandlers', () => {
       addWorktree: vi.fn().mockResolvedValue(undefined),
       listWorktrees: vi
         .fn()
-        .mockResolvedValueOnce([])
         .mockResolvedValueOnce([
           {
             path: '/remote/first-worktree',
@@ -4029,7 +4051,6 @@ describe('registerWorktreeHandlers', () => {
             isMainWorktree: false
           }
         ])
-        .mockResolvedValueOnce([])
         .mockResolvedValueOnce([
           {
             path: '/remote/second-worktree',

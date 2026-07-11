@@ -172,7 +172,8 @@ async function evaluateLocalBaseRefRefreshability(
   baseBranch: string,
   remoteTrackingRef: string,
   remoteTrackingBase?: AddWorktreeOptions['remoteTrackingBase'],
-  options: GitWorktreeExecOptions = {}
+  options: GitWorktreeExecOptions = {},
+  shouldInspectOwner: (behind: number) => boolean = () => true
 ): Promise<LocalBaseRefRefreshability | undefined> {
   const parsed = parseRemoteTrackingLocalBaseRef(baseBranch, remoteTrackingRef, remoteTrackingBase)
   if (!parsed) {
@@ -195,6 +196,11 @@ async function evaluateLocalBaseRefRefreshability(
     const parsedDrift = parseRevListDrift(stdout)
     if (!parsedDrift || parsedDrift.ahead !== 0) {
       return { refreshable: false, result: { ...resultBase, status: 'skipped_not_fast_forward' } }
+    }
+    if (!shouldInspectOwner(parsedDrift.behind)) {
+      // Why: a current local ref cannot produce an update suggestion, so the
+      // advisory path need not resolve OIDs or inspect its owner worktree.
+      return undefined
     }
     const { stdout: localOidOutput } = await gitExecFileAsync(
       ['rev-parse', '--verify', `${parsed.fullRef}^{commit}`],
@@ -289,7 +295,8 @@ async function getLocalBaseRefUpdateSuggestionForWorktreeCreate(
     baseBranch,
     remoteTrackingRef,
     remoteTrackingBase,
-    options
+    options,
+    (behind) => behind > 0
   )
   if (!evaluation?.refreshable || evaluation.behind <= 0) {
     return undefined

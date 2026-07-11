@@ -14249,7 +14249,12 @@ export class OrcaRuntimeService {
     const requestedDisplayName = args.displayName?.trim() || undefined
     const sanitizedName = sanitizeWorktreeName(args.name)
     let effectiveSanitizedName = sanitizedName
-    const username = await resolveLocalGitUsername(repo.path)
+    // Why: explicit branches and non-username prefix modes never consume this
+    // value; skipping the probes preserves the exact generated branch name.
+    const username =
+      !args.branchNameOverride && settings.branchPrefix === 'git-username'
+        ? await resolveLocalGitUsername(repo.path)
+        : ''
 
     const baseBranch = await resolveWorktreeCreateBase({
       requestedBaseBranch: args.baseBranch,

@@ -91,6 +91,7 @@ import { TERMINAL_METHODS } from './rpc/methods/terminal'
 const ORIGINAL_PLATFORM = process.platform
 const ORIGINAL_PLATFORM_DESCRIPTOR = Object.getOwnPropertyDescriptor(process, 'platform')
 const removeWorktreeLinkedPathsMock = vi.hoisted(() => vi.fn())
+const resolveLocalGitUsernameMock = vi.hoisted(() => vi.fn(async () => ''))
 
 vi.mock('../ipc/worktree-symlinks', () => ({
   createWorktreeLinkedPaths: vi.fn(),
@@ -532,7 +533,7 @@ vi.mock('../git/repo', async (importOriginal) => {
 
 vi.mock('../git/git-username', async () => {
   const actual = await vi.importActual<typeof GitUsernameModule>('../git/git-username')
-  return { ...actual, resolveLocalGitUsername: vi.fn(async () => '') }
+  return { ...actual, resolveLocalGitUsername: resolveLocalGitUsernameMock }
 })
 
 function resetRuntimeTestMocks(): void {
@@ -552,6 +553,7 @@ function resetRuntimeTestMocks(): void {
   vi.mocked(assertWorktreeCleanForRemoval).mockResolvedValue(undefined)
   vi.mocked(removeWorktree).mockReset()
   removeWorktreeLinkedPathsMock.mockReset()
+  resolveLocalGitUsernameMock.mockReset().mockResolvedValue('')
   vi.mocked(forceDeleteLocalBranchMock).mockReset()
   vi.mocked(forceDeleteLocalBranchMock).mockResolvedValue(undefined)
   sshGitProviders.clear()
@@ -3048,6 +3050,7 @@ describe('OrcaRuntimeService', () => {
       'origin/feature/something',
       false
     )
+    expect(resolveLocalGitUsernameMock).not.toHaveBeenCalled()
     expect(result.worktree).toMatchObject({
       path: '/tmp/workspaces/feature-something',
       branch: 'feature/something'
