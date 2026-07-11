@@ -29,7 +29,7 @@ export function pushMode2031SeedReply(paneId: number, deps: Mode2031SeedReplyDep
   let attempts = 0
   const send = (): void => {
     // Why: a TUI can unsubscribe while the PTY is connecting; every delayed
-    // attempt must revalidate intent or its DSR reply can land at a shell prompt.
+    // attempt must revalidate intent or its color reply can land at a shell prompt.
     if (!deps.hasPane(paneId) || !deps.isSubscribed(paneId)) {
       return
     }

@@ -41,7 +41,7 @@ describe('pushMode2031SeedReply', () => {
     }
   }
 
-  it('routes the DSR response through latency-critical input', () => {
+  it('routes the color-scheme response through latency-critical input', () => {
     const harness = createHarness(true)
 
     harness.push()
