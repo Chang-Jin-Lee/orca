@@ -102,6 +102,38 @@ describe('shared Markdown document list requests', () => {
     }
   })
 
+  it('evicts an abandoned scan for a route that is never requested again', async () => {
+    const abandoned = deferred<MarkdownDocument[]>()
+    const load = vi.fn().mockReturnValueOnce(abandoned.promise).mockResolvedValueOnce([])
+    const now = vi.spyOn(performance, 'now').mockReturnValue(1_000)
+
+    try {
+      const abandonedRequest = requestSharedMarkdownDocumentList(
+        context(),
+        '/abandoned-only',
+        {},
+        load
+      )
+      now.mockReturnValue(31_001)
+      // A request for a different route sweeps the expired entry so the map
+      // does not pin the abandoned promise for the renderer's lifetime.
+      await expect(
+        requestSharedMarkdownDocumentList(context(), '/other-route', {}, load)
+      ).resolves.toEqual([])
+
+      load.mockResolvedValueOnce([])
+      await expect(
+        requestSharedMarkdownDocumentList(context(), '/abandoned-only', {}, load)
+      ).resolves.toEqual([])
+      expect(load).toHaveBeenCalledTimes(3)
+
+      abandoned.resolve([])
+      await expect(abandonedRequest).resolves.toEqual([])
+    } finally {
+      now.mockRestore()
+    }
+  })
+
   it('keeps runtime routes isolated and encodes unusual paths losslessly', () => {
     const local = context()
     const ssh = context({ connectionId: 'ssh-1' })
