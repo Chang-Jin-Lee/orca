@@ -1,4 +1,4 @@
-import type { MobileTerminalTheme } from '../terminal/TerminalWebView'
+import type { MobileTerminalTheme } from '../terminal/terminal-webview-contract'
 import type { AgentStatusEntry } from '../../../src/shared/agent-status-types'
 
 export type TerminalRecord = {
@@ -126,7 +126,18 @@ export function mergeTerminalRecordsByCurrentOrder(
   const terminalTabsByHandle = new Map(terminalTabs.map((tab) => [tab.handle, tab]))
   const currentHandles = new Set(currentTerminals.map((terminal) => terminal.handle))
   return [
-    ...currentTerminals.map((terminal) => terminalTabsByHandle.get(terminal.handle) ?? terminal),
+    ...currentTerminals.map((terminal) => {
+      const snapshotTerminal = terminalTabsByHandle.get(terminal.handle)
+      if (!snapshotTerminal) {
+        return terminal
+      }
+      // Why: lightweight session snapshots can omit the theme; keep the last
+      // known value while still accepting current title/activity fields.
+      return {
+        ...snapshotTerminal,
+        terminalTheme: snapshotTerminal.terminalTheme ?? terminal.terminalTheme
+      }
+    }),
     ...terminalTabs.filter((terminal) => !currentHandles.has(terminal.handle))
   ]
 }
