@@ -57,6 +57,18 @@ export type WorktreeAttention = {
 
 export const IDLE: WorktreeAttention = { cls: 4, attentionTimestamp: 0 }
 
+export function hasFreshAttributedAgentStatus(
+  agentStatusByPaneKey: Record<string, AgentStatusEntry> | undefined,
+  now: number
+): boolean {
+  return Object.values(agentStatusByPaneKey ?? {}).some(
+    (entry) =>
+      !!entry.worktreeId &&
+      !!parsePaneKey(entry.paneKey) &&
+      isExplicitAgentStatusFresh(entry, now, AGENT_STATUS_STALE_AFTER_MS)
+  )
+}
+
 /**
  * Walk a pane's state-history rows and return the timestamp of the most
  * recent `done`/`blocked`/`waiting` entry, ignoring `done` rows that were
