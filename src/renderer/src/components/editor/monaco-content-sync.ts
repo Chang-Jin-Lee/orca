@@ -1,5 +1,15 @@
 import type { editor } from 'monaco-editor'
 
+function normalizeToModelEol(content: string, model: editor.ITextModel): string {
+  const eol = model.getEOL()
+  // Why: Monaco normalizes model line endings, while filesystem content keeps
+  // its raw EOLs. Compare the representation Monaco can actually retain.
+  if (eol === '\n' && !content.includes('\r')) {
+    return content
+  }
+  return content.replace(/\r\n|\r|\n/g, eol)
+}
+
 /**
  * Overwrite a Monaco model's text via pushEditOperations so the change
  * participates in the undo stack (unlike setValue, which blows it away).
@@ -43,13 +53,14 @@ export function syncContentOnMount(
     return false
   }
   const currentContent = model.getValue()
-  if (currentContent === content) {
+  const normalizedContent = normalizeToModelEol(content, model)
+  if (currentContent === normalizedContent) {
     return false
   }
   // Why: no undo stop on mount — the retained model's text was already the
   // user's last-known state, and adding an undo entry here would make Cmd+Z
   // revert to the pre-remount text, which is confusing.
-  replaceModelContent(editorInstance, model, currentContent, content, false)
+  replaceModelContent(editorInstance, model, currentContent, normalizedContent, false)
   return true
 }
 
@@ -70,11 +81,15 @@ export function syncContentUpdate(
     return
   }
   const currentContent = model.getValue()
-  if (currentContent.length === content.length) {
-    replaceModelContent(editorInstance, model, currentContent, content, true)
+  const normalizedContent = normalizeToModelEol(content, model)
+  if (currentContent.length === normalizedContent.length) {
+    replaceModelContent(editorInstance, model, currentContent, normalizedContent, true)
     return
   }
-  if (content.length > currentContent.length && content.startsWith(currentContent)) {
+  if (
+    normalizedContent.length > currentContent.length &&
+    normalizedContent.startsWith(currentContent)
+  ) {
     // Why: preserving the existing prefix lets Monaco retain viewport,
     // selection, find-widget, and tokenization state above a live-file append.
     const fullRange = model.getFullModelRange()
@@ -89,7 +104,7 @@ export function syncContentUpdate(
             endLineNumber: fullRange.endLineNumber,
             endColumn: fullRange.endColumn
           },
-          text: content.slice(currentContent.length)
+          text: normalizedContent.slice(currentContent.length)
         }
       ],
       () => null
@@ -97,5 +112,5 @@ export function syncContentUpdate(
     editorInstance.pushUndoStop()
     return
   }
-  replaceModelContent(editorInstance, model, currentContent, content, true)
+  replaceModelContent(editorInstance, model, currentContent, normalizedContent, true)
 }

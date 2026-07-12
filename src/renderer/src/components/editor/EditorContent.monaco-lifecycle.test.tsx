@@ -23,6 +23,7 @@ vi.mock('@/lib/lazy-with-retry', async () => {
           const retained = lifecycle.models.get(props.filePath) ?? { content: '', undo: [] }
           const model = {
             getValue: () => retained.content,
+            getEOL: () => '\n',
             getFullModelRange: () => ({
               startLineNumber: 1,
               startColumn: 1,

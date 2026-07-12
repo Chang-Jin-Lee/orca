@@ -2,7 +2,10 @@ import { describe, expect, it, vi } from 'vitest'
 import type { editor } from 'monaco-editor'
 import { syncContentOnMount, syncContentUpdate } from './monaco-content-sync'
 
-function createHarness(initialContent: string): {
+function createHarness(
+  initialContent: string,
+  eol = '\n'
+): {
   editorInstance: editor.IStandaloneCodeEditor
   getValue: ReturnType<typeof vi.fn>
   getFullModelRange: ReturnType<typeof vi.fn>
@@ -17,7 +20,12 @@ function createHarness(initialContent: string): {
     endColumn: 5
   }))
   const pushEditOperations = vi.fn()
-  const model = { getValue, getFullModelRange, pushEditOperations } as unknown as editor.ITextModel
+  const model = {
+    getValue,
+    getEOL: () => eol,
+    getFullModelRange,
+    pushEditOperations
+  } as unknown as editor.ITextModel
   const pushUndoStop = vi.fn()
   const editorInstance = {
     getModel: () => model,
@@ -64,6 +72,44 @@ describe('monaco content sync', () => {
   })
 
   it.each([
+    [
+      'CRLF file content into an LF model',
+      'first\nsecond\nlast',
+      '\n',
+      'first\r\nsecond\r\nlast\r\nnext',
+      '\nnext'
+    ],
+    [
+      'LF file content into a CRLF model',
+      'first\r\nsecond\r\nlast',
+      '\r\n',
+      'first\nsecond\nlast\nnext',
+      '\r\nnext'
+    ],
+    [
+      'mixed file content into an LF model',
+      'first\nsecond\nlast',
+      '\n',
+      'first\r\nsecond\rlast\nnext',
+      '\nnext'
+    ]
+  ])(
+    'keeps %s on the suffix path',
+    (_label, initialContent, modelEol, nextContent, expectedSuffix) => {
+      const harness = createHarness(initialContent, modelEol)
+
+      syncContentUpdate(harness.editorInstance, nextContent)
+
+      expect(harness.pushEditOperations).toHaveBeenCalledWith(
+        [],
+        [expect.objectContaining({ text: expectedSuffix })],
+        expect.any(Function)
+      )
+      expect(harness.pushUndoStop).toHaveBeenCalledTimes(2)
+    }
+  )
+
+  it.each([
     ['same-length rewrite', 'before', 'after!'],
     ['prefix mismatch', 'before', 'changed content'],
     ['truncation', 'longer content', 'short']
@@ -87,6 +133,24 @@ describe('monaco content sync', () => {
     expect(syncContentOnMount(harness.editorInstance, 'fresh')).toBe(true)
 
     expect(harness.pushEditOperations).toHaveBeenCalledTimes(1)
+    expect(harness.pushUndoStop).not.toHaveBeenCalled()
+  })
+
+  it('does nothing on mount when content already matches', () => {
+    const harness = createHarness('same')
+
+    expect(syncContentOnMount(harness.editorInstance, 'same')).toBe(false)
+
+    expect(harness.pushEditOperations).not.toHaveBeenCalled()
+    expect(harness.pushUndoStop).not.toHaveBeenCalled()
+  })
+
+  it('does nothing on mount when only raw file EOLs differ from the model', () => {
+    const harness = createHarness('first\nsecond')
+
+    expect(syncContentOnMount(harness.editorInstance, 'first\r\nsecond')).toBe(false)
+
+    expect(harness.pushEditOperations).not.toHaveBeenCalled()
     expect(harness.pushUndoStop).not.toHaveBeenCalled()
   })
 
