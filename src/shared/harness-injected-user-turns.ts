@@ -19,7 +19,6 @@ const KNOWN_HARNESS_TAG_NAMES = new Set([
   'bash-input',
   'bash-stderr',
   'bash-stdout',
-  'channel',
   'command-args',
   'command-message',
   'command-name',
@@ -37,8 +36,9 @@ const KNOWN_HARNESS_TAG_NAMES = new Set([
   'user-prompt-submit-hook'
 ])
 
-// Injected shapes the kebab-tag rule cannot see: single-word attribute tags
-// and the prose sentences the harness wraps deliveries and notices in.
+// Injected turns identified by a leading string rather than a known tag name:
+// the harness only emits <channel> in its attributed `<channel source=…>` form
+// (a bare <channel> is a real RSS/XML paste), plus prose deliveries and notices.
 const HARNESS_INJECTED_TURN_PREFIXES = [
   '<channel source=',
   '[request interrupted',

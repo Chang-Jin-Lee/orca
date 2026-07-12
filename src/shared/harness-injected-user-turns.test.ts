@@ -89,4 +89,13 @@ describe('isKnownHarnessInjectedUserTurnText', () => {
     expect(isKnownHarnessInjectedUserTurnText('<brand-new-harness-tag id="1">payload')).toBe(false)
     expect(isKnownHarnessInjectedUserTurnText('<queued-notice>\nlater')).toBe(false)
   })
+
+  it('only treats the attributed <channel source=…> form as machinery', () => {
+    // The harness emits <channel source="…">; a bare <channel> is a real RSS/XML
+    // paste and must stay a user turn (channel is the only single-word tag).
+    expect(isKnownHarnessInjectedUserTurnText('<channel source="general">new post')).toBe(true)
+    expect(
+      isKnownHarnessInjectedUserTurnText('<channel>general</channel> explain this feed element')
+    ).toBe(false)
+  })
 })
