@@ -20272,10 +20272,13 @@ export class OrcaRuntimeService {
     }
     // Why: malformed legacy relative paths can require pair-aware comparison;
     // keep the compatibility fallback off the normal indexed absolute path.
+    const comparisonPlatform = this.store?.getRepo(parsed.repoId)?.connectionId
+      ? 'linux'
+      : process.platform
     const resolved = resolvedWorktrees.find(
       (worktree) =>
         worktree.repoId === parsed.repoId &&
-        areWorktreePathsEqual(worktree.path, parsed.worktreePath)
+        areWorktreePathsEqual(worktree.path, parsed.worktreePath, comparisonPlatform)
     )
     const fallback = resolved ? (summaries.get(resolved.id) ?? null) : null
     fallbackSummaryByRuntimeWorktreeId.set(runtimeWorktreeId, fallback)
@@ -26765,17 +26768,17 @@ function compareWorktreePs(
   left: RuntimeWorktreePsSummary,
   right: RuntimeWorktreePsSummary
 ): number {
-  // Why: worktree.ps is truncated for mobile, so host-visible activity must
-  // survive ahead of inactive rows even when no PTY/output timestamp exists.
-  if (left.hasHostSidebarActivity !== right.hasHostSidebarActivity) {
-    return left.hasHostSidebarActivity ? -1 : 1
-  }
   // Pinned and unread worktrees sort above others so they survive truncation.
   if (left.isPinned !== right.isPinned) {
     return left.isPinned ? -1 : 1
   }
   if (left.unread !== right.unread) {
     return left.unread ? -1 : 1
+  }
+  // Why: worktree.ps is truncated for mobile, so host-visible activity must
+  // survive ahead of ordinary inactive rows without displacing pinned/unread.
+  if (left.hasHostSidebarActivity !== right.hasHostSidebarActivity) {
+    return left.hasHostSidebarActivity ? -1 : 1
   }
   const leftLast = left.lastOutputAt ?? -1
   const rightLast = right.lastOutputAt ?? -1

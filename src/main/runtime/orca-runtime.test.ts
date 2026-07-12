@@ -22133,6 +22133,7 @@ describe('OrcaRuntimeService', () => {
   ] as const)(
     'keeps %s POSIX backslashes distinct when projecting mobile agents',
     async (_kind, backslashPath, slashPath) => {
+      setPlatform('win32')
       const remoteRepo = {
         id: 'repo-relative-ssh',
         path: 'project',
@@ -22257,6 +22258,70 @@ describe('OrcaRuntimeService', () => {
     expect(summaries.worktrees).toHaveLength(200)
     expect(target).toMatchObject({ hasHostSidebarActivity: true, status: 'working' })
     expect(target?.agents).toHaveLength(1)
+  })
+
+  it('keeps pinned worktrees when active rows fill the mobile summary limit', async () => {
+    const remoteRepo = {
+      id: 'repo-pinned-limit',
+      path: '/remote',
+      displayName: 'pinned-limit-vm',
+      badgeColor: 'blue',
+      addedAt: 1,
+      connectionId: 'ssh-pinned-limit'
+    }
+    const activeWorktrees = Array.from({ length: 200 }, (_, index) => ({
+      path: `/remote/active-${String(index).padStart(3, '0')}`,
+      head: `head-${index}`,
+      branch: `refs/heads/active-${index}`,
+      isBare: false,
+      isMainWorktree: false
+    }))
+    const pinnedPath = '/remote/zzz-pinned'
+    const pinnedWorktree = {
+      path: pinnedPath,
+      head: 'pinned',
+      branch: 'refs/heads/pinned',
+      isBare: false,
+      isMainWorktree: false
+    }
+    const pinnedId = `${remoteRepo.id}::${pinnedPath}`
+    const metaById: Record<string, WorktreeMeta> = {
+      [pinnedId]: makeWorktreeMeta({ isPinned: true })
+    }
+    const runtimeStore = {
+      ...store,
+      getRepos: () => [remoteRepo],
+      getRepo: (id: string) => (id === remoteRepo.id ? remoteRepo : undefined),
+      getAllWorktreeMeta: () => metaById,
+      getWorktreeMeta: (worktreeId: string) => metaById[worktreeId]
+    }
+    registerSshGitProvider('ssh-pinned-limit', {
+      listWorktrees: vi.fn().mockResolvedValue([...activeWorktrees, pinnedWorktree])
+    } as never)
+    const now = Date.now()
+    const runtime = new OrcaRuntimeService(runtimeStore as never, undefined, {
+      getAgentStatusSnapshot: () =>
+        activeWorktrees.map((worktree, index) => ({
+          paneKey: `active-tab:${String(index).padStart(8, '0')}-8888-4888-8888-888888888888`,
+          worktreeId: `${remoteRepo.id}::${worktree.path}`,
+          tabId: 'active-tab',
+          state: 'working' as const,
+          prompt: 'active row',
+          agentType: 'codex',
+          connectionId: 'ssh-pinned-limit',
+          receivedAt: now,
+          stateStartedAt: now - 100
+        }))
+    })
+
+    const summaries = await runtime.getWorktreePs()
+
+    expect(summaries).toMatchObject({ totalCount: 201, truncated: true })
+    expect(summaries.worktrees).toHaveLength(200)
+    expect(summaries.worktrees.find((worktree) => worktree.worktreeId === pinnedId)).toMatchObject({
+      isPinned: true,
+      hasHostSidebarActivity: false
+    })
   })
 
   it('clears stale working status after the agent exits and the shell takes over the title', async () => {
