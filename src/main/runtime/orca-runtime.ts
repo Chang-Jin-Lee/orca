@@ -2032,15 +2032,18 @@ class WorktreeIdRequiresFullPathError extends Error {
   }
 }
 
-type ResolvedWorktreeCache = {
-  expiresAt: number
+type ResolvedWorktreeSnapshot = {
   worktrees: ResolvedWorktree[]
   platformByRepoId: ReadonlyMap<string, NodeJS.Platform>
 }
 
+type ResolvedWorktreeCache = ResolvedWorktreeSnapshot & {
+  expiresAt: number
+}
+
 type ResolvedWorktreeInFlight = {
   generation: number
-  promise: Promise<ResolvedWorktree[]>
+  promise: Promise<ResolvedWorktreeSnapshot>
 }
 
 export type MobileNotificationDispatchEvent = {
@@ -10941,36 +10944,15 @@ export class OrcaRuntimeService {
     if (!Number.isInteger(limit) || limit <= 0) {
       throw new Error('invalid_limit')
     }
-    const resolvedWorktrees = (await this.listResolvedWorktrees()).filter((worktree) =>
+    const resolvedWorktreeSnapshot = await this.listResolvedWorktreeSnapshot()
+    const resolvedWorktrees = resolvedWorktreeSnapshot.worktrees.filter((worktree) =>
       this.isRuntimeWorktreeVisible(worktree)
     )
     // Why: worktree.ps backs the mobile sidebar, so it must use the same
     // host-owned imported-worktree visibility gate as worktree.list/desktop.
     await this.refreshPtyWorktreeRecordsFromController(resolvedWorktrees)
     const repoById = new Map((this.store?.getRepos() ?? []).map((repo) => [repo.id, repo]))
-    let platformByRepoId = this.resolvedWorktreeCache?.platformByRepoId
-    if (!platformByRepoId) {
-      // Why: an invalidation can race the scan that returned these worktrees.
-      // Preserve correct WSL/SSH projection even when that result was not cached.
-      const representedRepos = [
-        ...new Map(
-          resolvedWorktrees
-            .map((worktree) => repoById.get(worktree.repoId))
-            .filter((repo): repo is Repo => repo !== undefined)
-            .map((repo) => [repo.id, repo])
-        ).values()
-      ]
-      const projectRuntimeByRepoId = resolveLocalProjectRuntimesForRepos(
-        this.requireStore(),
-        representedRepos
-      )
-      platformByRepoId = new Map(
-        representedRepos.map((repo) => [
-          repo.id,
-          getAgentLaunchPlatformForRepo(repo, projectRuntimeByRepoId.get(repo.id))
-        ])
-      )
-    }
+    const platformByRepoId = resolvedWorktreeSnapshot.platformByRepoId
     const summaries = new Map<string, RuntimeWorktreePsSummary>()
 
     // Why: the GitHub cache is keyed by `repoPath::branch` (no refs/heads/ prefix),
@@ -19779,12 +19761,16 @@ export class OrcaRuntimeService {
   }
 
   private async listResolvedWorktrees(): Promise<ResolvedWorktree[]> {
+    return (await this.listResolvedWorktreeSnapshot()).worktrees
+  }
+
+  private async listResolvedWorktreeSnapshot(): Promise<ResolvedWorktreeSnapshot> {
     if (!this.store) {
-      return []
+      return { worktrees: [], platformByRepoId: new Map() }
     }
     const now = Date.now()
     if (this.resolvedWorktreeCache && this.resolvedWorktreeCache.expiresAt > now) {
-      return this.resolvedWorktreeCache.worktrees
+      return this.resolvedWorktreeCache
     }
     const generation = this.resolvedWorktreeGeneration
     if (this.resolvedWorktreeInFlight?.generation === generation) {
@@ -19802,9 +19788,9 @@ export class OrcaRuntimeService {
     }
   }
 
-  private async computeResolvedWorktrees(generation: number): Promise<ResolvedWorktree[]> {
+  private async computeResolvedWorktrees(generation: number): Promise<ResolvedWorktreeSnapshot> {
     if (!this.store) {
-      return []
+      return { worktrees: [], platformByRepoId: new Map() }
     }
     const now = Date.now()
     const metaById = this.store.getAllWorktreeMeta() ?? {}
@@ -19885,7 +19871,7 @@ export class OrcaRuntimeService {
         expiresAt: now + RESOLVED_WORKTREE_CACHE_TTL_MS
       }
     }
-    return worktrees
+    return { worktrees, platformByRepoId }
   }
 
   private attachLineageToResolvedWorktrees(worktrees: ResolvedWorktree[]): ResolvedWorktree[] {

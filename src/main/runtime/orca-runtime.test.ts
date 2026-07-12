@@ -21760,6 +21760,50 @@ describe('OrcaRuntimeService', () => {
     })
   })
 
+  it('keeps each worktree poll paired with its platform generation', async () => {
+    await withPlatform('win32', async () => {
+      let runtimePreference: { kind: 'wsl'; distro: string } | { kind: 'windows-host' } = {
+        kind: 'wsl',
+        distro: 'Ubuntu'
+      }
+      const runtimeStore = {
+        ...store,
+        getProjects: () => [
+          {
+            id: 'project-generation',
+            displayName: 'generation',
+            badgeColor: 'blue',
+            sourceRepoIds: [TEST_REPO_ID],
+            localWindowsRuntimePreference: runtimePreference,
+            createdAt: 0,
+            updatedAt: 0
+          }
+        ],
+        getSettings: () => ({
+          ...store.getSettings(),
+          localWindowsRuntimeDefault: { kind: 'windows-host' as const }
+        })
+      }
+      const staleScan = deferred<typeof MOCK_GIT_WORKTREES>()
+      vi.mocked(listWorktrees)
+        .mockImplementationOnce(() => staleScan.promise)
+        .mockResolvedValueOnce(MOCK_GIT_WORKTREES)
+      const runtime = new OrcaRuntimeService(runtimeStore as never)
+
+      const stalePoll = runtime.getWorktreePs()
+      runtimePreference = { kind: 'windows-host' }
+      runtime.notifyBranchRenamed(TEST_REPO_ID)
+      const freshPoll = await runtime.getWorktreePs()
+      staleScan.resolve(MOCK_GIT_WORKTREES)
+      const staleResult = await stalePoll
+
+      // Why: invalidation can let a newer scan finish first. Each result must
+      // retain the platform map computed with its own worktree generation.
+      expect(staleResult.worktrees[0]).toMatchObject({ terminalPlatform: 'linux' })
+      expect(freshPoll.worktrees[0]).toMatchObject({ terminalPlatform: 'win32' })
+    })
+  })
+
   it('omits worktrees hidden by the host visibility policy from mobile summaries', async () => {
     const hiddenExternalRepo = {
       ...store.getRepos()[0],
