@@ -534,6 +534,7 @@ describe('installNativeDeps (via deployAndLaunchRelay)', () => {
       'C:\\Users\\u',
       '', // mkdir remoteDir
       '', // npm install native deps
+      '', // enforce Windows node-pty shutdown patch
       'MISSING\n', // native process exit normalized by PowerShell command
       '', // remove probe stderr file
       '', // no persisted active pipe marker
@@ -555,10 +556,43 @@ describe('installNativeDeps (via deployAndLaunchRelay)', () => {
     expect(probeScript).toContain('$LASTEXITCODE -ne 0')
     expect(probeScript).toContain("'MISSING'")
 
+    const decodedCommands = vi
+      .mocked(execCommand)
+      .mock.calls.map(([, command]) => decodePowerShellCommand(command) ?? '')
+    const npmIdx = decodedCommands.findIndex((command) => command.includes('npm install'))
+    const patchIdx = decodedCommands.findIndex((command) =>
+      command.includes('node-pty-windows-pre-ready-shutdown-patch.cjs')
+    )
+    const probeIdx = decodedCommands.findIndex((command) =>
+      command.includes('require(\\"node-pty\\")')
+    )
+    expect(patchIdx).toBeGreaterThan(npmIdx)
+    expect(probeIdx).toBeGreaterThan(patchIdx)
+
     const warnMessages = warnSpy.mock.calls.map((args) => String(args[0] ?? ''))
     expect(warnMessages.some((m) => m.includes('[ssh-relay][NPTY-MISSING]'))).toBe(true)
     expect(vi.mocked(finalizeInstall)).toHaveBeenCalledTimes(1)
     expect(vi.mocked(abandonInstall)).not.toHaveBeenCalled()
+  })
+
+  it('does not finalize a Windows relay when node-pty patch enforcement fails', async () => {
+    vi.mocked(parseUnameToRelayPlatform).mockReturnValueOnce('win32-x64')
+    vi.mocked(resolveRemoteNodePath).mockResolvedValueOnce('C:/Program Files/nodejs/node.exe')
+    const conn = makeMockConnection(sftpCapture)
+    feed([
+      '__ORCA_REMOTE_PLATFORM__ Windows AMD64',
+      'C:\\Users\\u',
+      '', // mkdir remoteDir
+      '', // npm install native deps
+      { reject: 'node-pty@1.1.0 kill() implementation did not match exactly once' }
+    ])
+
+    await expect(deployAndLaunchRelay(conn)).rejects.toThrow(/kill\(\) implementation/)
+
+    expect(vi.mocked(finalizeInstall)).not.toHaveBeenCalled()
+    expect(vi.mocked(abandonInstall)).toHaveBeenCalledTimes(1)
+    const warnings = warnSpy.mock.calls.map((args) => String(args[0] ?? ''))
+    expect(warnings.some((message) => message.includes('[ssh-relay][NPTY-PATCH-FAIL]'))).toBe(true)
   })
 
   it('includes the platform tuple in NPTY-MISSING and native install failure logs', async () => {
@@ -627,6 +661,38 @@ describe('installNativeDeps (via deployAndLaunchRelay)', () => {
         (c) => c.includes('npm install') && c.includes('node-pty') && c.includes('@parcel/watcher')
       )
     ).toBe(true)
+  })
+
+  it('repairs an existing Windows relay whose npm node-pty is still vanilla', async () => {
+    vi.mocked(parseUnameToRelayPlatform).mockReturnValueOnce('win32-x64')
+    vi.mocked(resolveRemoteNodePath).mockResolvedValueOnce('C:/Program Files/nodejs/node.exe')
+    vi.mocked(isRelayAlreadyInstalled).mockResolvedValue(true)
+    const conn = makeMockConnection(sftpCapture)
+    feed([
+      '__ORCA_REMOTE_PLATFORM__ Windows AMD64',
+      'C:\\Users\\u',
+      'MISSING', // pre-lock patch/dependency check
+      'MISSING', // under-lock patch/dependency check
+      '', // npm install native deps
+      '', // enforce Windows node-pty shutdown patch
+      'ORCA-NPTY-PROBE-OK\n',
+      '', // remove probe stderr
+      '', // no persisted active pipe marker
+      'WAITING',
+      '', // WMI relay launch
+      'READY',
+      '' // persist active pipe marker
+    ])
+
+    await deployAndLaunchRelay(conn)
+
+    expect(vi.mocked(acquireInstallLock)).toHaveBeenCalledTimes(1)
+    expect(vi.mocked(finalizeInstall)).toHaveBeenCalledTimes(1)
+    const decodedCommands = vi
+      .mocked(execCommand)
+      .mock.calls.map(([, command]) => decodePowerShellCommand(command) ?? '')
+    expect(decodedCommands.filter((command) => command.includes('--check'))).toHaveLength(2)
+    expect(decodedCommands.filter((command) => command.includes('--apply'))).toHaveLength(1)
   })
 
   it('does not mutate an existing relay dir when required native deps are present', async () => {

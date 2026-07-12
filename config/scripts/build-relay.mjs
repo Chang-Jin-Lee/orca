@@ -10,13 +10,20 @@
  */
 import { build } from 'esbuild'
 import { createHash } from 'node:crypto'
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { copyFileSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 const __dirname = import.meta.dirname
 // Why: the script lives under config/scripts, so go two levels up to reach the repo root.
 const ROOT = join(__dirname, '..', '..')
 const RELAY_ENTRY = join(ROOT, 'src', 'relay', 'relay.ts')
+const WINDOWS_NODE_PTY_PATCH_SOURCE = join(
+  ROOT,
+  'config',
+  'scripts',
+  'relay-node-pty-windows-pre-ready-shutdown-patch.cjs'
+)
+const WINDOWS_NODE_PTY_PATCH_NAME = 'node-pty-windows-pre-ready-shutdown-patch.cjs'
 
 const PLATFORMS = [
   'linux-x64',
@@ -53,7 +60,17 @@ for (const platform of PLATFORMS) {
   // Why: include a content hash so the deploy check detects code changes
   // even when RELAY_VERSION hasn't been bumped (common during development).
   const relayContent = readFileSync(join(outDir, 'relay.js'))
-  const hash = createHash('sha256').update(relayContent).digest('hex').slice(0, 12)
+  const artifactHash = createHash('sha256').update(relayContent)
+  if (platform.startsWith('win32-')) {
+    // Why: SSH relays install node-pty with npm on the remote, outside pnpm's
+    // patchedDependencies. Hashing the patch forces safe upgrade redeployment.
+    const patchTarget = join(outDir, WINDOWS_NODE_PTY_PATCH_NAME)
+    copyFileSync(WINDOWS_NODE_PTY_PATCH_SOURCE, patchTarget)
+    artifactHash.update(readFileSync(patchTarget))
+  } else {
+    rmSync(join(outDir, WINDOWS_NODE_PTY_PATCH_NAME), { force: true })
+  }
+  const hash = artifactHash.digest('hex').slice(0, 12)
   writeFileSync(join(outDir, '.version'), `${RELAY_VERSION}+${hash}`)
 
   console.log(`Built relay for ${platform} → ${outDir}/relay.js`)

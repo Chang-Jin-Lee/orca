@@ -437,6 +437,7 @@ const RELAY_NATIVE_DEPS = {
   'node-pty': '1.1.0',
   '@parcel/watcher': '2.5.6'
 } as const
+const WINDOWS_NODE_PTY_PATCH_NAME = 'node-pty-windows-pre-ready-shutdown-patch.cjs'
 
 async function hasRequiredNativeDeps(
   conn: SshConnection,
@@ -451,7 +452,7 @@ async function hasRequiredNativeDeps(
           hostPlatform,
           nodePath,
           remoteDir,
-          `try { & ${powerShellLiteral(nodePath)} -e ${powerShellNativeArg('require.resolve("node-pty"); require.resolve("@parcel/watcher"); console.log("ORCA-NATIVE-DEPS-OK")')} } catch { 'MISSING' }`
+          `& ${powerShellLiteral(nodePath)} ${powerShellLiteral(joinRemotePath(hostPlatform, remoteDir, WINDOWS_NODE_PTY_PATCH_NAME))} --check`
         )
       : commandWithNodePath(
           hostPlatform,
@@ -574,6 +575,27 @@ async function installNativeDeps(
       }
     }
     throw err
+  }
+
+  if (isWindowsRemoteHost(hostPlatform)) {
+    const patchPath = joinRemotePath(hostPlatform, remoteDir, WINDOWS_NODE_PTY_PATCH_NAME)
+    try {
+      await execHostCommand(
+        conn,
+        hostPlatform,
+        commandWithNodePath(
+          hostPlatform,
+          nodePath,
+          remoteDir,
+          `& ${powerShellLiteral(nodePath)} ${powerShellLiteral(patchPath)} --apply`
+        )
+      )
+    } catch (err) {
+      console.warn(
+        `[ssh-relay][NPTY-PATCH-FAIL] failed to enforce Windows pre-ready shutdown at ${remoteDir} (${platform}): ${(err as Error).message}`
+      )
+      throw err
+    }
   }
 
   // SFTP doesn't preserve execute bits; node-pty's spawn-helper prebuild
