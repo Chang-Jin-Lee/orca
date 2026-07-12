@@ -17,6 +17,7 @@ import {
 } from './config-toml-line-scan'
 import {
   normalizeCodexProjectPathForLookup,
+  normalizeCodexProjectPathForRevocationLookup,
   parseCodexProjectHeaderPath
 } from './config-toml-trust'
 
@@ -174,7 +175,7 @@ function mergeSystemCodexConfigIntoRuntime(runtimeConfig: string, systemConfig: 
     deduplicateProjectTomlSections(getTomlSections(systemConfig))
       .filter((section) => isRuntimeProjectTomlSection(section.header))
       .filter((section) => getProjectTrustLevel(section.block) === 'untrusted')
-      .map((section) => getTomlSectionHeaderKey(section.header))
+      .map((section) => getRevocationTomlSectionHeaderKey(section.header))
   )
   // Why: ordinary Codex settings should mirror ~/.codex exactly; runtime hook
   // trust and project trust are written under Orca's managed CODEX_HOME and
@@ -187,7 +188,7 @@ function mergeSystemCodexConfigIntoRuntime(runtimeConfig: string, systemConfig: 
       .filter(
         (section) =>
           !isRuntimeProjectTomlSection(section.header) ||
-          !systemUntrustedProjectHeaders.has(getTomlSectionHeaderKey(section.header))
+          !systemUntrustedProjectHeaders.has(getRevocationTomlSectionHeaderKey(section.header))
       )
       .map((section) => section.block)
   ])
@@ -275,6 +276,15 @@ function getTomlSectionHeaderKey(header: string): string {
   return projectPath === null
     ? header.trim()
     : `project:${normalizeCodexProjectPathForLookup(projectPath)}`
+}
+
+// Why: configs written before WSL tails compared case-sensitively can hold a
+// revocation under drifted casing; match it loosely so trust is not resurrected.
+function getRevocationTomlSectionHeaderKey(header: string): string {
+  const projectPath = parseCodexProjectHeaderPath(header)
+  return projectPath === null
+    ? header.trim()
+    : `project:${normalizeCodexProjectPathForRevocationLookup(projectPath)}`
 }
 
 // Why: hook upsert already removes both quote representations, while its paired

@@ -10,6 +10,7 @@ import {
 import { dirname, join } from 'node:path'
 import { createHash, randomUUID } from 'node:crypto'
 import { copyFileWithWindowsRetry, renameFileWithWindowsRetry } from '../codex-accounts/fs-utils'
+import { foldWslUncPathCaseInsensitiveParts } from '../../shared/wsl-paths'
 import {
   createTomlLineScanState,
   isTomlStructuralLine,
@@ -217,17 +218,17 @@ export function normalizeCodexProjectPathForLookup(projectPath: string): string 
   return foldWindowsCaseInsensitivePath(normalizeWindowsPathSeparators(projectPath))
 }
 
-// Why: drive letters and the \\wsl$\<distro> / \\wsl.localhost\<distro> share
-// prefix are matched case-insensitively by Windows, but the Linux path under a
-// WSL share is case-sensitive — lowercasing it would conflate distinct dirs
-// (e.g. .../Repo vs .../repo) onto one trust key. Fold only the part Windows
-// itself treats case-insensitively. Input must already be forward-slashed.
+// Why: the Linux path under a WSL share is case-sensitive, so folding it would
+// conflate distinct dirs (e.g. .../Repo vs .../repo) onto one trust key.
 function foldWindowsCaseInsensitivePath(slashedPath: string): string {
-  const wslShare = /^\/\/(?:wsl\$|wsl\.localhost)\/[^/]+/i.exec(slashedPath)
-  if (!wslShare) {
-    return slashedPath.toLowerCase()
-  }
-  return `${wslShare[0].toLowerCase()}${slashedPath.slice(wslShare[0].length)}`
+  return foldWslUncPathCaseInsensitiveParts(slashedPath) ?? slashedPath.toLowerCase()
+}
+
+// Why: trust revocations recorded before WSL tails compared case-sensitively
+// can carry drifted casing; fold fully so matching errs toward revoked.
+export function normalizeCodexProjectPathForRevocationLookup(projectPath: string): string {
+  const normalized = normalizeCodexProjectPathForLookup(projectPath)
+  return usesWindowsPathSeparators(projectPath) ? normalized.toLowerCase() : normalized
 }
 
 export function parseTrustKey(key: string): {
@@ -540,16 +541,9 @@ type TrustBlockRange = {
 // casing) must not prevent findTrustBlockRanges from matching an existing block.
 export function normalizeHookTrustKeyForLookup(key: string): string {
   const parsed = parseTrustKey(key)
-  const sourcePath = normalizeWindowsPathSeparators(parsed ? parsed.sourcePath : key)
-  // Why: Windows-native paths are case-insensitive, but WSL and SSH trust
-  // sources remain case-sensitive even when Orca's host process is Windows.
-  // Fold only the case-insensitive Windows portion so a WSL UNC hook path keeps
-  // its case-sensitive Linux tail (see foldWindowsCaseInsensitivePath).
-  const caseInsensitiveWindowsPath =
-    process.platform === 'win32' && usesWindowsPathSeparators(parsed?.sourcePath ?? key)
-  const foldedPath = caseInsensitiveWindowsPath
-    ? foldWindowsCaseInsensitivePath(sourcePath)
-    : sourcePath
+  // Why: fold by path shape, not host platform — hook sources on WSL and SSH
+  // Windows remotes need the same folding when Orca runs on macOS or Linux.
+  const foldedPath = normalizeCodexProjectPathForLookup(parsed ? parsed.sourcePath : key)
   return parsed
     ? `${foldedPath}:${parsed.eventLabel}:${parsed.groupIndex}:${parsed.handlerIndex}`
     : foldedPath
