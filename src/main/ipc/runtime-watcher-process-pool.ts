@@ -110,8 +110,9 @@ export class RuntimeWatcherProcessPool {
     }
   }
 
-  resetForTest(): void {
-    for (const slot of this.allSlots) {
+  /** Kill every pooled watcher child (production shutdown or test reset). */
+  dispose(): void {
+    for (const slot of [...this.allSlots]) {
       this.disposeSlot(slot)
     }
     this.activeSlots.clear()
@@ -119,6 +120,10 @@ export class RuntimeWatcherProcessPool {
     this.assignments.clear()
     this.isolatedRoots.clear()
     this.failedQuarantineRoots.clear()
+  }
+
+  resetForTest(): void {
+    this.dispose()
   }
 
   forgetRoot(dir: string): void {

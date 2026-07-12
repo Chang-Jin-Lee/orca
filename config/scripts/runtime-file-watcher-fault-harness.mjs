@@ -65,16 +65,31 @@ async function main() {
     throw new Error(`Missing ${ENTRY_PATH}; run pnpm run build:electron-vite first`)
   }
 
-  const createdRootPath = await mkdtemp(join(tmpdir(), 'orca-runtime-watcher-fault-'))
-  const bundleDir = await mkdtemp(join(tmpdir(), 'orca-runtime-watcher-harness-'))
-  // Parcel reports canonical event paths on macOS, where tmpdir() may use the
-  // /var symlink spelling. Keep the oracle in the same path domain.
-  const rootPath = await realpath(createdRootPath)
-  const WatcherProcessSupervisor = await loadSupervisor(bundleDir)
-  const supervisor = new WatcherProcessSupervisor()
+  // Why: mkdtemp/realpath/bundle/construction can fail before the body runs.
+  // Keep cleanup in finally from the first successful mkdtemp onward, and clean
+  // the original temp path if realpath never succeeds.
+  let createdRootPath
+  let bundleDir
+  let rootPath
+  let supervisor
   let subscription
   let eventListener = () => undefined
+  let rejectWatcherError
+  const watcherError = new Promise((_, reject) => {
+    rejectWatcherError = reject
+  })
+  // Attach early so a callback rejection before the race cannot become unhandled.
+  watcherError.catch(() => undefined)
+
   try {
+    createdRootPath = await mkdtemp(join(tmpdir(), 'orca-runtime-watcher-fault-'))
+    bundleDir = await mkdtemp(join(tmpdir(), 'orca-runtime-watcher-harness-'))
+    // Parcel reports canonical event paths on macOS, where tmpdir() may use the
+    // /var symlink spelling. Keep the oracle in the same path domain.
+    rootPath = await realpath(createdRootPath)
+    const WatcherProcessSupervisor = await loadSupervisor(bundleDir)
+    supervisor = new WatcherProcessSupervisor()
+
     let resolveInterruption
     const interrupted = withTimeout(
       new Promise((resolveWait) => {
@@ -86,7 +101,10 @@ async function main() {
       rootPath,
       (error, events) => {
         if (error) {
-          throw error
+          // Why: throws from the async watcher callback escape main()'s try/finally
+          // and skip teardown. Surface failures through a harness promise instead.
+          rejectWatcherError(error)
+          return
         }
         eventListener(events)
       },
@@ -105,14 +123,14 @@ async function main() {
       'pre-crash watch event'
     )
     await writeFile(join(rootPath, 'before.txt'), 'before')
-    await beforeEvent
+    await Promise.race([beforeEvent, watcherError])
 
     const firstChildPid = supervisor.child?.pid
     if (!firstChildPid) {
       throw new Error('Watcher supervisor did not expose a live child')
     }
     process.kill(firstChildPid, 'SIGSEGV')
-    await interrupted
+    await Promise.race([interrupted, watcherError])
 
     const replacementChildPid = supervisor.child?.pid
     if (!replacementChildPid || replacementChildPid === firstChildPid) {
@@ -126,7 +144,7 @@ async function main() {
       'post-crash watch event'
     )
     await writeFile(join(rootPath, 'after.txt'), 'after')
-    await afterEvent
+    await Promise.race([afterEvent, watcherError])
 
     console.log(
       JSON.stringify({
@@ -140,10 +158,15 @@ async function main() {
     )
   } finally {
     await subscription?.unsubscribe()
-    supervisor.dispose()
+    supervisor?.dispose()
     await Promise.all([
-      rm(rootPath, { recursive: true, force: true }),
-      rm(bundleDir, { recursive: true, force: true })
+      createdRootPath
+        ? rm(createdRootPath, { recursive: true, force: true })
+        : Promise.resolve(),
+      rootPath && rootPath !== createdRootPath
+        ? rm(rootPath, { recursive: true, force: true })
+        : Promise.resolve(),
+      bundleDir ? rm(bundleDir, { recursive: true, force: true }) : Promise.resolve()
     ])
   }
 }

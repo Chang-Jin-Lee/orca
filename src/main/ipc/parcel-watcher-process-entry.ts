@@ -232,15 +232,6 @@ function main(): void {
     }
   }
 
-  const handleCancelSubscribe = (id: number): void => {
-    const restartRequired = activeSubscriptionCrawlId === id
-    subscriptions.delete(id)
-    liveSubscriptionIds.delete(id)
-    eventDeliveries.get(id)?.close()
-    eventDeliveries.delete(id)
-    send(restartRequired ? { op: 'cancel-requires-restart', id } : { op: 'unsubscribed', id })
-  }
-
   const handleUnsubscribe = async (id: number): Promise<void> => {
     // Why: invalidate a probe already in flight, but keep future probes active.
     // A native teardown deadlock is the failure the canary exists to recover.
@@ -265,6 +256,23 @@ function main(): void {
       subscriptionActivityRevision++
     }
     send({ op: 'unsubscribed', id })
+  }
+
+  const handleCancelSubscribe = (id: number): void => {
+    // Why: an in-flight native crawl cannot be cancelled safely; ask the host to
+    // kill this child instead of risking the Parcel teardown deadlock.
+    if (activeSubscriptionCrawlId === id) {
+      subscriptions.delete(id)
+      liveSubscriptionIds.delete(id)
+      eventDeliveries.get(id)?.close()
+      eventDeliveries.delete(id)
+      send({ op: 'cancel-requires-restart', id })
+      return
+    }
+    // Why: cancel can race a crawl that already finished. Reuse unsubscribe
+    // teardown so a live native handle is released instead of leaked (Windows
+    // keeps the worktree locked while the handle stays open).
+    void handleUnsubscribe(id)
   }
 
   process.on('message', (message: HostToWatcherMessage) => {

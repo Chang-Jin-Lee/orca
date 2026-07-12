@@ -226,13 +226,37 @@ describe('parcel watcher process canary', () => {
     process.emit('message', { op: 'subscribe', id: 2, dir: '/queued', opts: {} })
     process.emit('message', { op: 'cancel-subscribe', id: 2 })
 
-    expect(sendMock).toHaveBeenCalledWith({ op: 'unsubscribed', id: 2 })
+    // Why: non-restart cancel reuses async unsubscribe teardown; drain the
+    // exclusive lifecycle queue after the active crawl finishes.
     finishActiveCrawl?.({ unsubscribe: vi.fn().mockResolvedValue(undefined) })
     await vi.advanceTimersByTimeAsync(0)
 
+    expect(sendMock).toHaveBeenCalledWith({ op: 'unsubscribed', id: 2 })
     expect(subscribeMock).toHaveBeenCalledTimes(2)
     expect(sendMock).not.toHaveBeenCalledWith({ op: 'subscribe-started', id: 2 })
     expect(sendMock).not.toHaveBeenCalledWith({ op: 'subscribed', id: 2 })
+  })
+
+  it('unsubscribes a late cancel after the crawl already finished', async () => {
+    const unsubscribe = vi.fn().mockResolvedValue(undefined)
+    subscribeMock.mockResolvedValueOnce({ unsubscribe: vi.fn() }).mockResolvedValueOnce({
+      unsubscribe
+    })
+    const sendMock = vi.fn()
+    process.send = sendMock
+
+    await import('./parcel-watcher-process-entry')
+    await vi.advanceTimersByTimeAsync(0)
+    process.emit('message', { op: 'subscribe', id: 1, dir: '/finished', opts: {} })
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(sendMock).toHaveBeenCalledWith({ op: 'subscribed', id: 1 })
+    process.emit('message', { op: 'cancel-subscribe', id: 1 })
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(unsubscribe).toHaveBeenCalledTimes(1)
+    expect(sendMock).toHaveBeenCalledWith({ op: 'unsubscribed', id: 1 })
+    expect(sendMock).not.toHaveBeenCalledWith({ op: 'cancel-requires-restart', id: 1 })
   })
 
   it('asks the host to restart when an active crawl is cancelled', async () => {

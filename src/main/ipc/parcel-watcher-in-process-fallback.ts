@@ -107,10 +107,10 @@ export async function subscribeWithInProcessWatcher(
     clearPendingControls()
     // Why: Parcel cannot cancel a crawl in-process. If it eventually finishes,
     // release the late native handle instead of leaking it into the test host.
-    void subscriptionPromise.then(
-      (lateSubscription) => lateSubscription.unsubscribe(),
-      () => undefined
-    )
+    // Swallow unsubscribe failures so they never surface as unhandled rejections.
+    void subscriptionPromise
+      .then((lateSubscription) => lateSubscription.unsubscribe())
+      .catch(() => undefined)
     throw error
   }
   clearPendingControls()
