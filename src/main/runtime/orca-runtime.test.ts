@@ -22165,10 +22165,12 @@ describe('OrcaRuntimeService', () => {
       } as never)
 
       const now = Date.now()
+      const pathComparisonSpy = vi.spyOn(worktreePathComparison, 'areWorktreePathsEqual')
+      pathComparisonSpy.mockClear()
       const runtime = new OrcaRuntimeService(runtimeStore as never, undefined, {
-        getAgentStatusSnapshot: () => [
-          {
-            paneKey: 'relative-tab:55555555-5555-4555-8555-555555555555',
+        getAgentStatusSnapshot: () =>
+          Array.from({ length: 100 }, (_, index) => ({
+            paneKey: `relative-tab:${String(index).padStart(8, '0')}-5555-4555-8555-555555555555`,
             worktreeId: `${remoteRepo.id}::${backslashWorktree.path}/`,
             tabId: 'relative-tab',
             state: 'working',
@@ -22177,8 +22179,7 @@ describe('OrcaRuntimeService', () => {
             connectionId: 'ssh-relative',
             receivedAt: now,
             stateStartedAt: now - 100
-          }
-        ]
+          }))
       })
 
       const summaries = await runtime.getWorktreePs()
@@ -22190,8 +22191,9 @@ describe('OrcaRuntimeService', () => {
       )
 
       expect(backslashSummary).toMatchObject({ hasHostSidebarActivity: true, status: 'working' })
-      expect(backslashSummary?.agents).toHaveLength(1)
+      expect(backslashSummary?.agents).toHaveLength(100)
       expect(slashSummary?.agents).toEqual([])
+      expect(pathComparisonSpy.mock.calls.length).toBeLessThanOrEqual(2)
     }
   )
 

@@ -11058,12 +11058,14 @@ export class OrcaRuntimeService {
       summaries,
       resolvedWorktrees
     )
+    const fallbackSummaryByRuntimeWorktreeId = new Map<string, RuntimeWorktreePsSummary | null>()
     const countedPtyIds = new Set<string>()
     for (const leaf of this.leaves.values()) {
       const summary = this.getSummaryForRuntimeWorktreeId(
         summaries,
         resolvedWorktrees,
         summaryByRuntimeWorktreePath,
+        fallbackSummaryByRuntimeWorktreeId,
         leaf.worktreeId
       )
       if (!summary) {
@@ -11099,6 +11101,7 @@ export class OrcaRuntimeService {
         summaries,
         resolvedWorktrees,
         summaryByRuntimeWorktreePath,
+        fallbackSummaryByRuntimeWorktreeId,
         pty.worktreeId
       )
       if (!summary) {
@@ -11126,6 +11129,7 @@ export class OrcaRuntimeService {
         summaries,
         resolvedWorktrees,
         summaryByRuntimeWorktreePath,
+        fallbackSummaryByRuntimeWorktreeId,
         worktreeId
       )
       if (!summary) {
@@ -11155,6 +11159,7 @@ export class OrcaRuntimeService {
         summaries,
         resolvedWorktrees,
         summaryByRuntimeWorktreePath,
+        fallbackSummaryByRuntimeWorktreeId,
         session.activeWorktreeId
       )
       if (activeSummary) {
@@ -11162,7 +11167,12 @@ export class OrcaRuntimeService {
       }
     }
 
-    this.attachAgentRowsToSummaries(summaries, resolvedWorktrees, summaryByRuntimeWorktreePath)
+    this.attachAgentRowsToSummaries(
+      summaries,
+      resolvedWorktrees,
+      summaryByRuntimeWorktreePath,
+      fallbackSummaryByRuntimeWorktreeId
+    )
 
     const sorted = [...summaries.values()].sort(compareWorktreePs)
     return {
@@ -11179,7 +11189,8 @@ export class OrcaRuntimeService {
   private attachAgentRowsToSummaries(
     summaries: Map<string, RuntimeWorktreePsSummary>,
     resolvedWorktrees: ResolvedWorktree[],
-    summaryByRuntimeWorktreePath: ReadonlyMap<string, RuntimeWorktreePsSummary>
+    summaryByRuntimeWorktreePath: ReadonlyMap<string, RuntimeWorktreePsSummary>,
+    fallbackSummaryByRuntimeWorktreeId: Map<string, RuntimeWorktreePsSummary | null>
   ): void {
     // Why: most agents report via hooks (agent-hooks/server), not OSC, so the
     // hook snapshot is the primary source — same one the desktop sidebar reads.
@@ -11252,6 +11263,7 @@ export class OrcaRuntimeService {
         summaries,
         resolvedWorktrees,
         summaryByRuntimeWorktreePath,
+        fallbackSummaryByRuntimeWorktreeId,
         worktreeId
       )
       if (!summary) {
@@ -20239,6 +20251,7 @@ export class OrcaRuntimeService {
     summaries: Map<string, RuntimeWorktreePsSummary>,
     resolvedWorktrees: ResolvedWorktree[],
     summaryByRuntimeWorktreePath: ReadonlyMap<string, RuntimeWorktreePsSummary>,
+    fallbackSummaryByRuntimeWorktreeId: Map<string, RuntimeWorktreePsSummary | null>,
     runtimeWorktreeId: string
   ): RuntimeWorktreePsSummary | null {
     const exact = summaries.get(runtimeWorktreeId)
@@ -20254,6 +20267,9 @@ export class OrcaRuntimeService {
     if (indexed) {
       return indexed
     }
+    if (fallbackSummaryByRuntimeWorktreeId.has(runtimeWorktreeId)) {
+      return fallbackSummaryByRuntimeWorktreeId.get(runtimeWorktreeId) ?? null
+    }
     // Why: malformed legacy relative paths can require pair-aware comparison;
     // keep the compatibility fallback off the normal indexed absolute path.
     const resolved = resolvedWorktrees.find(
@@ -20261,7 +20277,9 @@ export class OrcaRuntimeService {
         worktree.repoId === parsed.repoId &&
         areWorktreePathsEqual(worktree.path, parsed.worktreePath)
     )
-    return resolved ? (summaries.get(resolved.id) ?? null) : null
+    const fallback = resolved ? (summaries.get(resolved.id) ?? null) : null
+    fallbackSummaryByRuntimeWorktreeId.set(runtimeWorktreeId, fallback)
+    return fallback
   }
 
   private buildTerminalSummary(
