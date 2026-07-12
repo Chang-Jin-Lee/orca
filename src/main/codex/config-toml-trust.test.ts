@@ -1607,6 +1607,39 @@ describe('readHookTrustEntries', () => {
     }
   )
 
+  it.skipIf(process.platform !== 'win32')(
+    'keeps case-distinct WSL UNC hook paths distinct on a Windows host',
+    () => {
+      // Why: the \\wsl$\<distro> share is case-insensitive, but the Linux tail
+      // is not — folding the whole path would merge two distinct hook sources.
+      const upperKey = '\\\\wsl$\\Ubuntu\\home\\u\\Repo\\hooks.json:session_start:0:0'
+      const lowerKey = '\\\\wsl$\\Ubuntu\\home\\u\\repo\\hooks.json:session_start:0:0'
+      writeFileSync(
+        configPath,
+        [
+          `[hooks.state.'${upperKey}']`,
+          'enabled = true',
+          'trusted_hash = "sha256:UPPER"',
+          '',
+          `[hooks.state.'${lowerKey}']`,
+          'enabled = true',
+          'trusted_hash = "sha256:LOWER"',
+          ''
+        ].join('\n'),
+        'utf-8'
+      )
+
+      const result = readHookTrustEntries(configPath)
+
+      // Same share, different-cased distro/separators still fold to one key.
+      expect(result.get('//WSL$/ubuntu/home/u/Repo/hooks.json:session_start:0:0')?.trustedHash).toBe(
+        'sha256:UPPER'
+      )
+      expect(result.get(lowerKey)?.trustedHash).toBe('sha256:LOWER')
+      expect(result.size).toBe(2)
+    }
+  )
+
   it('reads entries from a CRLF-terminated config', () => {
     const key = '/x/hooks.json:pre_tool_use:0:0'
     const original = [

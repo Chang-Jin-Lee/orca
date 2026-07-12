@@ -214,29 +214,20 @@ export function normalizeCodexProjectPathForLookup(projectPath: string): string 
   if (!usesWindowsPathSeparators(projectPath)) {
     return projectPath
   }
-  const slashed = normalizeWindowsPathSeparators(projectPath)
-  const wsl = matchWslUncSharePrefix(slashed)
-  if (wsl) {
-    // Why: the \\wsl$\<distro> (and \\wsl.localhost\<distro>) share prefix is
-    // matched case-insensitively by Windows, but the Linux path underneath is
-    // case-sensitive — lowercasing it would conflate two distinct project dirs
-    // (e.g. .../Repo vs .../repo) onto one trust key.
-    return `${wsl.sharePrefix.toLowerCase()}${wsl.linuxPath}`
-  }
-  return slashed.toLowerCase()
+  return foldWindowsCaseInsensitivePath(normalizeWindowsPathSeparators(projectPath))
 }
 
-// Why: split a forward-slashed WSL UNC path into its case-insensitive Windows
-// share prefix (\\wsl$\<distro> or \\wsl.localhost\<distro>) and the
-// case-sensitive Linux path that follows.
-function matchWslUncSharePrefix(
-  slashedPath: string
-): { sharePrefix: string; linuxPath: string } | null {
-  const match = /^\/\/(?:wsl\$|wsl\.localhost)\/[^/]+/i.exec(slashedPath)
-  if (!match) {
-    return null
+// Why: drive letters and the \\wsl$\<distro> / \\wsl.localhost\<distro> share
+// prefix are matched case-insensitively by Windows, but the Linux path under a
+// WSL share is case-sensitive — lowercasing it would conflate distinct dirs
+// (e.g. .../Repo vs .../repo) onto one trust key. Fold only the part Windows
+// itself treats case-insensitively. Input must already be forward-slashed.
+function foldWindowsCaseInsensitivePath(slashedPath: string): string {
+  const wslShare = /^\/\/(?:wsl\$|wsl\.localhost)\/[^/]+/i.exec(slashedPath)
+  if (!wslShare) {
+    return slashedPath.toLowerCase()
   }
-  return { sharePrefix: match[0], linuxPath: slashedPath.slice(match[0].length) }
+  return `${wslShare[0].toLowerCase()}${slashedPath.slice(wslShare[0].length)}`
 }
 
 export function parseTrustKey(key: string): {
@@ -549,14 +540,19 @@ type TrustBlockRange = {
 // casing) must not prevent findTrustBlockRanges from matching an existing block.
 export function normalizeHookTrustKeyForLookup(key: string): string {
   const parsed = parseTrustKey(key)
-  const separated = parsed
-    ? `${normalizeWindowsPathSeparators(parsed.sourcePath)}:${parsed.eventLabel}:${parsed.groupIndex}:${parsed.handlerIndex}`
-    : normalizeWindowsPathSeparators(key)
+  const sourcePath = normalizeWindowsPathSeparators(parsed ? parsed.sourcePath : key)
   // Why: Windows-native paths are case-insensitive, but WSL and SSH trust
   // sources remain case-sensitive even when Orca's host process is Windows.
+  // Fold only the case-insensitive Windows portion so a WSL UNC hook path keeps
+  // its case-sensitive Linux tail (see foldWindowsCaseInsensitivePath).
   const caseInsensitiveWindowsPath =
     process.platform === 'win32' && usesWindowsPathSeparators(parsed?.sourcePath ?? key)
-  return caseInsensitiveWindowsPath ? separated.toLowerCase() : separated
+  const foldedPath = caseInsensitiveWindowsPath
+    ? foldWindowsCaseInsensitivePath(sourcePath)
+    : sourcePath
+  return parsed
+    ? `${foldedPath}:${parsed.eventLabel}:${parsed.groupIndex}:${parsed.handlerIndex}`
+    : foldedPath
 }
 
 function findTrustBlockRanges(content: string, key: string): TrustBlockRange[] {
