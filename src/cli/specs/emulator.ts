@@ -65,12 +65,14 @@ export const EMULATOR_COMMAND_SPECS: CommandSpec[] = [
   },
   {
     path: ['emulator', 'kill'],
+    destructive: true,
     summary: 'Stop helper for device',
     usage: 'orca emulator kill [--device <id>] [--worktree <selector>] [--json]',
     allowedFlags: [...GLOBAL_FLAGS, 'device', 'emulator', 'worktree']
   },
   {
     path: ['emulator', 'shutdown'],
+    destructive: true,
     summary: 'Stop helper and shut down the simulator device',
     usage:
       'orca emulator shutdown [--device <id>] [--emulator <id>] [--worktree <selector>] [--json]',
@@ -92,6 +94,9 @@ export const EMULATOR_COMMAND_SPECS: CommandSpec[] = [
   },
   {
     path: ['emulator', 'permissions'],
+    // Why: this shared path exposes revoke/reset as well as grant, so suggestion
+    // safety must classify the whole command rather than inspect later arguments.
+    destructive: true,
     summary: 'Grant/revoke an Android runtime permission, or reset all runtime grants',
     usage:
       'orca emulator permissions <grant|revoke> <package> <permission> [--device <id>] [--json]\n       orca emulator permissions reset [--device <id>] [--json]',

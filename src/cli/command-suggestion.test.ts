@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import type { CommandSpec } from './args'
 import { levenshtein, suggestCommands, unknownCommandData } from './command-suggestion'
+import { COMMAND_SPECS } from './specs'
 
 const specs: CommandSpec[] = [
   {
@@ -36,6 +37,32 @@ const specs: CommandSpec[] = [
     usage: 'orca emulator kill',
     allowedFlags: []
   }
+]
+
+const destructiveProductionPaths = [
+  'agent hooks off',
+  'automations remove',
+  'clear',
+  'cookie delete',
+  'emulator kill',
+  'emulator permissions',
+  'emulator shutdown',
+  'environment rm',
+  'linear assignee clear',
+  'linear due-date clear',
+  'linear estimate clear',
+  'linear label remove',
+  'linear priority clear',
+  'orchestration reset',
+  'orchestration run-stop',
+  'project setup-delete',
+  'storage local clear',
+  'storage session clear',
+  'tab close',
+  'tab profile delete',
+  'terminal close',
+  'terminal stop',
+  'worktree rm'
 ]
 
 describe('levenshtein', () => {
@@ -108,8 +135,54 @@ describe('suggestCommands', () => {
     expect(suggestCommands(specs, ['emulator', 'kil'])).toContain('emulator kill')
   })
 
+  it('does not unlock one destructive command with a typo of another destructive verb', () => {
+    expect(suggestCommands(specs, ['worktree', 'kll'])).not.toContain('worktree rm')
+  })
+
+  it('does not treat a benign one-character substitution as destructive intent', () => {
+    expect(suggestCommands(specs, ['emulator', 'fill'])).not.toContain('emulator kill')
+  })
+
+  it('does not infer destructive intent from a one-character abbreviation', () => {
+    expect(suggestCommands(specs, ['worktree', 'r'])).not.toContain('worktree rm')
+  })
+
+  it('recovers a misspelled parent when the destructive verb is exact', () => {
+    expect(suggestCommands(specs, ['emulato', 'kill'])).toContain('emulator kill')
+  })
+
+  it('recovers a repeated trailing character in a destructive verb', () => {
+    expect(suggestCommands(specs, ['emulator', 'killl'])).toContain('emulator kill')
+  })
+
   it('still recovers non-destructive near-misses', () => {
     expect(suggestCommands(specs, ['worktree', 'lst'])).toContain('worktree list')
+  })
+})
+
+describe('production destructive command registry', () => {
+  it.each(destructiveProductionPaths)('marks %s as destructive', (commandPath) => {
+    const spec = COMMAND_SPECS.find((candidate) => candidate.path.join(' ') === commandPath)
+    expect(spec?.destructive).toBe(true)
+  })
+
+  it('does not suggest orchestration reset for a benign typo', () => {
+    expect(suggestCommands(COMMAND_SPECS, ['orchestration', 'result'])).not.toContain(
+      'orchestration reset'
+    )
+  })
+
+  it('does not suggest emulator kill for a benign typo', () => {
+    expect(suggestCommands(COMMAND_SPECS, ['emulator', 'ball'])).not.toContain('emulator kill')
+    expect(suggestCommands(COMMAND_SPECS, ['emulator', 'fill'])).not.toContain('emulator kill')
+  })
+
+  it('does not unlock worktree removal with a typo of emulator kill', () => {
+    expect(suggestCommands(COMMAND_SPECS, ['worktree', 'kll'])).not.toContain('worktree rm')
+  })
+
+  it('still suggests a destructive command for a near-miss of its verb', () => {
+    expect(suggestCommands(COMMAND_SPECS, ['emulator', 'kil'])).toContain('emulator kill')
   })
 })
 

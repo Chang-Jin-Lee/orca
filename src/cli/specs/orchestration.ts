@@ -124,6 +124,7 @@ export const ORCHESTRATION_COMMAND_SPECS: CommandSpec[] = [
   },
   {
     path: ['orchestration', 'run-stop'],
+    destructive: true,
     summary: 'Stop the active coordinator run',
     usage: 'orca orchestration run-stop [--json]',
     allowedFlags: [...GLOBAL_FLAGS]
@@ -149,6 +150,7 @@ export const ORCHESTRATION_COMMAND_SPECS: CommandSpec[] = [
   },
   {
     path: ['orchestration', 'reset'],
+    destructive: true,
     summary: 'Reset orchestration state (one scope; bare command resets all)',
     usage: 'orca orchestration reset [--all | --tasks | --messages] [--json]',
     allowedFlags: [...GLOBAL_FLAGS, 'all', 'tasks', 'messages']

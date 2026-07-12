@@ -13,8 +13,8 @@ export type CommandSpec = {
   // or handler registrations.
   aliases?: string[][]
   argumentMode?: 'parsed' | 'passthrough'
-  // Why: irreversibly destroys persistent state — typo recovery must not steer a
-  // benign mistake into one of these via the agent nextSteps channel. #6303
+  // Why: commands that remove user state/configuration or terminate a workload
+  // must not be suggested from a benign mistake via agent nextSteps. #6303
   destructive?: boolean
   summary: string
   usage: string
