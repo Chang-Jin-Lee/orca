@@ -2387,17 +2387,9 @@ export default function TerminalPane({
       if (frame !== null) {
         cancelAnimationFrame(frame)
       }
-      // Why: a single rAF fires while the browser may still be dispatching
-      // ResizeObserver notifications, which causes syncPaneTitleOverlayRects to
-      // trigger a React state update that re-fires the observer — producing a
-      // "ResizeObserver loop completed with undelivered notifications" error and
-      // a potential freeze. The double-rAF defers work to the next paint frame,
-      // after the current observation cycle is fully complete.
       frame = requestAnimationFrame(() => {
-        frame = requestAnimationFrame(() => {
-          frame = null
-          syncPaneTitleOverlayRects()
-        })
+        frame = null
+        syncPaneTitleOverlayRects()
       })
     }
 

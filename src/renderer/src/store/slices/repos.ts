@@ -2814,7 +2814,9 @@ export const createRepoSlice: StateCreator<AppState, [], [], RepoSlice> = (set, 
           for (const ptyId of get().ptyIdsByTabId[tab.id] ?? []) {
             killedPtyIds.add(ptyId)
             if (!ptyId.startsWith('remote:')) {
-              window.api.pty.kill(ptyId).catch(() => {})
+              void Promise.resolve(window.api.pty.kill(ptyId)).catch((error) => {
+                console.warn('[pty] Failed to stop PTY while removing project', error)
+              })
             }
           }
         }

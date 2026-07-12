@@ -37,6 +37,7 @@ const runtimeEnvironmentTransportCallMock = vi.fn()
 const setActiveWorktreeMock = vi.fn()
 const createBrowserTabMock = vi.fn()
 const setPendingEditorRevealMock = vi.fn()
+const recordBreadcrumbMock = vi.fn()
 
 const deps = { worktreeId: 'wt-1', worktreePath: '/tmp' }
 const storeState = {
@@ -123,7 +124,8 @@ beforeEach(() => {
         pathExists: fsPathExistsMock,
         stat: statMock
       },
-      runtimeEnvironments: { call: runtimeEnvironmentTransportCallMock }
+      runtimeEnvironments: { call: runtimeEnvironmentTransportCallMock },
+      crashReports: { recordBreadcrumb: recordBreadcrumbMock }
     }
   })
   vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback): number => {
@@ -1404,6 +1406,46 @@ describe('createFilePathLinkProvider range bounds', () => {
       filePath: '/repo/shared.ts',
       connectionId: 'ssh-two'
     })
+  })
+
+  it('settles a remote path probe failure as one no-links callback', async () => {
+    setPlatform('Macintosh')
+    vi.mocked(getConnectionId).mockReturnValue('ssh-one')
+    const error = new Error('remote connection dropped')
+    fsPathExistsMock.mockRejectedValueOnce(error).mockRejectedValueOnce(error)
+    const provider = createProviderSetup([makeBufferLine('missing.ts')], new Map()).provider
+    const firstCallback = vi.fn()
+    const secondCallback = vi.fn()
+
+    provider.provideLinks(1, firstCallback)
+    await flushAsyncWork()
+    provider.provideLinks(1, secondCallback)
+    await flushAsyncWork()
+
+    expect(firstCallback).toHaveBeenCalledWith(undefined)
+    expect(secondCallback).toHaveBeenCalledWith(undefined)
+    expect(recordBreadcrumbMock).toHaveBeenCalledOnce()
+    expect(recordBreadcrumbMock).toHaveBeenCalledWith({
+      name: 'terminal_file_link_probe_error',
+      data: { errorName: 'Error', errorMessage: 'remote connection dropped' }
+    })
+  })
+
+  it('preserves successful sibling links when one remote probe rejects', async () => {
+    setPlatform('Macintosh')
+    vi.mocked(getConnectionId).mockReturnValue('ssh-one')
+    fsPathExistsMock
+      .mockResolvedValueOnce(true)
+      .mockRejectedValueOnce(new Error('remote connection dropped'))
+    const provider = createProviderSetup([makeBufferLine('good.ts missing.ts')], new Map()).provider
+
+    const links = await new Promise<ILink[]>((resolve) => {
+      provider.provideLinks(1, (provided) => resolve(provided ?? []))
+    })
+
+    expect(links.map((link) => link.text)).toContain('good.ts')
+    expect(links.map((link) => link.text)).not.toContain('missing.ts')
+    expect(recordBreadcrumbMock).toHaveBeenCalledOnce()
   })
 
   it('opens a single-row file path from a direct modifier-click fallback', async () => {

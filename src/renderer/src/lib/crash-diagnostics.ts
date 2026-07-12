@@ -64,15 +64,6 @@ if (typeof import.meta !== 'undefined' && import.meta.hot) {
 }
 
 function recordRendererError(event: ErrorEvent): void {
-  // Why: ResizeObserver loop errors are a Chromium/Electron browser quirk fired
-  // when a ResizeObserver callback causes layout changes mid-dispatch. They are
-  // benign and self-resolving; recording them fills the breadcrumb buffer and
-  // inflates the error count without adding diagnostic value. Suppress them
-  // here so they don't contribute to memory growth or false-positive crash traces.
-  if (/ResizeObserver loop/i.test(event.message)) {
-    event.preventDefault()
-    return
-  }
   recordRendererCrashBreadcrumb(
     'renderer_error',
     compactBreadcrumbData({

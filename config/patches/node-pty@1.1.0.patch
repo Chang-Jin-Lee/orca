@@ -73,6 +73,65 @@ index 1ec12f796a822c78fba9ad7f6448c3987e325c23..cec8b67aef02f8199e5606a0d257088b
  var DEFAULT_FILE = 'sh';
  var DEFAULT_NAME = 'xterm';
  var DESTROY_SOCKET_TIMEOUT_MS = 200;
+diff --git a/lib/windowsTerminal.js b/lib/windowsTerminal.js
+index 64afaa33ad620757445ba4e4f2d8c4dc8c840379..09366fc9cd77c89a631eb058761cbbc46123b13e 100644
+--- a/lib/windowsTerminal.js
++++ b/lib/windowsTerminal.js
+@@ -141,18 +141,14 @@ var WindowsTerminal = /** @class */ (function (_super) {
+     WindowsTerminal.prototype.destroy = function () {
+-        var _this = this;
+-        this._deferNoArgs(function () {
+-            _this.kill();
+-        });
++        this.kill();
+     };
+     WindowsTerminal.prototype.kill = function (signal) {
+-        var _this = this;
+-        this._deferNoArgs(function () {
+-            if (signal) {
+-                throw new Error('Signals not supported on windows.');
+-            }
+-            _this._close();
+-            _this._agent.kill();
+-        });
++        if (signal) {
++            throw new Error('Signals not supported on windows.');
++        }
++        // Shutdown must not wait for first output; silent shells can stay pre-ready forever.
++        this._deferreds = [];
++        this._close();
++        this._agent.kill();
+     };
+     WindowsTerminal.prototype._deferNoArgs = function (deferredFn) {
+         var _this = this;
+diff --git a/src/windowsTerminal.ts b/src/windowsTerminal.ts
+index e42e73a93ab31f649fdccc234436f3ec8f7f67de..197c327e5dd09409a80e39dc3dce6ff6cc176075 100644
+--- a/src/windowsTerminal.ts
++++ b/src/windowsTerminal.ts
+@@ -158,5 +158,3 @@ export class WindowsTerminal extends Terminal {
+   public destroy(): void {
+-    this._deferNoArgs(() => {
+-      this.kill();
+-    });
++    this.kill();
+   }
+@@ -164,9 +162,9 @@ export class WindowsTerminal extends Terminal {
+   public kill(signal?: string): void {
+-    this._deferNoArgs(() => {
+-      if (signal) {
+-        throw new Error('Signals not supported on windows.');
+-      }
+-      this._close();
+-      this._agent.kill();
+-    });
++    if (signal) {
++      throw new Error('Signals not supported on windows.');
++    }
++    // Shutdown must not wait for first output; silent shells can stay pre-ready forever.
++    this._deferreds = [];
++    this._close();
++    this._agent.kill();
+   }
 diff --git a/lib/conpty_console_list_agent.js b/lib/conpty_console_list_agent.js
 index ccc111c9e03a4a661ccfd5d8e8f0ee699571b5dd..f92c6bef7d46dc35c941c87ef186aa46d8ed9c44 100644
 --- a/lib/conpty_console_list_agent.js

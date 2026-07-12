@@ -21,11 +21,11 @@ const repo1: Repo = { id: 'repo-1', path: '/r1', displayName: 'R1', badgeColor: 
 const repo2: Repo = { id: 'repo-2', path: '/r2', displayName: 'R2', badgeColor: '#111', addedAt: 2 }
 
 const reposRemove = vi.fn().mockResolvedValue(undefined)
-const ptyKill = vi.fn()
+const ptyKill = vi.fn().mockResolvedValue(undefined)
 
 beforeEach(() => {
   reposRemove.mockReset().mockResolvedValue(undefined)
-  ptyKill.mockReset()
+  ptyKill.mockReset().mockResolvedValue(undefined)
   vi.stubGlobal('window', {
     api: {
       repos: { remove: reposRemove },
@@ -83,5 +83,26 @@ describe('removeProject purges per-worktree state (leak regression)', () => {
     expect(s.browserTabsByWorktree[W2]).toBeDefined()
     expect(s.gitStatusHugeByWorktree[W2]).toEqual({ limit: 2000 })
     expect(s.everActivatedWorktreeIds.has(W2)).toBe(true)
+  })
+
+  it('purges project state after a rejected best-effort PTY kill', async () => {
+    const store = createTestStore()
+    seedTwoProjects(store)
+    store.setState({
+      tabsByWorktree: { [W1]: [{ id: 'tab-1' } as never] },
+      ptyIdsByTabId: { 'tab-1': ['pty-1'] }
+    })
+    const error = new Error('remote connection dropped')
+    ptyKill.mockRejectedValueOnce(error)
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    try {
+      await store.getState().removeProject(repo1.id)
+
+      expect(store.getState().unifiedTabsByWorktree[W1]).toBeUndefined()
+      expect(warn).toHaveBeenCalledWith('[pty] Failed to stop PTY while removing project', error)
+    } finally {
+      warn.mockRestore()
+    }
   })
 })

@@ -25,25 +25,18 @@ import {
   type ShellReadyScanState
 } from '../main/shell-ready-marker-scanner'
 
-// Why: node-pty WindowsTerminal.kill(signal) throws "Signals not supported on
-// windows." when called with any argument. Use this helper everywhere instead of
-// calling .kill(signal) directly so the call is safe across all PTY backends.
-function killPtyProcess(pty: IPty, signal: string): void {
-  try {
-    pty.kill(signal)
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err)
-    if (/signals not supported/i.test(message)) {
-      // Windows PTY backend doesn't support signals — kill without a signal arg
-      // to terminate the process as best the platform allows.
-      try {
-        pty.kill()
-      } catch {
-        // Already dead or disposed; safe to ignore.
-      }
-      return
+function killPtyForShutdown(managed: ManagedPty, signal: 'SIGTERM' | 'SIGKILL'): void {
+  // Why: node-pty's Windows backend rejects signal arguments; its no-arg kill
+  // is the equivalent shutdown operation for ConPTY.
+  if (process.platform === 'win32') {
+    if (!managed.windowsShutdownKillIssued) {
+      managed.pty.kill()
+      // Why: a native kill throw can leave the process alive. Mark success only
+      // after return so provider ownership remains retryable on failure.
+      managed.windowsShutdownKillIssued = true
     }
-    throw err
+  } else {
+    managed.pty.kill(signal)
   }
 }
 
@@ -71,6 +64,7 @@ type ManagedPty = {
   buffered: string
   /** Timer for SIGKILL fallback after a graceful SIGTERM shutdown. */
   killTimer?: ReturnType<typeof setTimeout>
+  windowsShutdownKillIssued?: boolean
   /** True once disposeManagedPty has run. Prevents double-dispose (onExit + an
    *  explicit shutdown can both fire for the same PTY) and converts post-dispose
    *  entry-point calls into a clean "not found" error instead of a silent no-op
@@ -131,7 +125,9 @@ function disposeManagedPty(managed: ManagedPty): void {
     ;(managed.pty as unknown as { kill: (sig?: string) => void }).kill = () => {}
   }
   try {
-    ;(managed.pty as unknown as { destroy?: () => void }).destroy?.()
+    if (!managed.windowsShutdownKillIssued) {
+      ;(managed.pty as unknown as { destroy?: () => void }).destroy?.()
+    }
   } catch {
     /* swallow */
   }
@@ -732,11 +728,11 @@ export class PtyHandler {
       // response is discarded and no renderer can own this PTY. Shut it down
       // immediately so it does not linger as an unreachable remote shell.
       this.releaseStartupCommand(managed)
-      killPtyProcess(term, 'SIGTERM')
+      killPtyForShutdown(managed, 'SIGTERM')
       managed.killTimer = setTimeout(() => {
         const still = this.ptys.get(id)
         if (still && !still.disposed) {
-          killPtyProcess(still.pty, 'SIGKILL')
+          killPtyForShutdown(still, 'SIGKILL')
           // Why: stale-spawn cleanup has no client who will ever attach. If
           // SIGKILL's onExit is missed (kernel edge case, uninterruptible
           // sleep), the managed entry + ptmx fd would leak forever. Dispose
@@ -861,7 +857,7 @@ export class PtyHandler {
     if (immediate) {
       this.releaseStartupCommand(managed)
       this.flushPtyOutput(id)
-      killPtyProcess(managed.pty, 'SIGKILL')
+      killPtyForShutdown(managed, 'SIGKILL')
       // Why: SIGKILL has already reaped the child; release the ptmx fd on the
       // same tick. Deferring to onExit leaves a window where the fd is live
       // with a dead child. Idempotent via the disposed guard — if onExit fires
@@ -880,7 +876,7 @@ export class PtyHandler {
       this.clearPtyFlowState(id)
     } else {
       this.releaseStartupCommand(managed)
-      killPtyProcess(managed.pty, 'SIGTERM')
+      killPtyForShutdown(managed, 'SIGTERM')
 
       // Why: Some processes ignore SIGTERM (e.g. a hung child, a custom signal
       // handler). Without a SIGKILL fallback the PTY process would leak and the
@@ -894,7 +890,7 @@ export class PtyHandler {
       managed.killTimer = setTimeout(() => {
         const still = this.ptys.get(id)
         if (still && !still.disposed) {
-          killPtyProcess(still.pty, 'SIGKILL')
+          killPtyForShutdown(still, 'SIGKILL')
           this.flushPtyOutput(id)
           // Why: emit pty.exit BEFORE disposeManagedPty sets disposed=true.
           // The natural onExit short-circuits on `managed.disposed`, so
@@ -929,7 +925,7 @@ export class PtyHandler {
     if (!managed || managed.disposed) {
       throw new Error(`PTY "${id}" not found`)
     }
-    killPtyProcess(managed.pty, signal)
+    managed.pty.kill(signal)
   }
 
   private async getCwd(params: Record<string, unknown>): Promise<string> {
@@ -1162,7 +1158,7 @@ export class PtyHandler {
       // ptmx fd release via disposeManagedPty is synchronous, so there is
       // no graceful-shutdown window to preserve at this point.
       try {
-        managed.pty.kill('SIGKILL')
+        killPtyForShutdown(managed, 'SIGKILL')
       } catch {
         /* child may already be dead */
       }

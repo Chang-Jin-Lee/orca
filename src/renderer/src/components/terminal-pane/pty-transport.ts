@@ -732,7 +732,9 @@ export function createIpcPtyTransport(opts: IpcPtyTransportOptions = {}): PtyTra
 
         // If destroyed while spawn was in flight, kill the new pty and bail
         if (destroyed) {
-          window.api.pty.kill(spawnResult.id).catch(() => {})
+          void window.api.pty.kill(spawnResult.id).catch((error) => {
+            console.warn('[pty] Failed to stop PTY spawned after transport teardown', error)
+          })
           return
         }
 
@@ -918,7 +920,9 @@ export function createIpcPtyTransport(opts: IpcPtyTransportOptions = {}): PtyTra
       inputWriteQueue.clear()
       if (ptyId) {
         const id = ptyId
-        window.api.pty.kill(id).catch(() => {})
+        void window.api.pty.kill(id).catch((error) => {
+          console.warn('[pty] Failed to stop disconnected PTY', error)
+        })
         connected = false
         ptyId = null
         unregisterPtyHandlers(id)

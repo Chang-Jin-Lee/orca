@@ -28,6 +28,7 @@ import {
   readTerminalPathExistsCache,
   writeTerminalPathExistsCache
 } from './terminal-path-exists-cache'
+import { createTerminalLinkProbeResultCollector } from './terminal-link-probe-results'
 import {
   getTerminalHtmlFileOpenHint,
   getTerminalOrcaFileOpenHint,
@@ -95,6 +96,7 @@ export function createFilePathLinkProvider(
   openLinkHint: string
 ): ILinkProvider {
   const { startupCwd, managerRef, pathExistsCache, worktreeId, worktreePath } = deps
+  const collectProbeResults = createTerminalLinkProbeResultCollector<ProvidedFileLink | null>()
   return {
     provideLinks: (bufferLineNumber, callback) => {
       const pane = managerRef.current?.getPanes().find((candidate) => candidate.id === paneId)
@@ -121,7 +123,7 @@ export function createFilePathLinkProvider(
         return
       }
 
-      void Promise.all(
+      void Promise.allSettled(
         logicalLines.flatMap((logicalLine) =>
           extractTerminalFileLinkCandidates(logicalLine.text).map(
             async (parsed): Promise<ProvidedFileLink | null> => {
@@ -214,7 +216,8 @@ export function createFilePathLinkProvider(
             }
           )
         )
-      ).then((resolvedLinks) => {
+      ).then((results) => {
+        const resolvedLinks = collectProbeResults(results)
         const latestFingerprints = new Set(
           buildCandidateLogicalLinesForBufferPosition(buffer, bufferLineNumber).map(
             (logicalLine) => logicalLine.fingerprint
@@ -230,9 +233,6 @@ export function createFilePathLinkProvider(
           return
         }
         callback(links.length > 0 ? links : undefined)
-      })
-      .catch(() => {
-        callback(undefined)
       })
     }
   }

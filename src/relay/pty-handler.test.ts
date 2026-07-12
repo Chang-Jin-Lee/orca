@@ -1081,6 +1081,134 @@ describe('PtyHandler', () => {
     expect(mockKill).toHaveBeenCalledWith('SIGKILL')
   })
 
+  it('uses node-pty no-argument shutdown on Windows without changing signal delivery', async () => {
+    const platformDescriptor = Object.getOwnPropertyDescriptor(process, 'platform')
+    const mockKill = vi.fn()
+    const destroy = vi.fn(() => mockKill())
+    mockPtySpawn.mockReturnValue({
+      ...mockPtyInstance,
+      kill: mockKill,
+      destroy,
+      onData: vi.fn(),
+      onExit: vi.fn()
+    })
+
+    Object.defineProperty(process, 'platform', { configurable: true, value: 'win32' })
+    try {
+      await dispatcher.callRequest('pty.spawn', {})
+      await dispatcher.callRequest('pty.sendSignal', { id: 'pty-1', signal: 'SIGWINCH' })
+      await dispatcher.callRequest('pty.shutdown', { id: 'pty-1', immediate: true })
+
+      expect(mockKill.mock.calls).toEqual([['SIGWINCH'], []])
+      expect(destroy).not.toHaveBeenCalled()
+    } finally {
+      if (platformDescriptor) {
+        Object.defineProperty(process, 'platform', platformDescriptor)
+      }
+    }
+  })
+
+  it('keeps Windows graceful shutdown and its fallback signal-free', async () => {
+    const platformDescriptor = Object.getOwnPropertyDescriptor(process, 'platform')
+    const mockKill = vi.fn()
+    const destroy = vi.fn(() => mockKill())
+    mockPtySpawn.mockReturnValue({
+      ...mockPtyInstance,
+      kill: mockKill,
+      destroy,
+      onData: vi.fn(),
+      onExit: vi.fn()
+    })
+
+    Object.defineProperty(process, 'platform', { configurable: true, value: 'win32' })
+    try {
+      await dispatcher.callRequest('pty.spawn', {})
+      await dispatcher.callRequest('pty.shutdown', { id: 'pty-1', immediate: false })
+      vi.advanceTimersByTime(5000)
+
+      expect(mockKill.mock.calls).toEqual([[]])
+      expect(destroy).not.toHaveBeenCalled()
+      expect(handler.activePtyCount).toBe(0)
+    } finally {
+      if (platformDescriptor) {
+        Object.defineProperty(process, 'platform', platformDescriptor)
+      }
+    }
+  })
+
+  it('keeps a Windows PTY retryable when immediate native shutdown throws', async () => {
+    const platformDescriptor = Object.getOwnPropertyDescriptor(process, 'platform')
+    const mockKill = vi
+      .fn()
+      .mockImplementationOnce(() => {
+        throw new Error('invalid ConPTY handle')
+      })
+      .mockImplementationOnce(() => {})
+    const destroy = vi.fn(() => mockKill())
+    mockPtySpawn.mockReturnValue({
+      ...mockPtyInstance,
+      kill: mockKill,
+      destroy,
+      onData: vi.fn(),
+      onExit: vi.fn()
+    })
+
+    Object.defineProperty(process, 'platform', { configurable: true, value: 'win32' })
+    try {
+      await dispatcher.callRequest('pty.spawn', {})
+      await expect(
+        dispatcher.callRequest('pty.shutdown', { id: 'pty-1', immediate: true })
+      ).rejects.toThrow('invalid ConPTY handle')
+      expect(handler.activePtyCount).toBe(1)
+      expect(destroy).not.toHaveBeenCalled()
+
+      await dispatcher.callRequest('pty.shutdown', { id: 'pty-1', immediate: true })
+      expect(mockKill.mock.calls).toEqual([[], []])
+      expect(handler.activePtyCount).toBe(0)
+    } finally {
+      if (platformDescriptor) {
+        Object.defineProperty(process, 'platform', platformDescriptor)
+      }
+    }
+  })
+
+  it('does not arm Windows graceful fallback until native shutdown succeeds', async () => {
+    const platformDescriptor = Object.getOwnPropertyDescriptor(process, 'platform')
+    const mockKill = vi
+      .fn()
+      .mockImplementationOnce(() => {
+        throw new Error('invalid ConPTY handle')
+      })
+      .mockImplementationOnce(() => {})
+    const destroy = vi.fn(() => mockKill())
+    mockPtySpawn.mockReturnValue({
+      ...mockPtyInstance,
+      kill: mockKill,
+      destroy,
+      onData: vi.fn(),
+      onExit: vi.fn()
+    })
+
+    Object.defineProperty(process, 'platform', { configurable: true, value: 'win32' })
+    try {
+      await dispatcher.callRequest('pty.spawn', {})
+      await expect(
+        dispatcher.callRequest('pty.shutdown', { id: 'pty-1', immediate: false })
+      ).rejects.toThrow('invalid ConPTY handle')
+      vi.advanceTimersByTime(5000)
+      expect(handler.activePtyCount).toBe(1)
+
+      await dispatcher.callRequest('pty.shutdown', { id: 'pty-1', immediate: false })
+      vi.advanceTimersByTime(5000)
+      expect(mockKill.mock.calls).toEqual([[], []])
+      expect(handler.activePtyCount).toBe(0)
+    } finally {
+      if (platformDescriptor) {
+        Object.defineProperty(process, 'platform', platformDescriptor)
+      }
+    }
+  })
+
   it('throws for attach on nonexistent PTY', async () => {
     await expect(dispatcher.callRequest('pty.attach', { id: 'pty-999' })).rejects.toThrow(
       'PTY "pty-999" not found'
@@ -1774,6 +1902,33 @@ describe('PtyHandler', () => {
       { id: 'pty-2', paneKey: 'tab-dispose:1' }
     ])
     expect(handler.activePtyCount).toBe(0)
+  })
+
+  it('disposes Windows PTYs with node-pty no-argument kills', async () => {
+    const platformDescriptor = Object.getOwnPropertyDescriptor(process, 'platform')
+    const mockKill = vi.fn()
+    const destroy = vi.fn(() => mockKill())
+    mockPtySpawn.mockReturnValue({
+      ...mockPtyInstance,
+      kill: mockKill,
+      destroy,
+      onData: vi.fn(),
+      onExit: vi.fn()
+    })
+
+    Object.defineProperty(process, 'platform', { configurable: true, value: 'win32' })
+    try {
+      await dispatcher.callRequest('pty.spawn', {})
+      handler.dispose()
+
+      expect(mockKill).toHaveBeenCalledOnce()
+      expect(mockKill.mock.calls).toEqual([[]])
+      expect(destroy).not.toHaveBeenCalled()
+    } finally {
+      if (platformDescriptor) {
+        Object.defineProperty(process, 'platform', platformDescriptor)
+      }
+    }
   })
 })
 
