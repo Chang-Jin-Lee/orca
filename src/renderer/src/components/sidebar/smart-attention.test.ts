@@ -174,7 +174,7 @@ describe('resolveAttention', () => {
     expect(resolveAttention([hookPane(entry)], NOW)).toEqual(IDLE)
   })
 
-  it('classifies a working pane with prior done as Class 3 using the fresher turn timestamp', () => {
+  it('classifies a working pane with prior done as Class 3 with the prior timestamp', () => {
     const entry = makeEntry({
       paneKey: 't:1',
       state: 'working',
@@ -184,7 +184,7 @@ describe('resolveAttention', () => {
     })
     expect(resolveAttention([hookPane(entry)], NOW)).toEqual({
       cls: 3,
-      attentionTimestamp: NOW - 10_000
+      attentionTimestamp: NOW - 5 * 60_000
     })
   })
 
