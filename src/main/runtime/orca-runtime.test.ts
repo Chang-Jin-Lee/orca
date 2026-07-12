@@ -22084,7 +22084,22 @@ describe('OrcaRuntimeService', () => {
       listWorktrees: vi.fn().mockResolvedValue([remoteWorktree])
     } as never)
 
-    const runtime = new OrcaRuntimeService(runtimeStore as never)
+    const now = Date.now()
+    const runtime = new OrcaRuntimeService(runtimeStore as never, undefined, {
+      getAgentStatusSnapshot: () => [
+        {
+          paneKey: 'remote-tab:55555555-5555-4555-8555-555555555555',
+          worktreeId: `${remoteRepo.id}::${remoteWorktree.path}/`,
+          tabId: 'remote-tab',
+          state: 'working',
+          prompt: 'remote agent without a PTY',
+          agentType: 'codex',
+          connectionId: 'ssh-1',
+          receivedAt: now,
+          stateStartedAt: now - 100
+        }
+      ]
+    })
     const summaries = await runtime.getWorktreePs()
 
     expect(summaries.worktrees).toEqual([
@@ -22093,7 +22108,15 @@ describe('OrcaRuntimeService', () => {
         repoId: remoteRepo.id,
         repo: 'remote-vm',
         path: remoteWorktree.path,
-        displayName: 'Remote mobile'
+        displayName: 'Remote mobile',
+        hasHostSidebarActivity: true,
+        status: 'working',
+        agents: [
+          expect.objectContaining({
+            prompt: 'remote agent without a PTY',
+            agentType: 'codex'
+          })
+        ]
       })
     ])
   })

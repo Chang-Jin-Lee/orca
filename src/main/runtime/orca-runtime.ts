@@ -11150,7 +11150,7 @@ export class OrcaRuntimeService {
       }
     }
 
-    this.attachAgentRowsToSummaries(summaries)
+    this.attachAgentRowsToSummaries(summaries, resolvedWorktrees)
 
     const sorted = [...summaries.values()].sort(compareWorktreePs)
     return {
@@ -11164,7 +11164,10 @@ export class OrcaRuntimeService {
   // agent list, mirroring the desktop sidebar. Lineage parent is resolved from
   // the orchestration db (paneKey-keyed), not the OSC payload, since spawn
   // hierarchy is pane-level state tracked separately from terminal output.
-  private attachAgentRowsToSummaries(summaries: Map<string, RuntimeWorktreePsSummary>): void {
+  private attachAgentRowsToSummaries(
+    summaries: Map<string, RuntimeWorktreePsSummary>,
+    resolvedWorktrees: ResolvedWorktree[]
+  ): void {
     // Why: most agents report via hooks (agent-hooks/server), not OSC, so the
     // hook snapshot is the primary source — same one the desktop sidebar reads.
     // OSC-only entries (no hook) are merged in as a fallback, keyed by paneKey.
@@ -11229,7 +11232,11 @@ export class OrcaRuntimeService {
     const now = Date.now()
     for (const src of rowSources.values()) {
       const worktreeId = src.worktreeId
-      if (!worktreeId || !summaries.has(worktreeId)) {
+      if (!worktreeId) {
+        continue
+      }
+      const summary = this.getSummaryForRuntimeWorktreeId(summaries, resolvedWorktrees, worktreeId)
+      if (!summary) {
         continue
       }
       const taskTitle = orchestrationByPaneKey?.[src.paneKey]?.taskTitle ?? null
@@ -11249,11 +11256,13 @@ export class OrcaRuntimeService {
         stateStartedAt: src.stateStartedAt,
         updatedAt: src.updatedAt
       }
-      const rows = rowsByWorktree.get(worktreeId)
+      // Why: SSH/runtime projections can spell an equivalent path differently;
+      // bucket by the canonical summary id so mobile keeps the agent activity.
+      const rows = rowsByWorktree.get(summary.worktreeId)
       if (rows) {
         rows.push(row)
       } else {
-        rowsByWorktree.set(worktreeId, [row])
+        rowsByWorktree.set(summary.worktreeId, [row])
       }
     }
     for (const [worktreeId, rows] of rowsByWorktree) {
