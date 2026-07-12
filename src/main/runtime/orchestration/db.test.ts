@@ -339,6 +339,53 @@ describe('OrchestrationDb', () => {
       )
     })
 
+    // Real leaf UUIDs: pane keys are `${tabId}:${leafUuid}`; only the leaf is
+    // remint-stable identity (tab half can change on pane break-out).
+    const LEAF_A = '11111111-1111-1111-8111-111111111111'
+    const LEAF_B = '22222222-2222-4222-9222-222222222222'
+
+    it('rejects dispatch to a reminted handle on a pane with an active dispatch', () => {
+      const d = createDb()
+      const t1 = d.createTask({ spec: 'first' })
+      const t2 = d.createTask({ spec: 'second' })
+      d.createDispatchContext(t1.id, 'term_old', `tab_1:${LEAF_A}`)
+
+      expect(() => d.createDispatchContext(t2.id, 'term_new', `tab_1:${LEAF_A}`)).toThrow(
+        /already has an active dispatch/
+      )
+    })
+
+    it('rejects dispatch when pane keys share a leaf after break-out', () => {
+      const d = createDb()
+      const t1 = d.createTask({ spec: 'first' })
+      const t2 = d.createTask({ spec: 'second' })
+      d.createDispatchContext(t1.id, 'term_old', `tab_1:${LEAF_A}`)
+
+      expect(() => d.createDispatchContext(t2.id, 'term_new', `tab_2:${LEAF_A}`)).toThrow(
+        /already has an active dispatch/
+      )
+    })
+
+    it('allows concurrent dispatches to different panes', () => {
+      const d = createDb()
+      const t1 = d.createTask({ spec: 'first' })
+      const t2 = d.createTask({ spec: 'second' })
+      d.createDispatchContext(t1.id, 'term_a', `tab_1:${LEAF_A}`)
+
+      expect(() => d.createDispatchContext(t2.id, 'term_b', `tab_1:${LEAF_B}`)).not.toThrow()
+    })
+
+    it('falls back to handle lock when pane keys are missing', () => {
+      const d = createDb()
+      const t1 = d.createTask({ spec: 'first' })
+      const t2 = d.createTask({ spec: 'second' })
+      d.createDispatchContext(t1.id, 'term_worker')
+
+      // New dispatch has a pane key but the active row is legacy (no pane key):
+      // only handle identity can lock; a different handle is free.
+      expect(() => d.createDispatchContext(t2.id, 'term_other', `tab_1:${LEAF_A}`)).not.toThrow()
+    })
+
     it('allows dispatch to a terminal after previous dispatch completes', () => {
       const d = createDb()
       const t1 = d.createTask({ spec: 'first' })

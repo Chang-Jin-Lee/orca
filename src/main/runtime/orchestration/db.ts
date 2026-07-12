@@ -15,6 +15,18 @@ import type {
   CoordinatorRun
 } from './types'
 import { buildOrchestrationTaskDisplayMetadata } from '../../../shared/orchestration-task-display'
+import { parsePaneKey } from '../../../shared/stable-pane-id'
+
+// Why: leaf UUID is the remint-stable pane identity; the tab half changes on
+// break-out. Exact string match covers legacy/unparseable keys.
+function isEquivalentPaneKey(a: string, b: string): boolean {
+  if (a === b) {
+    return true
+  }
+  const aLeaf = parsePaneKey(a)?.leafId
+  const bLeaf = parsePaneKey(b)?.leafId
+  return Boolean(aLeaf && bLeaf && aLeaf === bLeaf)
+}
 
 export type {
   MessageType,
@@ -613,11 +625,11 @@ export class OrchestrationDb {
       throw new Error(`Task ${taskId} is ${task.status}; only ready tasks can be dispatched`)
     }
 
-    const existing = this.db
-      .prepare(
-        "SELECT * FROM dispatch_contexts WHERE assignee_handle = ? AND status IN ('pending', 'dispatched')"
-      )
-      .get(assigneeHandle) as DispatchContextRow | undefined
+    // Why: handle match covers legacy rows without pane keys; when both the
+    // new assignee and an active row have usable pane keys, also lock on
+    // equivalent pane identity so a reminted handle cannot open a second
+    // concurrent dispatch on the same pane.
+    const existing = this.findActiveDispatchForAssignee(assigneeHandle, assigneePaneKey)
 
     if (existing) {
       throw new Error(
@@ -660,11 +672,38 @@ export class OrchestrationDb {
   }
 
   getActiveDispatchForTerminal(handle: string): DispatchContextRow | undefined {
-    return this.db
+    return this.findActiveDispatchForAssignee(handle)
+  }
+
+  private findActiveDispatchForAssignee(
+    assigneeHandle: string,
+    assigneePaneKey?: string
+  ): DispatchContextRow | undefined {
+    const byHandle = this.db
       .prepare(
         "SELECT * FROM dispatch_contexts WHERE assignee_handle = ? AND status IN ('pending', 'dispatched') LIMIT 1"
       )
-      .get(handle) as DispatchContextRow | undefined
+      .get(assigneeHandle) as DispatchContextRow | undefined
+    if (byHandle) {
+      return byHandle
+    }
+
+    if (!assigneePaneKey) {
+      return undefined
+    }
+
+    const actives = this.db
+      .prepare(
+        "SELECT * FROM dispatch_contexts WHERE assignee_pane_key IS NOT NULL AND status IN ('pending', 'dispatched')"
+      )
+      .all() as DispatchContextRow[]
+
+    for (const row of actives) {
+      if (row.assignee_pane_key && isEquivalentPaneKey(row.assignee_pane_key, assigneePaneKey)) {
+        return row
+      }
+    }
+    return undefined
   }
 
   getLatestDispatchForTerminal(handle: string): DispatchContextRow | undefined {
