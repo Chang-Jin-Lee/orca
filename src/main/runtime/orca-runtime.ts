@@ -1260,6 +1260,7 @@ const BRACKETED_PASTE_END = '\x1b[201~'
 const BRACKETED_PASTE_QUIET_MS = 1500
 const DRAFT_PASTE_READY_TIMEOUT_MS = 8000
 const MOBILE_TERMINAL_SURFACE_TIMEOUT_MS = 10_000
+const GLOBAL_TERMINAL_ADMISSION_KEY = '__global_renderer_terminal_admission__'
 const MOBILE_TERMINAL_READY_FALLBACK_MS = 1000
 const RECENT_PTY_OUTPUT_LIMIT = 64 * 1024
 const RECENT_PTY_PATH_CANDIDATE_LIMIT = 1024
@@ -12202,7 +12203,11 @@ export class OrcaRuntimeService {
   }
 
   private beginTerminalAdmission(worktreeId: string): () => void {
-    if (this.terminalAdmissionBlockedWorktreeIds.has(worktreeId)) {
+    if (
+      worktreeId === GLOBAL_TERMINAL_ADMISSION_KEY
+        ? this.terminalAdmissionBlockedWorktreeIds.size > 0
+        : this.terminalAdmissionBlockedWorktreeIds.has(worktreeId)
+    ) {
       throw new Error('terminal_admission_blocked_for_project_removal')
     }
     let resolveDone = (): void => {}
@@ -12260,7 +12265,7 @@ export class OrcaRuntimeService {
       // Why: a create that passed admission before the block can still have a
       // provider spawn in flight. Let it register first so the fresh stop
       // snapshot sees and terminates it.
-      await this.drainTerminalAdmissions(worktreeIds)
+      await this.drainTerminalAdmissions([GLOBAL_TERMINAL_ADMISSION_KEY, ...worktreeIds])
       // Why: hold admission closed across both the fresh liveness proof and
       // repo mutation. A separate terminal.stop RPC leaves an inter-call gap.
       for (const id of worktreeIds) {
@@ -17813,7 +17818,7 @@ export class OrcaRuntimeService {
     }
     const { reply, handle } = workspace
       ? await this.withTerminalAdmission(workspace.id, createRendererTerminal)
-      : await createRendererTerminal()
+      : await this.withTerminalAdmission(GLOBAL_TERMINAL_ADMISSION_KEY, createRendererTerminal)
     return {
       handle,
       tabId: reply.tabId,
@@ -17943,146 +17948,148 @@ export class OrcaRuntimeService {
         }
       )
     }
-    const requestId = randomUUID()
-    const reply = await new Promise<{ tabId: string; title: string }>((resolve, reject) => {
-      const timer = setTimeout(() => {
-        ipcMain.removeListener('terminal:tabCreateReply', handler)
-        opts.signal?.removeEventListener('abort', onAbort)
-        reject(new Error('Terminal creation timed out'))
-      }, 10_000)
-      // Why: a dead client connection cancels the wait; the renderer tab (and
-      // its shell) stays alive for the host and mirrors on reconnect (#7718).
-      const onAbort = (): void => {
-        clearTimeout(timer)
-        ipcMain.removeListener('terminal:tabCreateReply', handler)
-        reject(new Error('client_disconnected'))
-      }
-
-      const handler = (
-        event: Electron.IpcMainEvent,
-        r: { requestId: string; tabId?: string; title?: string; error?: string }
-      ): void => {
-        if (event.sender !== win.webContents || r.requestId !== requestId) {
-          return
+    return await this.withTerminalAdmission(worktreeId, async () => {
+      const requestId = randomUUID()
+      const reply = await new Promise<{ tabId: string; title: string }>((resolve, reject) => {
+        const timer = setTimeout(() => {
+          ipcMain.removeListener('terminal:tabCreateReply', handler)
+          opts.signal?.removeEventListener('abort', onAbort)
+          reject(new Error('Terminal creation timed out'))
+        }, 10_000)
+        // Why: a dead client connection cancels the wait; the renderer tab (and
+        // its shell) stays alive for the host and mirrors on reconnect (#7718).
+        const onAbort = (): void => {
+          clearTimeout(timer)
+          ipcMain.removeListener('terminal:tabCreateReply', handler)
+          reject(new Error('client_disconnected'))
         }
-        clearTimeout(timer)
-        ipcMain.removeListener('terminal:tabCreateReply', handler)
-        opts.signal?.removeEventListener('abort', onAbort)
-        if (r.error) {
-          reject(new Error(r.error))
-        } else {
-          resolve({ tabId: r.tabId!, title: r.title ?? '' })
-        }
-      }
-      opts.signal?.addEventListener('abort', onAbort, { once: true })
-      ipcMain.on('terminal:tabCreateReply', handler)
-      win.webContents.send('terminal:requestTabCreate', {
-        requestId,
-        worktreeId,
-        afterTabId: afterDesktopTabId,
-        targetGroupId: opts.targetGroupId,
-        command: startupCommand.command,
-        cwd,
-        ...(startupCommand.env ? { env: startupCommand.env } : {}),
-        ...(startupCommand.launchConfig ? { launchConfig: startupCommand.launchConfig } : {}),
-        ...(startupCommand.launchAgent ? { launchAgent: startupCommand.launchAgent } : {}),
-        startupCommandDelivery: startupCommand.startupCommandDelivery,
-        source: 'runtime-session',
-        activate: opts.activate
-      })
-    })
 
-    if (opts.activate !== false) {
-      this.notifier?.focusTerminal(reply.tabId, worktreeId, null)
-    }
-    // Why: register the wait before the renderer's PTY spawn arrives so that
-    // spawn (registerPty) can publish the pty-backed surface main-side even if
-    // graph-sync is stalled (#7587). Removed in the finally below.
-    const pendingCreateKey = `${worktreeId}::${reply.tabId}`
-    // Why: a rescue publishes into the active group (opts.targetGroupId is not
-    // threaded); the renderer's reconciling publication then moves the tab to the
-    // requested group, so any wrong-group placement is cosmetic and stall-window-only.
-    this.pendingMobileTerminalCreatesByKey.set(pendingCreateKey, {
-      activate: opts.activate !== false,
-      selectIfNoActiveTab: true
-    })
-    try {
-      // Why: the PTY spawn and the tabCreate reply race on independent IPC
-      // channels; if the spawn already registered, publish immediately so the
-      // wait resolves without depending on a graph sync.
-      this.ensurePtyBackedMobileSurfaceForRendererTab(worktreeId, reply.tabId)
-      const surface = await this.waitForMobileTerminalSurface(worktreeId, reply.tabId, {
-        timeoutMs: MOBILE_TERMINAL_SURFACE_TIMEOUT_MS,
-        signal: opts.signal
-      })
-      if (this.isReadyMobileTerminalSurface(surface)) {
-        return surface
-      }
-      const readySurface = await this.waitForMobileTerminalSurface(worktreeId, reply.tabId, {
-        timeoutMs: MOBILE_TERMINAL_READY_FALLBACK_MS,
-        requireReady: true,
-        signal: opts.signal
-      }).catch(() => null)
-      if (readySurface) {
-        return readySurface
-      }
-      if (opts.signal?.aborted) {
-        // Why: nobody is waiting for this create anymore; do not materialize
-        // or roll back — the renderer's own publication settles the tab.
-        throw new Error('client_disconnected')
-      }
-      const pendingSurface = this.findMobileTerminalSurface(worktreeId, reply.tabId)
-      if (!pendingSurface) {
-        throw new Error('Timed out waiting for terminal surface after creation')
-      }
-      // Why: hidden/occluded renderer windows can publish the tab shell before
-      // TerminalPane mounts and spawns the PTY. Materialize into the same
-      // identity so later renderer focus adopts instead of creating another tab.
-      return await this.createHeadlessMobileSessionTerminal(
-        worktreeId,
-        opts.activate !== false,
-        opts.afterTabId,
-        {
+        const handler = (
+          event: Electron.IpcMainEvent,
+          r: { requestId: string; tabId?: string; title?: string; error?: string }
+        ): void => {
+          if (event.sender !== win.webContents || r.requestId !== requestId) {
+            return
+          }
+          clearTimeout(timer)
+          ipcMain.removeListener('terminal:tabCreateReply', handler)
+          opts.signal?.removeEventListener('abort', onAbort)
+          if (r.error) {
+            reject(new Error(r.error))
+          } else {
+            resolve({ tabId: r.tabId!, title: r.title ?? '' })
+          }
+        }
+        opts.signal?.addEventListener('abort', onAbort, { once: true })
+        ipcMain.on('terminal:tabCreateReply', handler)
+        win.webContents.send('terminal:requestTabCreate', {
+          requestId,
+          worktreeId,
+          afterTabId: afterDesktopTabId,
+          targetGroupId: opts.targetGroupId,
           command: startupCommand.command,
           cwd,
-          env: startupCommand.env,
+          ...(startupCommand.env ? { env: startupCommand.env } : {}),
+          ...(startupCommand.launchConfig ? { launchConfig: startupCommand.launchConfig } : {}),
+          ...(startupCommand.launchAgent ? { launchAgent: startupCommand.launchAgent } : {}),
           startupCommandDelivery: startupCommand.startupCommandDelivery,
-          identity: { tabId: pendingSurface.tab.parentTabId, leafId: pendingSurface.tab.leafId },
-          launchAgent: startupCommand.launchAgent,
-          targetGroupId: opts.targetGroupId,
-          launchConfig: startupCommand.launchConfig
-        }
-      )
-    } catch (error) {
-      // Why: publication latency (throttled/hidden renderer), not spawn failure,
-      // can trip the surface timeout. Rescue only when a live PTY actually backs
-      // the tab — gating on a surface would let a handle-less shell (or a failed
-      // materialize) resolve as success and skip the ghost-tab rollback (#7587).
-      if (this.findLiveRegisteredPtyForRendererTab(worktreeId, reply.tabId)) {
-        const rescued = this.ensurePtyBackedMobileSurfaceForRendererTab(worktreeId, reply.tabId)
-        if (rescued) {
-          return rescued
-        }
+          source: 'runtime-session',
+          activate: opts.activate
+        })
+      })
+
+      if (opts.activate !== false) {
+        this.notifier?.focusTerminal(reply.tabId, worktreeId, null)
       }
-      // Why: don't roll back when (a) the client connection died — the wait
-      // was cancelled, not the spawn — or (b) a live shell already backs the
-      // tab (its pane key may simply not be registered yet). Killing a real
-      // terminal the host user can see is the "tab dies after ~10s" bug (#7718).
-      if (
-        isClientDisconnectedError(error) ||
-        this.hasLiveShellForRendererTab(worktreeId, reply.tabId)
-      ) {
+      // Why: register the wait before the renderer's PTY spawn arrives so that
+      // spawn (registerPty) can publish the pty-backed surface main-side even if
+      // graph-sync is stalled (#7587). Removed in the finally below.
+      const pendingCreateKey = `${worktreeId}::${reply.tabId}`
+      // Why: a rescue publishes into the active group (opts.targetGroupId is not
+      // threaded); the renderer's reconciling publication then moves the tab to the
+      // requested group, so any wrong-group placement is cosmetic and stall-window-only.
+      this.pendingMobileTerminalCreatesByKey.set(pendingCreateKey, {
+        activate: opts.activate !== false,
+        selectIfNoActiveTab: true
+      })
+      try {
+        // Why: the PTY spawn and the tabCreate reply race on independent IPC
+        // channels; if the spawn already registered, publish immediately so the
+        // wait resolves without depending on a graph sync.
+        this.ensurePtyBackedMobileSurfaceForRendererTab(worktreeId, reply.tabId)
+        const surface = await this.waitForMobileTerminalSurface(worktreeId, reply.tabId, {
+          timeoutMs: MOBILE_TERMINAL_SURFACE_TIMEOUT_MS,
+          signal: opts.signal
+        })
+        if (this.isReadyMobileTerminalSurface(surface)) {
+          return surface
+        }
+        const readySurface = await this.waitForMobileTerminalSurface(worktreeId, reply.tabId, {
+          timeoutMs: MOBILE_TERMINAL_READY_FALLBACK_MS,
+          requireReady: true,
+          signal: opts.signal
+        }).catch(() => null)
+        if (readySurface) {
+          return readySurface
+        }
+        if (opts.signal?.aborted) {
+          // Why: nobody is waiting for this create anymore; do not materialize
+          // or roll back — the renderer's own publication settles the tab.
+          throw new Error('client_disconnected')
+        }
+        const pendingSurface = this.findMobileTerminalSurface(worktreeId, reply.tabId)
+        if (!pendingSurface) {
+          throw new Error('Timed out waiting for terminal surface after creation')
+        }
+        // Why: hidden/occluded renderer windows can publish the tab shell before
+        // TerminalPane mounts and spawns the PTY. Materialize into the same
+        // identity so later renderer focus adopts instead of creating another tab.
+        return await this.createHeadlessMobileSessionTerminal(
+          worktreeId,
+          opts.activate !== false,
+          opts.afterTabId,
+          {
+            command: startupCommand.command,
+            cwd,
+            env: startupCommand.env,
+            startupCommandDelivery: startupCommand.startupCommandDelivery,
+            identity: { tabId: pendingSurface.tab.parentTabId, leafId: pendingSurface.tab.leafId },
+            launchAgent: startupCommand.launchAgent,
+            targetGroupId: opts.targetGroupId,
+            launchConfig: startupCommand.launchConfig
+          }
+        )
+      } catch (error) {
+        // Why: publication latency (throttled/hidden renderer), not spawn failure,
+        // can trip the surface timeout. Rescue only when a live PTY actually backs
+        // the tab — gating on a surface would let a handle-less shell (or a failed
+        // materialize) resolve as success and skip the ghost-tab rollback (#7587).
+        if (this.findLiveRegisteredPtyForRendererTab(worktreeId, reply.tabId)) {
+          const rescued = this.ensurePtyBackedMobileSurfaceForRendererTab(worktreeId, reply.tabId)
+          if (rescued) {
+            return rescued
+          }
+        }
+        // Why: don't roll back when (a) the client connection died — the wait
+        // was cancelled, not the spawn — or (b) a live shell already backs the
+        // tab (its pane key may simply not be registered yet). Killing a real
+        // terminal the host user can see is the "tab dies after ~10s" bug (#7718).
+        if (
+          isClientDisconnectedError(error) ||
+          this.hasLiveShellForRendererTab(worktreeId, reply.tabId)
+        ) {
+          throw error
+        }
+        // Why: the renderer created the tab but no live PTY backs it (true PTY
+        // spawn/handle failure). Roll the half-created tab back via the renderer
+        // close path so it can't linger as a ghost in mobile snapshots, then
+        // surface the failure to the caller.
+        this.notifier?.closeTerminal(reply.tabId)
         throw error
+      } finally {
+        this.pendingMobileTerminalCreatesByKey.delete(pendingCreateKey)
       }
-      // Why: the renderer created the tab but no live PTY backs it (true PTY
-      // spawn/handle failure). Roll the half-created tab back via the renderer
-      // close path so it can't linger as a ghost in mobile snapshots, then
-      // surface the failure to the caller.
-      this.notifier?.closeTerminal(reply.tabId)
-      throw error
-    } finally {
-      this.pendingMobileTerminalCreatesByKey.delete(pendingCreateKey)
-    }
+    })
   }
 
   private async resolveMobileSessionTerminalCommand(
@@ -18651,14 +18658,16 @@ export class OrcaRuntimeService {
       }
     }
 
-    this.notifier?.splitTerminal(leaf.tabId, leaf.paneRuntimeId, {
-      direction,
-      command: opts.command,
-      telemetrySource: opts.telemetrySource
-    })
+    return await this.withTerminalAdmission(leaf.worktreeId, async () => {
+      this.notifier?.splitTerminal(leaf.tabId, leaf.paneRuntimeId, {
+        direction,
+        command: opts.command,
+        telemetrySource: opts.telemetrySource
+      })
 
-    const newHandle = await this.waitForNewLeafInTab(leaf.tabId, leafKeysBefore)
-    return { handle: newHandle, tabId: leaf.tabId, paneRuntimeId: leaf.paneRuntimeId }
+      const newHandle = await this.waitForNewLeafInTab(leaf.tabId, leafKeysBefore)
+      return { handle: newHandle, tabId: leaf.tabId, paneRuntimeId: leaf.paneRuntimeId }
+    })
   }
 
   private async splitPtyBackedTerminal(

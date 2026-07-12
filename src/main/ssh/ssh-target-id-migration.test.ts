@@ -34,7 +34,7 @@ describe('migrateWorkspaceSessionSshTargetId', () => {
     const session = makeSession({
       tabsByWorktree: {
         'r1::/wt': [
-          makeTab({ id: 'tab1', ptyId: `ssh:${OLD_ID}@@pty-3` }),
+          makeTab({ id: 'tab1', ptyId: `ssh:${OLD_ID}@@relay-generation@@pty-3` }),
           makeTab({ id: 'tab2', ptyId: 'local-pty-7' }),
           makeTab({ id: 'tab3', ptyId: `ssh:other-target@@pty-1` })
         ]
@@ -44,11 +44,11 @@ describe('migrateWorkspaceSessionSshTargetId', () => {
           root: { type: 'leaf', leafId: 'leaf-1' },
           activeLeafId: 'leaf-1',
           expandedLeafId: null,
-          ptyIdsByLeafId: { 'leaf-1': `ssh:${OLD_ID}@@pty-3` }
+          ptyIdsByLeafId: { 'leaf-1': `ssh:${OLD_ID}@@relay-generation@@pty-3` }
         }
       },
       remoteSessionIdsByTabId: {
-        tab1: `ssh:${OLD_ID}@@pty-3`,
+        tab1: `ssh:${OLD_ID}@@relay-generation@@pty-3`,
         tab3: `ssh:other-target@@pty-1`
       }
     })
@@ -56,15 +56,15 @@ describe('migrateWorkspaceSessionSshTargetId', () => {
     expect(migrateWorkspaceSessionSshTargetId(session, OLD_ID, NEW_ID)).toBe(true)
 
     const tabs = session.tabsByWorktree['r1::/wt']
-    expect(tabs[0].ptyId).toBe(`ssh:${NEW_ID}@@pty-3`)
+    expect(tabs[0].ptyId).toBe(`ssh:${NEW_ID}@@relay-generation@@pty-3`)
     // Local and other-target pty ids must be untouched.
     expect(tabs[1].ptyId).toBe('local-pty-7')
     expect(tabs[2].ptyId).toBe(`ssh:other-target@@pty-1`)
     expect(session.terminalLayoutsByTabId.tab1.ptyIdsByLeafId).toEqual({
-      'leaf-1': `ssh:${NEW_ID}@@pty-3`
+      'leaf-1': `ssh:${NEW_ID}@@relay-generation@@pty-3`
     })
     expect(session.remoteSessionIdsByTabId).toEqual({
-      tab1: `ssh:${NEW_ID}@@pty-3`,
+      tab1: `ssh:${NEW_ID}@@relay-generation@@pty-3`,
       tab3: `ssh:other-target@@pty-1`
     })
   })

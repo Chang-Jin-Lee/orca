@@ -3600,17 +3600,17 @@
       "providers": ["ssh", "remote-runtime"],
       "coveredPlatforms": ["macos"],
       "coveredProviders": ["ssh"],
-      "coverageNotes": "A macOS unit harness loads the installed patched node-pty WindowsTerminal prototype without constructing native state, proving pre-ready kill/destroy dispatch immediately. A relay artifact harness reproduces vanilla npm node-pty retaining one deferred kill with zero native close calls, then proves both Windows relay artifacts hash, ship, apply, include the local ConPTY console-list fallback, and idempotently verify the fix. Relay tests simulate win32 shutdown, repeated stale-spawn native failure, one-shot ownership, and retry after native failure without deleting the only handle before close is proven. Relay boot UUIDs scope recycled pty-N counters, while pane identity protects older relay shutdown. Renderer pre-handler exits and retained shutdown retries are capped at 64, and lifecycle retry performs at most one attempt with backoff. Project removal keeps local or remote ownership until provider-verified shutdown and successful VM cleanup; runtime repo removal holds terminal admission closed across fresh liveness, stop, and metadata mutation. Targeted terminal.stop probes skip unrelated sessions. The same relay contract serves paired web/mobile clients; no live Windows ConPTY or Windows-over-SSH run is recorded yet.",
+      "coverageNotes": "A macOS unit harness loads the installed patched node-pty WindowsTerminal prototype without constructing native state, proving pre-ready kill/destroy dispatch immediately. A relay artifact harness reproduces vanilla npm node-pty retaining one deferred kill with zero native close calls, then proves both Windows relay artifacts hash, ship, apply, include the local ConPTY console-list fallback, and idempotently verify the fix. Relay tests simulate win32 shutdown, repeated stale-spawn native failure, one-shot ownership, and retry after native failure without deleting the only handle before close is proven. Relay boot UUIDs scope recycled pty-N counters through initial spawn, durable-lease reattach, and SSH target-id migration, while pane identity protects older relays. Renderer pre-handler exits and retained shutdown retries are capped at 64, and lifecycle retry performs at most one attempt with backoff. Project removal keeps local or remote ownership until provider-verified shutdown and successful VM cleanup; runtime repo removal drains headless, renderer-backed mobile, renderer split, and selector-less renderer admissions before fresh liveness, stop, and metadata mutation. Targeted terminal.stop probes skip unrelated sessions. The same relay contract serves paired web/mobile clients; no live Windows ConPTY or Windows-over-SSH run is recorded yet.",
       "motivatingLinks": [
         "https://github.com/stablyai/orca/issues/8260",
         "https://github.com/stablyai/orca/pull/8279"
       ],
       "invariant": "A Windows relay PTY closed before its first output executes exactly one no-argument node-pty shutdown immediately; Orca does not delete ownership for a native kill failure, and a later retry can target only the same relay generation and pane while project removal fences new terminal admission.",
-      "oracle": "Load the installed patched WindowsTerminal prototype in a pre-ready state and assert kill and destroy each close the terminal and native agent once with zero deferred work, while signal arguments still throw. Build both Windows SSH relay artifacts, reproduce vanilla npm node-pty with close=0/native-kill=0/deferred=1, apply the shipped patch, and assert close=1/native-kill=1/deferred=0, AttachConsole failure falls back to the shell pid, and the artifact version derives from all patch bytes. Assert remote npm install executes patch enforcement before its runtime probe and never finalizes a failed patch. In the relay, assert immediate, graceful, stale-spawn fallback, and handler-dispose paths preserve ownership through native throw and issue at most one successful no-argument shutdown. In the renderer, reject the first kill, retain exact identity, and assert the next lifecycle/removal retry succeeds before ownership state is purged.",
+      "oracle": "Load the installed patched WindowsTerminal prototype in a pre-ready state and assert kill and destroy each close the terminal and native agent once with zero deferred work, while signal arguments still throw. Build both Windows SSH relay artifacts, reproduce vanilla npm node-pty with close=0/native-kill=0/deferred=1, apply the shipped patch, and assert close=1/native-kill=1/deferred=0, AttachConsole failure falls back to the shell pid, and the artifact version derives from all patch bytes. Assert remote npm install executes patch enforcement before its runtime probe and never finalizes a failed patch. In the relay, assert immediate, graceful, stale-spawn fallback, and handler-dispose paths preserve ownership through native throw and issue at most one successful no-argument shutdown. Assert reattach and target migration preserve relay generation. In the renderer, reject the first kill, retain exact identity, and assert the next lifecycle/removal retry succeeds before ownership state is purged. Start each terminal creation surface before project removal and assert removal performs no liveness snapshot until the create or split publishes its PTY; failed and concurrent admissions must release without deadlock.",
       "commands": [
         "pnpm exec vitest run --config config/vitest.config.ts config/scripts/build-relay-windows-node-pty-patch.test.mjs src/main/ssh/ssh-relay-native-deps-install.test.ts src/relay/node-pty-windows-pre-ready-shutdown.test.ts src/relay/pty-handler.test.ts src/renderer/src/components/terminal-pane/pty-transport.test.ts src/renderer/src/store/slices/repos-remove-project-purge-leak.test.ts src/renderer/src/store/slices/repos.test.ts src/renderer/src/store/slices/repos-runtime-vm-removal.test.ts src/renderer/src/lib/ephemeral-vm-runtime-cleanup.test.ts",
         "pnpm exec vitest run --config config/vitest.config.ts src/main/runtime/orca-runtime.test.ts",
-        "pnpm exec vitest run --config config/vitest.config.ts src/shared/ssh-pty-id.test.ts src/main/providers/ssh-pty-provider.test.ts src/main/ssh/ssh-relay-session.test.ts src/relay/pty-handler.test.ts src/relay/subprocess.test.ts src/renderer/src/components/terminal-pane/pty-transport.test.ts src/renderer/src/components/terminal-pane/pty-pre-handler-buffer.test.ts src/renderer/src/lib/pty-kill-retry-ownership.test.ts src/renderer/src/lib/ephemeral-vm-runtime-cleanup.test.ts src/renderer/src/store/slices/repos.test.ts src/main/runtime/orca-runtime.test.ts src/main/ipc/pty.test.ts"
+        "pnpm exec vitest run --config config/vitest.config.ts src/shared/ssh-pty-id.test.ts src/main/providers/ssh-pty-provider.test.ts src/main/ssh/ssh-relay-session.test.ts src/main/ssh/ssh-target-id-migration.test.ts src/relay/pty-handler.test.ts src/relay/subprocess.test.ts src/renderer/src/components/terminal-pane/pty-transport.test.ts src/renderer/src/components/terminal-pane/pty-pre-handler-buffer.test.ts src/renderer/src/lib/pty-kill-retry-ownership.test.ts src/renderer/src/lib/ephemeral-vm-runtime-cleanup.test.ts src/renderer/src/store/slices/repos.test.ts src/main/runtime/orca-runtime.test.ts src/main/ipc/pty.test.ts"
       ],
       "testFiles": [
         "config/scripts/build-relay-windows-node-pty-patch.test.mjs",
@@ -3626,6 +3626,7 @@
         "src/shared/ssh-pty-id.test.ts",
         "src/main/providers/ssh-pty-provider.test.ts",
         "src/main/ssh/ssh-relay-session.test.ts",
+        "src/main/ssh/ssh-target-id-migration.test.ts",
         "src/relay/subprocess.test.ts",
         "src/renderer/src/components/terminal-pane/pty-pre-handler-buffer.test.ts",
         "src/renderer/src/lib/pty-kill-retry-ownership.test.ts",
@@ -3698,7 +3699,8 @@
             "terminal.stop awaits stopAndWait and fresh post-stop liveness before acknowledging provider shutdown",
             "provider shutdown rejection fails terminal.stop closed",
             "project removal fences paired terminal admission through provider stop and repo mutation",
-            "project removal drains create-first in-flight admissions before its liveness snapshot",
+            "project removal drains create-first headless, renderer-backed mobile, renderer split, and selector-less renderer admissions before its liveness snapshot",
+            "failed and concurrent admissions release without deadlocking project removal",
             "targeted terminal stop omits foreground probes for unrelated sessions"
           ]
         },
@@ -3712,6 +3714,18 @@
           "file": "src/main/providers/ssh-pty-provider.test.ts",
           "assertions": [
             "SSH shutdown forwards pane identity and rejects an older relay generation before RPC"
+          ]
+        },
+        {
+          "file": "src/main/ssh/ssh-relay-session.test.ts",
+          "assertions": [
+            "durable-lease reattach rebuilds app PTY ownership with the current relay generation"
+          ]
+        },
+        {
+          "file": "src/main/ssh/ssh-target-id-migration.test.ts",
+          "assertions": [
+            "SSH target re-adoption rewrites only the target id and preserves relay generation"
           ]
         },
         {
@@ -3762,10 +3776,10 @@
           "date": "2026-07-12",
           "runner": "local",
           "platform": "macos",
-          "command": "pnpm exec vitest run --config config/vitest.config.ts src/shared/ssh-pty-id.test.ts src/main/providers/ssh-pty-provider.test.ts src/main/ssh/ssh-relay-session.test.ts src/relay/pty-handler.test.ts src/relay/subprocess.test.ts src/renderer/src/components/terminal-pane/pty-transport.test.ts src/renderer/src/components/terminal-pane/pty-pre-handler-buffer.test.ts src/renderer/src/lib/pty-kill-retry-ownership.test.ts src/renderer/src/lib/ephemeral-vm-runtime-cleanup.test.ts src/renderer/src/store/slices/repos.test.ts src/main/runtime/orca-runtime.test.ts src/main/ipc/pty.test.ts",
+          "command": "pnpm exec vitest run --config config/vitest.config.ts src/shared/ssh-pty-id.test.ts src/main/providers/ssh-pty-provider.test.ts src/main/ssh/ssh-relay-session.test.ts src/main/ssh/ssh-target-id-migration.test.ts src/relay/pty-handler.test.ts src/relay/subprocess.test.ts src/renderer/src/components/terminal-pane/pty-transport.test.ts src/renderer/src/components/terminal-pane/pty-pre-handler-buffer.test.ts src/renderer/src/lib/pty-kill-retry-ownership.test.ts src/renderer/src/lib/ephemeral-vm-runtime-cleanup.test.ts src/renderer/src/store/slices/repos.test.ts src/main/runtime/orca-runtime.test.ts src/main/ipc/pty.test.ts",
           "result": "passed",
           "durationSeconds": 12,
-          "summary": "1236 tests passed with relay-generation identity, stale-spawn retained ownership, bounded renderer maps/retry work, VM cleanup success ordering, atomic runtime removal admission, and targeted liveness probes."
+          "summary": "1247 tests passed with relay-generation identity preserved across reattach and migration, stale-spawn retained ownership, bounded renderer maps/retry work, VM cleanup success ordering, all renderer/runtime removal admissions drained, and targeted liveness probes."
         },
         {
           "date": "2026-07-12",
@@ -3774,7 +3788,7 @@
           "command": "pnpm exec vitest run --config config/vitest.config.ts src/main/runtime/orca-runtime.test.ts",
           "result": "passed",
           "durationSeconds": 18,
-          "summary": "664 runtime tests passed, including removal-first rejection and create-first admission drain before provider liveness snapshots."
+          "summary": "668 runtime tests passed, including removal-first rejection and create-first admission drain for headless, renderer-backed mobile, renderer split, and selector-less renderer paths before provider liveness snapshots."
         }
       ],
       "runtimeBudget": {

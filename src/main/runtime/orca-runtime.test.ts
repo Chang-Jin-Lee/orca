@@ -22301,6 +22301,207 @@ describe('OrcaRuntimeService', () => {
     expect(removeProject).toHaveBeenCalledWith(TEST_REPO_ID)
   })
 
+  it.each([
+    ['renderer-backed mobile create', 'mobile'],
+    ['selector-less renderer create', 'global']
+  ] as const)('drains a create-first %s before project removal', async (_name, kind) => {
+    const removeProject = vi.fn()
+    const runtime = new OrcaRuntimeService({ ...store, removeProject } as never)
+    const processLists = [
+      [{ id: 'pty-renderer-late', cwd: TEST_WORKTREE_PATH, title: 'Shell' }],
+      []
+    ]
+    const stopAndWait = vi.fn(async (ptyId: string) => {
+      runtime.onPtyExit(ptyId, -1)
+      return true
+    })
+    runtime.setPtyController({
+      write: () => true,
+      kill: () => false,
+      stopAndWait,
+      getForegroundProcess: async () => null,
+      listProcesses: async () => processLists.shift() ?? []
+    })
+    runtime.setNotifier({ focusTerminal: vi.fn(), reposChanged: vi.fn() } as never)
+    const webContents = { send: vi.fn() }
+    const send = vi.fn((_channel: string, payload: { requestId: string }) => {
+      ipcMain.emit(
+        'terminal:tabCreateReply',
+        { sender: webContents },
+        { requestId: payload.requestId, tabId: 'tab-renderer-late', title: 'Terminal' }
+      )
+    })
+    webContents.send = send
+    runtime.attachWindow(1)
+    runtime.syncWindowGraph(1, { tabs: [], leaves: [] })
+    electronMocks.BrowserWindow.fromId.mockReturnValue({
+      isDestroyed: () => false,
+      webContents
+    })
+
+    const create =
+      kind === 'mobile'
+        ? runtime.createMobileSessionTerminal(`id:${TEST_WORKTREE_ID}`, { activate: false })
+        : runtime.createTerminal()
+    await vi.waitFor(() => expect(send).toHaveBeenCalledOnce())
+    const removal = runtime.removeProject(`id:${TEST_REPO_ID}`)
+    await Promise.resolve()
+    expect(processLists).toHaveLength(2)
+    expect(removeProject).not.toHaveBeenCalled()
+
+    runtime.syncWindowGraph(1, {
+      tabs: [],
+      leaves: [
+        {
+          tabId: 'tab-renderer-late',
+          worktreeId: TEST_WORKTREE_ID,
+          leafId: 'pane:late',
+          paneRuntimeId: 1,
+          ptyId: 'pty-renderer-late'
+        }
+      ],
+      mobileSessionTabs: [
+        {
+          worktree: TEST_WORKTREE_ID,
+          publicationEpoch: `admission-${kind}`,
+          snapshotVersion: 1,
+          activeGroupId: 'group-1',
+          activeTabId: 'tab-renderer-late::pane:late',
+          activeTabType: 'terminal',
+          tabs: [
+            {
+              type: 'terminal',
+              id: 'tab-renderer-late::pane:late',
+              parentTabId: 'tab-renderer-late',
+              leafId: 'pane:late',
+              title: 'Terminal',
+              isActive: true
+            }
+          ]
+        }
+      ]
+    })
+
+    await expect(create).resolves.toBeDefined()
+    await expect(removal).resolves.toEqual({ removed: true })
+    expect(stopAndWait).toHaveBeenCalledWith('pty-renderer-late')
+    expect(removeProject).toHaveBeenCalledWith(TEST_REPO_ID)
+  })
+
+  it('drains a renderer-owned split before project removal snapshots liveness', async () => {
+    const removeProject = vi.fn()
+    const splitTerminal = vi.fn()
+    const runtime = new OrcaRuntimeService({ ...store, removeProject } as never)
+    const processLists = [
+      [
+        { id: 'pty-left', cwd: TEST_WORKTREE_PATH, title: 'Shell' },
+        { id: 'pty-right', cwd: TEST_WORKTREE_PATH, title: 'Shell' }
+      ],
+      []
+    ]
+    const stopAndWait = vi.fn(async (ptyId: string) => {
+      runtime.onPtyExit(ptyId, -1)
+      return true
+    })
+    runtime.setPtyController({
+      write: () => true,
+      kill: () => false,
+      stopAndWait,
+      getForegroundProcess: async () => null,
+      listProcesses: async () => processLists.shift() ?? []
+    })
+    runtime.setNotifier({ splitTerminal, reposChanged: vi.fn() } as never)
+    runtime.attachWindow(1)
+    runtime.syncWindowGraph(1, {
+      tabs: [
+        {
+          tabId: 'tab-split',
+          worktreeId: TEST_WORKTREE_ID,
+          title: 'Terminal',
+          activeLeafId: 'pane:left',
+          layout: null
+        }
+      ],
+      leaves: [
+        {
+          tabId: 'tab-split',
+          worktreeId: TEST_WORKTREE_ID,
+          leafId: 'pane:left',
+          paneRuntimeId: 1,
+          ptyId: 'pty-left'
+        }
+      ]
+    })
+    const handle = await runtime.resolveActiveTerminal(`id:${TEST_WORKTREE_ID}`)
+    expect(handle).not.toBeNull()
+
+    const split = runtime.splitTerminal(handle!)
+    await vi.waitFor(() => expect(splitTerminal).toHaveBeenCalledOnce())
+    const removal = runtime.removeProject(`id:${TEST_REPO_ID}`)
+    await Promise.resolve()
+    expect(processLists).toHaveLength(2)
+
+    runtime.syncWindowGraph(1, {
+      tabs: [
+        {
+          tabId: 'tab-split',
+          worktreeId: TEST_WORKTREE_ID,
+          title: 'Terminal',
+          activeLeafId: 'pane:right',
+          layout: null
+        }
+      ],
+      leaves: [
+        {
+          tabId: 'tab-split',
+          worktreeId: TEST_WORKTREE_ID,
+          leafId: 'pane:left',
+          paneRuntimeId: 1,
+          ptyId: 'pty-left'
+        },
+        {
+          tabId: 'tab-split',
+          worktreeId: TEST_WORKTREE_ID,
+          leafId: 'pane:right',
+          paneRuntimeId: 2,
+          ptyId: 'pty-right'
+        }
+      ]
+    })
+
+    await expect(split).resolves.toBeDefined()
+    await expect(removal).resolves.toEqual({ removed: true })
+    expect(stopAndWait).toHaveBeenCalledWith('pty-left')
+    expect(stopAndWait).toHaveBeenCalledWith('pty-right')
+  })
+
+  it('releases failed and concurrent terminal admissions without deadlocking removal', async () => {
+    const removeProject = vi.fn()
+    const runtime = new OrcaRuntimeService({ ...store, removeProject } as never)
+    runtime.setPtyController({
+      write: () => true,
+      kill: () => false,
+      getForegroundProcess: async () => null,
+      listProcesses: async () => []
+    })
+    runtime.attachWindow(1)
+    runtime.syncWindowGraph(1, { tabs: [], leaves: [] })
+    const first = deferred<void>()
+    const second = deferred<void>()
+    const firstAdmission = runtime['withTerminalAdmission'](TEST_WORKTREE_ID, () => first.promise)
+    const secondAdmission = runtime['withTerminalAdmission'](TEST_WORKTREE_ID, () => second.promise)
+    const removal = runtime.removeProject(`id:${TEST_REPO_ID}`)
+    await Promise.resolve()
+    expect(removeProject).not.toHaveBeenCalled()
+
+    first.reject(new Error('spawn failed'))
+    second.resolve()
+    await expect(firstAdmission).rejects.toThrow('spawn failed')
+    await expect(secondAdmission).resolves.toBeUndefined()
+    await expect(removal).resolves.toEqual({ removed: true })
+    expect(removeProject).toHaveBeenCalledWith(TEST_REPO_ID)
+  })
+
   it('rejects terminal.stop when provider shutdown is not accepted', async () => {
     const runtime = new OrcaRuntimeService(store)
     runtime.setPtyController({

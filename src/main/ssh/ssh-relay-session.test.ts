@@ -562,6 +562,7 @@ describe('SshRelaySession', () => {
     const mockAttach = vi.fn().mockResolvedValue(undefined)
     vi.mocked(getSshPtyProvider).mockReturnValue({
       attachForReconnect: mockAttach,
+      getRelayInstanceId: () => 'relay-generation',
       dispose: vi.fn()
     } as unknown as ReturnType<typeof getSshPtyProvider>)
     vi.mocked(getPtyIdsForConnection).mockReturnValue([])
@@ -576,7 +577,8 @@ describe('SshRelaySession', () => {
 
     expect(mockAttach).toHaveBeenCalledWith('pty-live')
     expect(mockAttach).not.toHaveBeenCalledWith('pty-expired')
-    expect(setPtyOwnership).toHaveBeenCalledWith('ssh:target-1@@pty-live', 'target-1')
+    const expectedAppPtyId = 'ssh:target-1@@relay-generation@@pty-live'
+    expect(setPtyOwnership).toHaveBeenCalledWith(expectedAppPtyId, 'target-1')
     expect(mockStore.markSshRemotePtyLease).toHaveBeenCalledWith('target-1', 'pty-live', 'attached')
   })
 

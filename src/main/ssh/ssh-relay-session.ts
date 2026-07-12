@@ -1230,6 +1230,7 @@ export class SshRelaySession {
     if (!ptyProvider) {
       return
     }
+    const relayInstanceId = ptyProvider.getRelayInstanceId?.()
     for (const ptyId of ptyIds) {
       if (!shouldContinue()) {
         return
@@ -1243,7 +1244,7 @@ export class SshRelaySession {
         if (!shouldContinue()) {
           return
         }
-        const appPtyId = toAppSshPtyId(this.targetId, ptyId)
+        const appPtyId = toAppSshPtyId(this.targetId, ptyId, relayInstanceId)
         setPtyOwnership(appPtyId, this.targetId)
         this.store.markSshRemotePtyLease(this.targetId, ptyId, 'attached')
         this.forwardReattachReplay(appPtyId, attachResult.replay ?? '')
@@ -1251,7 +1252,7 @@ export class SshRelaySession {
         if (!isSshPtyNotFoundError(err)) {
           throw err
         }
-        const appPtyId = toAppSshPtyId(this.targetId, ptyId)
+        const appPtyId = toAppSshPtyId(this.targetId, ptyId, relayInstanceId)
         if (isSshPtyIdentityMismatchError(err)) {
           console.warn(
             `[ssh-relay-session] Ignoring stale PTY ${ptyId} for ${this.targetId} after relay identity mismatch: ${

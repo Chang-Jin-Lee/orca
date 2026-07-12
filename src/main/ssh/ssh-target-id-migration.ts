@@ -21,7 +21,7 @@ function rewriteSshPtyId(ptyId: string, oldTargetId: string, newTargetId: string
   if (!parsed || parsed.connectionId !== oldTargetId) {
     return null
   }
-  return toAppSshPtyId(newTargetId, parsed.relayPtyId)
+  return toAppSshPtyId(newTargetId, parsed.relayPtyId, parsed.relayInstanceId)
 }
 
 function rewriteSshPtyIdRecordValues(

@@ -96,6 +96,10 @@ export class SshPtyProvider implements IPtyProvider {
     return this.connectionId
   }
 
+  getRelayInstanceId(): string | undefined {
+    return this.relayInstanceId
+  }
+
   private toRelayPtyId(id: string): string {
     const parsed = parseAppSshPtyId(id)
     if (
