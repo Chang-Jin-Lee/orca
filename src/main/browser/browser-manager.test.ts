@@ -162,11 +162,17 @@ describe('browserManager', () => {
     const handler = guestSetWindowOpenHandlerMock.mock.calls[0][0] as (details: {
       url: string
       features?: string
+      disposition?: string
     }) => { action: 'allow' | 'deny' }
-    expect(handler({ url: 'about:blank' })).toMatchObject({ action: 'allow' })
+    // Why: 'new-window' is Chromium's disposition for a windowed popup
+    // (window.open with features) — the OAuth pattern that earns a native child.
+    expect(handler({ url: 'about:blank', disposition: 'new-window' })).toMatchObject({
+      action: 'allow'
+    })
     expect(
       handler({
         url: 'https://example.com/login',
+        disposition: 'new-window',
         features: 'alwaysOnTop=yes,frame=no,fullscreen=yes,kiosk=yes,modal=yes,transparent=yes'
       })
     ).toEqual({
@@ -191,6 +197,99 @@ describe('browserManager', () => {
 
     expect(shellOpenExternalMock).not.toHaveBeenCalled()
     expect(rendererSendMock).not.toHaveBeenCalled()
+  })
+
+  it('routes generic target=_blank navigations to the OS browser instead of a native child', () => {
+    const rendererSendMock = vi.fn()
+    const guest = {
+      id: 1103,
+      isDestroyed: vi.fn(() => false),
+      getType: vi.fn(() => 'webview'),
+      setBackgroundThrottling: guestSetBackgroundThrottlingMock,
+      setWindowOpenHandler: guestSetWindowOpenHandlerMock,
+      on: guestOnMock,
+      off: guestOffMock,
+      openDevTools: guestOpenDevToolsMock
+    }
+    webContentsFromIdMock.mockImplementation((id: number) => {
+      if (id === guest.id) {
+        return guest
+      }
+      if (id === rendererWebContentsId) {
+        return { isDestroyed: vi.fn(() => false), send: rendererSendMock }
+      }
+      return null
+    })
+
+    browserManager.attachGuestPolicies(guest as never)
+    browserManager.registerGuest({
+      browserPageId: 'browser-1',
+      webContentsId: guest.id,
+      rendererWebContentsId
+    })
+
+    const handler = guestSetWindowOpenHandlerMock.mock.calls[0][0] as (details: {
+      url: string
+      disposition?: string
+    }) => { action: 'allow' | 'deny' }
+
+    // A plain target=_blank link (foreground-tab) must not earn native chrome
+    // even though the guest owns a registered browser tab.
+    expect(
+      handler({ url: 'https://evil.example.com/spam', disposition: 'foreground-tab' })
+    ).toEqual({ action: 'deny' })
+    expect(shellOpenExternalMock).toHaveBeenCalledWith('https://evil.example.com/spam')
+    expect(rendererSendMock).toHaveBeenCalledWith('browser:popup', {
+      browserPageId: 'browser-1',
+      origin: 'https://evil.example.com',
+      action: 'opened-external'
+    })
+
+    // A background-tab (ctrl/cmd+click) navigation is treated the same way.
+    expect(
+      handler({ url: 'https://other.example.com/page', disposition: 'background-tab' })
+    ).toEqual({ action: 'deny' })
+    expect(shellOpenExternalMock).toHaveBeenCalledWith('https://other.example.com/page')
+  })
+
+  it('does not grant a native child for a registered guest when disposition is absent', () => {
+    const rendererSendMock = vi.fn()
+    const guest = {
+      id: 1104,
+      isDestroyed: vi.fn(() => false),
+      getType: vi.fn(() => 'webview'),
+      setBackgroundThrottling: guestSetBackgroundThrottlingMock,
+      setWindowOpenHandler: guestSetWindowOpenHandlerMock,
+      on: guestOnMock,
+      off: guestOffMock,
+      openDevTools: guestOpenDevToolsMock
+    }
+    webContentsFromIdMock.mockImplementation((id: number) => {
+      if (id === guest.id) {
+        return guest
+      }
+      if (id === rendererWebContentsId) {
+        return { isDestroyed: vi.fn(() => false), send: rendererSendMock }
+      }
+      return null
+    })
+
+    browserManager.attachGuestPolicies(guest as never)
+    browserManager.registerGuest({
+      browserPageId: 'browser-1',
+      webContentsId: guest.id,
+      rendererWebContentsId
+    })
+
+    const handler = guestSetWindowOpenHandlerMock.mock.calls[0][0] as (details: {
+      url: string
+      disposition?: string
+    }) => { action: 'allow' | 'deny' }
+
+    // Why: only an explicit 'new-window' disposition is treated as a popup;
+    // anything else falls through to the external-browser fallback.
+    expect(handler({ url: 'https://example.com/login' })).toEqual({ action: 'deny' })
+    expect(shellOpenExternalMock).toHaveBeenCalledWith('https://example.com/login')
   })
 
   it('blocks unsafe popup URLs for registered guests', () => {
@@ -988,11 +1087,19 @@ describe('browserManager', () => {
 
     const childWindowOpenHandler = childSetWindowOpenHandlerMock.mock.calls[0][0] as (details: {
       url: string
+      disposition?: string
     }) => { action: 'allow' | 'deny' }
-    expect(childWindowOpenHandler({ url: 'https://identity.example.com/login' })).toMatchObject({
+    expect(
+      childWindowOpenHandler({
+        url: 'https://identity.example.com/login',
+        disposition: 'new-window'
+      })
+    ).toMatchObject({
       action: 'allow'
     })
-    expect(childWindowOpenHandler({ url: 'file:///etc/passwd' })).toEqual({ action: 'deny' })
+    expect(
+      childWindowOpenHandler({ url: 'file:///etc/passwd', disposition: 'new-window' })
+    ).toEqual({ action: 'deny' })
     expect(rendererSendMock).toHaveBeenCalledWith('browser:popup', {
       browserPageId: 'browser-1',
       origin: 'null',
@@ -1064,9 +1171,14 @@ describe('browserManager', () => {
     childDidCreateWindowHandler?.({ webContents: cleanupChildGuest })
     expect(managerState.popupOwnerContextByGuestId.has(cleanupChildGuest.id)).toBe(true)
     const cleanupChildWindowOpenHandler = cleanupChildGuest.setWindowOpenHandler.mock
-      .calls[0][0] as (details: { url: string }) => { action: 'allow' | 'deny' }
+      .calls[0][0] as (details: { url: string; disposition?: string }) => {
+      action: 'allow' | 'deny'
+    }
     expect(
-      cleanupChildWindowOpenHandler({ url: 'https://identity.example.com/continue' })
+      cleanupChildWindowOpenHandler({
+        url: 'https://identity.example.com/continue',
+        disposition: 'new-window'
+      })
     ).toMatchObject({ action: 'allow' })
     const cleanupChildDestroyedHandler = cleanupChildOnMock.mock.calls.find(
       ([event]) => event === 'destroyed'

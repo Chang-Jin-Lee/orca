@@ -626,7 +626,7 @@ export class BrowserManager {
       this.attachGuestPolicies(window.webContents, this.resolvePopupOwnerContext(guest.id))
     }
     guest.on('did-create-window', handleDidCreateWindow)
-    guest.setWindowOpenHandler(({ url }) => {
+    guest.setWindowOpenHandler(({ url, disposition }) => {
       const browserTabId = this.resolveBrowserTabIdForGuestWebContentsId(guest.id)
       const browserUrl = normalizeBrowserNavigationUrl(url)
       const externalUrl = normalizeExternalBrowserUrl(url)
@@ -634,7 +634,15 @@ export class BrowserManager {
       // Why: file URLs are valid for user-opened in-pane previews, but remote
       // content must not create native child windows targeting local paths.
       const canOpenAsChild = Boolean(externalUrl || browserUrl === ORCA_BROWSER_BLANK_URL)
-      if (browserTabId && canOpenAsChild) {
+      // Why: only grant a native Electron child to genuine popups. Chromium
+      // reports 'new-window' when a page calls window.open() with window
+      // features (or the user shift-clicks) — the OAuth/consent-dialog pattern.
+      // Ordinary target=_blank clicks and featureless window.open() arrive as
+      // 'foreground-tab'/'background-tab'; letting those spawn native windows
+      // would let any embedded page create deceptive or spammy Orca chrome, so
+      // route them to the OS browser (external branch) instead.
+      const isNativePopupRequest = disposition === 'new-window'
+      if (browserTabId && canOpenAsChild && isNativePopupRequest) {
         // Why: OAuth may request ordinary size/position features, but browser
         // content must not create deceptive or inescapable native chrome.
         return { action: 'allow', overrideBrowserWindowOptions: SAFE_POPUP_WINDOW_OPTIONS }
