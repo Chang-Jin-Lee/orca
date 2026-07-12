@@ -135,6 +135,21 @@ describe('orchestration send structured payload flags', () => {
     })
   })
 
+  it('forwards multiline message bodies without normalization', async () => {
+    const body = 'paragraph one line one\nparagraph one line two\n\nparagraph two'
+
+    await invokeSend(
+      new Map<string, string | boolean>([
+        ['from', 'term_worker'],
+        ['to', 'term_coord'],
+        ['subject', 'multiline'],
+        ['body', body]
+      ])
+    )
+
+    expect(callMock).toHaveBeenCalledWith('orchestration.send', expect.objectContaining({ body }))
+  })
+
   it('rejects mixing raw payload with structured payload flags', async () => {
     await expect(
       invokeSend(
