@@ -6064,7 +6064,9 @@ export function connectPanePty(
       }
       // Why: snapshot replay clears and rebuilds xterm state; re-apply the
       // user's scroll intent once so hidden catch-up cannot repin the viewport.
-      enforceTerminalWriteScrollIntent(pane.terminal, scrollIntent)
+      // Restore by bottom offset — the rebuilt buffer renumbers every row, so
+      // the pre-replay absolute viewport line points at arbitrary content.
+      enforceTerminalWriteScrollIntent(pane.terminal, scrollIntent, { restoreBy: 'bottomOffset' })
     }
 
     function requestHiddenOutputRestoreIfNeeded(opts?: { bypassScheduler?: boolean }): boolean {
