@@ -164,6 +164,16 @@ describe('repos:create', () => {
     expect(removeHandlerMock).toHaveBeenCalledWith('repos:getDefaultCreateProjectParent')
   })
 
+  it('routes desktop repo removal through the runtime teardown transaction', async () => {
+    const runtime = { removeProject: vi.fn().mockResolvedValue({ removed: true }) }
+    registerRepoHandlers(mockWindow as never, mockStore as never, runtime as never)
+
+    await handlers.get('repos:remove')?.(null, { repoId: 'repo-1' })
+
+    expect(runtime.removeProject).toHaveBeenCalledWith('id:repo-1')
+    expect(mockStore.removeProject).not.toHaveBeenCalled()
+  })
+
   // ── input validation ──────────────────────────────────────────────
 
   it('rejects empty names', async () => {

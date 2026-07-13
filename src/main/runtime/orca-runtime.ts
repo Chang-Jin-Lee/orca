@@ -12286,6 +12286,13 @@ export class OrcaRuntimeService {
     }
   }
 
+  async runWithTerminalCreateAdmission<T>(
+    worktreeId: string | undefined,
+    action: () => Promise<T>
+  ): Promise<T> {
+    return worktreeId ? this.withTerminalAdmission(worktreeId, action) : action()
+  }
+
   private beginWorktreeCreateAdmission(repoId: string): () => void {
     if (this.projectRemovalBlockedRepoIds.has(repoId)) {
       throw new Error('project_removal_in_progress')
@@ -12311,10 +12318,7 @@ export class OrcaRuntimeService {
     }
   }
 
-  private async withWorktreeCreateAdmission<T>(
-    repoId: string,
-    action: () => Promise<T>
-  ): Promise<T> {
+  async runWithWorktreeCreateAdmission<T>(repoId: string, action: () => Promise<T>): Promise<T> {
     const release = this.beginWorktreeCreateAdmission(repoId)
     try {
       return await action()
@@ -12325,6 +12329,32 @@ export class OrcaRuntimeService {
 
   private async drainWorktreeCreateAdmissions(repoId: string): Promise<void> {
     await Promise.all([...(this.worktreeCreateAdmissionsByRepoId.get(repoId) ?? [])])
+  }
+
+  async runWithWorktreeRemovalAdmission<T>(
+    worktreeId: string,
+    action: () => Promise<T>
+  ): Promise<T> {
+    if (this.terminalAdmissionBlockedWorktreeIds.has(worktreeId)) {
+      throw new Error('worktree_removal_in_progress')
+    }
+    this.terminalAdmissionBlockedWorktreeIds.add(worktreeId)
+    try {
+      await this.drainTerminalAdmissions([worktreeId])
+      return await action()
+    } finally {
+      this.terminalAdmissionBlockedWorktreeIds.delete(worktreeId)
+    }
+  }
+
+  async verifyTerminalsStoppedForRemoval(worktreeId: string): Promise<void> {
+    if (!this.ptyController) {
+      if (this.getLivePtyIdsForWorktree(worktreeId).size > 0) {
+        throw new Error('terminal_verified_stop_unavailable')
+      }
+      return
+    }
+    await this.stopTerminalsForWorktree(`id:${worktreeId}`, { allowUnavailableGraph: true })
   }
 
   async removeProject(repoSelector: string): Promise<{ removed: true }> {
@@ -14700,7 +14730,7 @@ export class OrcaRuntimeService {
     }
 
     const repo = await this.resolveRepoSelector(args.repoSelector)
-    return await this.withWorktreeCreateAdmission(repo.id, () =>
+    return await this.runWithWorktreeCreateAdmission(repo.id, () =>
       this.runCreateManagedWorktree(args)
     )
   }
@@ -17038,7 +17068,7 @@ export class OrcaRuntimeService {
 
     // Why: runtime callers can race the same workspace through CLI/mobile
     // retries. Share one destructive Git/filesystem operation per worktree ID.
-    const removal = (async (): Promise<RemoveWorktreeResult & { warning?: string }> => {
+    const removal = this.runWithWorktreeRemovalAdmission(removalTarget.id, async () => {
       const repo = store.getRepo(removalTarget.repoId)
       if (!repo) {
         throw new Error('repo_not_found')
@@ -17050,6 +17080,7 @@ export class OrcaRuntimeService {
           )
         }
         const localProvider = this.getLocalProvider()
+        await this.verifyTerminalsStoppedForRemoval(removalTarget.id)
         if (localProvider) {
           // Why: folder workspace deletion has no Git removal phase where PTYs
           // would otherwise be swept; tear them down before hiding the workspace.
@@ -17273,6 +17304,7 @@ export class OrcaRuntimeService {
         return removalResult ?? {}
       }
       if (repo.connectionId) {
+        await this.verifyTerminalsStoppedForRemoval(removalTarget.id)
         const remoteRemoveOptions = !deleteBranch ? { deleteBranch } : {}
         const rawRemovalResult = await (Object.keys(remoteRemoveOptions).length > 0
           ? provider!.removeWorktree(canonicalWorktreePath, force, remoteRemoveOptions)
@@ -17363,6 +17395,9 @@ export class OrcaRuntimeService {
       await closeLocalWatcherForWorktreePath(canonicalWorktreePath).catch((err) => {
         console.warn(`[filesystem-watcher] failed to close ${canonicalWorktreePath}:`, err)
       })
+      if (shouldTearDownPtys) {
+        await this.verifyTerminalsStoppedForRemoval(removalTarget.id)
+      }
       if (localProvider && shouldTearDownPtys) {
         // Why: once preflight proves normal deletion is clean, kill PTYs before
         // git-level removal so Windows handles cannot keep the directory busy. This also
@@ -17493,7 +17528,7 @@ export class OrcaRuntimeService {
         ...removalResult,
         ...(warning ? { warning } : {})
       }
-    })()
+    })
     this.removeManagedWorktreeInFlight.set(removalTarget.id, { optionsKey, promise: removal })
     try {
       return await removal
@@ -18917,14 +18952,26 @@ export class OrcaRuntimeService {
     })
   }
 
-  async stopTerminalsForWorktree(worktreeSelector: string): Promise<{ stopped: number }> {
-    // Why: this mutates live PTYs, so the runtime must reject it while the
-    // renderer graph is reloading instead of acting on cached leaf ownership.
-    const graphEpoch = this.captureReadyGraphEpoch()
+  async stopTerminalsForWorktree(
+    worktreeSelector: string,
+    options: { allowUnavailableGraph?: boolean } = {}
+  ): Promise<{ stopped: number }> {
+    // Why: fresh provider liveness, not a cached renderer graph, is shutdown
+    // authority. When a graph is ready, still reject epoch changes mid-proof;
+    // headless/boot removal can proceed from the same fresh provider snapshot.
+    const graphEpoch = options.allowUnavailableGraph
+      ? this.graphStatus === 'ready'
+        ? this.captureReadyGraphEpoch()
+        : null
+      : this.captureReadyGraphEpoch()
     const worktree = await this.resolveWorktreeSelector(worktreeSelector)
-    this.assertStableReadyGraph(graphEpoch)
+    if (graphEpoch !== null) {
+      this.assertStableReadyGraph(graphEpoch)
+    }
     const resolvedWorktrees = [...(await this.getResolvedWorktreeMap()).values()]
-    this.assertStableReadyGraph(graphEpoch)
+    if (graphEpoch !== null) {
+      this.assertStableReadyGraph(graphEpoch)
+    }
     const refreshedPtyLiveness = await this.refreshPtyWorktreeRecordsFromController(
       resolvedWorktrees,
       worktree.id

@@ -971,6 +971,18 @@ export function registerWorktreeHandlers(
   store: Store,
   runtime: OrcaRuntimeService
 ): void {
+  const withCreateAdmission = <T>(repoId: string, action: () => Promise<T>): Promise<T> =>
+    typeof runtime.runWithWorktreeCreateAdmission === 'function'
+      ? runtime.runWithWorktreeCreateAdmission(repoId, action)
+      : action()
+  const withRemovalAdmission = <T>(worktreeId: string, action: () => Promise<T>): Promise<T> =>
+    typeof runtime.runWithWorktreeRemovalAdmission === 'function'
+      ? runtime.runWithWorktreeRemovalAdmission(worktreeId, action)
+      : action()
+  const verifyTerminalsStopped = (worktreeId: string): Promise<void> =>
+    typeof runtime.verifyTerminalsStoppedForRemoval === 'function'
+      ? runtime.verifyTerminalsStoppedForRemoval(worktreeId)
+      : Promise.resolve()
   // Remove any previously registered handlers so we can re-register them
   // (e.g. when macOS re-activates the app and creates a new window).
   ipcMain.removeHandler('worktrees:listAll')
@@ -1228,72 +1240,74 @@ export function registerWorktreeHandlers(
       // attributes — branch names can carry user-content (e.g. an issue
       // title) and the redactor would have to learn yet another rule;
       // the repo ID is the safer correlator for the bundle.
-      return withWorktreeSpan({ stage: 'create' }, async () => {
-        const repo = store.getRepo(args.repoId)
-        if (!repo) {
-          throw new Error(`Repo not found: ${args.repoId}`)
-        }
+      return withCreateAdmission(args.repoId, () =>
+        withWorktreeSpan({ stage: 'create' }, async () => {
+          const repo = store.getRepo(args.repoId)
+          if (!repo) {
+            throw new Error(`Repo not found: ${args.repoId}`)
+          }
 
-        const sourceParse = workspaceSourceSchema.safeParse(args.telemetrySource)
-        const source: WorkspaceSource = sourceParse.success ? sourceParse.data : 'unknown'
+          const sourceParse = workspaceSourceSchema.safeParse(args.telemetrySource)
+          const source: WorkspaceSource = sourceParse.success ? sourceParse.data : 'unknown'
 
-        const automationProvenance = resolveAutomationWorkspaceProvenance({
-          authority: runtime,
-          repoSelector: args.repoId,
-          repo,
-          request: args.automationProvenanceRequest
-        })
-        const createArgs: CreateWorktreeArgsWithSystemProvenance = {
-          ...args,
-          automationProvenance
-        }
+          const automationProvenance = resolveAutomationWorkspaceProvenance({
+            authority: runtime,
+            repoSelector: args.repoId,
+            repo,
+            request: args.automationProvenanceRequest
+          })
+          const createArgs: CreateWorktreeArgsWithSystemProvenance = {
+            ...args,
+            automationProvenance
+          }
 
-        let result: CreateWorktreeResult
-        try {
-          // Why: only wrap the helpers themselves. The pre-validation throws
-          // above (`Repo not found`, `Folder mode does not support creating
-          // worktrees`) signal IPC-shape bugs, not the user-visible
-          // git/filesystem failures the funnel cares about — bucketing them
-          // into `unknown` would pollute the failure taxonomy.
-          result = isFolderRepo(repo)
-            ? createFolderWorkspace(createArgs, repo, store)
-            : repo.connectionId
-              ? await createRemoteWorktree(createArgs, repo, store, mainWindow)
-              : await createLocalWorktree(createArgs, repo, store, mainWindow, runtime)
-        } catch (error) {
-          releaseAutomationWorkspaceProvenanceRequest(args.automationProvenanceRequest)
-          track('workspace_create_failed', {
+          let result: CreateWorktreeResult
+          try {
+            // Why: only wrap the helpers themselves. The pre-validation throws
+            // above (`Repo not found`, `Folder mode does not support creating
+            // worktrees`) signal IPC-shape bugs, not the user-visible
+            // git/filesystem failures the funnel cares about — bucketing them
+            // into `unknown` would pollute the failure taxonomy.
+            result = isFolderRepo(repo)
+              ? createFolderWorkspace(createArgs, repo, store)
+              : repo.connectionId
+                ? await createRemoteWorktree(createArgs, repo, store, mainWindow)
+                : await createLocalWorktree(createArgs, repo, store, mainWindow, runtime)
+          } catch (error) {
+            releaseAutomationWorkspaceProvenanceRequest(args.automationProvenanceRequest)
+            track('workspace_create_failed', {
+              source,
+              error_class: classifyWorkspaceCreateError(error),
+              ...getCohortAtEmit()
+            })
+            throw error
+          }
+          finishAutomationWorkspaceProvenanceRequest(args.automationProvenanceRequest)
+
+          // Why: emit `workspace_created` only after the underlying create has
+          // resolved (the helpers throw on failure, so reaching this line means
+          // git-add succeeded — we deliberately do not also emit a separate
+          // `workspace_initialized`, see telemetry-plan.md§Deferred events).
+          // `from_existing_branch` is true iff the caller specified a non-empty
+          // baseBranch; an unspecified baseBranch means "branch from default
+          // HEAD", which is the not-from-existing-branch case. We never send
+          // the branch name itself.
+          track('workspace_created', {
             source,
-            error_class: classifyWorkspaceCreateError(error),
+            from_existing_branch:
+              !isFolderRepo(repo) &&
+              typeof args.baseBranch === 'string' &&
+              args.baseBranch.length > 0,
             ...getCohortAtEmit()
           })
-          throw error
-        }
-        finishAutomationWorkspaceProvenanceRequest(args.automationProvenanceRequest)
 
-        // Why: emit `workspace_created` only after the underlying create has
-        // resolved (the helpers throw on failure, so reaching this line means
-        // git-add succeeded — we deliberately do not also emit a separate
-        // `workspace_initialized`, see telemetry-plan.md§Deferred events).
-        // `from_existing_branch` is true iff the caller specified a non-empty
-        // baseBranch; an unspecified baseBranch means "branch from default
-        // HEAD", which is the not-from-existing-branch case. We never send
-        // the branch name itself.
-        track('workspace_created', {
-          source,
-          from_existing_branch:
-            !isFolderRepo(repo) &&
-            typeof args.baseBranch === 'string' &&
-            args.baseBranch.length > 0,
-          ...getCohortAtEmit()
+          if (isFolderRepo(repo)) {
+            notifyWorktreesChanged(mainWindow, repo.id)
+          }
+
+          return result
         })
-
-        if (isFolderRepo(repo)) {
-          notifyWorktreesChanged(mainWindow, repo.id)
-        }
-
-        return result
-      })
+      )
     }
   )
 
@@ -1418,13 +1432,14 @@ export function registerWorktreeHandlers(
       // Why: stale toast actions, double-clicks, and Space/sidebar races can
       // target the same worktree concurrently. Share the destructive backend
       // operation so only one path touches Git and the filesystem.
-      const removal = (async (): Promise<RemoveWorktreeResult> => {
+      const removal = withRemovalAdmission(args.worktreeId, async () => {
         if (isFolderRepo(repo)) {
           if (args.worktreeId === getFolderWorkspaceRootId(repo)) {
             throw new Error(
               'Cannot delete the project root workspace. Remove the folder project instead.'
             )
           }
+          await verifyTerminalsStopped(args.worktreeId)
           // Why: folder workspaces share one filesystem root, so there is no Git
           // remove step to close shells; sweep PTYs before dropping metadata.
           await killAllProcessesForWorktree(args.worktreeId, {
@@ -1682,6 +1697,7 @@ export function registerWorktreeHandlers(
             }
           }
 
+          await verifyTerminalsStopped(args.worktreeId)
           const remoteRemoveOptions = !deleteBranch ? { deleteBranch } : {}
           const rawRemovalResult = await (Object.keys(remoteRemoveOptions).length > 0
             ? provider!.removeWorktree(canonicalWorktreePath, args.force, remoteRemoveOptions)
@@ -1762,6 +1778,7 @@ export function registerWorktreeHandlers(
         await closeLocalWatcherForRemoval(canonicalWorktreePath)
 
         if (shouldTearDownPtys) {
+          await verifyTerminalsStopped(args.worktreeId)
           // Why: once preflight proves normal deletion is clean, kill PTYs before
           // git-level removal so Windows handles cannot keep the directory busy.
           await killAllProcessesForWorktree(args.worktreeId, {
@@ -1885,7 +1902,7 @@ export function registerWorktreeHandlers(
 
         notifyWorktreesChanged(mainWindow, repoId)
         return removalResult ?? {}
-      })()
+      })
       worktreeRemovalsInFlight.set(inFlightKey, { optionsKey, promise: removal })
       try {
         return await removal
@@ -1930,30 +1947,33 @@ export function registerWorktreeHandlers(
         throw new Error(`Worktree deletion already in progress: ${args.worktreeId}`)
       }
 
-      const forget = (async (): Promise<RemoveWorktreeResult> => {
-        if (isFolderRepo(repo) && args.worktreeId === getFolderWorkspaceRootId(repo)) {
-          throw new Error(
-            'Cannot delete the project root workspace. Remove the folder project instead.'
-          )
+      const forget = withRemovalAdmission(
+        args.worktreeId,
+        async (): Promise<RemoveWorktreeResult> => {
+          if (isFolderRepo(repo) && args.worktreeId === getFolderWorkspaceRootId(repo)) {
+            throw new Error(
+              'Cannot delete the project root workspace. Remove the folder project instead.'
+            )
+          }
+
+          // Why: best-effort PTY sweep. killAllProcessesForWorktree resolves
+          // synchronously for a dead SSH relay (the provider tombstones the lease
+          // and returns without awaiting the remote), so this never hangs.
+          await killAllProcessesForWorktree(args.worktreeId, {
+            runtime,
+            localProvider: getLocalPtyProvider(),
+            onPtyStopped: clearProviderPtyState
+          }).catch((err) => {
+            console.warn(`[worktree-teardown] forget-local failed for ${args.worktreeId}:`, err)
+          })
+
+          runtime.clearOptimisticReconcileToken(args.worktreeId)
+          removeWorktreeMetadataAndTransientState(store, args.worktreeId)
+          preservedBranchCleanupByWorktreeId.delete(args.worktreeId)
+          notifyWorktreesChanged(mainWindow, repoId)
+          return {}
         }
-
-        // Why: best-effort PTY sweep. killAllProcessesForWorktree resolves
-        // synchronously for a dead SSH relay (the provider tombstones the lease
-        // and returns without awaiting the remote), so this never hangs.
-        await killAllProcessesForWorktree(args.worktreeId, {
-          runtime,
-          localProvider: getLocalPtyProvider(),
-          onPtyStopped: clearProviderPtyState
-        }).catch((err) => {
-          console.warn(`[worktree-teardown] forget-local failed for ${args.worktreeId}:`, err)
-        })
-
-        runtime.clearOptimisticReconcileToken(args.worktreeId)
-        removeWorktreeMetadataAndTransientState(store, args.worktreeId)
-        preservedBranchCleanupByWorktreeId.delete(args.worktreeId)
-        notifyWorktreesChanged(mainWindow, repoId)
-        return {}
-      })()
+      )
       worktreeRemovalsInFlight.set(inFlightKey, { optionsKey, promise: forget })
       try {
         return await forget

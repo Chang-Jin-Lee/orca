@@ -290,6 +290,9 @@ describe('registerWorktreeHandlers', () => {
     createTerminal: ReturnType<typeof vi.fn>
     splitTerminal: ReturnType<typeof vi.fn>
     notifyWorktreesChangedForRemoteClients: ReturnType<typeof vi.fn>
+    runWithWorktreeCreateAdmission: ReturnType<typeof vi.fn>
+    runWithWorktreeRemovalAdmission: ReturnType<typeof vi.fn>
+    verifyTerminalsStoppedForRemoval: ReturnType<typeof vi.fn>
   }
 
   beforeEach(() => {
@@ -501,7 +504,14 @@ describe('registerWorktreeHandlers', () => {
         tabId: 'tab-startup',
         paneRuntimeId: -1
       }),
-      notifyWorktreesChangedForRemoteClients: vi.fn()
+      notifyWorktreesChangedForRemoteClients: vi.fn(),
+      runWithWorktreeCreateAdmission: vi.fn(
+        async (_repoId: string, action: () => Promise<unknown>) => action()
+      ),
+      runWithWorktreeRemovalAdmission: vi.fn(
+        async (_worktreeId: string, action: () => Promise<unknown>) => action()
+      ),
+      verifyTerminalsStoppedForRemoval: vi.fn().mockResolvedValue(undefined)
     }
     registerWorktreeHandlers(mainWindow as never, store as never, runtimeStub as never)
   })
@@ -621,6 +631,10 @@ describe('registerWorktreeHandlers', () => {
       { cwd: '/workspace/repo' }
     )
     expect(runtimeStub.fetchRemoteWithCache).not.toHaveBeenCalled()
+    expect(runtimeStub.runWithWorktreeCreateAdmission).toHaveBeenCalledWith(
+      'repo-1',
+      expect.any(Function)
+    )
     expect(addWorktreeMock).toHaveBeenCalledWith(
       '/workspace/repo',
       '/workspace/pr-title',
@@ -6505,6 +6519,13 @@ describe('registerWorktreeHandlers', () => {
     expect(mainWindow.webContents.send).toHaveBeenCalledWith('worktrees:changed', {
       repoId: 'repo-1'
     })
+    expect(runtimeStub.runWithWorktreeRemovalAdmission).toHaveBeenCalledWith(
+      'repo-1::/workspace/feature-wt',
+      expect.any(Function)
+    )
+    expect(runtimeStub.verifyTerminalsStoppedForRemoval).toHaveBeenCalledWith(
+      'repo-1::/workspace/feature-wt'
+    )
   })
 
   it('recovers forced Windows long-path worktree removal through local deletion and prune', async () => {

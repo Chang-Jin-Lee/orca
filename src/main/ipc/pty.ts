@@ -3578,9 +3578,17 @@ export function registerPtyHandlers(
     resetPtyRendererDeliveryDebug()
   })
 
+  const withTerminalCreateAdmission = <T>(
+    worktreeId: string | undefined,
+    action: () => Promise<T>
+  ): Promise<T> =>
+    typeof runtime?.runWithTerminalCreateAdmission === 'function'
+      ? runtime.runWithTerminalCreateAdmission(worktreeId, action)
+      : action()
+
   ipcMain.handle(
     'pty:spawn',
-    async (
+    (
       _event,
       args: {
         cols: number
@@ -3631,7 +3639,8 @@ export function registerPtyHandlers(
           request_kind?: unknown
         }
       }
-    ) => {
+    ) =>
+      withTerminalCreateAdmission(args.worktreeId, async () => {
       const spawnTiming = createPtySpawnTiming()
       const startupPromise = getLocalPtyStartupPromise(args.connectionId)
       if (startupPromise) {
@@ -4407,7 +4416,7 @@ export function registerPtyHandlers(
         rejectPaneSpawnReservation(reservationPaneKey, paneSpawnReservation, err)
         throw err
       }
-    }
+      })
   )
 
   const writePtyProviderInputWithinLimit = (

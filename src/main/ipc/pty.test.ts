@@ -510,6 +510,29 @@ describe('registerPtyHandlers', () => {
     }
   })
 
+  it('enters runtime terminal-create admission before renderer spawn work', async () => {
+    const admissionError = new Error('terminal admission blocked')
+    const runtime = {
+      setPtyController: vi.fn(),
+      runWithTerminalCreateAdmission: vi.fn().mockRejectedValue(admissionError)
+    }
+    registerPtyHandlers(mainWindow as never, runtime as never)
+
+    await expect(
+      handlers.get('pty:spawn')!(null, {
+        cols: 80,
+        rows: 24,
+        worktreeId: 'repo-1::/workspace/feature'
+      })
+    ).rejects.toBe(admissionError)
+
+    expect(runtime.runWithTerminalCreateAdmission).toHaveBeenCalledWith(
+      'repo-1::/workspace/feature',
+      expect.any(Function)
+    )
+    expect(spawnMock).not.toHaveBeenCalled()
+  })
+
   function createMockProc() {
     let dataHandler: ((data: string) => void) | null = null
     let exitHandler: ((event: { exitCode: number }) => void) | null = null

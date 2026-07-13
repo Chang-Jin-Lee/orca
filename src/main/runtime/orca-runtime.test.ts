@@ -29624,6 +29624,28 @@ describe('OrcaRuntimeService', () => {
       expect(gitIdx).toBeGreaterThan(killIdx)
     })
 
+    it('blocks late terminal admission while worktree removal is in preflight', async () => {
+      const preflightStarted = deferred<void>()
+      const allowPreflight = deferred<void>()
+      vi.mocked(removeWorktree).mockResolvedValue({})
+      vi.mocked(assertWorktreeCleanForRemoval).mockImplementation(async () => {
+        preflightStarted.resolve()
+        await allowPreflight.promise
+      })
+
+      const runtime = new OrcaRuntimeService(store)
+
+      const removal = runtime.removeManagedWorktree(TEST_WORKTREE_ID)
+      await preflightStarted.promise
+
+      await expect(
+        runtime.runWithTerminalCreateAdmission(TEST_WORKTREE_ID, async () => undefined)
+      ).rejects.toThrow('terminal_admission_blocked_for_project_removal')
+
+      allowPreflight.resolve()
+      await expect(removal).resolves.toEqual({})
+    })
+
     it('thunk resolves the installed provider lazily, not at construction time', async () => {
       // Simulates the daemon adapter being installed AFTER OrcaRuntimeService
       // construction (setLocalPtyProvider(routedAdapter) in daemon-init).
