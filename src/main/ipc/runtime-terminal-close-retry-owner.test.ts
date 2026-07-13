@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const { callRuntimeEnvironmentMock, getRuntimeEnvironmentStatusMock } = vi.hoisted(() => ({
   callRuntimeEnvironmentMock: vi.fn(),
@@ -24,6 +24,11 @@ function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
 }
 
 describe('runtime terminal close retry ownership', () => {
+  beforeEach(() => {
+    callRuntimeEnvironmentMock.mockReset()
+    getRuntimeEnvironmentStatusMock.mockReset()
+  })
+
   afterEach(() => {
     initializeRuntimeTerminalCloseRetryOwner(
       { getPendingRuntimeTerminalCloses: () => [] } as never,
@@ -113,6 +118,56 @@ describe('runtime terminal close retry ownership', () => {
       requestedAt: expect.any(Number)
     })
     expect(remove).toHaveBeenCalledOnce()
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('releases a same-runtime stale handle without another retry', async () => {
+    vi.useFakeTimers()
+    const remove = vi.fn()
+    initializeRuntimeTerminalCloseRetryOwner(
+      {
+        getPendingRuntimeTerminalCloses: () => [],
+        upsertPendingRuntimeTerminalClose: vi.fn(),
+        removePendingRuntimeTerminalClose: remove
+      } as never,
+      '/tmp/orca-runtime-owner-test'
+    )
+    getRuntimeEnvironmentStatusMock.mockResolvedValue({
+      id: 'status-a',
+      ok: true,
+      result: { runtimeId: 'runtime-a' },
+      _meta: { runtimeId: 'runtime-a' }
+    })
+    callRuntimeEnvironmentMock
+      .mockResolvedValueOnce({
+        id: 'close-transient',
+        ok: false,
+        error: { code: 'runtime_unavailable', message: 'runtime unavailable' },
+        _meta: { runtimeId: 'runtime-a' }
+      })
+      .mockResolvedValueOnce({
+        id: 'close-a',
+        ok: false,
+        error: { code: 'terminal_handle_stale', message: 'terminal_handle_stale' },
+        _meta: { runtimeId: 'runtime-a' }
+      })
+
+    await expect(
+      closeRuntimeTerminalWithRetryOwnership('environment-1', 'terminal-1', 'runtime-a')
+    ).resolves.toMatchObject({ ok: false, error: { code: 'runtime_unavailable' } })
+    expect(vi.getTimerCount()).toBe(1)
+
+    await expect(
+      closeRuntimeTerminalWithRetryOwnership('environment-1', 'terminal-1', 'runtime-a')
+    ).resolves.toMatchObject({
+      ok: true,
+      result: { close: false, reason: 'terminal_handle_stale' }
+    })
+    expect(vi.getTimerCount()).toBe(0)
+    await vi.advanceTimersByTimeAsync(60_000)
+
+    expect(callRuntimeEnvironmentMock).toHaveBeenCalledTimes(2)
+    expect(remove).toHaveBeenCalledWith('environment-1', 'terminal-1')
     expect(vi.getTimerCount()).toBe(0)
   })
 })

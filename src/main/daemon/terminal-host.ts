@@ -61,14 +61,15 @@ export class TerminalHost {
    * already deliver them through shell launch arguments.
    */
   async createOrAttach(opts: CreateOrAttachOptions): Promise<CreateOrAttachResult> {
-    const existing = this.sessions.get(opts.sessionId)
+    let existing = this.sessions.get(opts.sessionId)
 
-    // Why: a session that has been asked to terminate (kill() called but the
-    // subprocess hasn't exited yet) must not be reattached. Reattaching would
-    // hand the caller a handle that races with the in-flight exit, and any
-    // subsequent operation (write/kill/resize) would fail once the subprocess
-    // finally exits. Treat terminating sessions the same as fully-exited ones.
-    if (existing && existing.isAlive && !existing.isTerminating) {
+    // Why: replacing a terminating session would dispose its exit listener and
+    // retry timer before physical exit proof, orphaning the old native process.
+    while (existing?.isAlive && existing.isTerminating) {
+      await existing.waitForExitProof()
+      existing = this.sessions.get(opts.sessionId)
+    }
+    if (existing?.isAlive) {
       assertPtyPaneIdentity(
         opts.sessionId,
         { paneKey: existing.paneKey, tabId: existing.tabId },
@@ -89,7 +90,7 @@ export class TerminalHost {
       }
     }
 
-    // Clean up dead session if present
+    // Clean up only a physically exited session if its exit reaper has not run yet.
     if (existing) {
       existing.dispose()
       this.sessions.delete(opts.sessionId)

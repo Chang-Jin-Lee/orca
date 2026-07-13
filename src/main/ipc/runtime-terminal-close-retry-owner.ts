@@ -34,6 +34,15 @@ function isCurrentOwner(close: RetainedTerminalClose): boolean {
   )
 }
 
+function release(close: RetainedTerminalClose): void {
+  if (!isCurrentOwner(close)) {
+    return
+  }
+  retainedCloses.delete(key(close.environmentId, close.handle))
+  store?.removePendingRuntimeTerminalClose?.(close.environmentId, close.handle)
+  schedule()
+}
+
 function schedule(): void {
   if (retryTimer) {
     clearTimeout(retryTimer)
@@ -67,10 +76,12 @@ function attempt(close: RetainedTerminalClose): Promise<RuntimeRpcResponse<unkno
   if (close.inFlight) {
     return close.inFlight
   }
-  const closeKey = key(close.environmentId, close.handle)
   const noOpResponse = (
     runtimeId?: string | null,
-    reason: 'retry_owner_replaced' | 'environment_removed' = 'retry_owner_replaced'
+    reason:
+      | 'retry_owner_replaced'
+      | 'environment_removed'
+      | 'terminal_handle_stale' = 'retry_owner_replaced'
   ) => ({
     id: 'terminal.close',
     ok: true as const,
@@ -87,8 +98,7 @@ function attempt(close: RetainedTerminalClose): Promise<RuntimeRpcResponse<unkno
       }
       const currentRuntimeId = status._meta.runtimeId
       if (close.runtimeId && close.runtimeId !== currentRuntimeId) {
-        retainedCloses.delete(closeKey)
-        store?.removePendingRuntimeTerminalClose?.(close.environmentId, close.handle)
+        release(close)
         return {
           id: 'terminal.close',
           ok: true as const,
@@ -117,8 +127,7 @@ function attempt(close: RetainedTerminalClose): Promise<RuntimeRpcResponse<unkno
       if (!response.ok) {
         const responseRuntimeId = response._meta?.runtimeId
         if (close.runtimeId && responseRuntimeId && responseRuntimeId !== close.runtimeId) {
-          retainedCloses.delete(closeKey)
-          store?.removePendingRuntimeTerminalClose?.(close.environmentId, close.handle)
+          release(close)
           return {
             id: 'terminal.close',
             ok: true as const,
@@ -126,12 +135,19 @@ function attempt(close: RetainedTerminalClose): Promise<RuntimeRpcResponse<unkno
             _meta: { runtimeId: responseRuntimeId }
           }
         }
+        if (
+          response.error.code === 'terminal_handle_stale' &&
+          close.runtimeId &&
+          responseRuntimeId === close.runtimeId
+        ) {
+          // Why: the same runtime generation is authoritative for its handle.
+          // A stale handle proves this exact retained resource no longer exists.
+          release(close)
+          return noOpResponse(responseRuntimeId, 'terminal_handle_stale')
+        }
         throw Object.assign(new Error(response.error.message), { response })
       }
-      retainedCloses.delete(closeKey)
-      if (typeof store?.removePendingRuntimeTerminalClose === 'function') {
-        store.removePendingRuntimeTerminalClose(close.environmentId, close.handle)
-      }
+      release(close)
       return response
     })
     .catch((error: unknown) => {
@@ -140,8 +156,7 @@ function attempt(close: RetainedTerminalClose): Promise<RuntimeRpcResponse<unkno
       }
       if (error instanceof RuntimeEnvironmentStoreError && error.code === 'invalid_argument') {
         // Why: persisted ownership for a removed environment can never become reachable again.
-        retainedCloses.delete(closeKey)
-        store?.removePendingRuntimeTerminalClose?.(close.environmentId, close.handle)
+        release(close)
         return noOpResponse(undefined, 'environment_removed')
       }
       close.attempts += 1

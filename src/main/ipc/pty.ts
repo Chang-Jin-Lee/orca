@@ -195,6 +195,15 @@ const providerProcessListsInFlight = new WeakMap<IPtyProvider, Promise<PtyProces
 const sshRetainedExitUnsubscribers = new Map<string, () => void>()
 let retainedShutdownRetryTimer: ReturnType<typeof setTimeout> | null = null
 const MAX_RETAINED_SHUTDOWN_BACKOFF_MS = 30_000
+
+function assertPtySpawnHasNoRetainedShutdown(id: string | undefined): void {
+  if (id && (pendingLocalShutdownRetries.has(id) || pendingSshShutdownRetries.has(id))) {
+    // Why: replacing or attaching this exact id would strand the retained
+    // teardown owner on the older native process/provider generation.
+    throw new Error(`PTY "${id}" shutdown is still pending`)
+  }
+}
+
 const SYNTHETIC_KILL_EXIT_DUPLICATE_WINDOW_MS = 30_000
 // Why: producer flow control changes terminal physics — a flooding shell now
 // blocks on write instead of buffering in main. Kill switch: flip this one
@@ -3695,6 +3704,7 @@ export function registerPtyHandlers(
           : undefined
       }
 
+      assertPtySpawnHasNoRetainedShutdown(effectiveSessionAppId)
       const existingPaneSpawn = materializedPaneKey
         ? paneSpawnReservationsByPaneKey.get(materializedPaneKey)
         : undefined
@@ -4592,6 +4602,7 @@ export function registerPtyHandlers(
               ? (getSettings()?.terminalWindowsPowerShellImplementation ?? 'auto')
               : undefined
           }
+          assertPtySpawnHasNoRetainedShutdown(effectiveSessionAppId)
           const existingPaneSpawn = reservationPaneKey
             ? paneSpawnReservationsByPaneKey.get(reservationPaneKey)
             : undefined

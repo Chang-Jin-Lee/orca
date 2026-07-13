@@ -3923,6 +3923,95 @@ describe('registerPtyHandlers', () => {
     vi.useRealTimers()
   })
 
+  it('blocks renderer same-id restore until startup teardown replay completes', async () => {
+    const startup = makeDeferred()
+    const shutdownGate = makeDeferred()
+    const spawn = vi.fn().mockResolvedValue({ id: 'daemon-pty' })
+    const shutdown = vi.fn(() => shutdownGate.promise)
+    const removePendingLocalPtyShutdown = vi.fn()
+    setLocalPtyProvider({
+      spawn,
+      shutdown,
+      onData: vi.fn(() => () => {}),
+      onReplay: vi.fn(() => () => {}),
+      onExit: vi.fn(() => () => {})
+    } as never)
+    handlers.clear()
+    registerPtyHandlers(
+      mainWindow as never,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      {
+        getPendingLocalPtyShutdowns: () => [{ ptyId: 'daemon-pty', requestedAt: 1 }],
+        upsertPendingLocalPtyShutdown: vi.fn(),
+        removePendingLocalPtyShutdown
+      } as never,
+      { awaitLocalPtyStartup: () => startup.promise }
+    )
+
+    const restore = handlers.get('pty:spawn')!(null, {
+      sessionId: 'daemon-pty',
+      cols: 80,
+      rows: 24
+    }) as Promise<unknown>
+    startup.resolve()
+
+    await expect(restore).rejects.toThrow('shutdown is still pending')
+    expect(shutdown).toHaveBeenCalledOnce()
+    expect(spawn).not.toHaveBeenCalled()
+
+    shutdownGate.resolve()
+    await vi.waitFor(() => expect(removePendingLocalPtyShutdown).toHaveBeenCalledOnce())
+    await expect(
+      handlers.get('pty:spawn')!(null, { sessionId: 'daemon-pty', cols: 80, rows: 24 })
+    ).resolves.toMatchObject({ id: 'daemon-pty' })
+    expect(spawn).toHaveBeenCalledOnce()
+  })
+
+  it('blocks runtime same-id restore while startup teardown replay owns the PTY', async () => {
+    const startup = makeDeferred()
+    const shutdownGate = makeDeferred()
+    const spawn = vi.fn().mockResolvedValue({ id: 'daemon-pty' })
+    const shutdown = vi.fn(() => shutdownGate.promise)
+    const removePendingLocalPtyShutdown = vi.fn()
+    setLocalPtyProvider({
+      spawn,
+      shutdown,
+      onData: vi.fn(() => () => {}),
+      onReplay: vi.fn(() => () => {}),
+      onExit: vi.fn(() => () => {})
+    } as never)
+    const runtime = { setPtyController: vi.fn(), onPtyExit: vi.fn() }
+    handlers.clear()
+    registerPtyHandlers(
+      mainWindow as never,
+      runtime as never,
+      undefined,
+      undefined,
+      undefined,
+      {
+        getPendingLocalPtyShutdowns: () => [{ ptyId: 'daemon-pty', requestedAt: 1 }],
+        upsertPendingLocalPtyShutdown: vi.fn(),
+        removePendingLocalPtyShutdown
+      } as never,
+      { awaitLocalPtyStartup: () => startup.promise }
+    )
+    const controller = runtime.setPtyController.mock.calls[0]?.[0] as {
+      spawn: (args: { sessionId: string; cols: number; rows: number }) => Promise<unknown>
+    }
+
+    const restore = controller.spawn({ sessionId: 'daemon-pty', cols: 80, rows: 24 })
+    startup.resolve()
+
+    await expect(restore).rejects.toThrow('shutdown is still pending')
+    expect(shutdown).toHaveBeenCalledOnce()
+    expect(spawn).not.toHaveBeenCalled()
+    shutdownGate.resolve()
+    await vi.waitFor(() => expect(removePendingLocalPtyShutdown).toHaveBeenCalledOnce())
+  })
+
   it('does not let an in-flight old provider complete persisted shutdown ownership', async () => {
     vi.useFakeTimers()
     let rejectOldShutdown!: (error: Error) => void

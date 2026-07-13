@@ -3686,7 +3686,8 @@
           "file": "src/main/daemon/terminal-host.test.ts",
           "assertions": [
             "a reused live daemon session rejects attach and kill from a replacement pane identity",
-            "native immediate force-kill failure preserves the live daemon session for retry"
+            "native immediate force-kill failure preserves the live daemon session for retry",
+            "same-id create waits for physical exit proof without disposing the terminating session owner"
           ]
         },
         {
@@ -3786,6 +3787,7 @@
             "disconnected SSH kill and stop retain the lease and reject without a synthetic exit",
             "provider reconnect retries durable shutdown intent with its generation and pane identity",
             "persisted local shutdown waits for daemon startup instead of accepting unknown-id success from the fallback provider",
+            "renderer and runtime same-id restore reject while startup teardown replay retains that exact PTY owner",
             "an in-flight replaced local provider cannot complete or delete the newer shutdown owner",
             "local and SSH stale-provider not-found rejections preserve replacement ownership and coalesced callers fail closed",
             "direct local and SSH kill requests share the retained owner and re-drive after in-flight provider replacement",
@@ -3827,7 +3829,8 @@
         {
           "file": "src/main/ipc/runtime-terminal-close-retry-owner.test.ts",
           "assertions": [
-            "a late runtime close completion cannot delete a replacement-generation retry owner"
+            "a late runtime close completion cannot delete a replacement-generation retry owner",
+            "same-generation terminal_handle_stale releases durable ownership and cancels the last retry timer"
           ]
         },
         {
@@ -4163,6 +4166,33 @@
           "result": "passed",
           "durationSeconds": 1.43,
           "summary": "219 tests passed including packaged relay patch parity, vanilla pre-ready red control, one-shot accepted close ownership, and delayed OS-death inventory reaping."
+        },
+        {
+          "date": "2026-07-12",
+          "runner": "local",
+          "platform": "macos",
+          "command": "pnpm exec vitest run --config config/vitest.config.ts src/main/providers/local-pty-provider.test.ts src/main/daemon/daemon-pty-adapter.test.ts src/main/daemon/daemon-pty-router.test.ts src/main/daemon/degraded-daemon-pty-provider.test.ts src/main/daemon/session.test.ts src/main/daemon/pty-subprocess.test.ts src/main/daemon/terminal-host.test.ts src/main/daemon/terminal-host-session-reaping-leak.test.ts src/main/daemon/daemon-server.test.ts src/main/ipc/pty.test.ts src/main/ipc/runtime-terminal-close-retry-owner.test.ts src/main/runtime/orca-runtime.test.ts",
+          "result": "passed",
+          "durationSeconds": 9.17,
+          "summary": "1442 tests passed: terminating same-id daemon sessions deferred creation until physical exit, renderer/runtime startup restore rejected retained teardown identities, and same-generation stale runtime handles released persistence plus the last timer."
+        },
+        {
+          "date": "2026-07-12",
+          "runner": "local",
+          "platform": "macos",
+          "command": "pnpm exec vitest run --config config/vitest.config.ts src/main/runtime/orca-runtime.test.ts src/main/ipc/worktrees.test.ts src/main/ipc/pty.test.ts src/main/ipc/runtime-environments.test.ts src/main/runtime/rpc/terminal-close-generation.test.ts src/main/persistence.test.ts src/main/ssh/ssh-relay-session.test.ts src/main/ipc/ssh.test.ts src/renderer/src/store/slices/worktrees.test.ts",
+          "result": "passed",
+          "durationSeconds": 9.63,
+          "summary": "1891 tests passed across app-start teardown replay, local/SSH/runtime identity ownership, selected-provider liveness, and durable close settlement."
+        },
+        {
+          "date": "2026-07-12",
+          "runner": "local",
+          "platform": "macos",
+          "command": "pnpm exec vitest run --config config/vitest.config.ts src/shared/ssh-pty-id.test.ts src/shared/ssh-types.test.ts src/main/providers/local-pty-provider.test.ts src/main/providers/ssh-pty-provider.test.ts src/main/persistence.test.ts src/main/ssh/ssh-relay-session.test.ts src/main/ssh/ssh-relay-generation-reattach.test.ts src/main/ssh/ssh-target-id-migration.test.ts src/relay/pty-handler.test.ts src/relay/subprocess.test.ts src/renderer/src/components/terminal-pane/pty-transport.test.ts src/renderer/src/components/terminal-pane/pty-pre-handler-buffer.test.ts src/renderer/src/lib/pty-kill-retry-ownership.test.ts src/renderer/src/lib/runtime-terminal-close-retry-ownership.test.ts src/renderer/src/lib/ephemeral-vm-runtime-cleanup.test.ts src/renderer/src/lib/launch-agent-background-session.test.ts src/renderer/src/store/slices/repos.test.ts src/renderer/src/store/slices/repos-host-identity-routing.test.ts src/main/runtime/orca-runtime.test.ts src/main/ipc/pty.test.ts",
+          "result": "passed",
+          "durationSeconds": 10.49,
+          "summary": "1800 tests passed with exact same-id startup replay admission, retained pre-handler/liveness bounds, and cross-provider retry identity preserved."
         }
       ],
       "runtimeBudget": {

@@ -139,6 +139,8 @@ export class Session {
   private producerPaused = false
   private producerPauseFailsafeTimer: ReturnType<typeof setTimeout> | null = null
   private readonly _historySeeded: boolean | undefined
+  private readonly exitProofPromise: Promise<void>
+  private resolveExitProof!: () => void
 
   constructor(opts: SessionOptions) {
     this.sessionId = opts.sessionId
@@ -148,6 +150,9 @@ export class Session {
     this.launchAgent = opts.launchAgent ?? null
     this.subprocess = opts.subprocess
     this.onSessionExit = opts.onExit
+    this.exitProofPromise = new Promise((resolve) => {
+      this.resolveExitProof = resolve
+    })
     const size = normalizePtySize(opts.cols, opts.rows)
     this.emulator = new HeadlessEmulator({
       cols: size.cols,
@@ -200,6 +205,10 @@ export class Session {
 
   get isTerminating(): boolean {
     return this._isTerminating
+  }
+
+  waitForExitProof(): Promise<void> {
+    return this._state === 'exited' ? Promise.resolve() : this.exitProofPromise
   }
 
   get pid(): number {
@@ -653,6 +662,7 @@ export class Session {
 
     this._exitCode = code
     this._state = 'exited'
+    this.resolveExitProof()
     // Why resume:false — the child is reaped, so there is nothing to unblock;
     // only the failsafe timer must not outlive the session.
     this.releaseProducerPause({ resume: false })

@@ -128,6 +128,34 @@ describe('TerminalHost', () => {
       expect(spawnFn).toHaveBeenCalledOnce()
     })
 
+    it('retains a terminating same-id session until physical exit proof', async () => {
+      await host.createOrAttach({
+        sessionId: 'session-1',
+        cols: 80,
+        rows: 24,
+        streamClient: { onData: vi.fn(), onExit: vi.fn() }
+      })
+      const terminatingSubprocess = lastSubprocess
+
+      host.kill('session-1', { immediate: true })
+      const replacement = host.createOrAttach({
+        sessionId: 'session-1',
+        cols: 80,
+        rows: 24,
+        streamClient: { onData: vi.fn(), onExit: vi.fn() }
+      })
+      await Promise.resolve()
+
+      expect(spawnFn).toHaveBeenCalledOnce()
+      expect(terminatingSubprocess.forceKill).toHaveBeenCalledOnce()
+      expect(terminatingSubprocess.dispose).not.toHaveBeenCalled()
+      expect(host.listSessions()).toHaveLength(1)
+
+      terminatingSubprocess._onExitCb?.(0)
+      await expect(replacement).resolves.toMatchObject({ isNew: true })
+      expect(spawnFn).toHaveBeenCalledTimes(2)
+    })
+
     it('returns snapshot when attaching to existing session', async () => {
       await host.createOrAttach({
         sessionId: 'session-1',
