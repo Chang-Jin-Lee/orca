@@ -306,8 +306,11 @@ function NativeChatResolvedView({
 
   // The streaming preview bubble (if any) sits after the transcript but before
   // the optimistic user echoes — same order mobile uses.
+  const pendingMessages = useMemo(
+    () => pendingSendsAsMessages(pending, sessionAfterCommandBoundaries.messages),
+    [pending, sessionAfterCommandBoundaries.messages]
+  )
   const streamingText = useMemo(() => {
-    const pendingMessages = pendingSendsAsMessages(pending, sessionAfterCommandBoundaries.messages)
     return deriveNativeChatStreamingText({
       messages:
         pendingMessages.length > 0
@@ -316,7 +319,7 @@ function NativeChatResolvedView({
       previewText: hookPreview,
       working: hookWorking
     })
-  }, [sessionAfterCommandBoundaries.messages, pending, hookPreview, hookWorking])
+  }, [sessionAfterCommandBoundaries.messages, pendingMessages, hookPreview, hookWorking])
   const sessionWithPending = useMemo<typeof session>(() => {
     if (pending.length === 0 && commandMarkers.length === 0 && !streamingText) {
       return sessionAfterCommandBoundaries
@@ -327,10 +330,10 @@ function NativeChatResolvedView({
         ...sessionAfterCommandBoundaries.messages,
         ...commandMarkersAsMessages(commandMarkers),
         ...(streamingText ? [nativeChatStreamingMessage(streamingText)] : []),
-        ...pendingSendsAsMessages(pending, sessionAfterCommandBoundaries.messages)
+        ...pendingMessages
       ]
     }
-  }, [sessionAfterCommandBoundaries, pending, commandMarkers, streamingText])
+  }, [sessionAfterCommandBoundaries, pending, pendingMessages, commandMarkers, streamingText])
   // Derive the view state from the pending-augmented session so a send into an
   // otherwise-empty conversation flips to the list (showing the queued bubble)
   // instead of staying on the empty state.
