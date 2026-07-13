@@ -106,7 +106,7 @@ describe('TerminalHost dead-session reaping (leak regression)', () => {
     expect(host.listSessions()).toHaveLength(0)
   })
 
-  it('reaps a session killed immediately (forceKill path)', async () => {
+  it('retains an immediate kill until onExit proves shutdown, then reaps it', async () => {
     await host.createOrAttach({
       sessionId: 'session-1',
       cols: 80,
@@ -116,20 +116,25 @@ describe('TerminalHost dead-session reaping (leak regression)', () => {
 
     host.kill('session-1', { immediate: true })
 
-    // Emulator freed and session dropped from the map (no lingering dead entry).
+    expect(emulatorDispose).not.toHaveBeenCalled()
+    expect(host.listSessions()).toHaveLength(1)
+
+    lastSubprocess._onExitCb?.(-1)
     expect(emulatorDispose).toHaveBeenCalledTimes(1)
     expect(host.listSessions()).toHaveLength(0)
   })
 
-  it('reaps a session whose graceful kill times out (forceDispose path)', async () => {
+  it('retains a timed-out graceful kill until onExit proves shutdown, then reaps it', async () => {
     vi.useFakeTimers()
     try {
+      let stubbornSubprocess: ReturnType<typeof createMockSubprocess> | null = null
       const stubbornHost = new TerminalHost({
         spawnSubprocess: () => {
           const sub = createMockSubprocess()
           // Stubborn child: ignores graceful kill, so the KILL_TIMEOUT_MS timer
           // must force-dispose it.
           sub.kill = vi.fn()
+          stubbornSubprocess = sub
           return sub
         }
       })
@@ -144,14 +149,48 @@ describe('TerminalHost dead-session reaping (leak regression)', () => {
       stubbornHost.kill('stubborn')
       expect(emulatorDispose).not.toHaveBeenCalled()
 
-      // The 5s KILL_TIMEOUT_MS fallback fires forceDispose, which disposes the
-      // emulator and reaps the session via the onExit hook.
+      // The fallback kill is accepted, but ownership remains until exit proof.
       vi.advanceTimersByTime(5000)
 
+      expect(emulatorDispose).not.toHaveBeenCalled()
+      expect(stubbornHost.listSessions()).toHaveLength(1)
+      stubbornSubprocess!._onExitCb?.(-1)
       expect(emulatorDispose).toHaveBeenCalledTimes(1)
       expect(stubbornHost.listSessions()).toHaveLength(0)
       stubbornHost.dispose()
     } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('whole-host shutdown retries native failure and waits for exit proof', async () => {
+    vi.useFakeTimers()
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      await host.createOrAttach({
+        sessionId: 'session-1',
+        cols: 80,
+        rows: 24,
+        streamClient: streamClient()
+      })
+      const forceKill = lastSubprocess.forceKill as ReturnType<typeof vi.fn>
+      forceKill
+        .mockImplementationOnce(() => {
+          throw new Error('native force kill failed')
+        })
+        .mockImplementationOnce(() => lastSubprocess._onExitCb?.(-1))
+      lastSubprocess.kill = vi.fn()
+      host.kill('session-1')
+
+      const shutdown = host.shutdownAndWait(1_000)
+      expect(host.listSessions()).toHaveLength(1)
+      await vi.advanceTimersByTimeAsync(100)
+
+      await expect(shutdown).resolves.toBeUndefined()
+      expect(forceKill).toHaveBeenCalledTimes(2)
+      expect(host.listSessions()).toHaveLength(0)
+    } finally {
+      warn.mockRestore()
       vi.useRealTimers()
     }
   })

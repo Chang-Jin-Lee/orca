@@ -126,6 +126,7 @@ async function main(): Promise<void> {
     socketPath,
     tokenPath,
     log: daemonLog,
+    requestProcessExit: (exitCode) => process.exit(exitCode),
     spawnSubprocess: (opts) => createPtySubprocess(opts)
   })
 

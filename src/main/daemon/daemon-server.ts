@@ -36,6 +36,7 @@ export type DaemonServerOptions = {
   tokenPath: string
   ptySpawnHealthCheck?: () => Promise<void>
   log?: DaemonFileLog
+  requestProcessExit?: (exitCode: number) => void
   spawnSubprocess: (opts: {
     sessionId: string
     cols: number
@@ -61,6 +62,7 @@ export class DaemonServer {
   private tokenPath: string
   private ptySpawnHealthCheck: () => Promise<void>
   private log: DaemonFileLog
+  private requestProcessExit: DaemonServerOptions['requestProcessExit']
 
   private clients = new Map<string, ConnectedClient>()
   private streamDataBatcher = new DaemonStreamDataBatcher(
@@ -120,6 +122,7 @@ export class DaemonServer {
       backgroundedSessionIdSuffixes: this.transientFactRelay.backgroundedSessionIdSuffixes()
     }))
     this.log = opts.log ?? createNoopDaemonFileLog()
+    this.requestProcessExit = opts.requestProcessExit
   }
 
   async start(): Promise<void> {
@@ -149,7 +152,14 @@ export class DaemonServer {
   async shutdown(): Promise<void> {
     this.stopStreamBacklogProbe()
     this.transientFactRelay.dispose()
-    this.host.dispose()
+    // Why: process exit must not erase a still-live PTY after native kill
+    // failure or acceptance. Preserve listeners while the bounded drain retries.
+    let drainError: unknown = null
+    try {
+      await this.host.shutdownAndWait(4_000)
+    } catch (error) {
+      drainError = error
+    }
     this.streamDataBatcher.clear()
 
     for (const [, client] of this.clients) {
@@ -158,7 +168,7 @@ export class DaemonServer {
     }
     this.clients.clear()
 
-    return new Promise<void>((resolve) => {
+    await new Promise<void>((resolve) => {
       if (this.server) {
         this.server.close(() => {
           try {
@@ -171,6 +181,9 @@ export class DaemonServer {
         resolve()
       }
     })
+    if (drainError) {
+      throw drainError
+    }
   }
 
   private handleConnection(socket: Socket): void {
@@ -585,13 +598,29 @@ export class DaemonServer {
           reason: 'rpc',
           killSessions: request.payload.killSessions === true
         })
-        if (request.payload.killSessions) {
-          this.host.dispose()
-        }
-        process.nextTick(() => this.shutdown())
+        // shutdownForRpc owns the exit-proof drain and contains failures before
+        // explicitly terminating the detached daemon process.
+        process.nextTick(() => void this.shutdownForRpc())
         return {}
     }
     throw new Error(`Unknown request type: ${(request as { type: string }).type}`)
+  }
+
+  private async shutdownForRpc(): Promise<void> {
+    let exitCode = 0
+    try {
+      await this.shutdown()
+    } catch (error) {
+      exitCode = 1
+      this.log.log('shutdown-error', {
+        reason: 'rpc',
+        message: error instanceof Error ? error.message : String(error)
+      })
+    } finally {
+      // Why: a failed native kill keeps PTY handles alive; explicit process
+      // exit prevents an untracked old daemon from surviving after socket removal.
+      this.requestProcessExit?.(exitCode)
+    }
   }
 
   private sendExitEvent(

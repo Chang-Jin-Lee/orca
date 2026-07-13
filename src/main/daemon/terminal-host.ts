@@ -8,6 +8,7 @@ import type { SessionInfo, TakePendingOutputResult, TerminalSnapshot } from './t
 import { SessionNotFoundError } from './types'
 import type { CreateOrAttachOptions, CreateOrAttachResult } from './terminal-host-create-contract'
 import { assertPtyPaneIdentity } from '../pty/pty-shutdown-identity'
+import { TerminalHostShutdownDrain } from './terminal-host-shutdown-drain'
 
 export type { CreateOrAttachOptions, CreateOrAttachResult } from './terminal-host-create-contract'
 
@@ -44,13 +45,13 @@ export class TerminalHost {
   private sessions = new Map<string, Session>()
   private killedTombstones = new Map<string, number>()
   private spawnSubprocess: TerminalHostOptions['spawnSubprocess']
-  private onFinalCheckpoint: TerminalHostOptions['onFinalCheckpoint']
   private maxTombstones: number
+  private shutdownDrain: TerminalHostShutdownDrain
 
   constructor(opts: TerminalHostOptions) {
     this.spawnSubprocess = opts.spawnSubprocess
-    this.onFinalCheckpoint = opts.onFinalCheckpoint
     this.maxTombstones = opts.maxTombstones ?? DEFAULT_MAX_TOMBSTONES
+    this.shutdownDrain = new TerminalHostShutdownDrain(this.sessions, opts.onFinalCheckpoint)
   }
 
   /**
@@ -91,6 +92,7 @@ export class TerminalHost {
     if (existing) {
       existing.dispose()
       this.sessions.delete(opts.sessionId)
+      this.shutdownDrain.notifyIfEmpty()
     }
 
     // Clear tombstone if re-creating a killed session
@@ -229,6 +231,7 @@ export class TerminalHost {
     }
     session.dispose()
     this.sessions.delete(sessionId)
+    this.shutdownDrain.notifyIfEmpty()
   }
 
   signal(sessionId: string, sig: string): void {
@@ -353,41 +356,12 @@ export class TerminalHost {
   }
 
   dispose(): void {
-    // Why: write final checkpoints before killing sessions so graceful shutdown
-    // has zero data loss. The checkpoint callback writes synchronously to disk.
-    if (this.onFinalCheckpoint) {
-      for (const [sessionId, session] of this.sessions) {
-        if (!session.isAlive) {
-          continue
-        }
-        const take = session.takePendingOutput(true, { teardownSnapshot: true })
-        if (take?.snapshot) {
-          try {
-            this.onFinalCheckpoint(sessionId, take.snapshot, take.records)
-          } catch {
-            // Best-effort — don't block shutdown
-          }
-        }
-      }
-    }
+    this.shutdownDrain.disposeImmediately()
+    this.killedTombstones.clear()
+  }
 
-    for (const [, session] of this.sessions) {
-      session.detachAllClients()
-      // Why: live-vs-exited is load-bearing. For LIVE sessions we use
-      // forceKillAndDisposeSubprocess (SIGKILL + destroy) to reap stubborn
-      // children AND release the ptmx fd on the same tick, bypassing the 5s
-      // KILL_TIMEOUT_MS fallback that would otherwise outlive the daemon
-      // process. For sessions that have already exited but are still in the
-      // map, SIGKILL would target a reaped pid — on POSIX that pid can be
-      // recycled to an unrelated process, so we MUST only release the fd via
-      // disposeSubprocess() (destroy without kill). See docs/fix-pty-fd-leak.md.
-      if (session.isAlive) {
-        session.forceKillAndDisposeSubprocess()
-      } else {
-        session.disposeSubprocess()
-      }
-    }
-    this.sessions.clear()
+  async shutdownAndWait(timeoutMs: number): Promise<void> {
+    await this.shutdownDrain.run(timeoutMs)
     this.killedTombstones.clear()
   }
 

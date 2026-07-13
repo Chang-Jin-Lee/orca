@@ -174,6 +174,19 @@ describe('PtyHandler', () => {
     expect(handler.activePtyCount).toBe(1)
   })
 
+  it('keeps the 50-session cap atomic across concurrent module loads', async () => {
+    mockPtySpawn.mockImplementation(() => ({ ...mockPtyInstance }))
+
+    const results = await Promise.allSettled(
+      Array.from({ length: 51 }, () => dispatcher.callRequest('pty.spawn', {}))
+    )
+
+    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(50)
+    expect(results.filter((result) => result.status === 'rejected')).toHaveLength(1)
+    expect(mockPtySpawn).toHaveBeenCalledTimes(50)
+    expect(handler.activePtyCount).toBe(50)
+  })
+
   it('uses an explicit shell override and falls back to the default shell otherwise', async () => {
     const originalPlatform = process.platform
     Object.defineProperty(process, 'platform', {
@@ -1797,6 +1810,37 @@ describe('PtyHandler', () => {
       rmSync(homeDir, { recursive: true, force: true })
     }
   )
+
+  it('whole-relay shutdown retries native failure and waits for exit proof', async () => {
+    let onExitCb: ((event: { exitCode: number }) => void) | null = null
+    const kill = vi
+      .fn()
+      .mockImplementationOnce(() => {
+        throw new Error('native force kill failed')
+      })
+      .mockImplementationOnce(() => onExitCb?.({ exitCode: 137 }))
+    const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
+    mockPtySpawn.mockReturnValue({
+      ...mockPtyInstance,
+      kill,
+      onExit: vi.fn((cb: (event: { exitCode: number }) => void) => {
+        onExitCb = cb
+      })
+    })
+    try {
+      await dispatcher.callRequest('pty.spawn', {})
+
+      const shutdown = handler.shutdownAndWait(1_000)
+      expect(handler.activePtyCount).toBe(1)
+      await vi.advanceTimersByTimeAsync(100)
+
+      await expect(shutdown).resolves.toBeUndefined()
+      expect(kill).toHaveBeenCalledTimes(2)
+      expect(handler.activePtyCount).toBe(0)
+    } finally {
+      stderr.mockRestore()
+    }
+  })
 
   it('revive restores pane identity env alongside hook-server coordinates', async () => {
     await dispatcher.callRequest('pty.spawn', {

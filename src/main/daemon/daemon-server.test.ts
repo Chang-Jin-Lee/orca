@@ -8,6 +8,7 @@ import { DaemonClient } from './client'
 import { encodeNdjson } from './ndjson'
 import { PROTOCOL_VERSION, type DaemonRequest } from './types'
 import type { SubprocessHandle } from './session'
+import type { TerminalHost } from './terminal-host'
 import { getDaemonSocketPath } from './daemon-spawner'
 
 const confirmForegroundProcessMock = vi.fn(async () => 'droid')
@@ -29,7 +30,7 @@ function createMockSubprocess(): SubprocessHandle & {
     write: vi.fn(),
     resize: vi.fn(),
     kill: vi.fn(() => setTimeout(() => onExitCb?.(0), 5)),
-    forceKill: vi.fn(),
+    forceKill: vi.fn(() => setTimeout(() => onExitCb?.(-1), 5)),
     signal: vi.fn(),
     onData(cb) {
       onDataCb = cb
@@ -49,6 +50,7 @@ function createMockSubprocess(): SubprocessHandle & {
 
 type DaemonServerPrivate = {
   server: Server | null
+  host: TerminalHost
   clients: Map<
     string,
     {
@@ -625,6 +627,30 @@ describe('DaemonServer', () => {
 
       const c = new DaemonClient({ socketPath, tokenPath })
       await expect(c.ensureConnected()).rejects.toThrow()
+    })
+
+    it('contains an RPC drain rejection and requests process exit', async () => {
+      const requestProcessExit = vi.fn()
+      server = new DaemonServer({
+        socketPath,
+        tokenPath,
+        requestProcessExit,
+        spawnSubprocess: () => createMockSubprocess()
+      })
+      const daemon = server as unknown as DaemonServerPrivate
+      const drain = vi
+        .spyOn(daemon.host, 'shutdownAndWait')
+        .mockRejectedValue(new Error('native drain failed'))
+
+      await daemon.routeRequest('rpc-client', {
+        id: 'shutdown-1',
+        type: 'shutdown',
+        payload: { killSessions: true }
+      })
+      await new Promise<void>((resolve) => process.nextTick(resolve))
+      await vi.waitFor(() => expect(requestProcessExit).toHaveBeenCalledWith(1))
+
+      drain.mockRestore()
     })
   })
 })

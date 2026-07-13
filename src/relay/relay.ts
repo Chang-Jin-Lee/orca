@@ -977,7 +977,7 @@ async function main(): Promise<void> {
     )
     ptyHandler.startGraceTimer(() => {
       relayLogLine(`[relay] Grace expired (${reason}); shutting down`)
-      shutdown()
+      void shutdown()
     }, timeoutMs)
   }
 
@@ -1019,29 +1019,41 @@ async function main(): Promise<void> {
     })
   }
 
-  function shutdown(): void {
+  let shuttingDown = false
+  async function shutdown(): Promise<void> {
+    if (shuttingDown) {
+      return
+    }
+    shuttingDown = true
     relayLogLine(
       `[relay] Shutdown: ptys=${ptyHandler.activePtyCount}, clients=${socketClients.size}, ownsSocket=${ownsSocketPath}`
     )
     graceDeadlineAt = null
     graceReason = null
     dispatcher.dispose()
-    ptyHandler.dispose()
-    fsHandler.dispose()
-    gitHandler.dispose()
-    hookServer.stop()
-    // Why: Node's Unix server.close() can unlink the listen path. If the path
-    // was externally removed and rebound by a newer relay, closing this older
-    // server would strand the newer daemon behind a missing socket.
-    if (socketServer && ownsCurrentSocketPath()) {
-      socketServer.close()
+    try {
+      await ptyHandler.shutdownAndWait(4_000)
+    } catch (error) {
+      relayLogLine(
+        `[relay] PTY shutdown drain incomplete: ${error instanceof Error ? error.message : String(error)}`
+      )
+    } finally {
+      fsHandler.dispose()
+      gitHandler.dispose()
+      hookServer.stop()
+      // Why: Node's Unix server.close() can unlink the listen path. If the path
+      // was externally removed and rebound by a newer relay, closing this older
+      // server would strand the newer daemon behind a missing socket.
+      if (socketServer && ownsCurrentSocketPath()) {
+        socketServer.close()
+      }
+      cleanupOwnedSocket()
+      process.exit(0)
     }
-    cleanupOwnedSocket()
-    process.exit(0)
   }
 
-  process.on('SIGTERM', shutdown)
-  process.on('SIGINT', shutdown)
+  process.on('SIGTERM', () => void shutdown())
+  process.on('SIGINT', () => void shutdown())
   // Why: when the SSH session drops, the OS sends SIGHUP to the relay's
   // process group. Node's default SIGHUP behavior is to exit immediately,
   // which kills all PTYs before the grace period can start. Ignoring

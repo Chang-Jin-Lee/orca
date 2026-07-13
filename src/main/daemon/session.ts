@@ -24,6 +24,7 @@ const SHELL_READY_TIMEOUT_MS = 15_000
 export const CODEX_SHELL_READY_TIMEOUT_MS = 300
 const KILL_TIMEOUT_MS = 5_000
 const EXIT_PROOF_POLL_MS = 1_000
+const SHUTDOWN_DRAIN_RETRY_MS = 100
 // Why: pending records exist so the 5s checkpoint can persist increments
 // instead of re-serializing the whole buffer. If no client drains them (main
 // process gone, history disabled), memory must stay bounded — past the cap we
@@ -127,6 +128,7 @@ export class Session {
   private killTimer: ReturnType<typeof setTimeout> | null = null
   private forceKillAccepted = false
   private forceKillFailureCount = 0
+  private forceKillRetryDelayMs = KILL_TIMEOUT_MS
   private postReadyFlushGate: PostReadyFlushGate
   private pendingOutputRecords: PendingOutputRecord[] = []
   private pendingOutputBytes = 0
@@ -304,6 +306,29 @@ export class Session {
       throw error
     }
     this.scheduleForceShutdownCheck(this.nextForceShutdownCheckDelay())
+  }
+
+  /** Whole-process shutdown keeps retry/listener ownership until exit proof. */
+  beginShutdownDrain(): void {
+    if (this._state === 'exited') {
+      return
+    }
+    this.forceKillRetryDelayMs = SHUTDOWN_DRAIN_RETRY_MS
+    // Why: a prior graceful/accepted kill may own a 5s timer, longer than the
+    // process drain budget. Re-arm it on the bounded shutdown cadence.
+    if (this.killTimer) {
+      clearTimeout(this.killTimer)
+      this.killTimer = null
+    }
+    try {
+      this.requestImmediateShutdown()
+    } catch (error) {
+      this._isTerminating = true
+      this.recordForceKillFailure(error)
+    }
+    if (this.isAlive) {
+      this.scheduleForceShutdownCheck(this.nextForceShutdownCheckDelay())
+    }
   }
 
   signal(sig: string): void {
@@ -739,10 +764,7 @@ export class Session {
           try {
             this.subprocess.forceKill()
           } catch (error) {
-            this.forceKillFailureCount += 1
-            if (this.forceKillFailureCount <= 2 || this.forceKillFailureCount === 8) {
-              console.warn('[Session] retained force shutdown failed:', error)
-            }
+            this.recordForceKillFailure(error)
           }
         }
         if (!this.isAlive) {
@@ -758,10 +780,7 @@ export class Session {
       try {
         this.issueForceShutdown()
       } catch (error) {
-        this.forceKillFailureCount += 1
-        if (this.forceKillFailureCount <= 2 || this.forceKillFailureCount === 8) {
-          console.warn('[Session] retained force shutdown failed:', error)
-        }
+        this.recordForceKillFailure(error)
       }
       if (this.isAlive) {
         this.scheduleForceShutdownCheck(this.nextForceShutdownCheckDelay())
@@ -772,6 +791,13 @@ export class Session {
   private nextForceShutdownCheckDelay(): number {
     return this.forceKillAccepted && !this.subprocess.retryForceKillUntilExit
       ? EXIT_PROOF_POLL_MS
-      : KILL_TIMEOUT_MS
+      : this.forceKillRetryDelayMs
+  }
+
+  private recordForceKillFailure(error: unknown): void {
+    this.forceKillFailureCount += 1
+    if (this.forceKillFailureCount <= 2 || this.forceKillFailureCount === 8) {
+      console.warn('[Session] retained force shutdown failed:', error)
+    }
   }
 }

@@ -260,6 +260,7 @@ export class PtyHandler {
   private pendingOutputByPty = new Map<string, PendingPtyOutput>()
   private lastInputAtByPty = new Map<string, number>()
   private interactiveOutputCharsByPty = new Map<string, number>()
+  private emptyWaiters = new Set<() => void>()
   // Why: external observers need to drop per-pane state when a PTY exits.
   // Today the relay composes multiple consumers (hook-server cache eviction
   // and plugin-overlay dir cleanup) into a single callback at the call site
@@ -461,6 +462,7 @@ export class PtyHandler {
       this.dispatcher.notify('pty.exit', { id: managed.id, code: exitCode })
       this.notifyExitListener(managed)
       this.ptys.delete(managed.id)
+      this.notifyIfEmpty()
       this.clearPtyFlowState(managed.id)
       // Why: release the ptmx fd on the natural-exit path. Without this the
       // node-pty wrapper's _socket stays alive until GC and the master fd
@@ -503,6 +505,7 @@ export class PtyHandler {
     this.dispatcher.notify('pty.exit', { id: managed.id, code })
     this.notifyExitListener(managed)
     this.ptys.delete(managed.id)
+    this.notifyIfEmpty()
     this.clearPtyFlowState(managed.id)
     disposeManagedPty(managed)
     return true
@@ -510,7 +513,12 @@ export class PtyHandler {
 
   private scheduleManagedPtyForceShutdown(
     managed: ManagedPty,
-    state: { forceKillAccepted: boolean; failedAttempts: number; label: string }
+    state: {
+      forceKillAccepted: boolean
+      failedAttempts: number
+      label: string
+      retryDelayMs?: number
+    }
   ): void {
     if (managed.disposed || managed.killTimer || this.ptys.get(managed.id) !== managed) {
       return
@@ -541,7 +549,7 @@ export class PtyHandler {
         // must never throw into relay-global uncaughtException. Keep one owner.
         this.scheduleManagedPtyForceShutdown(still, state)
       }
-    }, STALE_SPAWN_KILL_RETRY_MS)
+    }, state.retryDelayMs ?? STALE_SPAWN_KILL_RETRY_MS)
   }
 
   private registerHandlers(): void {
@@ -674,6 +682,11 @@ export class PtyHandler {
     const pty = await loadPty()
     if (!pty) {
       throw new Error('node-pty is not available on this remote host')
+    }
+    // Why: concurrent requests can all cross the pre-await size check while
+    // node-pty loads. Spawn/store below is synchronous, so recheck atomically.
+    if (this.ptys.size >= 50) {
+      throw new Error('Maximum number of PTY sessions reached (50)')
     }
 
     const cols = (params.cols as number) || 80
@@ -831,6 +844,7 @@ export class PtyHandler {
       this.notifyExitListener(managed)
       disposeManagedPty(managed)
       this.ptys.delete(id)
+      this.notifyIfEmpty()
       this.clearPtyFlowState(id)
       throw new Error(`PTY "${id}" not found`)
     }
@@ -1201,6 +1215,74 @@ export class PtyHandler {
       disposeManagedPty(managed)
     }
     this.ptys.clear()
+    this.notifyIfEmpty()
+  }
+
+  async shutdownAndWait(timeoutMs: number): Promise<void> {
+    this.cancelGraceTimer()
+    for (const [, managed] of this.ptys) {
+      if (managed.killTimer) {
+        clearTimeout(managed.killTimer)
+        managed.killTimer = undefined
+      }
+      this.clearStartupCommandTimer(managed)
+      const state = {
+        forceKillAccepted: false,
+        failedAttempts: 0,
+        label: 'relay-shutdown',
+        retryDelayMs: 100
+      }
+      try {
+        killPtyForShutdown(managed, 'SIGKILL')
+        state.forceKillAccepted = true
+      } catch (error) {
+        state.failedAttempts = 1
+        process.stderr.write(
+          `[pty-handler] relay-shutdown force kill failed: ${error instanceof Error ? error.message : String(error)}\n`
+        )
+      }
+      if (!this.reapManagedPtyIfProvablyExited(managed)) {
+        this.scheduleManagedPtyForceShutdown(managed, state)
+      }
+    }
+    this.notifyIfEmpty()
+    if (!(await this.waitForEmpty(timeoutMs))) {
+      throw new Error(`Timed out waiting for ${this.ptys.size} relay PTY session(s) to exit`)
+    }
+    if (this.outputFlushTimer !== null) {
+      clearTimeout(this.outputFlushTimer)
+      this.outputFlushTimer = null
+    }
+    this.pendingOutputByPty.clear()
+    this.lastInputAtByPty.clear()
+    this.interactiveOutputCharsByPty.clear()
+  }
+
+  private waitForEmpty(timeoutMs: number): Promise<boolean> {
+    if (this.ptys.size === 0) {
+      return Promise.resolve(true)
+    }
+    return new Promise((resolve) => {
+      const waiter = (): void => {
+        clearTimeout(timer)
+        this.emptyWaiters.delete(waiter)
+        resolve(true)
+      }
+      const timer = setTimeout(() => {
+        this.emptyWaiters.delete(waiter)
+        resolve(false)
+      }, timeoutMs)
+      this.emptyWaiters.add(waiter)
+    })
+  }
+
+  private notifyIfEmpty(): void {
+    if (this.ptys.size !== 0) {
+      return
+    }
+    for (const waiter of this.emptyWaiters) {
+      waiter()
+    }
   }
 
   get activePtyCount(): number {
