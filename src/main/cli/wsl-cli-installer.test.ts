@@ -13,7 +13,7 @@ vi.mock('node:child_process', async (importOriginal) => ({
 }))
 
 import { WslCliInstaller, _internals } from './wsl-cli-installer'
-import { repairManagedWslCliRegistrations } from './wsl-cli-startup-migration'
+import { reconcileManagedWslCliRegistrations } from './wsl-cli-registration-reconciliation'
 
 function makeHostStatus(
   launcherPath = 'C:\\Users\\me\\AppData\\Local\\Programs\\Orca\\resources\\bin\\orca.exe'
@@ -387,13 +387,20 @@ describe('WslCliInstaller', () => {
     expect(orchestrationCalls.map(simulateRc4Launch)).toEqual([2, 2, 2])
 
     await expect(
-      repairManagedWslCliRegistrations({
+      reconcileManagedWslCliRegistrations({
         platform: 'win32',
         isPackaged: true,
+        userDataPath: '/user-data',
         listDistros: async () => ['Ubuntu'],
+        registry: {
+          getCandidates: async () => ['Ubuntu'],
+          recordObservations: async () => undefined
+        },
         createInstaller: () => installer
       })
-    ).resolves.toEqual([{ distro: 'Ubuntu', outcome: 'repaired', state: 'installed' }])
+    ).resolves.toEqual([
+      { distro: 'Ubuntu', outcome: 'repaired', state: 'installed', managed: true }
+    ])
     await expect(installer.getStatus()).resolves.toMatchObject({
       state: 'installed',
       currentTarget: nativeLauncher

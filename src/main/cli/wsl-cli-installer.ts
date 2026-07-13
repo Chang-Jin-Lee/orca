@@ -40,6 +40,7 @@ type WslCliInstallerOptions = {
 
 export type ManagedWslCliRepairResult = {
   changed: boolean
+  managed: boolean
   status: CliInstallStatus
 }
 
@@ -140,30 +141,30 @@ export class WslCliInstaller {
   async repairManagedRegistration(): Promise<ManagedWslCliRepairResult> {
     const status = await this.getStatus()
     if (!status.supported || status.state === 'conflict') {
-      return { changed: false, status }
+      return { changed: false, managed: false, status }
     }
 
     if (status.state === 'stale') {
-      return { changed: true, status: await this.install() }
+      return { changed: true, managed: true, status: await this.install() }
     }
 
     const legacyCommandPath = status.commandPath
       ? `${getPosixDirname(status.commandPath)}/${LEGACY_WSL_COMMAND_NAME}`
       : null
     if (!legacyCommandPath || !this.distro) {
-      return { changed: false, status }
+      return { changed: false, managed: status.state === 'installed', status }
     }
 
     const legacyContent = await this.readCommandFile(this.distro, legacyCommandPath)
     const legacyManaged =
       typeof legacyContent === 'string' && legacyContent.includes(MANAGED_MARKER)
     if (!legacyManaged) {
-      return { changed: false, status }
+      return { changed: false, managed: status.state === 'installed', status }
     }
 
     // Why: a legacy-only managed command proves the user opted into WSL CLI
     // registration; install the current name before removing that owned script.
-    return { changed: true, status: await this.install() }
+    return { changed: true, managed: true, status: await this.install() }
   }
 
   async install(): Promise<CliInstallStatus> {

@@ -187,7 +187,7 @@ import { applyElectronProxySettings } from './network/proxy-settings'
 import { preserveAgentAuthBeforeRestart } from './agent-auth-restart-preservation'
 import { CliInstaller } from './cli/cli-installer'
 import { installLinuxBareOrcaDispatcher } from './cli/linux-bare-orca-dispatcher'
-import { repairManagedWslCliRegistrations } from './cli/wsl-cli-startup-migration'
+import { reconcileManagedWslCliRegistrations } from './cli/wsl-cli-registration-reconciliation'
 import { selfHealRuntimeEnvironmentFocus } from './runtime-environment-focus-self-heal'
 
 let mainWindow: BrowserWindow | null = null
@@ -1603,13 +1603,14 @@ app.whenReady().then(async () => {
   electronApp.setAppUserModelId(devInstanceIdentity.appUserModelId)
   app.setName(devInstanceIdentity.name)
 
-  // Why: pre-rc4 WSL registrations persist across app updates and still point
-  // at orca.cmd, which rc4 cannot use for orchestration message bodies.
-  const managedWslCliRepair = repairManagedWslCliRegistrations({
-    isPackaged: app.isPackaged
+  // Why: managed WSL launchers live outside the Windows app bundle, so keep
+  // their launcher and bridge contract synchronized across app updates.
+  const managedWslCliReconciliation = reconcileManagedWslCliRegistrations({
+    isPackaged: app.isPackaged,
+    userDataPath: getCanonicalUserDataPath()
   }).catch((error) => {
     console.warn(
-      '[wsl-cli] Managed registration discovery failed:',
+      '[wsl-cli] Managed registration reconciliation discovery failed:',
       error instanceof Error ? error.message : String(error)
     )
     return []
@@ -2065,10 +2066,12 @@ app.whenReady().then(async () => {
   registerMobileHandlers(runtimeRpc)
 
   // Why: restored WSL agents can emit heartbeat/reply traffic as soon as the
-  // runtime starts, so finish the bounded repair before making it reachable.
-  for (const result of await managedWslCliRepair) {
+  // runtime starts, so finish bounded reconciliation before making it reachable.
+  for (const result of await managedWslCliReconciliation) {
     if (result.outcome === 'failed') {
-      console.warn(`[wsl-cli] ${result.distro} managed registration repair failed: ${result.error}`)
+      console.warn(
+        `[wsl-cli] ${result.distro} managed registration reconciliation failed: ${result.error}`
+      )
     } else if (result.outcome === 'repaired') {
       console.log(`[wsl-cli] Repaired managed registration in ${result.distro}.`)
     }

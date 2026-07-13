@@ -1,11 +1,21 @@
 import { ipcMain } from 'electron'
 import type { CliInstallStatus } from '../../shared/cli-install-types'
 import { CliInstaller } from '../cli/cli-installer'
+import {
+  recordWslCliRegistrationInstalled,
+  recordWslCliRegistrationRemoved
+} from '../cli/wsl-cli-registration-registry'
 import { WslCliInstaller } from '../cli/wsl-cli-installer'
+import { getCanonicalUserDataPath } from '../persistence'
 import { hydrateShellPath, mergePathSegments } from '../startup/hydrate-shell-path'
+import { getDefaultWslDistro } from '../wsl'
 
 function normalizeWslCliDistro(args?: { distro?: string | null }): string | undefined {
   return args?.distro?.trim() || undefined
+}
+
+function resolveWslCliDistro(args?: { distro?: string | null }): string | null {
+  return normalizeWslCliDistro(args) ?? getDefaultWslDistro()
 }
 
 async function hydrateLocalShellPathForCli(force = false): Promise<void> {
@@ -39,21 +49,31 @@ export function registerCliHandlers(): void {
   ipcMain.handle(
     'cli:getWslInstallStatus',
     async (_event, args?: { distro?: string | null }): Promise<CliInstallStatus> => {
-      return new WslCliInstaller({ distro: normalizeWslCliDistro(args) }).getStatus()
+      return new WslCliInstaller({ distro: resolveWslCliDistro(args) }).getStatus()
     }
   )
 
   ipcMain.handle(
     'cli:installWsl',
     async (_event, args?: { distro?: string | null }): Promise<CliInstallStatus> => {
-      return new WslCliInstaller({ distro: normalizeWslCliDistro(args) }).install()
+      const distro = resolveWslCliDistro(args)
+      const status = await new WslCliInstaller({ distro }).install()
+      if (distro && status.state === 'installed') {
+        await recordWslCliRegistrationInstalled(getCanonicalUserDataPath(), distro)
+      }
+      return status
     }
   )
 
   ipcMain.handle(
     'cli:removeWsl',
     async (_event, args?: { distro?: string | null }): Promise<CliInstallStatus> => {
-      return new WslCliInstaller({ distro: normalizeWslCliDistro(args) }).remove()
+      const distro = resolveWslCliDistro(args)
+      const status = await new WslCliInstaller({ distro }).remove()
+      if (distro && status.state === 'not_installed') {
+        await recordWslCliRegistrationRemoved(getCanonicalUserDataPath(), distro)
+      }
+      return status
     }
   )
 }
