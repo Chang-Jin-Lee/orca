@@ -3606,6 +3606,7 @@
             "duplicate repo and worktree ids isolate admissions and PTY liveness by execution host while whole-project removal still drains every host scope",
             "host-scoped terminal stop succeeds when an unrelated provider is unavailable without disconnecting that host's cached PTYs",
             "workspace resolution on an unrelated host proceeds while the removed host remains admission-fenced",
+            "a matching host removal that starts and finishes during unresolved workspace selection still rejects the stale create",
             "worktree removal rejects a late renderer terminal admission while destructive preflight is still pending",
             "already-missing exceptional removal verifies terminal stop before metadata purge",
             "failed and concurrent admissions release without deadlocking project removal",
@@ -3629,7 +3630,8 @@
           "file": "src/main/providers/local-pty-provider.test.ts",
           "assertions": [
             "a synchronous Windows native kill throw retains PTY ownership and listeners so retry can succeed",
-            "a stale pane identity is rejected before the local PTY can be killed"
+            "a stale pane identity is rejected before the local PTY can be killed",
+            "immediate POSIX local shutdown uses SIGKILL while Windows remains signal-free"
           ]
         },
         {

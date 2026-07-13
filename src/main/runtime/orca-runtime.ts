@@ -2262,6 +2262,7 @@ export class OrcaRuntimeService {
   // Why: repo removal must make verified stop + metadata removal atomic with
   // respect to paired/mobile terminal creation, or a late spawn is orphaned.
   private terminalAdmissionBlockedWorktreeIds = new Set<string>()
+  private terminalRemovalGeneration = 0
   private terminalAdmissionsByWorktreeId = new Map<string, Set<Promise<void>>>()
   private projectRemovalBlockedRepoIds = new Set<string>()
   private worktreeCreateAdmissionsByRepoId = new Map<string, Set<Promise<void>>>()
@@ -12418,6 +12419,11 @@ export class OrcaRuntimeService {
     }
   }
 
+  private blockTerminalAdmissionScope(scopeKey: string): void {
+    this.terminalRemovalGeneration += 1
+    this.terminalAdmissionBlockedWorktreeIds.add(scopeKey)
+  }
+
   private async drainTerminalAdmissions(
     worktreeIds: readonly string[],
     hostId?: ExecutionHostId | null,
@@ -12438,6 +12444,7 @@ export class OrcaRuntimeService {
     // aware of the unresolved create, then transfer ownership without a gap.
     let releaseResolutionAdmission: (() => void) | null = null
     let removalsActiveAtResolutionStart: ReadonlySet<string> | null = null
+    let removalGenerationAtResolutionStart: number | null = null
     try {
       releaseResolutionAdmission = this.beginTerminalAdmission(GLOBAL_TERMINAL_ADMISSION_KEY)
     } catch (error) {
@@ -12451,12 +12458,14 @@ export class OrcaRuntimeService {
       // Resolve it, but remember the active removals so a fast completion
       // cannot reopen the exact stale scope before the atomic transfer.
       removalsActiveAtResolutionStart = new Set(this.terminalAdmissionBlockedWorktreeIds)
+      removalGenerationAtResolutionStart = this.terminalRemovalGeneration
     }
     try {
       const workspace = await this.resolveTerminalWorkspaceLaunchScope(selector, hostId)
       if (
         removalsActiveAtResolutionStart &&
-        this.isAdmissionBlocked(removalsActiveAtResolutionStart, workspace.id, workspace.hostId)
+        (removalGenerationAtResolutionStart !== this.terminalRemovalGeneration ||
+          this.isAdmissionBlocked(removalsActiveAtResolutionStart, workspace.id, workspace.hostId))
       ) {
         throw new Error('terminal_admission_blocked_for_project_removal')
       }
@@ -12556,7 +12565,7 @@ export class OrcaRuntimeService {
       throw new Error('worktree_removal_in_progress')
     }
     const scopeKey = this.admissionScopeKey(worktreeId, hostId)
-    this.terminalAdmissionBlockedWorktreeIds.add(scopeKey)
+    this.blockTerminalAdmissionScope(scopeKey)
     try {
       await Promise.all([
         this.drainTerminalAdmissions([GLOBAL_TERMINAL_ADMISSION_KEY]),
@@ -12626,7 +12635,7 @@ export class OrcaRuntimeService {
         throw new Error('project_removal_in_progress')
       }
       for (const scope of worktreeScopes) {
-        this.terminalAdmissionBlockedWorktreeIds.add(
+        this.blockTerminalAdmissionScope(
           this.admissionScopeKey(scope.id, hostId === null ? null : scope.hostId)
         )
       }

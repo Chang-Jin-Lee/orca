@@ -917,7 +917,13 @@ export class LocalPtyProvider implements IPtyProvider {
     ptyShutdownInProgress.add(id)
     let exitCode = -1
     try {
-      proc.kill()
+      // Why: a renderer or paired/mobile close is destructive. POSIX's
+      // default SIGHUP can be ignored; Windows node-pty requires no argument.
+      if (opts.immediate && process.platform !== 'win32') {
+        proc.kill('SIGKILL')
+      } else {
+        proc.kill()
+      }
     } catch (error) {
       if (!ptyExitDuringShutdown.has(id)) {
         throw error

@@ -967,7 +967,7 @@ describe('LocalPtyProvider', () => {
       })
     })
 
-    it('kills the PTY process', async () => {
+    it('uses SIGKILL for immediate POSIX shutdown', async () => {
       // Why: capture the spy reference before shutdown triggers onExit →
       // POSIX kill neutralization. After neutralization, mockProc.kill is
       // replaced with a non-spy no-op to close the UnixTerminal.destroy() →
@@ -975,7 +975,7 @@ describe('LocalPtyProvider', () => {
       const killSpy = mockProc.kill
       const { id } = await provider.spawn({ cols: 80, rows: 24 })
       await provider.shutdown(id, { immediate: true })
-      expect(killSpy).toHaveBeenCalled()
+      expect(killSpy).toHaveBeenCalledWith('SIGKILL')
     })
 
     it('invokes onExit callback via the node-pty exit handler', async () => {
