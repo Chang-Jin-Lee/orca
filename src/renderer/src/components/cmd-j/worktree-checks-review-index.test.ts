@@ -3,6 +3,7 @@ import type { HostedReviewInfo } from '../../../../shared/hosted-review'
 import type { PRInfo, Repo, Worktree } from '../../../../shared/types'
 import { getGitHubPRCacheKey } from '@/store/slices/github-cache-key'
 import { getHostedReviewCacheKey } from '@/store/slices/hosted-review-cache-identity'
+import { getRepoHostIdentity } from '@/store/slices/repo-host-identity'
 import { buildWorktreeChecksReviewIndex } from './worktree-checks-review-index'
 
 const repo: Repo = {
@@ -27,6 +28,7 @@ const worktree: Worktree = {
   linkedIssue: null,
   linkedPR: 42,
   linkedLinearIssue: null,
+  hostId: 'ssh:staging',
   isArchived: false,
   isUnread: false,
   isPinned: false,
@@ -73,13 +75,13 @@ describe('buildWorktreeChecksReviewIndex', () => {
 
     const reviews = buildWorktreeChecksReviewIndex({
       worktrees: [worktree],
-      repoMap: new Map([[repo.id, repo]]),
+      repoByHostIdentity: new Map([[getRepoHostIdentity(repo), repo]]),
       prCache: { [key]: { data: makePR(), fetchedAt: 1 } },
       hostedReviewCache: {},
       settings: null
     })
 
-    expect(reviews.get(worktree.id)).toMatchObject({
+    expect(reviews.get(worktree)).toMatchObject({
       provider: 'github',
       number: 42,
       title: 'Search worktrees by their pull requests'
@@ -110,12 +112,69 @@ describe('buildWorktreeChecksReviewIndex', () => {
 
     const reviews = buildWorktreeChecksReviewIndex({
       worktrees: [gitLabWorktree],
-      repoMap: new Map([[repo.id, repo]]),
+      repoByHostIdentity: new Map([[getRepoHostIdentity(repo), repo]]),
       prCache: { [prKey]: { data: makePR(), fetchedAt: 1 } },
       hostedReviewCache: { [reviewKey]: { data: gitLabReview, fetchedAt: 1 } },
       settings: null
     })
 
-    expect(reviews.get(worktree.id)).toBe(gitLabReview)
+    expect(reviews.get(gitLabWorktree)).toBe(gitLabReview)
+  })
+
+  it('records when a non-GitHub link suppresses stale GitHub metadata before its review loads', () => {
+    const gitLabWorktree = { ...worktree, linkedGitLabMR: 17 }
+    const prKey = getGitHubPRCacheKey(
+      repo.path,
+      repo.id,
+      'feature/search',
+      null,
+      repo.connectionId,
+      repo.executionHostId,
+      true
+    )
+
+    const reviews = buildWorktreeChecksReviewIndex({
+      worktrees: [gitLabWorktree],
+      repoByHostIdentity: new Map([[getRepoHostIdentity(repo), repo]]),
+      prCache: { [prKey]: { data: makePR(), fetchedAt: 1 } },
+      hostedReviewCache: {},
+      settings: null
+    })
+
+    expect(reviews.has(gitLabWorktree)).toBe(true)
+    expect(reviews.get(gitLabWorktree)).toBeNull()
+  })
+
+  it('keeps same-id worktrees isolated across execution hosts', () => {
+    const localRepo: Repo = {
+      ...repo,
+      path: '/local/orca',
+      executionHostId: 'local'
+    }
+    const localWorktree: Worktree = { ...worktree, hostId: 'local' }
+    const sshWorktree: Worktree = { ...worktree, hostId: 'ssh:staging' }
+    const sshKey = getGitHubPRCacheKey(
+      repo.path,
+      repo.id,
+      'feature/search',
+      null,
+      repo.connectionId,
+      repo.executionHostId,
+      true
+    )
+
+    const reviews = buildWorktreeChecksReviewIndex({
+      worktrees: [localWorktree, sshWorktree],
+      repoByHostIdentity: new Map([
+        [getRepoHostIdentity(localRepo), localRepo],
+        [getRepoHostIdentity(repo), repo]
+      ]),
+      prCache: { [sshKey]: { data: makePR(), fetchedAt: 1 } },
+      hostedReviewCache: {},
+      settings: null
+    })
+
+    expect(reviews.has(localWorktree)).toBe(false)
+    expect(reviews.get(sshWorktree)).toMatchObject({ provider: 'github', number: 42 })
   })
 })

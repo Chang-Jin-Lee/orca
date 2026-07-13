@@ -1,14 +1,16 @@
 import { branchName } from '@/lib/git-utils'
 import { getGitHubPRCacheKey } from '@/store/slices/github-cache-key'
 import { getHostedReviewCacheKey } from '@/store/slices/hosted-review-cache-identity'
+import { getRepoHostIdentityForParts } from '@/store/slices/repo-host-identity'
 import type { AppState } from '@/store/types'
+import { LOCAL_EXECUTION_HOST_ID } from '../../../../shared/execution-host'
 import type { HostedReviewInfo } from '../../../../shared/hosted-review'
 import type { Repo, Worktree } from '../../../../shared/types'
 import { selectChecksPanelReview } from '../right-sidebar/checks-panel-review'
 
 type WorktreeChecksReviewIndexArgs = {
   worktrees: readonly Worktree[]
-  repoMap: ReadonlyMap<string, Repo>
+  repoByHostIdentity: ReadonlyMap<string, Repo>
   prCache: AppState['prCache'] | null
   hostedReviewCache: AppState['hostedReviewCache'] | null
   settings: AppState['settings']
@@ -16,18 +18,20 @@ type WorktreeChecksReviewIndexArgs = {
 
 export function buildWorktreeChecksReviewIndex({
   worktrees,
-  repoMap,
+  repoByHostIdentity,
   prCache,
   hostedReviewCache,
   settings
-}: WorktreeChecksReviewIndexArgs): Map<string, HostedReviewInfo> {
-  const reviews = new Map<string, HostedReviewInfo>()
+}: WorktreeChecksReviewIndexArgs): Map<Worktree, HostedReviewInfo | null> {
+  const reviews = new Map<Worktree, HostedReviewInfo | null>()
   if (!prCache || !hostedReviewCache) {
     return reviews
   }
 
   for (const worktree of worktrees) {
-    const repo = repoMap.get(worktree.repoId)
+    const repo = repoByHostIdentity.get(
+      getRepoHostIdentityForParts(worktree.repoId, worktree.hostId ?? LOCAL_EXECUTION_HOST_ID)
+    )
     if (!repo) {
       continue
     }
@@ -61,7 +65,18 @@ export function buildWorktreeChecksReviewIndex({
       linkedGiteaPR: worktree.linkedGiteaPR ?? null
     })
     if (review) {
-      reviews.set(worktree.id, review)
+      // Why: persisted IDs can be identical across execution hosts; the search
+      // scope preserves these object references while sorting and filtering.
+      reviews.set(worktree, review)
+    } else if (
+      worktree.linkedGitLabMR != null ||
+      worktree.linkedBitbucketPR != null ||
+      worktree.linkedAzureDevOpsPR != null ||
+      worktree.linkedGiteaPR != null
+    ) {
+      // Why: an empty Checks selection for a non-GitHub link is authoritative;
+      // omitting it would let Cmd+J surface stale GitHub metadata as a fallback.
+      reviews.set(worktree, null)
     }
   }
 

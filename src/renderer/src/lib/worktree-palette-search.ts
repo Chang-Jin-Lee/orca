@@ -72,7 +72,7 @@ export function searchWorktrees(
   prCache: Record<string, PRCacheEntry> | null,
   issueCache: Record<string, IssueCacheEntry> | null,
   workspacePortsByWorktreeId?: Map<string, { port: number; processName?: string }[]>,
-  checksReviewByWorktreeId?: ReadonlyMap<string, HostedReviewInfo>
+  checksReviewByWorktree?: ReadonlyMap<Worktree, HostedReviewInfo | null>
 ): PaletteSearchResult[] {
   if (isWorktreePaletteQueryTooLarge(query)) {
     return []
@@ -202,7 +202,8 @@ export function searchWorktrees(
     }
 
     const repo = repoMap.get(worktree.repoId)
-    const checksReview = checksReviewByWorktreeId?.get(worktree.id)
+    const checksReview = checksReviewByWorktree?.get(worktree)
+    const hasChecksReviewEntry = checksReview !== undefined
     if (checksReview) {
       const supportingText = matchWorktreePaletteReview(checksReview, q, numericQuery)
       if (supportingText) {
@@ -212,7 +213,7 @@ export function searchWorktrees(
     }
 
     const prKey = repo ? `${repo.path}::${branch}` : ''
-    const pr = !checksReview && prKey && prCache ? prCache[prKey]?.data : undefined
+    const pr = !hasChecksReviewEntry && prKey && prCache ? prCache[prKey]?.data : undefined
 
     if (pr) {
       const supportingText = matchWorktreePaletteReview(
@@ -224,7 +225,7 @@ export function searchWorktrees(
         results.push(makeResult(worktree.id, 'pr', { supportingText }))
         continue
       }
-    } else if (!checksReview && worktree.linkedPR != null) {
+    } else if (!hasChecksReviewEntry && worktree.linkedPR != null) {
       const prText = `PR #${worktree.linkedPR}`
       const prNumberIndex = String(worktree.linkedPR).indexOf(numericQuery)
       if (prNumberIndex !== -1) {

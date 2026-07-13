@@ -106,6 +106,7 @@ import {
 } from '@/components/cmd-j/quick-actions'
 import { buildWorktreeChecksReviewIndex } from '@/components/cmd-j/worktree-checks-review-index'
 import { selectWorktreePaletteCacheInputs } from '@/components/cmd-j/worktree-palette-cache-inputs'
+import { getRepoHostIdentity } from '@/store/slices/repo-host-identity'
 import {
   getComposerEligibleRepos,
   resolveComposerGitRepoId
@@ -442,6 +443,10 @@ export default function WorktreeJumpPalette(): React.JSX.Element | null {
   const preserveCreateLookupOnCloseRef = useRef(false)
 
   const repoMap = useMemo(() => new Map(repos.map((r) => [r.id, r])), [repos])
+  const repoByHostIdentity = useMemo(
+    () => new Map(repos.map((repo) => [getRepoHostIdentity(repo), repo])),
+    [repos]
+  )
   const hostLabelOverrides = useMemo(() => getHostDisplayLabelOverrides(settings), [settings])
   // Why: host badges only appear when more than one execution host exists; reuse
   // the same registry the sidebar host-scope strip builds so labels stay in sync.
@@ -625,16 +630,16 @@ export default function WorktreeJumpPalette(): React.JSX.Element | null {
     [browserSortedWorktrees]
   )
 
-  const checksReviewByWorktreeId = useMemo(
+  const checksReviewByWorktree = useMemo(
     () =>
       buildWorktreeChecksReviewIndex({
         worktrees: allWorktrees,
-        repoMap,
+        repoByHostIdentity,
         prCache,
         hostedReviewCache,
         settings
       }),
-    [allWorktrees, hostedReviewCache, prCache, repoMap, settings]
+    [allWorktrees, hostedReviewCache, prCache, repoByHostIdentity, settings]
   )
 
   const worktreeMatches = useMemo(
@@ -646,7 +651,7 @@ export default function WorktreeJumpPalette(): React.JSX.Element | null {
         prCache,
         issueCache,
         getWorkspacePortsByWorktreeId(workspacePortScan),
-        checksReviewByWorktreeId
+        checksReviewByWorktree
       ),
     [
       sortedWorktrees,
@@ -655,7 +660,7 @@ export default function WorktreeJumpPalette(): React.JSX.Element | null {
       prCache,
       issueCache,
       workspacePortScan,
-      checksReviewByWorktreeId
+      checksReviewByWorktree
     ]
   )
 

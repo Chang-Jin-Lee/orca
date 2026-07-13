@@ -184,10 +184,11 @@ describe('worktree-palette-search', () => {
       updatedAt: '2026-07-12T00:00:00Z',
       mergeable: 'MERGEABLE'
     }
-    const reviews = new Map([['wt-1', review]])
+    const worktree = makeWorktree()
+    const reviews = new Map([[worktree, review]])
 
     const titleResults = searchWorktrees(
-      [makeWorktree()],
+      [worktree],
       'checks tab',
       repoMap,
       null,
@@ -196,7 +197,7 @@ describe('worktree-palette-search', () => {
       reviews
     )
     const numberResults = searchWorktrees(
-      [makeWorktree()],
+      [worktree],
       '!17',
       repoMap,
       null,
@@ -228,10 +229,15 @@ describe('worktree-palette-search', () => {
       updatedAt: '2026-07-12T00:00:00Z',
       mergeable: 'MERGEABLE'
     }
+    const staleWorktree = makeWorktree({
+      branch: 'refs/heads/feature/palette-refresh',
+      linkedPR: 99
+    })
+    const reviews = new Map([[staleWorktree, review]])
 
     expect(
       searchWorktrees(
-        [makeWorktree({ branch: 'refs/heads/feature/palette-refresh' })],
+        [staleWorktree],
         'stale github title',
         repoMap,
         {
@@ -241,21 +247,80 @@ describe('worktree-palette-search', () => {
         },
         null,
         undefined,
-        new Map([['wt-1', review]])
+        reviews
       )
     ).toEqual([])
 
     expect(
+      searchWorktrees([staleWorktree], '#99', repoMap, null, null, undefined, reviews)
+    ).toEqual([])
+  })
+
+  it('does not search stale GitHub metadata while a linked non-GitHub review is loading', () => {
+    const stalePRCache = {
+      '/repo/orca::feature/palette-refresh': {
+        data: { number: 99, title: 'Stale GitHub title' }
+      }
+    }
+    const staleWorktree = makeWorktree({
+      branch: 'refs/heads/feature/palette-refresh',
+      linkedPR: 99,
+      linkedGitLabMR: 17
+    })
+    const authoritativeEmptyReviews = new Map<Worktree, HostedReviewInfo | null>([
+      [staleWorktree, null]
+    ])
+
+    expect(
       searchWorktrees(
-        [makeWorktree({ linkedPR: 99 })],
-        '#99',
+        [staleWorktree],
+        'stale github title',
         repoMap,
-        null,
+        stalePRCache,
         null,
         undefined,
-        new Map([['wt-1', review]])
+        authoritativeEmptyReviews
       )
     ).toEqual([])
+    expect(
+      searchWorktrees(
+        [staleWorktree],
+        '#99',
+        repoMap,
+        stalePRCache,
+        null,
+        undefined,
+        authoritativeEmptyReviews
+      )
+    ).toEqual([])
+  })
+
+  it('keeps review matches isolated between same-id worktrees on different hosts', () => {
+    const localWorktree = makeWorktree({ hostId: 'local' })
+    const sshWorktree = makeWorktree({ hostId: 'ssh:staging' })
+    const review: HostedReviewInfo = {
+      provider: 'gitlab',
+      number: 17,
+      title: 'Remote-only merge request',
+      state: 'open',
+      url: 'https://gitlab.com/acme/orca/-/merge_requests/17',
+      status: 'success',
+      updatedAt: '2026-07-12T00:00:00Z',
+      mergeable: 'MERGEABLE'
+    }
+
+    const results = searchWorktrees(
+      [localWorktree, sshWorktree],
+      'remote-only',
+      repoMap,
+      null,
+      null,
+      undefined,
+      new Map([[sshWorktree, review]])
+    )
+
+    expect(results).toHaveLength(1)
+    expect(results[0].supportingText?.text).toBe(review.title)
   })
 
   it('scopes PR and MR number sigils to their providers', () => {
@@ -279,27 +344,29 @@ describe('worktree-palette-search', () => {
       updatedAt: '2026-07-12T00:00:00Z',
       mergeable: 'MERGEABLE'
     }
+    const gitHubWorktree = makeWorktree()
+    const gitLabWorktree = makeWorktree()
 
     expect(
       searchWorktrees(
-        [makeWorktree()],
+        [gitHubWorktree],
         '!42',
         repoMap,
         null,
         null,
         undefined,
-        new Map([['wt-1', gitHubReview]])
+        new Map([[gitHubWorktree, gitHubReview]])
       )
     ).toEqual([])
     expect(
       searchWorktrees(
-        [makeWorktree()],
+        [gitLabWorktree],
         '#17',
         repoMap,
         null,
         null,
         undefined,
-        new Map([['wt-1', gitLabReview]])
+        new Map([[gitLabWorktree, gitLabReview]])
       )
     ).toEqual([])
     expect(
