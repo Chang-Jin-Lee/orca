@@ -103,6 +103,36 @@ describe('recovering pairing relay candidate', () => {
     expect(resolveDirector).not.toHaveBeenCalled()
   })
 
+  it.each([
+    ['wrong cell', new RelayOuterError(4409)],
+    ['planned drain', new RelayOuterError(4503)],
+    ['opaque close', new RelayOuterError(1006)],
+    ['HTTP 503', new Error('HTTP 503')],
+    ['HTTP 504', new Error('HTTP 504')],
+    ['transport failure', new Error('relay transport error')]
+  ])('uses the configured director after %s before E2EE', async (_name, failure) => {
+    const stale = client(Promise.reject(failure))
+    const target = client(Promise.resolve(success()))
+    const resolveDirector = vi.fn(async (relay) => ({
+      ...relay,
+      cellUrl: 'https://relay-c2.onorca.dev',
+      assignmentEpoch: 8
+    }))
+    let connects = 0
+    const candidate = createRecoveringPairingRelayCandidate({
+      journal,
+      connect: () => (connects++ === 0 ? stale : target),
+      resolveDirector,
+      persistMove: vi.fn(async () => {}),
+      now: () => 1,
+      random: () => 0,
+      sleep: async () => {}
+    })
+
+    await expect(candidate.sendRequest('status.get')).resolves.toEqual(success())
+    expect(resolveDirector).toHaveBeenCalledOnce()
+  })
+
   it('bounds director recovery and applies full jitter to failures and target retries', async () => {
     const stale = client(Promise.reject(new Error('HTTP 503')))
     const target = client(Promise.resolve(success()))
