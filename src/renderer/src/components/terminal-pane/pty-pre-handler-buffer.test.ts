@@ -4,7 +4,8 @@ import {
   bufferPreHandlerPtyExit,
   clearPreHandlerPtyState,
   drainPreHandlerPtyData,
-  drainPreHandlerPtyExit
+  drainPreHandlerPtyExit,
+  reconcilePreHandlerPtyExitAfterOverflow
 } from './pty-pre-handler-buffer'
 
 const RESCAN_PTY_ID = 'pty-pre-handler-rescan'
@@ -89,5 +90,20 @@ describe('pre-handler PTY buffer', () => {
 
     expect(oldest).not.toHaveBeenCalled()
     expect(newest).toHaveBeenCalledWith(64)
+  })
+
+  it('reconciles an evicted pending exit with one targeted liveness readback', async () => {
+    for (let index = 0; index <= 64; index += 1) {
+      bufferPreHandlerPtyExit(`pty-exit-${index}`, index)
+    }
+    const handler = vi.fn()
+    const hasPty = vi.fn(async () => false)
+
+    reconcilePreHandlerPtyExitAfterOverflow('pty-exit-0', hasPty, handler, () => true)
+    await Promise.resolve()
+
+    expect(hasPty).toHaveBeenCalledOnce()
+    expect(hasPty).toHaveBeenCalledWith('pty-exit-0')
+    expect(handler).toHaveBeenCalledWith(-1)
   })
 })

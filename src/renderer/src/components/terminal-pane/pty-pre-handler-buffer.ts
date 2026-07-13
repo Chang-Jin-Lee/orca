@@ -22,6 +22,7 @@ const preHandlerPtyExit = new Map<string, number>()
 const PRE_HANDLER_PTY_DATA_MAX_BYTES = 512 * 1024
 const PRE_HANDLER_PTY_DATA_MAX_PTYS = 64
 const PRE_HANDLER_PTY_EXIT_MAX_PTYS = 64
+let preHandlerPtyExitOverflowed = false
 // Why: legit pre-attach windows drain within milliseconds and hold little
 // data. Sustained accumulation means a pane lost its data handler (the
 // frozen-pane detach/attach race) — leave a breadcrumb for trace capture.
@@ -96,18 +97,40 @@ export function bufferPreHandlerPtyExit(ptyId: string, code: number): void {
     const oldestPtyId = preHandlerPtyExit.keys().next().value
     if (typeof oldestPtyId === 'string') {
       preHandlerPtyExit.delete(oldestPtyId)
+      preHandlerPtyExitOverflowed = true
     }
   }
   preHandlerPtyExit.set(ptyId, code)
 }
 
-export function drainPreHandlerPtyExit(ptyId: string, handler: (code: number) => void): void {
+export function drainPreHandlerPtyExit(ptyId: string, handler: (code: number) => void): boolean {
   const code = preHandlerPtyExit.get(ptyId)
   if (code === undefined) {
-    return
+    return false
   }
   preHandlerPtyExit.delete(ptyId)
   handler(code)
+  return true
+}
+
+export function reconcilePreHandlerPtyExitAfterOverflow(
+  ptyId: string,
+  hasPty: ((id: string) => Promise<boolean | null>) | undefined,
+  handler: (code: number) => void,
+  isCurrent: () => boolean
+): void {
+  if (!preHandlerPtyExitOverflowed || !hasPty) {
+    return
+  }
+  // Why: the bounded exit buffer may evict a legitimate pre-registration exit.
+  // One targeted readback after overflow recovers truth without retaining IDs.
+  void hasPty(ptyId)
+    .then((alive) => {
+      if (alive === false && isCurrent()) {
+        handler(-1)
+      }
+    })
+    .catch(() => {})
 }
 
 export function clearPreHandlerPtyData(ptyId: string): void {

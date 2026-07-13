@@ -1,5 +1,6 @@
 import type { DaemonPtyAdapter } from './daemon-pty-adapter'
 import { shutdownDegradedFallbackSessions } from './degraded-daemon-fallback-shutdown'
+import * as PtyRoutes from './pty-provider-route-reconciliation'
 import type {
   IPtyProvider,
   PtyBackgroundStreamEvent,
@@ -15,12 +16,12 @@ type ManagedPtyProvider = IPtyProvider & {
 }
 
 export class DegradedDaemonPtyProvider implements IPtyProvider {
+  readonly requiresShutdownExitProof = true
   readonly routesFreshSpawnsToLocalProvider = true
   // Why: the preserved daemon answers protocol but cannot spawn fresh PTYs.
   // Surfaced (e.g. via pty:management:listSessions) so the UI can warn that
   // new terminals are running without daemon persistence until a restart.
   readonly isDegraded = true
-
   private current: DaemonPtyAdapter
   private legacy: DaemonPtyAdapter[]
   private fallback: ManagedPtyProvider
@@ -50,7 +51,15 @@ export class DegradedDaemonPtyProvider implements IPtyProvider {
           }
         }),
         provider.onExit((payload) => {
-          this.sessionProviders.delete(payload.id)
+          // Why: a late exit from an old daemon must not delete a route that
+          // has already been rebound to the local fallback or another daemon.
+          const routed = this.sessionProviders.get(payload.id)
+          if (routed && routed !== provider) {
+            return
+          }
+          if (routed === provider) {
+            this.sessionProviders.delete(payload.id)
+          }
           for (const listener of this.exitListeners) {
             listener(payload)
           }
@@ -114,9 +123,8 @@ export class DegradedDaemonPtyProvider implements IPtyProvider {
 
   async shutdown(id: string, opts: { immediate?: boolean; keepHistory?: boolean }): Promise<void> {
     await this.providerFor(id).shutdown(id, opts)
-    if (!opts.keepHistory) {
-      this.sessionProviders.delete(id)
-    }
+    // Why: shutdown acceptance is not physical-exit proof. Keep routing until
+    // the owning provider emits onExit or listProcesses proves the id absent.
   }
 
   async sendSignal(id: string, signal: string): Promise<void> {
@@ -173,10 +181,10 @@ export class DegradedDaemonPtyProvider implements IPtyProvider {
   }
 
   async listProcesses(): Promise<PtyProcessInfo[]> {
-    const results = await Promise.all(
-      this.allProviders().map((provider) => provider.listProcesses())
+    return PtyRoutes.listProviderProcessesAndReconcileRoutes(
+      this.allProviders(),
+      this.sessionProviders
     )
-    return results.flat()
   }
 
   async getDefaultShell(): Promise<string> {
@@ -286,7 +294,7 @@ export class DegradedDaemonPtyProvider implements IPtyProvider {
   }
 
   getCurrentDaemonSessionIds(): string[] {
-    return this.sessionIdsForProvider(this.current)
+    return PtyRoutes.providerSessionIds(this.sessionProviders, this.current)
   }
 
   fanoutCurrentDaemonSyntheticExits(code: number): void {
@@ -334,12 +342,6 @@ export class DegradedDaemonPtyProvider implements IPtyProvider {
       }
     }
     return null
-  }
-
-  private sessionIdsForProvider(provider: ManagedPtyProvider): string[] {
-    return [...this.sessionProviders]
-      .filter(([, mappedProvider]) => mappedProvider === provider)
-      .map(([id]) => id)
   }
 
   private daemonAdapterFor(sessionId: string): DaemonPtyAdapter | null {

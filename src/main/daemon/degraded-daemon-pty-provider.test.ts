@@ -109,6 +109,25 @@ function createDaemonAdapter(
 }
 
 describe('DegradedDaemonPtyProvider', () => {
+  it('retains the exact child route until exit proof', async () => {
+    const daemonSessions = ['shared-session']
+    const current = createDaemonAdapter('daemon', daemonSessions)
+    const fallback = createProvider('fallback')
+    vi.mocked(current.shutdown).mockResolvedValueOnce(undefined)
+    const provider = new DegradedDaemonPtyProvider({ current, legacy: [], fallback })
+    await provider.discoverDaemonSessions()
+
+    expect(provider.requiresShutdownExitProof).toBe(true)
+    await provider.shutdown('shared-session', { immediate: true })
+    provider.write('shared-session', 'before-exit')
+
+    expect(current.write).toHaveBeenCalledWith('shared-session', 'before-exit')
+    daemonSessions.length = 0
+    current.emitExit('shared-session', 0)
+    provider.write('shared-session', 'after-exit')
+    expect(fallback.write).toHaveBeenCalledWith('shared-session', 'after-exit')
+  })
+
   it('routes fresh foreground confirmation to the session owner', async () => {
     const current = createDaemonAdapter('daemon', ['daemon-session'])
     const fallback = createProvider('fallback')

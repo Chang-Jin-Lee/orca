@@ -18,7 +18,8 @@ import {
   bufferPreHandlerPtyExit,
   clearPreHandlerPtyState,
   drainPreHandlerPtyData,
-  drainPreHandlerPtyExit
+  drainPreHandlerPtyExit,
+  reconcilePreHandlerPtyExitAfterOverflow
 } from './pty-pre-handler-buffer'
 import {
   clearReceivedPtyCharTotal,
@@ -392,7 +393,14 @@ export function registerEagerPtyBuffer(
   // caller receives that handle before onExit fires.
   queueMicrotask(() => {
     if (ptyExitHandlers.get(ptyId) === exitHandler) {
-      drainPreHandlerPtyExit(ptyId, exitHandler)
+      if (!drainPreHandlerPtyExit(ptyId, exitHandler)) {
+        reconcilePreHandlerPtyExitAfterOverflow(
+          ptyId,
+          window.api.pty.hasPty,
+          exitHandler,
+          () => ptyExitHandlers.get(ptyId) === exitHandler
+        )
+      }
     } else {
       clearPreHandlerPtyState(ptyId)
     }

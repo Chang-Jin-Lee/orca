@@ -3491,7 +3491,8 @@
         "pnpm exec vitest run --config config/vitest.config.ts src/shared/ssh-pty-id.test.ts src/shared/ssh-types.test.ts src/main/providers/local-pty-provider.test.ts src/main/providers/ssh-pty-provider.test.ts src/main/persistence.test.ts src/main/ssh/ssh-relay-session.test.ts src/main/ssh/ssh-relay-generation-reattach.test.ts src/main/ssh/ssh-target-id-migration.test.ts src/relay/pty-handler.test.ts src/relay/subprocess.test.ts src/renderer/src/components/terminal-pane/pty-transport.test.ts src/renderer/src/components/terminal-pane/pty-pre-handler-buffer.test.ts src/renderer/src/lib/pty-kill-retry-ownership.test.ts src/renderer/src/lib/runtime-terminal-close-retry-ownership.test.ts src/renderer/src/lib/ephemeral-vm-runtime-cleanup.test.ts src/renderer/src/lib/launch-agent-background-session.test.ts src/renderer/src/store/slices/repos.test.ts src/renderer/src/store/slices/repos-host-identity-routing.test.ts src/main/runtime/orca-runtime.test.ts src/main/ipc/pty.test.ts",
         "pnpm exec vitest run --config config/vitest.config.ts src/main/ipc/repos-create.test.ts src/main/window/attach-main-window-services.test.ts src/main/ipc/worktrees.test.ts src/main/ipc/worktrees-windows.test.ts src/main/ipc/pty.test.ts src/main/runtime/orca-runtime.test.ts src/renderer/src/lib/launch-agent-background-session.test.ts src/renderer/src/lib/runtime-terminal-close-retry-ownership.test.ts src/renderer/src/store/slices/repos-host-identity-routing.test.ts",
         "pnpm exec vitest run --config config/vitest.config.ts src/main/runtime/orca-runtime.test.ts src/main/ipc/worktrees.test.ts src/main/ipc/pty.test.ts src/main/ipc/runtime-environments.test.ts src/main/runtime/rpc/terminal-close-generation.test.ts src/main/persistence.test.ts src/main/ssh/ssh-relay-session.test.ts src/main/ipc/ssh.test.ts src/renderer/src/store/slices/worktrees.test.ts",
-        "pnpm exec vitest run --config config/vitest.config.ts src/main/providers/local-pty-provider.test.ts src/main/daemon/daemon-pty-adapter.test.ts src/main/daemon/session.test.ts src/main/daemon/pty-subprocess.test.ts src/main/daemon/terminal-host.test.ts src/main/daemon/terminal-host-session-reaping-leak.test.ts src/main/daemon/daemon-server.test.ts src/main/ipc/pty.test.ts src/main/ipc/runtime-terminal-close-retry-owner.test.ts src/main/runtime/orca-runtime.test.ts"
+        "pnpm exec vitest run --config config/vitest.config.ts src/main/providers/local-pty-provider.test.ts src/main/daemon/daemon-pty-adapter.test.ts src/main/daemon/session.test.ts src/main/daemon/pty-subprocess.test.ts src/main/daemon/terminal-host.test.ts src/main/daemon/terminal-host-session-reaping-leak.test.ts src/main/daemon/daemon-server.test.ts src/main/ipc/pty.test.ts src/main/ipc/runtime-terminal-close-retry-owner.test.ts src/main/runtime/orca-runtime.test.ts",
+        "pnpm exec vitest run --config config/vitest.config.ts src/main/providers/local-pty-provider.test.ts src/main/daemon/daemon-pty-adapter.test.ts src/main/daemon/daemon-pty-router.test.ts src/main/daemon/degraded-daemon-pty-provider.test.ts src/main/daemon/session.test.ts src/main/daemon/pty-subprocess.test.ts src/main/daemon/terminal-host.test.ts src/main/daemon/terminal-host-session-reaping-leak.test.ts src/main/daemon/daemon-server.test.ts src/main/ipc/pty.test.ts src/main/ipc/runtime-terminal-close-retry-owner.test.ts src/main/runtime/orca-runtime.test.ts"
       ],
       "testFiles": [
         "config/scripts/build-relay-windows-node-pty-patch.test.mjs",
@@ -3508,6 +3509,8 @@
         "src/shared/ssh-types.test.ts",
         "src/main/providers/local-pty-provider.test.ts",
         "src/main/daemon/daemon-pty-adapter.test.ts",
+        "src/main/daemon/daemon-pty-router.test.ts",
+        "src/main/daemon/degraded-daemon-pty-provider.test.ts",
         "src/main/daemon/session.test.ts",
         "src/main/daemon/pty-subprocess.test.ts",
         "src/main/daemon/terminal-host.test.ts",
@@ -3715,7 +3718,10 @@
         },
         {
           "file": "src/renderer/src/components/terminal-pane/pty-pre-handler-buffer.test.ts",
-          "assertions": ["ownerless pre-handler exits evict oldest state at the 64-id bound"]
+          "assertions": [
+            "ownerless pre-handler exits evict oldest state at the 64-id bound",
+            "an evicted legitimate exit triggers one targeted liveness readback and disconnects the dead pane"
+          ]
         },
         {
           "file": "src/renderer/src/lib/pty-kill-retry-ownership.test.ts",
@@ -3743,8 +3749,22 @@
             "relay generation reuse removes stale retry ownership without touching the new PTY",
             "lease-less SSH shutdown survives provider unregister and re-drives the replacement transport",
             "accepted local and SSH kills retain retry ownership until provider readback proves physical exit",
+            "runtime-owned and renderer SSH spawn persistence failures retain exact retry ownership after cleanup rejection and clear only after retry success",
             "an old provider exit readback cannot settle replacement-provider retry ownership",
             "unprovable pre-v22 restart intent retires once without synthesizing exit, retrying forever, or killing by recycled id"
+          ]
+        },
+        {
+          "file": "src/main/daemon/daemon-pty-router.test.ts",
+          "assertions": [
+            "upgrade routing advertises exit-proof shutdown and retains the legacy adapter until onExit or readback",
+            "a late legacy exit cannot delete a replacement route after PTY id reuse"
+          ]
+        },
+        {
+          "file": "src/main/daemon/degraded-daemon-pty-provider.test.ts",
+          "assertions": [
+            "degraded routing advertises exit-proof shutdown and retains the exact child provider until onExit or readback"
           ]
         },
         {
@@ -3978,6 +3998,24 @@
           "result": "passed",
           "durationSeconds": 9.8,
           "summary": "1781 cross-provider ownership tests passed, including whole-relay exit-proof drain and an atomic 50-live-PTY cap under 51 concurrent spawn requests."
+        },
+        {
+          "date": "2026-07-12",
+          "runner": "local",
+          "platform": "macos",
+          "command": "pnpm exec vitest run --config config/vitest.config.ts src/main/providers/local-pty-provider.test.ts src/main/daemon/daemon-pty-adapter.test.ts src/main/daemon/daemon-pty-router.test.ts src/main/daemon/degraded-daemon-pty-provider.test.ts src/main/daemon/session.test.ts src/main/daemon/pty-subprocess.test.ts src/main/daemon/terminal-host.test.ts src/main/daemon/terminal-host-session-reaping-leak.test.ts src/main/daemon/daemon-server.test.ts src/main/ipc/pty.test.ts src/main/ipc/runtime-terminal-close-retry-owner.test.ts src/main/runtime/orca-runtime.test.ts",
+          "result": "passed",
+          "durationSeconds": 9.3,
+          "summary": "1414 daemon/provider/runtime tests passed, adding composite-provider exit-proof routing, late-exit generation fencing, and retained persistence-failure cleanup retries."
+        },
+        {
+          "date": "2026-07-12",
+          "runner": "local",
+          "platform": "macos",
+          "command": "pnpm exec vitest run --config config/vitest.config.ts src/shared/ssh-pty-id.test.ts src/shared/ssh-types.test.ts src/main/providers/local-pty-provider.test.ts src/main/providers/ssh-pty-provider.test.ts src/main/persistence.test.ts src/main/ssh/ssh-relay-session.test.ts src/main/ssh/ssh-relay-generation-reattach.test.ts src/main/ssh/ssh-target-id-migration.test.ts src/relay/pty-handler.test.ts src/relay/subprocess.test.ts src/renderer/src/components/terminal-pane/pty-transport.test.ts src/renderer/src/components/terminal-pane/pty-pre-handler-buffer.test.ts src/renderer/src/lib/pty-kill-retry-ownership.test.ts src/renderer/src/lib/runtime-terminal-close-retry-ownership.test.ts src/renderer/src/lib/ephemeral-vm-runtime-cleanup.test.ts src/renderer/src/lib/launch-agent-background-session.test.ts src/renderer/src/store/slices/repos.test.ts src/renderer/src/store/slices/repos-host-identity-routing.test.ts src/main/runtime/orca-runtime.test.ts src/main/ipc/pty.test.ts",
+          "result": "passed",
+          "durationSeconds": 10,
+          "summary": "1784 cross-provider ownership tests passed, including bounded pre-handler exit overflow with targeted liveness recovery and both persistence-failure cleanup entry points."
         }
       ],
       "runtimeBudget": {

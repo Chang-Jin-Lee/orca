@@ -22,7 +22,11 @@ import {
   ensurePtyDispatcher,
   getEagerPtyBufferHandle
 } from './pty-dispatcher'
-import { drainPreHandlerPtyData, drainPreHandlerPtyExit } from './pty-pre-handler-buffer'
+import {
+  drainPreHandlerPtyData,
+  drainPreHandlerPtyExit,
+  reconcilePreHandlerPtyExitAfterOverflow
+} from './pty-pre-handler-buffer'
 import { createPtyInputWriteQueue } from './pty-input-write-queue'
 import type { PtyDataMeta } from './pty-dispatcher'
 import type { IpcPtyTransportOptions, PtyConnectResult, PtyTransport } from './pty-transport-types'
@@ -682,7 +686,14 @@ export function createIpcPtyTransport(opts: IpcPtyTransportOptions = {}): PtyTra
     // would otherwise fire stale notifications after the data handler
     // is removed but before the exit event arrives.
     ptyTeardownHandlers.set(id, clearAccumulatedState)
-    drainPreHandlerPtyExit(id, exitHandler)
+    if (!drainPreHandlerPtyExit(id, exitHandler)) {
+      reconcilePreHandlerPtyExitAfterOverflow(
+        id,
+        window.api.pty.hasPty,
+        exitHandler,
+        () => ownedExitHandlers.get(id) === exitHandler
+      )
+    }
   }
 
   return {

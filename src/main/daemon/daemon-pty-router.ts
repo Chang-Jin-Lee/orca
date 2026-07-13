@@ -1,4 +1,5 @@
 import type { DaemonPtyAdapter } from './daemon-pty-adapter'
+import { listProviderProcessesAndReconcileRoutes } from './pty-provider-route-reconciliation'
 import type {
   IPtyProvider,
   PtyBackgroundStreamEvent,
@@ -10,6 +11,7 @@ import type {
 } from '../providers/types'
 
 export class DaemonPtyRouter implements IPtyProvider {
+  readonly requiresShutdownExitProof = true
   private current: DaemonPtyAdapter
   private legacy: DaemonPtyAdapter[]
   private sessionAdapters = new Map<string, DaemonPtyAdapter>()
@@ -33,7 +35,15 @@ export class DaemonPtyRouter implements IPtyProvider {
           }
         }),
         adapter.onExit((payload) => {
-          this.sessionAdapters.delete(payload.id)
+          // Why: a late exit from a legacy daemon must not delete a route that
+          // has already been rebound to a replacement provider generation.
+          const routed = this.sessionAdapters.get(payload.id)
+          if (routed && routed !== adapter) {
+            return
+          }
+          if (routed === adapter) {
+            this.sessionAdapters.delete(payload.id)
+          }
           for (const listener of this.exitListeners) {
             listener(payload)
           }
@@ -97,15 +107,8 @@ export class DaemonPtyRouter implements IPtyProvider {
 
   async shutdown(id: string, opts: PtyShutdownOptions): Promise<void> {
     await this.adapterFor(id).shutdown(id, opts)
-    // Why: sleep passes keepHistory=true and re-spawns against the same
-    // sessionId on wake. If we delete the routing entry here, adapterFor()
-    // falls back to `this.current` on wake — for a session that originally
-    // lived on a legacy adapter (different protocolVersion), the wake-side
-    // createOrAttach lands on the wrong adapter and creates a fresh session,
-    // losing the cold-restore from the legacy adapter's history dir.
-    if (!opts.keepHistory) {
-      this.sessionAdapters.delete(id)
-    }
+    // Why: native shutdown acceptance is not exit proof. onExit or a later
+    // successful listProcesses readback retires the exact adapter route.
   }
 
   async sendSignal(id: string, signal: string): Promise<void> {
@@ -162,8 +165,7 @@ export class DaemonPtyRouter implements IPtyProvider {
   async listProcesses(): Promise<PtyProcessInfo[]> {
     // Why: runtime exact-stop/liveness flows must fail closed if any adapter
     // cannot provide a trustworthy process list.
-    const results = await Promise.all(this.allAdapters().map((adapter) => adapter.listProcesses()))
-    return results.flat()
+    return listProviderProcessesAndReconcileRoutes(this.allAdapters(), this.sessionAdapters)
   }
 
   async getDefaultShell(): Promise<string> {

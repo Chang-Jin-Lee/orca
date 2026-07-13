@@ -856,6 +856,21 @@ function retainSshPtyShutdown(
   return retained
 }
 
+async function retainFailedSpawnCleanup(
+  id: string,
+  connectionId: string | null | undefined,
+  provider: IPtyProvider,
+  options: PtyShutdownOptions
+): Promise<void> {
+  const retained = connectionId
+    ? retainSshPtyShutdown(id, connectionId, provider, options)
+    : retainLocalPtyShutdown(id, options)
+  if (!retained) {
+    throw new Error('PTY cleanup could not retain shutdown ownership')
+  }
+  await attemptRetainedPtyShutdownForCaller(retained)
+}
+
 // ─── Host PTY env assembly ──────────────────────────────────────────
 // Why: both the LocalPtyProvider.buildSpawnEnv closure and the daemon-active
 // fallback in pty:spawn need the same set of host-local env injections
@@ -3690,14 +3705,27 @@ export function registerPtyHandlers(
             })
           } catch (err) {
             console.error('[pty] failed to persist runtime PTY binding after spawn:', err)
-            deletePtyOwnership(result.id)
-            if (!result.isReattach) {
+            if (result.isReattach) {
+              // Why: the caller rejected this attach and must not keep routing
+              // writes, but the pre-existing provider session remains owned.
+              deletePtyOwnership(result.id)
+            } else {
+              if (args.connectionId) {
+                // Why: the binding failed, so the SSH lease is the only durable
+                // identity that can carry cleanup across an app restart.
+                try {
+                  persistSshLease()
+                } catch {}
+              }
               try {
-                await provider.shutdown(result.id, { immediate: true })
+                await retainFailedSpawnCleanup(result.id, args.connectionId, provider, {
+                  immediate: true,
+                  ...(metadataPaneKey ? { expectedPaneKey: metadataPaneKey } : {}),
+                  ...(typeof args.tabId === 'string' ? { expectedTabId: args.tabId } : {})
+                })
               } catch (shutdownErr) {
                 console.warn('[pty] failed to clean up PTY after persistence failure:', shutdownErr)
               }
-              clearProviderPtyState(result.id)
             }
             throw new Error(createTerminalSessionStateSaveFailureMessage())
           }
@@ -4697,18 +4725,17 @@ export function registerPtyHandlers(
                 console.error('[pty] failed to persist PTY binding after spawn:', err)
                 if (!result.isReattach) {
                   try {
-                    await provider.shutdown(result.id, { immediate: true })
+                    await retainFailedSpawnCleanup(result.id, args.connectionId, provider, {
+                      immediate: true,
+                      ...(validatedPaneKey ? { expectedPaneKey: validatedPaneKey } : {}),
+                      ...(typeof args.tabId === 'string' ? { expectedTabId: args.tabId } : {})
+                    })
                   } catch (shutdownErr) {
                     console.warn(
                       '[pty] failed to clean up PTY after persistence failure:',
                       shutdownErr
                     )
                   }
-                  clearProviderPtyState(result.id)
-                  deletePtyOwnership(result.id)
-                }
-                if (!result.isReattach && args.connectionId && store) {
-                  store.removeSshRemotePtyLease(args.connectionId, relayResultId)
                 }
                 throw new Error(createTerminalSessionStateSaveFailureMessage())
               }

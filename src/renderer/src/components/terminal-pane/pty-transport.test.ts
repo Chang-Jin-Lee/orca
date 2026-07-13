@@ -42,6 +42,7 @@ describe('createIpcPtyTransport', () => {
           writeAccepted: vi.fn().mockResolvedValue(true),
           resize: vi.fn(),
           kill: vi.fn().mockResolvedValue(undefined),
+          hasPty: vi.fn().mockResolvedValue(true),
           onData: vi.fn((callback: (payload: { id: string; data: string }) => void) => {
             onData = callback
             return () => {}
@@ -930,6 +931,24 @@ describe('createIpcPtyTransport', () => {
     expect(handle.flush()).toBe('setup failed fast\n')
     await Promise.resolve()
     expect(onEagerExit).toHaveBeenCalledWith('pty-fast-setup', 1)
+  })
+
+  it('reconciles an exit evicted by the bounded pre-handler buffer', async () => {
+    const { ensurePtyDispatcher, registerEagerPtyBuffer } = await import('./pty-transport')
+    const hasPty = window.api.pty.hasPty as unknown as ReturnType<typeof vi.fn>
+    const onEagerExit = vi.fn()
+    hasPty.mockResolvedValue(false)
+    ensurePtyDispatcher()
+    for (let index = 0; index <= 64; index += 1) {
+      onExit?.({ id: `pty-overflow-${index}`, code: index })
+    }
+
+    registerEagerPtyBuffer('pty-overflow-0', onEagerExit)
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(hasPty).toHaveBeenCalledWith('pty-overflow-0')
+    expect(onEagerExit).toHaveBeenCalledWith('pty-overflow-0', -1)
   })
 
   it('enforces the eager buffer cap in UTF-8 bytes for multi-byte output', async () => {

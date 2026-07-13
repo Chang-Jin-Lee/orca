@@ -6679,6 +6679,7 @@ describe('registerPtyHandlers', () => {
   })
 
   it('cleans up fresh runtime-owned SSH spawns when binding persistence fails', async () => {
+    vi.useFakeTimers()
     type RuntimeSpawnController = {
       spawn(args: {
         cols: number
@@ -6692,7 +6693,10 @@ describe('registerPtyHandlers', () => {
       }): Promise<{ id: string }>
     }
     const appPtyId = 'ssh:ssh-fresh-fail@@relay-pty'
-    const remoteShutdown = vi.fn()
+    const remoteShutdown = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('relay cleanup unavailable'))
+      .mockResolvedValueOnce(undefined)
     registerSshPtyProvider('ssh-fresh-fail', {
       spawn: vi.fn(async () => ({ id: appPtyId })),
       write: vi.fn(),
@@ -6720,7 +6724,8 @@ describe('registerPtyHandlers', () => {
         throw new Error('disk full')
       }),
       removeSshRemotePtyLease: vi.fn(),
-      markSshRemotePtyLease: vi.fn()
+      markSshRemotePtyLease: vi.fn(),
+      markSshRemotePtyShutdownRequested: vi.fn(() => true)
     }
     let controller: RuntimeSpawnController | null = null
     const runtime = {
@@ -6761,14 +6766,101 @@ describe('registerPtyHandlers', () => {
         })
       ).rejects.toThrow(/ORCA_TERMINAL_SESSION_STATE_SAVE_FAILED/)
 
-      expect(remoteShutdown).toHaveBeenCalledWith(appPtyId, { immediate: true })
-      expect(store.upsertSshRemotePtyLease).not.toHaveBeenCalled()
+      expect(remoteShutdown).toHaveBeenCalledWith(appPtyId, {
+        immediate: true,
+        expectedPaneKey: makePaneKey('tab-remote', leafId),
+        expectedTabId: 'tab-remote'
+      })
+      expect(store.upsertSshRemotePtyLease).toHaveBeenCalled()
       expect(store.removeSshRemotePtyLease).not.toHaveBeenCalled()
+      expect(openCodeClearPtyMock).not.toHaveBeenCalledWith(appPtyId)
+      expect(piClearPtyMock).not.toHaveBeenCalledWith(appPtyId)
+
+      await vi.advanceTimersByTimeAsync(250)
+
+      expect(remoteShutdown).toHaveBeenCalledTimes(2)
+      expect(store.markSshRemotePtyLease).toHaveBeenCalledWith(
+        'ssh-fresh-fail',
+        appPtyId,
+        'terminated'
+      )
       expect(openCodeClearPtyMock).toHaveBeenCalledWith(appPtyId)
       expect(piClearPtyMock).toHaveBeenCalledWith(appPtyId)
     } finally {
       unregisterSshPtyProvider('ssh-fresh-fail')
     }
+  })
+
+  it('retains renderer SSH cleanup when binding persistence and first shutdown fail', async () => {
+    vi.useFakeTimers()
+    const appPtyId = 'ssh:ssh-1@@renderer-persist-fail'
+    const remoteShutdown = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('relay cleanup unavailable'))
+      .mockResolvedValueOnce(undefined)
+    registerSshPtyProvider('ssh-1', {
+      spawn: vi.fn(async () => ({ id: appPtyId })),
+      write: vi.fn(),
+      resize: vi.fn(),
+      shutdown: remoteShutdown,
+      sendSignal: vi.fn(),
+      getCwd: vi.fn(),
+      getInitialCwd: vi.fn(),
+      clearBuffer: vi.fn(),
+      acknowledgeDataEvent: vi.fn(),
+      onData: vi.fn(() => () => {}),
+      onReplay: vi.fn(() => () => {}),
+      onExit: vi.fn(() => () => {}),
+      listProcesses: vi.fn(async () => []),
+      hasChildProcesses: vi.fn(),
+      getForegroundProcess: vi.fn(),
+      serialize: vi.fn(),
+      revive: vi.fn(),
+      getDefaultShell: vi.fn(),
+      getProfiles: vi.fn()
+    } as never)
+    const store = {
+      upsertSshRemotePtyLease: vi.fn(),
+      persistPtyBinding: vi.fn(() => {
+        throw new Error('disk full')
+      }),
+      markSshRemotePtyShutdownRequested: vi.fn(() => true),
+      markSshRemotePtyLease: vi.fn(),
+      removeSshRemotePtyLease: vi.fn()
+    }
+    registerPtyHandlers(
+      mainWindow as never,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      store as never
+    )
+    const leafId = '11111111-1111-4111-8111-111111111111'
+    const paneKey = makePaneKey('tab-renderer', leafId)
+
+    await expect(
+      handlers.get('pty:spawn')!(null, {
+        cols: 80,
+        rows: 24,
+        connectionId: 'ssh-1',
+        worktreeId: 'wt-remote',
+        tabId: 'tab-renderer',
+        leafId,
+        env: { ORCA_PANE_KEY: paneKey }
+      })
+    ).rejects.toThrow(/ORCA_TERMINAL_SESSION_STATE_SAVE_FAILED/)
+
+    expect(remoteShutdown).toHaveBeenCalledWith(appPtyId, {
+      immediate: true,
+      expectedPaneKey: paneKey,
+      expectedTabId: 'tab-renderer'
+    })
+    expect(openCodeClearPtyMock).not.toHaveBeenCalledWith(appPtyId)
+    await vi.advanceTimersByTimeAsync(250)
+    expect(remoteShutdown).toHaveBeenCalledTimes(2)
+    expect(store.markSshRemotePtyLease).toHaveBeenCalledWith('ssh-1', appPtyId, 'terminated')
+    expect(openCodeClearPtyMock).toHaveBeenCalledWith(appPtyId)
   })
 
   it('maps runtime-owned spawn paneKeys for renderer serializer settlement', async () => {

@@ -122,6 +122,41 @@ function createAdapter(
 }
 
 describe('DaemonPtyRouter', () => {
+  it('retains the exact adapter route until exit proof', async () => {
+    const current = createAdapter('current')
+    const legacy = createAdapter('legacy', ['shared-session'])
+    vi.mocked(legacy.shutdown).mockResolvedValueOnce(undefined)
+    const router = new DaemonPtyRouter({ current, legacy: [legacy] })
+    await router.discoverLegacySessions()
+
+    expect(router.requiresShutdownExitProof).toBe(true)
+    await router.shutdown('shared-session', { immediate: true })
+    router.write('shared-session', 'before-exit')
+
+    expect(legacy.write).toHaveBeenCalledWith('shared-session', 'before-exit')
+    legacy.emitExit('shared-session', 0)
+    router.write('shared-session', 'after-exit')
+    expect(current.write).toHaveBeenCalledWith('shared-session', 'after-exit')
+  })
+
+  it('fences a late legacy exit after readback and id reuse', async () => {
+    const current = createAdapter('current')
+    const legacy = createAdapter('legacy', ['shared-session'])
+    const router = new DaemonPtyRouter({ current, legacy: [legacy] })
+    const exit = vi.fn()
+    router.onExit(exit)
+    await router.discoverLegacySessions()
+
+    await router.shutdown('shared-session', { immediate: true })
+    await router.listProcesses()
+    await router.spawn({ sessionId: 'shared-session', cols: 80, rows: 24 })
+    legacy.emitExit('shared-session', 0)
+    router.write('shared-session', 'replacement')
+
+    expect(current.write).toHaveBeenCalledWith('shared-session', 'replacement')
+    expect(exit).not.toHaveBeenCalled()
+  })
+
   it('routes fresh foreground confirmation to the session-owning daemon', async () => {
     const current = createAdapter('current', ['current-session'])
     const legacy = createAdapter('legacy', ['legacy-session'])
