@@ -19,8 +19,12 @@ const mocks = vi.hoisted(() => ({
   state: {} as MobileRelayStoreState
 }))
 
-vi.mock('@/store', () => ({
+vi.mock('../../store', () => ({
   useAppStore: (selector: (state: MobileRelayStoreState) => unknown) => selector(mocks.state)
+}))
+
+vi.mock('../../i18n/i18n', () => ({
+  translate: (_key: string, fallback: string) => fallback
 }))
 
 describe('MobileRelayStatusSection', () => {
