@@ -41,6 +41,7 @@ import {
   clearPtyOwnershipForConnection,
   clearProviderPtyState,
   deletePtyOwnership,
+  releasePendingSshShutdown,
   setPtyOwnership,
   answerStartupTerminalColorQueriesForPty
 } from '../ipc/pty'
@@ -1200,6 +1201,7 @@ export class SshRelaySession {
   }
 
   private expireReattachPty(_relayPtyId: string, appPtyId: string): void {
+    releasePendingSshShutdown(appPtyId)
     clearProviderPtyState(appPtyId)
     deletePtyOwnership(appPtyId)
     this.forwardedReattachReplayByPty.delete(appPtyId)

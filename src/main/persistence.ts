@@ -6459,6 +6459,20 @@ export class Store {
     }
   }
 
+  private sshTeardownIntentMutationForLease(
+    lease: Pick<SshRemotePtyLease, 'targetId' | 'ptyId' | 'relayInstanceId' | 'shutdownRequestedAt'>
+  ): TerminalTeardownIntentMutation {
+    return {
+      kind: 'ssh-set',
+      targetId: lease.targetId,
+      ptyId: lease.ptyId,
+      ...(lease.relayInstanceId ? { relayInstanceId: lease.relayInstanceId } : {}),
+      ...(lease.shutdownRequestedAt === undefined
+        ? {}
+        : { shutdownRequestedAt: lease.shutdownRequestedAt })
+    }
+  }
+
   upsertSshRemotePtyLease(
     lease: Omit<SshRemotePtyLease, 'createdAt' | 'updatedAt'> &
       Partial<Pick<SshRemotePtyLease, 'createdAt' | 'updatedAt'>>
@@ -6497,7 +6511,7 @@ export class Store {
       this.state.sshRemotePtyLeases.push(next)
     }
     this.flush()
-    this.persistTerminalTeardownIntents({ kind: 'ssh-replace' })
+    this.persistTerminalTeardownIntents(this.sshTeardownIntentMutationForLease(next))
   }
 
   markSshRemotePtyLeases(targetId: string, state: SshRemotePtyLease['state']): void {
@@ -6536,7 +6550,7 @@ export class Store {
       : false
     if (changed || bindingsChanged) {
       if (shouldClearBindings) {
-        this.persistTerminalTeardownIntents({ kind: 'ssh-replace' })
+        this.persistTerminalTeardownIntents({ kind: 'ssh-remove-target', targetId })
       } else {
         this.scheduleSave()
       }
@@ -6569,7 +6583,7 @@ export class Store {
       const bindingsChanged =
         shouldClearBindings && this.clearSshRemotePtyBindingsForLeases(targetId, [lease])
       if (bindingsChanged || intentChanged) {
-        this.persistTerminalTeardownIntents({ kind: 'ssh-replace' })
+        this.persistTerminalTeardownIntents(this.sshTeardownIntentMutationForLease(lease))
       }
       return true
     }
@@ -6583,7 +6597,7 @@ export class Store {
     }
     if (shouldClearBindings) {
       this.clearSshRemotePtyBindingsForLeases(targetId, [lease])
-      this.persistTerminalTeardownIntents({ kind: 'ssh-replace' })
+      this.persistTerminalTeardownIntents(this.sshTeardownIntentMutationForLease(lease))
     } else {
       this.scheduleSave()
     }
@@ -6604,7 +6618,7 @@ export class Store {
     }
     lease.shutdownRequestedAt = Date.now()
     lease.updatedAt = lease.shutdownRequestedAt
-    this.persistTerminalTeardownIntents({ kind: 'ssh-replace' })
+    this.persistTerminalTeardownIntents(this.sshTeardownIntentMutationForLease(lease))
     return true
   }
 
@@ -6626,7 +6640,12 @@ export class Store {
         lease.relayInstanceId !== requestedGeneration
     )
     if (this.state.sshRemotePtyLeases.length !== before) {
-      this.persistTerminalTeardownIntents({ kind: 'ssh-replace' })
+      this.persistTerminalTeardownIntents({
+        kind: 'ssh-set',
+        targetId,
+        ptyId: relayPtyId,
+        ...(requestedGeneration ? { relayInstanceId: requestedGeneration } : {})
+      })
     }
   }
 
@@ -6638,7 +6657,7 @@ export class Store {
       (lease) => lease.targetId !== targetId
     )
     if (this.state.sshRemotePtyLeases.length !== before) {
-      this.persistTerminalTeardownIntents({ kind: 'ssh-replace' })
+      this.persistTerminalTeardownIntents({ kind: 'ssh-remove-target', targetId })
     }
   }
 

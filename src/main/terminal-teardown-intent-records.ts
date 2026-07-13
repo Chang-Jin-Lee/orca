@@ -70,7 +70,16 @@ export const terminalTeardownIntentJournalRecordSchema = z.discriminatedUnion('k
     .extend({ kind: z.literal('runtime-remove-environment'), environmentId: nonEmptyString })
     .strict(),
   journalBaseSchema
-    .extend({ kind: z.literal('ssh-replace'), pendingSshPtyShutdowns: z.array(sshShutdownSchema) })
+    .extend({
+      kind: z.literal('ssh-set'),
+      targetId: nonEmptyString,
+      ptyId: nonEmptyString,
+      relayInstanceId: nonEmptyString.optional(),
+      shutdownRequestedAt: timestamp.optional()
+    })
+    .strict(),
+  journalBaseSchema
+    .extend({ kind: z.literal('ssh-remove-target'), targetId: nonEmptyString })
     .strict()
 ])
 
@@ -84,4 +93,11 @@ export type TerminalTeardownIntentMutation =
   | { kind: 'runtime-upsert'; request: PersistedRuntimeTerminalClose }
   | { kind: 'runtime-remove'; environmentId: string; handle: string }
   | { kind: 'runtime-remove-environment'; environmentId: string }
-  | { kind: 'ssh-replace' }
+  | {
+      kind: 'ssh-set'
+      targetId: string
+      ptyId: string
+      relayInstanceId?: string
+      shutdownRequestedAt?: number
+    }
+  | { kind: 'ssh-remove-target'; targetId: string }

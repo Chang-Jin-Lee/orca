@@ -72,13 +72,15 @@ function readRecords(dataFile: string): {
       }
       const journal = terminalTeardownIntentJournalRecordSchema.safeParse(parsed)
       if (journal.success) {
-        return { records: [journal.data], journalReady: true }
+        // Why: appendFileSync needs a record delimiter. A crash after the JSON
+        // bytes but before the newline must recover through an atomic checkpoint.
+        return { records: [journal.data], journalReady: raw.endsWith('\n') }
       }
     } catch {
       // Multi-record journals are newline-delimited rather than one JSON value.
     }
     const records: TerminalTeardownIntentJournalRecord[] = []
-    let appendable = true
+    let appendable = raw.endsWith('\n')
     for (const line of raw.split('\n')) {
       if (!line.trim()) {
         continue
@@ -180,8 +182,30 @@ function applyJournalRecord(
         (entry) => entry.environmentId !== record.environmentId
       )
       return
-    case 'ssh-replace':
-      applySshShutdowns(state, record.pendingSshPtyShutdowns)
+    case 'ssh-set': {
+      const lease = state.sshRemotePtyLeases?.find(
+        (candidate) =>
+          candidate.targetId === record.targetId &&
+          candidate.ptyId === record.ptyId &&
+          candidate.relayInstanceId === record.relayInstanceId
+      )
+      if (!lease) {
+        return
+      }
+      if (record.shutdownRequestedAt === undefined) {
+        delete lease.shutdownRequestedAt
+      } else {
+        lease.shutdownRequestedAt = record.shutdownRequestedAt
+        lease.updatedAt = Math.max(lease.updatedAt, record.shutdownRequestedAt)
+      }
+      return
+    }
+    case 'ssh-remove-target':
+      for (const lease of state.sshRemotePtyLeases ?? []) {
+        if (lease.targetId === record.targetId) {
+          delete lease.shutdownRequestedAt
+        }
+      }
   }
 }
 
@@ -250,14 +274,6 @@ export function appendTerminalTeardownIntentMutation(
     return
   }
   const revision = state.terminalTeardownIntentRevision ?? 0
-  const record: TerminalTeardownIntentJournalRecord =
-    mutation.kind === 'ssh-replace'
-      ? {
-          version: 2,
-          revision,
-          kind: 'ssh-replace',
-          pendingSshPtyShutdowns: pendingSshShutdowns(state)
-        }
-      : { version: 2, revision, ...mutation }
+  const record: TerminalTeardownIntentJournalRecord = { version: 2, revision, ...mutation }
   appendFileSync(getSnapshotFile(dataFile), `${JSON.stringify(record)}\n`, 'utf-8')
 }

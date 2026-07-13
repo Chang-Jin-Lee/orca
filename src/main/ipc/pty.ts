@@ -1338,6 +1338,13 @@ export function releasePendingSshShutdownsForTarget(connectionId: string): void 
   scheduleRetainedShutdownRetries()
 }
 
+export function releasePendingSshShutdown(id: string): void {
+  pendingSshShutdownRetries.delete(id)
+  // Why: generation expiry proves this exact remote process is unreachable;
+  // its retained owner must not keep waking against the replacement relay.
+  scheduleRetainedShutdownRetries()
+}
+
 function retryPersistedSshShutdowns(connectionId: string, provider: IPtyProvider): void {
   const store = activePtyStore
   if (!store || typeof store.getSshRemotePtyLeases !== 'function') {

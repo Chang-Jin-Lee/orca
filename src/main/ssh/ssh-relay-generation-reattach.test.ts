@@ -45,6 +45,7 @@ vi.mock('../ipc/pty', () => ({
   clearPtyOwnershipForConnection: vi.fn(),
   clearProviderPtyState: vi.fn(),
   deletePtyOwnership: vi.fn(),
+  releasePendingSshShutdown: vi.fn(),
   setPtyOwnership: vi.fn(),
   answerStartupTerminalColorQueriesForPty: vi.fn((_id: string, data: string) => data)
 }))
@@ -60,7 +61,8 @@ vi.mock('../providers/ssh-git-dispatch', () => ({
   unregisterSshGitProvider: vi.fn()
 }))
 
-const { getSshPtyProvider, getPtyIdsForConnection, setPtyOwnership } = await import('../ipc/pty')
+const { getSshPtyProvider, getPtyIdsForConnection, releasePendingSshShutdown, setPtyOwnership } =
+  await import('../ipc/pty')
 
 describe('SSH relay generation reattach', () => {
   beforeEach(() => {
@@ -125,6 +127,7 @@ describe('SSH relay generation reattach', () => {
       'ssh:target-1@@relay-old@@pty-recycled',
       'expired'
     )
+    expect(releasePendingSshShutdown).toHaveBeenCalledWith('ssh:target-1@@relay-old@@pty-recycled')
     expect(mockWindow.webContents.send).toHaveBeenCalledWith('pty:exit', {
       id: 'ssh:target-1@@relay-old@@pty-recycled',
       code: -1

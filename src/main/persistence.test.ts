@@ -8974,6 +8974,71 @@ describe('Store', () => {
     secondReload.flush()
   })
 
+  it('rewrites a checkpoint before appending after a complete record loses its newline', async () => {
+    const store = await createStore()
+    store.upsertPendingLocalPtyShutdown({ ptyId: 'local-a', requestedAt: 1 })
+    writeFileSync(
+      terminalTeardownIntentFile(),
+      readFileSync(terminalTeardownIntentFile(), 'utf-8').trimEnd(),
+      'utf-8'
+    )
+
+    const reloaded = await createStore()
+    expect(reloaded.getPendingLocalPtyShutdowns()).toEqual([{ ptyId: 'local-a', requestedAt: 1 }])
+    reloaded.upsertPendingLocalPtyShutdown({ ptyId: 'local-b', requestedAt: 2 })
+
+    const secondReload = await createStore()
+    expect(secondReload.getPendingLocalPtyShutdowns()).toEqual([
+      { ptyId: 'local-a', requestedAt: 1 },
+      { ptyId: 'local-b', requestedAt: 2 }
+    ])
+    expect(readTerminalTeardownIntentJournal()).toEqual([
+      expect.objectContaining({ kind: 'checkpoint', revision: 2 })
+    ])
+    store.flush()
+    reloaded.flush()
+    secondReload.flush()
+  })
+
+  it('keeps the 50-PTY SSH shutdown journal within the constant-record budget', async () => {
+    const store = await createStore()
+    const owners = Array.from({ length: 50 }, (_, index) => ({
+      targetId: `target-${index}-${'t'.repeat(36)}`,
+      relayInstanceId: `boot-${index}-${'g'.repeat(36)}`,
+      ptyId: `pty-${index}-${'p'.repeat(36)}`
+    }))
+    for (const owner of owners) {
+      store.upsertSshRemotePtyLease({ ...owner, state: 'attached' })
+    }
+    for (const owner of owners) {
+      expect(
+        store.markSshRemotePtyShutdownRequested(
+          owner.targetId,
+          `ssh:${owner.targetId}@@${owner.relayInstanceId}@@${owner.ptyId}`
+        )
+      ).toBe(true)
+    }
+
+    const raw = readFileSync(terminalTeardownIntentFile(), 'utf-8')
+    const records = readTerminalTeardownIntentJournal()
+    const shutdownRecords = records.filter(
+      (record) => record.kind === 'ssh-set' && record.shutdownRequestedAt !== undefined
+    )
+    expect(shutdownRecords).toHaveLength(50)
+    expect(Math.max(...records.map((record) => JSON.stringify(record).length))).toBeLessThan(1_024)
+    expect(raw.length).toBeLessThan(100_000)
+
+    const reloaded = await createStore()
+    expect(
+      owners.filter(
+        (owner) =>
+          reloaded.getSshRemotePtyLeases(owner.targetId)[0]?.shutdownRequestedAt !== undefined
+      )
+    ).toHaveLength(50)
+    store.flush()
+    reloaded.flush()
+  })
+
   it('ignores an older sidecar after the full-store fallback persisted a newer revision', async () => {
     const store = await createStore()
     store.upsertPendingLocalPtyShutdown({
