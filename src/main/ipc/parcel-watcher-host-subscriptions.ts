@@ -79,7 +79,7 @@ export function failAllWatcherSubscriptions(
   error: Error
 ): void {
   // Snapshot first: onTerminalError hooks can dispose the supervisor and clear `records`.
-  for (const record of [...records.values()]) {
+  for (const record of Array.from(records.values())) {
     resetPendingSubscribeAttempt(record)
     const pending = takePendingSubscribe(record)
     if (pending) {
