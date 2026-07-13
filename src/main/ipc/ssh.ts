@@ -1004,7 +1004,7 @@ export function registerSshHandlers(
       }
       clearProviderPtyState(appPtyId)
       deletePtyOwnership(appPtyId)
-      persistedStore!.markSshRemotePtyLease(args.targetId, relayPtyId, 'terminated')
+      persistedStore!.markSshRemotePtyLease(args.targetId, appPtyId, 'terminated')
     }
     if (shutdownFailures.length > 0) {
       // Why: a failed relay shutdown can leave the remote process alive in the

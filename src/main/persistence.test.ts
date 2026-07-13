@@ -8802,6 +8802,80 @@ describe('Store', () => {
     ])
   })
 
+  it('replaces teardown identity when a new relay boot reuses a raw PTY id', async () => {
+    const store = await createStore()
+    store.upsertSshRemotePtyLease({
+      targetId: 'ssh-1',
+      ptyId: 'ssh:ssh-1@@boot-a@@remote-pty',
+      state: 'expired',
+      shutdownRequestedAt: 10
+    })
+
+    store.upsertSshRemotePtyLease({
+      targetId: 'ssh-1',
+      ptyId: 'ssh:ssh-1@@boot-b@@remote-pty',
+      state: 'attached'
+    })
+    store.markSshRemotePtyShutdownRequested('ssh-1', 'ssh:ssh-1@@boot-a@@remote-pty')
+
+    expect(store.getSshRemotePtyLeases('ssh-1')).toEqual([
+      expect.objectContaining({
+        ptyId: 'remote-pty',
+        relayInstanceId: 'boot-b',
+        state: 'attached'
+      })
+    ])
+    expect(store.getSshRemotePtyLeases('ssh-1')[0]).not.toHaveProperty('shutdownRequestedAt')
+  })
+
+  it('preserves SSH relay generation across save and reload', async () => {
+    const store = await createStore()
+    store.upsertSshRemotePtyLease({
+      targetId: 'ssh-1',
+      ptyId: 'ssh:ssh-1@@boot-a@@remote-pty',
+      state: 'detached'
+    })
+
+    const reloaded = await createStore()
+    expect(reloaded.getSshRemotePtyLeases('ssh-1')[0]).toEqual(
+      expect.objectContaining({ relayInstanceId: 'boot-a' })
+    )
+  })
+
+  it('preserves exact local and runtime close intent across app restart', async () => {
+    const store = await createStore()
+    store.upsertPendingLocalPtyShutdown({
+      ptyId: 'local-pty',
+      expectedPaneKey: 'tab:leaf',
+      expectedTabId: 'tab',
+      requestedAt: 10
+    })
+    store.upsertPendingRuntimeTerminalClose({
+      environmentId: 'env-1',
+      handle: 'terminal-1',
+      runtimeId: 'runtime-a',
+      requestedAt: 20
+    })
+
+    const reloaded = await createStore()
+    expect(reloaded.getPendingLocalPtyShutdowns()).toEqual([
+      {
+        ptyId: 'local-pty',
+        expectedPaneKey: 'tab:leaf',
+        expectedTabId: 'tab',
+        requestedAt: 10
+      }
+    ])
+    expect(reloaded.getPendingRuntimeTerminalCloses()).toEqual([
+      {
+        environmentId: 'env-1',
+        handle: 'terminal-1',
+        runtimeId: 'runtime-a',
+        requestedAt: 20
+      }
+    ])
+  })
+
   it('rejects mismatched scoped SSH remote PTY lease ids on write paths', async () => {
     const store = await createStore()
 

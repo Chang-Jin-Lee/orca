@@ -1468,14 +1468,11 @@ describe('createIpcPtyTransport', () => {
       expect(onPtySpawn).not.toHaveBeenCalled()
       expect(transport.getPtyId()).toBeNull()
 
-      // A later transport lifecycle event retries the retained exact id.
+      // Main owns the retry; later renderer lifecycle must not duplicate it.
       spawnMock.mockResolvedValueOnce({ id: 'pty-next' })
       await createIpcPtyTransport().connect({ url: '', callbacks: {} })
       await flushPtySideEffects()
-      expect(killMock).toHaveBeenNthCalledWith(2, 'pty-late', {
-        expectedPaneKey: 'tab-late:11111111-1111-4111-8111-111111111111',
-        expectedTabId: 'tab-late'
-      })
+      expect(killMock).toHaveBeenCalledTimes(1)
     } finally {
       warn.mockRestore()
     }
@@ -1497,7 +1494,7 @@ describe('createIpcPtyTransport', () => {
       expect(warn).toHaveBeenCalledWith('[pty] Failed to stop disconnected PTY', killError)
       await createIpcPtyTransport().connect({ url: '', callbacks: {} })
       await flushPtySideEffects()
-      expect(kill).toHaveBeenNthCalledWith(2, 'pty-1')
+      expect(kill).toHaveBeenCalledTimes(1)
     } finally {
       warn.mockRestore()
     }

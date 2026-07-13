@@ -3565,6 +3565,20 @@ export type LegacyPaneKeyAliasEntry = {
   updatedAt: number
 }
 
+export type PersistedLocalPtyShutdown = {
+  ptyId: string
+  expectedPaneKey?: string
+  expectedTabId?: string
+  requestedAt: number
+}
+
+export type PersistedRuntimeTerminalClose = {
+  environmentId: string
+  handle: string
+  runtimeId?: string
+  requestedAt: number
+}
+
 // ─── Persistence shape ──────────────────────────────────────────────
 export type PersistedState = {
   schemaVersion: number
@@ -3602,6 +3616,10 @@ export type PersistedState = {
    *  workspaces that were orphaned on the old target id. Pruned by age/count. */
   removedSshTargetTombstones?: RemovedSshTargetTombstone[]
   sshRemotePtyLeases: SshRemotePtyLease[]
+  /** Exact local daemon shutdown intents survive renderer and app restarts. */
+  pendingLocalPtyShutdowns?: PersistedLocalPtyShutdown[]
+  /** Remote runtime close intents survive renderer and app restarts. */
+  pendingRuntimeTerminalCloses?: PersistedRuntimeTerminalClose[]
   /** Daemon session ids of live local Claude launches. Seeds the Claude
    *  live-PTY gate on startup so an early OAuth refresh cannot rotate the
    *  single-use refresh token out from under a still-running daemon CLI. */

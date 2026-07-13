@@ -157,6 +157,7 @@ vi.mock('../providers/ssh-filesystem-provider', () => ({
 vi.mock('./pty', () => ({
   registerSshPtyProvider: vi.fn(),
   unregisterSshPtyProvider: vi.fn(),
+  releasePendingSshShutdownsForTarget: vi.fn(),
   clearPtyOwnershipForConnection: vi.fn(),
   clearProviderPtyState: vi.fn(),
   deletePtyOwnership: vi.fn(),
@@ -1218,8 +1219,16 @@ describe('SSH IPC handlers', () => {
     expect(clearProviderPtyState).toHaveBeenCalledWith('ssh:ssh-1@@pty-lease')
     expect(deletePtyOwnership).toHaveBeenCalledWith('ssh:ssh-1@@pty-live')
     expect(deletePtyOwnership).toHaveBeenCalledWith('ssh:ssh-1@@pty-lease')
-    expect(mockStore.markSshRemotePtyLease).toHaveBeenCalledWith('ssh-1', 'pty-live', 'terminated')
-    expect(mockStore.markSshRemotePtyLease).toHaveBeenCalledWith('ssh-1', 'pty-lease', 'terminated')
+    expect(mockStore.markSshRemotePtyLease).toHaveBeenCalledWith(
+      'ssh-1',
+      'ssh:ssh-1@@pty-live',
+      'terminated'
+    )
+    expect(mockStore.markSshRemotePtyLease).toHaveBeenCalledWith(
+      'ssh-1',
+      'ssh:ssh-1@@pty-lease',
+      'terminated'
+    )
   })
 
   it('ssh:terminateSessions ignores expired leases when disconnected', async () => {

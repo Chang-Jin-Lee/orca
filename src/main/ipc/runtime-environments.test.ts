@@ -499,6 +499,148 @@ describe('registerRuntimeEnvironmentHandlers', () => {
     expect(sendRemoteRuntimeRequestMock).not.toHaveBeenCalled()
   })
 
+  it('persists and retries exact terminal closes after renderer loss', async () => {
+    vi.useFakeTimers()
+    const upsertClose = vi.fn()
+    const removeClose = vi.fn()
+    Object.assign(store, {
+      getPendingRuntimeTerminalCloses: () => [],
+      upsertPendingRuntimeTerminalClose: upsertClose,
+      removePendingRuntimeTerminalClose: removeClose
+    })
+    registerRuntimeEnvironmentHandlers(store as never)
+    let closeAttempt = 0
+    sendRemoteRuntimeRequestMock.mockImplementation(async (_pairing, method) => {
+      if (method === 'status.get') {
+        return {
+          id: 'status',
+          ok: true,
+          result: { runtimeId: 'runtime-remote', capabilities: [] },
+          _meta: { runtimeId: 'runtime-remote' }
+        }
+      }
+      closeAttempt += 1
+      if (closeAttempt < 3) {
+        return {
+          id: `close-${closeAttempt}`,
+          ok: false,
+          error: { message: closeAttempt === 1 ? 'offline' : 'still offline' }
+        }
+      }
+      return {
+        id: 'close-3',
+        ok: true,
+        result: { close: true },
+        _meta: { runtimeId: 'runtime-remote' }
+      }
+    })
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    const add = handler<
+      { name: string; pairingCode: string },
+      { environment: { id: string; name: string } }
+    >('runtimeEnvironments:addFromPairingCode')
+    const added = await add(null, { name: 'desk', pairingCode: pairingCode() })
+    const call = handler<{ selector: string; method: string; params?: unknown }, { ok: boolean }>(
+      'runtimeEnvironments:call'
+    )
+    await expect(
+      call(null, { selector: 'desk', method: 'terminal.close', params: { terminal: 't1' } })
+    ).resolves.toMatchObject({ ok: false })
+
+    await vi.advanceTimersByTimeAsync(250)
+    await vi.advanceTimersByTimeAsync(500)
+
+    expect(closeAttempt).toBe(3)
+    expect(upsertClose).toHaveBeenCalledWith({
+      environmentId: added.environment.id,
+      handle: 't1',
+      requestedAt: expect.any(Number)
+    })
+    expect(removeClose).toHaveBeenCalledWith(added.environment.id, 't1')
+    expect(vi.getTimerCount()).toBe(0)
+    vi.useRealTimers()
+  })
+
+  it('hydrates and drains persisted terminal close intent after app restart', async () => {
+    vi.useFakeTimers()
+    const environment = environmentStore.addEnvironmentFromPairingCode(userDataPath, {
+      name: 'desk',
+      pairingCode: pairingCode()
+    })
+    const removePendingRuntimeTerminalClose = vi.fn()
+    Object.assign(store, {
+      getPendingRuntimeTerminalCloses: () => [
+        { environmentId: environment.id, handle: 't1', requestedAt: 1 }
+      ],
+      upsertPendingRuntimeTerminalClose: vi.fn(),
+      removePendingRuntimeTerminalClose
+    })
+    sendRemoteRuntimeRequestMock.mockImplementation(async (_pairing, method) =>
+      method === 'status.get'
+        ? {
+            id: 'status',
+            ok: true,
+            result: { runtimeId: 'runtime-remote', capabilities: [] },
+            _meta: { runtimeId: 'runtime-remote' }
+          }
+        : {
+            id: 'close',
+            ok: true,
+            result: { close: true },
+            _meta: { runtimeId: 'runtime-remote' }
+          }
+    )
+
+    registerRuntimeEnvironmentHandlers(store as never)
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(sendRemoteRuntimeRequestMock.mock.calls.map((call) => call[1])).toEqual([
+      'status.get',
+      'status.get',
+      'terminal.close'
+    ])
+    expect(removePendingRuntimeTerminalClose).toHaveBeenCalledWith(environment.id, 't1')
+    expect(vi.getTimerCount()).toBe(0)
+    vi.useRealTimers()
+  })
+
+  it('does not apply persisted close intent to a replacement runtime generation', async () => {
+    vi.useFakeTimers()
+    const environment = environmentStore.addEnvironmentFromPairingCode(userDataPath, {
+      name: 'desk',
+      pairingCode: pairingCode()
+    })
+    environmentStore.markEnvironmentUsed(userDataPath, environment.id, { runtimeId: 'runtime-a' })
+    const removePendingRuntimeTerminalClose = vi.fn()
+    Object.assign(store, {
+      getPendingRuntimeTerminalCloses: () => [
+        {
+          environmentId: environment.id,
+          handle: 't1',
+          runtimeId: 'runtime-a',
+          requestedAt: 1
+        }
+      ],
+      upsertPendingRuntimeTerminalClose: vi.fn(),
+      removePendingRuntimeTerminalClose
+    })
+    sendRemoteRuntimeRequestMock.mockResolvedValue({
+      id: 'status',
+      ok: true,
+      result: { runtimeId: 'runtime-b', capabilities: [] },
+      _meta: { runtimeId: 'runtime-b' }
+    })
+
+    registerRuntimeEnvironmentHandlers(store as never)
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(sendRemoteRuntimeRequestMock.mock.calls.map((call) => call[1])).toEqual(['status.get'])
+    expect(removePendingRuntimeTerminalClose).toHaveBeenCalledWith(environment.id, 't1')
+    expect(vi.getTimerCount()).toBe(0)
+    vi.useRealTimers()
+  })
+
   it('keeps terminal hot path RPCs on the cached request connection when shared control is supported', async () => {
     registerRuntimeEnvironmentHandlers(store as never)
     sendRemoteRuntimeRequestMock.mockResolvedValue({

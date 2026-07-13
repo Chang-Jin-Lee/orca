@@ -23,6 +23,11 @@ import {
   resetSharedControlSupport,
   subscribeRuntimeEnvironment
 } from './runtime-environment-transport-routing'
+import {
+  closeRuntimeTerminalWithRetryOwnership,
+  initializeRuntimeTerminalCloseRetryOwner,
+  releaseRuntimeTerminalClosesForEnvironment
+} from './runtime-terminal-close-retry-owner'
 
 const RUNTIME_ENVIRONMENT_HANDLER_CHANNELS = [
   'runtimeEnvironments:list',
@@ -66,6 +71,7 @@ function listPublicRuntimeEnvironments(): PublicKnownRuntimeEnvironment[] {
 }
 
 export function registerRuntimeEnvironmentHandlers(store: Store): void {
+  initializeRuntimeTerminalCloseRetryOwner(store, getUserDataPath())
   // Why: keep direct re-registration safe even though register-core-handlers
   // normally guards this path; otherwise the binary send listener can stack.
   resetSharedControlSupport()
@@ -103,6 +109,8 @@ export function registerRuntimeEnvironmentHandlers(store: Store): void {
       }
       clearActiveRuntimeEnvironmentFocusIfMatches(store, removed.id)
       closeSubscriptionsForEnvironment(removed.id)
+      // Why: removal is authoritative; no future transport can reach these handles.
+      releaseRuntimeTerminalClosesForEnvironment(removed.id)
       return { removed: redactRuntimeEnvironment(removed) }
     }
   )
@@ -137,6 +145,19 @@ export function registerRuntimeEnvironmentHandlers(store: Store): void {
       _event,
       args: { selector: string; method: string; params?: unknown; timeoutMs?: number }
     ): Promise<RuntimeRpcResponse<unknown>> => {
+      if (
+        args.method === 'terminal.close' &&
+        args.params &&
+        typeof args.params === 'object' &&
+        typeof (args.params as { terminal?: unknown }).terminal === 'string'
+      ) {
+        const environment = resolveEnvironment(getUserDataPath(), args.selector)
+        return closeRuntimeTerminalWithRetryOwnership(
+          environment.id,
+          (args.params as { terminal: string }).terminal,
+          environment.runtimeId
+        )
+      }
       return callRuntimeEnvironment(
         getUserDataPath(),
         args.selector,

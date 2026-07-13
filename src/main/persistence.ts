@@ -65,7 +65,9 @@ import type {
   TerminalLayoutSnapshot,
   TerminalTab,
   WorkspaceSessionPatch,
-  WorkspaceSessionState
+  WorkspaceSessionState,
+  PersistedLocalPtyShutdown,
+  PersistedRuntimeTerminalClose
 } from '../shared/types'
 import {
   deriveGlobalWindowsRuntimeDefaultFromLegacySettings,
@@ -1577,6 +1579,7 @@ function normalizeSshRemotePtyLease(value: unknown): SshRemotePtyLease | null {
   return {
     targetId: raw.targetId,
     ptyId: raw.ptyId,
+    ...(typeof raw.relayInstanceId === 'string' ? { relayInstanceId: raw.relayInstanceId } : {}),
     ...(typeof raw.worktreeId === 'string' ? { worktreeId: raw.worktreeId } : {}),
     ...(typeof raw.tabId === 'string' ? { tabId: raw.tabId } : {}),
     ...(typeof raw.leafId === 'string' && raw.leafId.length <= 256 ? { leafId: raw.leafId } : {}),
@@ -1588,6 +1591,42 @@ function normalizeSshRemotePtyLease(value: unknown): SshRemotePtyLease | null {
     ...(typeof raw.shutdownRequestedAt === 'number'
       ? { shutdownRequestedAt: raw.shutdownRequestedAt }
       : {})
+  }
+}
+
+function normalizeLocalPtyShutdown(value: unknown): PersistedLocalPtyShutdown | null {
+  if (!value || typeof value !== 'object') {
+    return null
+  }
+  const raw = value as Partial<PersistedLocalPtyShutdown>
+  if (typeof raw.ptyId !== 'string' || typeof raw.requestedAt !== 'number') {
+    return null
+  }
+  return {
+    ptyId: raw.ptyId,
+    requestedAt: raw.requestedAt,
+    ...(typeof raw.expectedPaneKey === 'string' ? { expectedPaneKey: raw.expectedPaneKey } : {}),
+    ...(typeof raw.expectedTabId === 'string' ? { expectedTabId: raw.expectedTabId } : {})
+  }
+}
+
+function normalizeRuntimeTerminalClose(value: unknown): PersistedRuntimeTerminalClose | null {
+  if (!value || typeof value !== 'object') {
+    return null
+  }
+  const raw = value as Partial<PersistedRuntimeTerminalClose>
+  if (
+    typeof raw.environmentId !== 'string' ||
+    typeof raw.handle !== 'string' ||
+    typeof raw.requestedAt !== 'number'
+  ) {
+    return null
+  }
+  return {
+    environmentId: raw.environmentId,
+    handle: raw.handle,
+    ...(typeof raw.runtimeId === 'string' ? { runtimeId: raw.runtimeId } : {}),
+    requestedAt: raw.requestedAt
   }
 }
 
@@ -3428,6 +3467,12 @@ export class Store {
           sshRemotePtyLeases: (parsed.sshRemotePtyLeases ?? [])
             .map(normalizeSshRemotePtyLease)
             .filter((lease): lease is SshRemotePtyLease => lease !== null),
+          pendingLocalPtyShutdowns: (parsed.pendingLocalPtyShutdowns ?? [])
+            .map(normalizeLocalPtyShutdown)
+            .filter((request): request is PersistedLocalPtyShutdown => request !== null),
+          pendingRuntimeTerminalCloses: (parsed.pendingRuntimeTerminalCloses ?? [])
+            .map(normalizeRuntimeTerminalClose)
+            .filter((request): request is PersistedRuntimeTerminalClose => request !== null),
           claudeLivePtySessionIds: normalizeClaudeLivePtySessionIds(parsed.claudeLivePtySessionIds),
           migrationUnsupportedPtyEntries: normalizeMigrationUnsupportedPtyEntries(
             parsed.migrationUnsupportedPtyEntries
@@ -6311,6 +6356,70 @@ export class Store {
     return leases.filter((lease) => targetId === undefined || lease.targetId === targetId)
   }
 
+  getPendingLocalPtyShutdowns(): PersistedLocalPtyShutdown[] {
+    return [...(this.state.pendingLocalPtyShutdowns ?? [])]
+  }
+
+  upsertPendingLocalPtyShutdown(request: PersistedLocalPtyShutdown): void {
+    this.state.pendingLocalPtyShutdowns ??= []
+    const index = this.state.pendingLocalPtyShutdowns.findIndex(
+      (entry) => entry.ptyId === request.ptyId
+    )
+    if (index >= 0) {
+      this.state.pendingLocalPtyShutdowns[index] = request
+    } else {
+      this.state.pendingLocalPtyShutdowns.push(request)
+    }
+    this.flush()
+  }
+
+  removePendingLocalPtyShutdown(ptyId: string): void {
+    const before = this.state.pendingLocalPtyShutdowns?.length ?? 0
+    this.state.pendingLocalPtyShutdowns = (this.state.pendingLocalPtyShutdowns ?? []).filter(
+      (entry) => entry.ptyId !== ptyId
+    )
+    if (this.state.pendingLocalPtyShutdowns.length !== before) {
+      this.flush()
+    }
+  }
+
+  getPendingRuntimeTerminalCloses(): PersistedRuntimeTerminalClose[] {
+    return [...(this.state.pendingRuntimeTerminalCloses ?? [])]
+  }
+
+  upsertPendingRuntimeTerminalClose(request: PersistedRuntimeTerminalClose): void {
+    this.state.pendingRuntimeTerminalCloses ??= []
+    const index = this.state.pendingRuntimeTerminalCloses.findIndex(
+      (entry) => entry.environmentId === request.environmentId && entry.handle === request.handle
+    )
+    if (index >= 0) {
+      this.state.pendingRuntimeTerminalCloses[index] = request
+    } else {
+      this.state.pendingRuntimeTerminalCloses.push(request)
+    }
+    this.flush()
+  }
+
+  removePendingRuntimeTerminalClose(environmentId: string, handle: string): void {
+    const before = this.state.pendingRuntimeTerminalCloses?.length ?? 0
+    this.state.pendingRuntimeTerminalCloses = (
+      this.state.pendingRuntimeTerminalCloses ?? []
+    ).filter((entry) => entry.environmentId !== environmentId || entry.handle !== handle)
+    if (this.state.pendingRuntimeTerminalCloses.length !== before) {
+      this.flush()
+    }
+  }
+
+  removePendingRuntimeTerminalClosesForEnvironment(environmentId: string): void {
+    const before = this.state.pendingRuntimeTerminalCloses?.length ?? 0
+    this.state.pendingRuntimeTerminalCloses = (
+      this.state.pendingRuntimeTerminalCloses ?? []
+    ).filter((entry) => entry.environmentId !== environmentId)
+    if (this.state.pendingRuntimeTerminalCloses.length !== before) {
+      this.flush()
+    }
+  }
+
   upsertSshRemotePtyLease(
     lease: Omit<SshRemotePtyLease, 'createdAt' | 'updatedAt'> &
       Partial<Pick<SshRemotePtyLease, 'createdAt' | 'updatedAt'>>
@@ -6334,10 +6443,13 @@ export class Store {
         entry.targetId === normalizedLease.targetId && entry.ptyId === normalizedLease.ptyId
     )
     const existing = existingIndex >= 0 ? this.state.sshRemotePtyLeases[existingIndex] : undefined
+    const sameGeneration = existing?.relayInstanceId === normalizedLease.relayInstanceId
     const next: SshRemotePtyLease = {
-      ...existing,
+      ...(sameGeneration ? existing : undefined),
       ...normalizedLease,
-      createdAt: existing?.createdAt ?? normalizedLease.createdAt ?? now,
+      createdAt: sameGeneration
+        ? (existing?.createdAt ?? normalizedLease.createdAt ?? now)
+        : (normalizedLease.createdAt ?? now),
       updatedAt: normalizedLease.updatedAt ?? now
     }
     if (existingIndex >= 0) {
@@ -6384,9 +6496,13 @@ export class Store {
   }
 
   markSshRemotePtyLease(targetId: string, ptyId: string, state: SshRemotePtyLease['state']): void {
+    const requestedGeneration = parseAppSshPtyId(ptyId)?.relayInstanceId
     const relayPtyId = this.getRelayPtyIdForSshLeaseStorage(targetId, ptyId)
     const lease = this.state.sshRemotePtyLeases?.find(
-      (entry) => entry.targetId === targetId && entry.ptyId === relayPtyId
+      (entry) =>
+        entry.targetId === targetId &&
+        entry.ptyId === relayPtyId &&
+        (requestedGeneration === undefined || entry.relayInstanceId === requestedGeneration)
     )
     if (!lease) {
       return
@@ -6413,9 +6529,13 @@ export class Store {
   }
 
   markSshRemotePtyShutdownRequested(targetId: string, ptyId: string): void {
+    const requestedGeneration = parseAppSshPtyId(ptyId)?.relayInstanceId
     const relayPtyId = this.getRelayPtyIdForSshLeaseStorage(targetId, ptyId)
     const lease = this.state.sshRemotePtyLeases?.find(
-      (entry) => entry.targetId === targetId && entry.ptyId === relayPtyId
+      (entry) =>
+        entry.targetId === targetId &&
+        entry.ptyId === relayPtyId &&
+        (requestedGeneration === undefined || entry.relayInstanceId === requestedGeneration)
     )
     if (!lease) {
       return
@@ -6426,14 +6546,21 @@ export class Store {
   }
 
   removeSshRemotePtyLease(targetId: string, ptyId: string): void {
+    const requestedGeneration = parseAppSshPtyId(ptyId)?.relayInstanceId
     const relayPtyId = this.getRelayPtyIdForSshLeaseStorage(targetId, ptyId)
     const leases = (this.state.sshRemotePtyLeases ?? []).filter(
-      (lease) => lease.targetId === targetId && lease.ptyId === relayPtyId
+      (lease) =>
+        lease.targetId === targetId &&
+        lease.ptyId === relayPtyId &&
+        (requestedGeneration === undefined || lease.relayInstanceId === requestedGeneration)
     )
     const before = this.state.sshRemotePtyLeases?.length ?? 0
     this.clearSshRemotePtyBindingsForLeases(targetId, leases)
     this.state.sshRemotePtyLeases = (this.state.sshRemotePtyLeases ?? []).filter(
-      (lease) => lease.targetId !== targetId || lease.ptyId !== relayPtyId
+      (lease) =>
+        lease.targetId !== targetId ||
+        lease.ptyId !== relayPtyId ||
+        (requestedGeneration !== undefined && lease.relayInstanceId !== requestedGeneration)
     )
     if (this.state.sshRemotePtyLeases.length !== before) {
       this.flush()

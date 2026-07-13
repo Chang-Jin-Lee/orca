@@ -1159,11 +1159,10 @@ export class SshRelaySession {
       }
     })
     ptyProvider.onExit((payload) => {
-      const relayPtyId = toRelaySshPtyId(this.targetId, payload.id)
       clearProviderPtyState(payload.id)
       deletePtyOwnership(payload.id)
       this.forwardedReattachReplayByPty.delete(payload.id)
-      this.store.markSshRemotePtyLease(this.targetId, relayPtyId, 'terminated')
+      this.store.markSshRemotePtyLease(this.targetId, payload.id, 'terminated')
       this.runtime?.onPtyExit(payload.id, payload.code)
       const win = this.getMainWindow()
       if (win && !win.isDestroyed()) {
@@ -1200,11 +1199,11 @@ export class SshRelaySession {
     }
   }
 
-  private expireReattachPty(relayPtyId: string, appPtyId: string): void {
+  private expireReattachPty(_relayPtyId: string, appPtyId: string): void {
     clearProviderPtyState(appPtyId)
     deletePtyOwnership(appPtyId)
     this.forwardedReattachReplayByPty.delete(appPtyId)
-    this.store.markSshRemotePtyLease(this.targetId, relayPtyId, 'expired')
+    this.store.markSshRemotePtyLease(this.targetId, appPtyId, 'expired')
     const win = this.getMainWindow()
     if (win && !win.isDestroyed()) {
       win.webContents.send('pty:exit', { id: appPtyId, code: -1 })
@@ -1276,7 +1275,7 @@ export class SshRelaySession {
         }
         const appPtyId = toAppSshPtyId(this.targetId, ptyId, relayInstanceId)
         setPtyOwnership(appPtyId, this.targetId)
-        this.store.markSshRemotePtyLease(this.targetId, ptyId, 'attached')
+        this.store.markSshRemotePtyLease(this.targetId, appPtyId, 'attached')
         this.forwardReattachReplay(appPtyId, attachResult.replay ?? '')
       } catch (err) {
         if (!isSshPtyNotFoundError(err)) {
@@ -1299,7 +1298,7 @@ export class SshRelaySession {
         clearProviderPtyState(appPtyId)
         deletePtyOwnership(appPtyId)
         this.forwardedReattachReplayByPty.delete(appPtyId)
-        this.store.markSshRemotePtyLease(this.targetId, ptyId, 'expired')
+        this.store.markSshRemotePtyLease(this.targetId, appPtyId, 'expired')
         // Why: if the new relay cannot reattach this id, the remote backing
         // process is gone. Tell the renderer so it clears stale pane bindings
         // instead of keeping a cursor-only terminal.

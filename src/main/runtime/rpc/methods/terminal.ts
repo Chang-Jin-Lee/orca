@@ -735,6 +735,10 @@ const TerminalHandle = z.object({
   terminal: requiredString('Missing terminal handle')
 })
 
+const TerminalClose = TerminalHandle.extend({
+  expectedRuntimeId: z.string().min(1).optional()
+})
+
 const TerminalListParams = z.object({
   worktree: OptionalString,
   limit: OptionalFiniteNumber,
@@ -1363,10 +1367,13 @@ export const TERMINAL_METHODS: RpcAnyMethod[] = [
   }),
   defineMethod({
     name: 'terminal.close',
-    params: TerminalHandle,
-    handler: async (params, { runtime }) => ({
-      close: await runtime.closeTerminal(params.terminal)
-    })
+    params: TerminalClose,
+    handler: async (params, { runtime }) => {
+      if (params.expectedRuntimeId && params.expectedRuntimeId !== runtime.getRuntimeId()) {
+        throw new Error('runtime_generation_mismatch')
+      }
+      return { close: await runtime.closeTerminal(params.terminal) }
+    }
   }),
   defineMethod({
     name: 'agentTeams.tmuxCompat',

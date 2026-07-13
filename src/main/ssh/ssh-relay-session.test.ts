@@ -553,7 +553,11 @@ describe('SshRelaySession', () => {
 
     expect(mockAttach).toHaveBeenCalledWith('pty-1')
     expect(setPtyOwnership).toHaveBeenCalledWith('ssh:target-1@@pty-1', 'target-1')
-    expect(mockStore.markSshRemotePtyLease).toHaveBeenCalledWith('target-1', 'pty-1', 'attached')
+    expect(mockStore.markSshRemotePtyLease).toHaveBeenCalledWith(
+      'target-1',
+      'ssh:target-1@@pty-1',
+      'attached'
+    )
   })
 
   it('forwards a lease tab identity to reattach so a reset relay cannot cross-wire it', async () => {

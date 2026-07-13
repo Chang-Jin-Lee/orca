@@ -3028,7 +3028,11 @@ describe('registerPtyHandlers', () => {
 
         expect(shutdown).toHaveBeenCalledWith('ssh:ssh-1@@relay-pty', { immediate: false })
         expect(localShutdown).not.toHaveBeenCalled()
-        expect(store.markSshRemotePtyLease).toHaveBeenCalledWith('ssh-1', 'relay-pty', 'terminated')
+        expect(store.markSshRemotePtyLease).toHaveBeenCalledWith(
+          'ssh-1',
+          'ssh:ssh-1@@relay-pty',
+          'terminated'
+        )
       })
 
       it('runtime controller kill retains app-scoped SSH ids when the provider is absent', async () => {
@@ -3351,12 +3355,18 @@ describe('registerPtyHandlers', () => {
     deletePtyOwnership('missing-pty')
   })
 
-  it('rethrows non-not-found local provider shutdown failures', async () => {
+  it('persists local daemon shutdown and retries after renderer loss', async () => {
+    vi.useFakeTimers()
+    const shutdown = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('daemon unavailable'))
+      .mockRejectedValueOnce(new Error('daemon still unavailable'))
+      .mockResolvedValue(undefined)
     setLocalPtyProvider({
       spawn: vi.fn(),
       write: vi.fn(),
       resize: vi.fn(),
-      shutdown: vi.fn().mockRejectedValue(new Error('daemon unavailable')),
+      shutdown,
       sendSignal: vi.fn(),
       getCwd: vi.fn(),
       getInitialCwd: vi.fn(),
@@ -3374,12 +3384,79 @@ describe('registerPtyHandlers', () => {
       getDefaultShell: vi.fn(),
       getProfiles: vi.fn()
     } as never)
+    const store = {
+      getPendingLocalPtyShutdowns: vi.fn(() => []),
+      upsertPendingLocalPtyShutdown: vi.fn(),
+      removePendingLocalPtyShutdown: vi.fn()
+    }
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
     handlers.clear()
-    registerPtyHandlers(mainWindow as never)
-
-    await expect(handlers.get('pty:kill')!(null, { id: 'local-pty' })).rejects.toThrow(
-      'daemon unavailable'
+    registerPtyHandlers(
+      mainWindow as never,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      store as never
     )
+
+    await expect(
+      handlers.get('pty:kill')!(null, {
+        id: 'local-pty',
+        expectedPaneKey: 'tab:leaf',
+        expectedTabId: 'tab'
+      })
+    ).rejects.toThrow('daemon unavailable')
+    await vi.advanceTimersByTimeAsync(250)
+    await vi.advanceTimersByTimeAsync(500)
+
+    expect(shutdown).toHaveBeenCalledTimes(3)
+    expect(store.upsertPendingLocalPtyShutdown).toHaveBeenCalledWith({
+      ptyId: 'local-pty',
+      expectedPaneKey: 'tab:leaf',
+      expectedTabId: 'tab',
+      requestedAt: expect.any(Number)
+    })
+    expect(store.removePendingLocalPtyShutdown).toHaveBeenCalledWith('local-pty')
+    await vi.advanceTimersByTimeAsync(30_000)
+    expect(vi.getTimerCount()).toBe(0)
+    vi.useRealTimers()
+  })
+
+  it('rebinds a persisted local shutdown after async daemon startup replaces the provider', async () => {
+    vi.useFakeTimers()
+    const makeProvider = (shutdown: ReturnType<typeof vi.fn>) =>
+      ({
+        spawn: vi.fn(),
+        write: vi.fn(),
+        resize: vi.fn(),
+        shutdown,
+        sendSignal: vi.fn(),
+        onData: vi.fn(() => () => {}),
+        onReplay: vi.fn(() => () => {}),
+        onExit: vi.fn(() => () => {})
+      }) as never
+    const fallbackShutdown = vi.fn().mockRejectedValue(new Error('temporary provider'))
+    const daemonShutdown = vi.fn().mockResolvedValue(undefined)
+    const removePendingLocalPtyShutdown = vi.fn()
+    setLocalPtyProvider(makeProvider(fallbackShutdown))
+    handlers.clear()
+    registerPtyHandlers(mainWindow as never, undefined, undefined, undefined, undefined, {
+      getPendingLocalPtyShutdowns: () => [{ ptyId: 'daemon-pty', requestedAt: 1 }],
+      upsertPendingLocalPtyShutdown: vi.fn(),
+      removePendingLocalPtyShutdown
+    } as never)
+    await vi.advanceTimersByTimeAsync(0)
+
+    setLocalPtyProvider(makeProvider(daemonShutdown))
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(fallbackShutdown).toHaveBeenCalledOnce()
+    expect(daemonShutdown).toHaveBeenCalledOnce()
+    expect(removePendingLocalPtyShutdown).toHaveBeenCalledWith('daemon-pty')
+    await vi.advanceTimersByTimeAsync(30_000)
+    expect(vi.getTimerCount()).toBe(0)
+    vi.useRealTimers()
   })
 
   it('synthesizes runtime exit after ordinary daemon-backed pty kill', async () => {
@@ -4049,7 +4126,11 @@ describe('registerPtyHandlers', () => {
       expectedTabId: 'tab-a'
     })
     expect(localShutdown).not.toHaveBeenCalled()
-    expect(store.markSshRemotePtyLease).toHaveBeenCalledWith('ssh-1', 'relay-pty', 'terminated')
+    expect(store.markSshRemotePtyLease).toHaveBeenCalledWith(
+      'ssh-1',
+      'ssh:ssh-1@@relay-pty',
+      'terminated'
+    )
   })
 
   it('rejects app-scoped SSH PTY kill without tombstoning when the provider is absent', async () => {
@@ -4089,9 +4170,9 @@ describe('registerPtyHandlers', () => {
       store as never
     )
 
-    await expect(
-      handlers.get('pty:kill')!(null, { id: 'ssh:ssh-1@@relay-pty' })
-    ).rejects.toThrow('SSH PTY provider unavailable')
+    await expect(handlers.get('pty:kill')!(null, { id: 'ssh:ssh-1@@relay-pty' })).rejects.toThrow(
+      'SSH PTY provider unavailable'
+    )
 
     expect(localShutdown).not.toHaveBeenCalled()
     expect(store.markSshRemotePtyLease).not.toHaveBeenCalled()
@@ -4101,7 +4182,8 @@ describe('registerPtyHandlers', () => {
     )
   })
 
-  it('retries durable SSH shutdown intent when the provider reconnects', async () => {
+  it('retries durable SSH shutdown through repeated reconnect failure then clears timers', async () => {
+    vi.useFakeTimers()
     const lease = {
       targetId: 'ssh-1',
       ptyId: 'relay-pty',
@@ -4132,24 +4214,73 @@ describe('registerPtyHandlers', () => {
       'SSH PTY provider unavailable'
     )
 
-    const shutdown = vi.fn().mockResolvedValue(undefined)
+    const shutdown = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockRejectedValueOnce(new Error('still offline'))
+      .mockResolvedValue(undefined)
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
     registerSshPtyProvider('ssh-1', {
       shutdown,
       onExit: vi.fn(() => () => {})
     } as never)
-    await vi.waitFor(() => expect(store.markSshRemotePtyLease).toHaveBeenCalledOnce())
+    await vi.advanceTimersByTimeAsync(250)
+    await vi.advanceTimersByTimeAsync(500)
 
-    expect(shutdown).toHaveBeenCalledWith(id, {
+    expect(shutdown).toHaveBeenCalledTimes(3)
+    expect(shutdown).toHaveBeenLastCalledWith(id, {
       immediate: true,
       expectedPaneKey: 'tab-a:11111111-1111-4111-8111-111111111111',
       expectedTabId: 'tab-a'
     })
-    expect(store.markSshRemotePtyLease).toHaveBeenCalledWith(
-      'ssh-1',
-      'relay-pty',
-      'terminated'
-    )
+    expect(store.markSshRemotePtyLease).toHaveBeenCalledWith('ssh-1', id, 'terminated')
     unregisterSshPtyProvider('ssh-1')
+    await vi.advanceTimersByTimeAsync(30_000)
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('drops a retained SSH retry when a new relay generation reuses the raw id', async () => {
+    vi.useFakeTimers()
+    const lease: Record<string, unknown> = {
+      targetId: 'ssh-1',
+      ptyId: 'relay-pty',
+      relayInstanceId: 'boot-a',
+      state: 'detached',
+      shutdownRequestedAt: 2,
+      createdAt: 1,
+      updatedAt: 2
+    }
+    const store = { getSshRemotePtyLeases: vi.fn(() => [lease]) }
+    handlers.clear()
+    registerPtyHandlers(
+      mainWindow as never,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      store as never
+    )
+    const oldShutdown = vi.fn().mockRejectedValue(new Error('relay replaced'))
+    registerSshPtyProvider('ssh-1', {
+      shutdown: oldShutdown,
+      onExit: vi.fn(() => () => {})
+    } as never)
+    await vi.advanceTimersByTimeAsync(0)
+
+    Object.assign(lease, { relayInstanceId: 'boot-b', state: 'attached' })
+    delete lease.shutdownRequestedAt
+    const newShutdown = vi.fn()
+    registerSshPtyProvider('ssh-1', {
+      shutdown: newShutdown,
+      onExit: vi.fn(() => () => {})
+    } as never)
+    await vi.advanceTimersByTimeAsync(30_000)
+
+    expect(oldShutdown).toHaveBeenCalledOnce()
+    expect(newShutdown).not.toHaveBeenCalled()
+    expect(vi.getTimerCount()).toBe(0)
+    unregisterSshPtyProvider('ssh-1')
+    vi.useRealTimers()
   })
 
   it('ignores fire-and-forget IPC for detached SSH PTYs without a provider', async () => {
