@@ -117,6 +117,9 @@ function reconcileHeartbeatMessage(
   })
   const persistedRejection = getPersistedLifecycleRejection(payload)
   if (persistedRejection) {
+    // Why: the send-path reconcile converts with a no-op logger, so the
+    // coordinator's re-read is the only chance to surface the rejection.
+    onLog(`Heartbeat rejected: ${persistedRejection.reason}`)
     return persistedRejection
   }
   const dispatchId = payload.dispatchId
@@ -161,6 +164,9 @@ function reconcileWorkerDoneMessage(
   })
   const persistedRejection = getPersistedLifecycleRejection(payload)
   if (persistedRejection) {
+    // Why: the send-path reconcile converts with a no-op logger, so the
+    // coordinator's re-read is the only chance to surface the rejection.
+    onLog(`Warning: worker_done rejected: ${persistedRejection.reason}`)
     return persistedRejection
   }
 

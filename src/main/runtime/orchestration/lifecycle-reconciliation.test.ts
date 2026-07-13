@@ -118,10 +118,16 @@ describe('lifecycle reconciliation', () => {
       dispatchId: dispatch.id,
       _orcaLifecycleRejection: { code: 'sender_not_assignee' }
     })
-    expect(persisted && reconcileLifecycleMessage(db, persisted)).toMatchObject({
+    const rereadLogs: string[] = []
+    expect(
+      persisted && reconcileLifecycleMessage(db, persisted, (line) => rereadLogs.push(line))
+    ).toMatchObject({
       action: 'rejected',
       code: 'sender_not_assignee'
     })
+    // Why: the send-path conversion logs nothing (no-op logger), so the
+    // coordinator's re-read must still surface the rejection to its log stream.
+    expect(rereadLogs.some((line) => line.includes('worker_done rejected'))).toBe(true)
   })
 
   it('does not let a caller-supplied rejection marker turn completion into success', () => {
@@ -309,6 +315,16 @@ describe('lifecycle reconciliation', () => {
       type: 'heartbeat',
       subject: 'Rejected heartbeat: alive'
     })
+    // Why: the coordinator's re-read of the already-converted heartbeat must
+    // still log the rejection, since the send-path conversion logged nothing.
+    const persisted = db.getMessageById(heartbeat.id)
+    const rereadLogs: string[] = []
+    expect(
+      persisted && reconcileLifecycleMessage(db, persisted, (line) => rereadLogs.push(line))
+    ).toMatchObject({
+      action: 'rejected'
+    })
+    expect(rereadLogs.some((line) => line.includes('Heartbeat rejected'))).toBe(true)
   })
 
   it('surfaces a foreign heartbeat that claims the assignee handle', () => {
