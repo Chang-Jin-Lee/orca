@@ -42,8 +42,9 @@ including processes that decide the event is irrelevant.
 
 1. A generated hook script consumes its input exactly once.
 2. No whole-script success exit may occur before that consumption completes.
-3. A launcher that declines to start a missing or non-executable managed script
-   becomes the stdin owner and drains to EOF before returning success.
+3. A launcher that declines to start a missing, unreadable, or non-executable
+   managed script becomes the stdin owner and drains to EOF before returning
+   success.
 4. A launcher propagates the exit code of a managed script that was started.
 5. Output required by an agent protocol may be emitted before stdin is read,
    but the process must still retain the read end until EOF.
@@ -105,8 +106,9 @@ path. This mirrors POSIX ownership without starting an additional process.
 
 ### Managed launchers
 
-- POSIX `/bin/sh` launchers require a regular executable file. The rejected
-  path drains with `cat`; the started-script branch keeps propagating status.
+- POSIX `/bin/sh` launchers require a regular, readable, executable file. The
+  rejected path drains with `cat`; the started-script branch keeps propagating
+  status.
 - Encoded PowerShell launchers use `Test-Path -PathType Leaf`. A missing script
   calls `[Console]::In.ReadToEnd()` and exits zero; an existing script preserves
   `$LASTEXITCODE`.
@@ -140,7 +142,8 @@ path syntax or shell.
 - Missing Orca environment: consume input, exit zero, emit only protocol-required
   output.
 - Empty payload: consume EOF, then follow the agent's existing empty-event rule.
-- Missing/non-executable script: launcher consumes input and exits zero.
+- Missing/unreadable/non-executable script: launcher consumes input and exits
+  zero.
 - Endpoint parse/read failure: preserve the existing fail-open behavior after
   stdin ownership has been satisfied.
 - Existing script returns nonzero: propagate its status; do not drain again or

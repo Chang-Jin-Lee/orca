@@ -136,8 +136,8 @@ function quotePosixShellString(value: string): string {
 // switched dev↔prod installs, or had a partial install fail) used to fire
 // `/bin/sh "<missing path>"` on every tool call, which exits 127 and surfaces
 // as `PreToolUse hook (failed) error: hook exited with code 127` in the agent
-// transcript. Guarding for a regular executable file makes a broken install a
-// silent no-op without hiding failures from a script that actually starts.
+// transcript. Guarding for a regular readable executable file makes a broken
+// install a silent no-op without hiding failures from a script that starts.
 export function wrapPosixHookCommand(scriptPath: string, env: Record<string, string> = {}): string {
   // Why: POSIX single-quote escape so $, `, ", and \ in scriptPath are taken
   // literally — avoids a shell-injection footgun if a future caller passes an
@@ -147,7 +147,7 @@ export function wrapPosixHookCommand(scriptPath: string, env: Record<string, str
     .map(([key, value]) => `${key}='${value.replaceAll("'", "'\\''")}'`)
     .join(' ')
   const invocation = envPrefix ? `${envPrefix} /bin/sh ${quoted}` : `/bin/sh ${quoted}`
-  return `if [ -f ${quoted} ] && [ -x ${quoted} ]; then ${invocation}; else ${POSIX_HOOK_STDIN_DRAIN_COMMAND}; fi`
+  return `if [ -f ${quoted} ] && [ -r ${quoted} ] && [ -x ${quoted} ]; then ${invocation}; else ${POSIX_HOOK_STDIN_DRAIN_COMMAND}; fi`
 }
 
 function quotePowerShellString(value: string): string {
@@ -317,7 +317,7 @@ export function writeManagedScript(scriptPath: string, content: string): void {
   try {
     writeScriptWithAclRetry(tmpPath, content)
     // Why: chmod before rename so the canonical path is never visible in a
-    // non-executable state; wrapPosixHookCommand's `[ -x ]` guard would
+    // unreadable/non-executable state; wrapPosixHookCommand's guards would
     // silently skip the hook in that window.
     if (process.platform !== 'win32') {
       chmodSync(tmpPath, 0o755)

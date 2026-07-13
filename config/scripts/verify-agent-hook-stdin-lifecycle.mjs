@@ -2,7 +2,9 @@
 
 import { spawn } from 'node:child_process'
 import {
+  accessSync,
   chmodSync,
+  constants as fsConstants,
   mkdtempSync,
   readFileSync,
   rmSync,
@@ -125,6 +127,14 @@ function readGeneratedScripts(home, minMtime) {
   return MANAGED_SCRIPTS.map(([fileName, source]) => {
     const path = join(hooksDir, fileName)
     const stats = statSync(path)
+    if (!stats.isFile()) {
+      throw new Error([fileName, ' is not a regular file'].join(''))
+    }
+    try {
+      accessSync(path, fsConstants.R_OK | fsConstants.X_OK)
+    } catch {
+      throw new Error([fileName, ' is not readable and executable'].join(''))
+    }
     if (minMtime > 0 && stats.mtimeMs < minMtime) {
       throw new Error([fileName, ' predates the Electron launch'].join(''))
     }
@@ -202,20 +212,46 @@ async function verifyNoOpWrites(scripts, home, payload) {
       assertSuccessfulWrite(result, [script.fileName, ' no-op'].join(''))
       assertProtocolStdout(script.fileName, result.stdout)
     }
+  } finally {
+    rmSync(commandCodeBin, { recursive: true, force: true })
+  }
+}
 
-    const claude = scripts.find((script) => script.fileName === 'claude-hook.sh')
+async function verifyClaudeDevinSkip(scripts, home, payload) {
+  const claude = scripts.find((script) => script.fileName === 'claude-hook.sh')
+  let unexpectedRequests = 0
+  const server = createServer((_request, response) => {
+    unexpectedRequests += 1
+    response.writeHead(200, { 'Content-Type': 'application/json' })
+    response.end('{}')
+  })
+  await new Promise((resolve, reject) => {
+    server.once('error', reject)
+    server.listen(0, '127.0.0.1', resolve)
+  })
+  try {
+    const address = server.address()
+    if (!address || typeof address === 'string') {
+      throw new Error('Claude skip verifier did not receive a TCP port')
+    }
     const result = await runShell(
       ['/bin/sh ', JSON.stringify(claude.path)].join(''),
       payload,
       withoutOrcaEnvironment({
         DEVIN_PROJECT_DIR: join(home, 'devin-project'),
         HOME: home,
-        ORCA_AGENT_HOOK_ENDPOINT: ''
+        ORCA_AGENT_HOOK_ENDPOINT: '',
+        ORCA_AGENT_HOOK_PORT: String(address.port),
+        ORCA_AGENT_HOOK_TOKEN: 'electron-verification-token',
+        ORCA_PANE_KEY: 'electron-verification-pane'
       })
     )
     assertSuccessfulWrite(result, 'Claude Devin-import skip')
+    if (unexpectedRequests !== 0) {
+      throw new Error('Claude forwarded a hook imported by Devin')
+    }
   } finally {
-    rmSync(commandCodeBin, { recursive: true, force: true })
+    await new Promise((resolve) => server.close(resolve))
   }
 }
 
@@ -281,7 +317,7 @@ async function verifyInstalledLauncher(home, payload) {
   const command = findStrings(settings).find(
     (value) => value.includes('claude-hook.sh') && value.includes('if [ -f ')
   )
-  if (!command || !command.includes('else cat >/dev/null')) {
+  if (!command || !command.includes('] && [ -r ') || !command.includes('else cat >/dev/null')) {
     throw new Error('Electron did not install the guarded Claude launcher')
   }
   const installedPath = join(home, '.orca', 'agent-hooks', 'claude-hook.sh')
@@ -322,6 +358,7 @@ async function main() {
   })
   const scripts = readGeneratedScripts(args.home, args.minMtime)
   await verifyNoOpWrites(scripts, args.home, payload)
+  await verifyClaudeDevinSkip(scripts, args.home, payload)
   await verifyForwarding(scripts, args.home, payload)
   await verifyInstalledLauncher(args.home, payload)
   process.stdout.write(
@@ -329,6 +366,7 @@ async function main() {
       JSON.stringify(
         {
           forwardingPayloadBytes: Buffer.byteLength(payload),
+          claudeDevinSkipCases: 1,
           launcherCases: 2,
           noOpScripts: scripts.length,
           forwardedScripts: scripts.length,

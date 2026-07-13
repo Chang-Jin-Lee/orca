@@ -295,14 +295,14 @@ describe('wrapPosixHookCommand', () => {
   it('produces a guarded command that no-ops when the script is missing', () => {
     const cmd = wrapPosixHookCommand('/does/not/exist.sh')
     expect(cmd).toBe(
-      "if [ -f '/does/not/exist.sh' ] && [ -x '/does/not/exist.sh' ]; then /bin/sh '/does/not/exist.sh'; else cat >/dev/null 2>&1 || :; fi"
+      "if [ -f '/does/not/exist.sh' ] && [ -r '/does/not/exist.sh' ] && [ -x '/does/not/exist.sh' ]; then /bin/sh '/does/not/exist.sh'; else cat >/dev/null 2>&1 || :; fi"
     )
   })
 
   it('preserves spaces in the script path (Library/Application Support case)', () => {
     // Why: Electron's userData on macOS lives under "Application Support" with
-    // a space. The guard must keep the path quoted so `[ -x ]` and `/bin/sh`
-    // each see one argument.
+    // a space. The guard must keep the path quoted so each file test and
+    // `/bin/sh` see one argument.
     const cmd = wrapPosixHookCommand('/Users/a/Library/Application Support/Orca/agent-hooks/x.sh')
     expect(cmd).toContain("'/Users/a/Library/Application Support/Orca/agent-hooks/x.sh'")
   })
@@ -313,7 +313,7 @@ describe('wrapPosixHookCommand', () => {
     // /bin/sh as a single argument.
     const cmd = wrapPosixHookCommand("/path/with'quote/x.sh")
     expect(cmd).toBe(
-      "if [ -f '/path/with'\\''quote/x.sh' ] && [ -x '/path/with'\\''quote/x.sh' ]; then /bin/sh '/path/with'\\''quote/x.sh'; else cat >/dev/null 2>&1 || :; fi"
+      "if [ -f '/path/with'\\''quote/x.sh' ] && [ -r '/path/with'\\''quote/x.sh' ] && [ -x '/path/with'\\''quote/x.sh' ]; then /bin/sh '/path/with'\\''quote/x.sh'; else cat >/dev/null 2>&1 || :; fi"
     )
   })
 
@@ -322,7 +322,7 @@ describe('wrapPosixHookCommand', () => {
       ORCA_COPILOT_HOOK_EVENT: 'UserPromptSubmit'
     })
     expect(cmd).toBe(
-      "if [ -f '/does/not/exist.sh' ] && [ -x '/does/not/exist.sh' ]; then ORCA_COPILOT_HOOK_EVENT='UserPromptSubmit' /bin/sh '/does/not/exist.sh'; else cat >/dev/null 2>&1 || :; fi"
+      "if [ -f '/does/not/exist.sh' ] && [ -r '/does/not/exist.sh' ] && [ -x '/does/not/exist.sh' ]; then ORCA_COPILOT_HOOK_EVENT='UserPromptSubmit' /bin/sh '/does/not/exist.sh'; else cat >/dev/null 2>&1 || :; fi"
     )
   })
 
@@ -340,6 +340,21 @@ describe('wrapPosixHookCommand', () => {
     () => {
       const scriptPath = join(tmpDir, 'directory-hook.sh')
       mkdirSync(scriptPath)
+      const result = spawnSync('/bin/sh', ['-c', wrapPosixHookCommand(scriptPath)], {
+        input: Buffer.alloc(1_000_000, 'x')
+      })
+
+      expect(result.error).toBeUndefined()
+      expect(result.status).toBe(0)
+    }
+  )
+
+  it.skipIf(process.platform === 'win32' || process.getuid?.() === 0)(
+    'drains stdin when the managed script is executable but unreadable',
+    () => {
+      const scriptPath = join(tmpDir, 'unreadable-hook.sh')
+      writeFileSync(scriptPath, '#!/bin/sh\nexit 0\n', 'utf-8')
+      chmodSync(scriptPath, 0o111)
       const result = spawnSync('/bin/sh', ['-c', wrapPosixHookCommand(scriptPath)], {
         input: Buffer.alloc(1_000_000, 'x')
       })
