@@ -1387,7 +1387,9 @@
         "1ff5d979df": "Nadie asignado",
         "checkActionRequiredHint": "Esta verificación necesita una acción manual en GitHub (por ejemplo, aprobar la ejecución del workflow) antes de que se desbloquee la fusión.",
         "dd5d9a4f17": "actualizado {{value0}}",
-        "71a3c0f9d2": "Iniciar espacio de trabajo"
+        "71a3c0f9d2": "Iniciar espacio de trabajo",
+        "filesUnavailable": "Couldn't load changed files.",
+        "filesRetry": "Retry"
       },
       "QuickOpen": {
         "1dbd3f59ff": "Mover",
@@ -3213,6 +3215,13 @@
           "usagePercentageLabel": {
             "used": "{{value0}}% usado",
             "remaining": "{{value0}}% restante"
+          },
+          "UsagePercentageDisplayChangeNotice": {
+            "title": "Usage now shows % used",
+            "body": "Prefer remaining? Change it in Settings.",
+            "dismiss": "Dismiss",
+            "openSettings": "Open Settings",
+            "gotIt": "Got it"
           }
         }
       },
@@ -9455,7 +9464,6 @@
             "createPrIntentConfigureAi": "Agrega un mensaje de commit o configura la IA de Source Control.",
             "createPrIntentGenerateFailed": "No se pudo generar un mensaje de commit. Agrega uno y vuelve a intentarlo.",
             "createPrIntentCommitFailed": "No se pudo hacer commit de los cambios. Corrige el issue y vuelve a intentar Crear PR.",
-            "createPrIntentNeedsSync": "Sincroniza esta rama antes de crear una revisión.",
             "createPrIntentBranchNotReady": "La rama aún no está lista para crear una revisión.",
             "createPrIntentPublishing": "Publicando rama…",
             "createPrIntentForcePushing": "Haciendo force push con lease…",
@@ -9492,7 +9500,9 @@
               "a9bf7c171a": "Push fallido",
               "834cb3f23d": "Corregir con AI",
               "783a808870": "Cerrar"
-            }
+            },
+            "createPrIntentSyncConflicts": "Sync hit conflicts. Resolve them, then retry Create PR.",
+            "createPrIntentSyncing": "Syncing branch…"
           },
           "SourceControlAgentActionDialog": {
             "8e856842d1": "No se pudo iniciar el agente seleccionado.",

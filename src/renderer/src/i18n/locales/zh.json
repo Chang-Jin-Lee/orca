@@ -1387,7 +1387,9 @@
         "1ff5d979df": "未分配任何人",
         "checkActionRequiredHint": "此检查需要在 GitHub 上执行手动操作（例如，批准工作流运行），然后才能解除合并阻止。",
         "dd5d9a4f17": "{{value0}}更新",
-        "71a3c0f9d2": "启动工作区"
+        "71a3c0f9d2": "启动工作区",
+        "filesUnavailable": "Couldn't load changed files.",
+        "filesRetry": "Retry"
       },
       "QuickOpen": {
         "1dbd3f59ff": "移动",
@@ -3213,6 +3215,13 @@
           "usagePercentageLabel": {
             "used": "已用 {{value0}}%",
             "remaining": "剩余 {{value0}}%"
+          },
+          "UsagePercentageDisplayChangeNotice": {
+            "title": "Usage now shows % used",
+            "body": "Prefer remaining? Change it in Settings.",
+            "dismiss": "Dismiss",
+            "openSettings": "Open Settings",
+            "gotIt": "Got it"
           }
         }
       },
@@ -9455,7 +9464,6 @@
             "createPrIntentConfigureAi": "请添加 commit 消息或配置 Source Control AI 设置。",
             "createPrIntentGenerateFailed": "无法生成 commit 消息。请添加一条消息后重试。",
             "createPrIntentCommitFailed": "无法提交更改。请修复问题后重试创建 PR。",
-            "createPrIntentNeedsSync": "创建评审前请先同步此分支。",
             "createPrIntentBranchNotReady": "分支尚未准备好创建评审。",
             "createPrIntentPublishing": "正在发布分支…",
             "createPrIntentForcePushing": "正在使用 lease 强制推送…",
@@ -9492,7 +9500,9 @@
               "a9bf7c171a": "推送失败",
               "834cb3f23d": "使用 AI 修复",
               "783a808870": "关闭"
-            }
+            },
+            "createPrIntentSyncConflicts": "Sync hit conflicts. Resolve them, then retry Create PR.",
+            "createPrIntentSyncing": "Syncing branch…"
           },
           "SourceControlAgentActionDialog": {
             "8e856842d1": "无法启动选定的智能体。",

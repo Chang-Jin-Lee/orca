@@ -1387,7 +1387,9 @@
         "1ff5d979df": "担当者なし",
         "checkActionRequiredHint": "マージを解除するには、このチェックにGitHub上で手動アクション（例：ワークフロー実行の承認）が必要です。",
         "dd5d9a4f17": "{{value0}}に更新",
-        "71a3c0f9d2": "ワークスペースを開始"
+        "71a3c0f9d2": "ワークスペースを開始",
+        "filesUnavailable": "Couldn't load changed files.",
+        "filesRetry": "Retry"
       },
       "QuickOpen": {
         "1dbd3f59ff": "移動",
@@ -3213,6 +3215,13 @@
           "usagePercentageLabel": {
             "used": "{{value0}}% 使用済み",
             "remaining": "残り {{value0}}%"
+          },
+          "UsagePercentageDisplayChangeNotice": {
+            "title": "Usage now shows % used",
+            "body": "Prefer remaining? Change it in Settings.",
+            "dismiss": "Dismiss",
+            "openSettings": "Open Settings",
+            "gotIt": "Got it"
           }
         }
       },
@@ -9455,7 +9464,6 @@
             "createPrIntentConfigureAi": "commit メッセージを追加するか、Source Control AI 設定を構成してください。",
             "createPrIntentGenerateFailed": "commit メッセージを生成できませんでした。追加してから再試行してください。",
             "createPrIntentCommitFailed": "変更を commit できませんでした。問題を修正してから Create PR を再試行してください。",
-            "createPrIntentNeedsSync": "レビューを作成する前にこのブランチを同期してください。",
             "createPrIntentBranchNotReady": "このブランチはまだレビューを作成できる状態ではありません。",
             "createPrIntentPublishing": "ブランチを公開中…",
             "createPrIntentForcePushing": "lease 付きで強制プッシュ中…",
@@ -9492,7 +9500,9 @@
               "a9bf7c171a": "プッシュ失敗",
               "834cb3f23d": "AIで修正",
               "783a808870": "閉じる"
-            }
+            },
+            "createPrIntentSyncConflicts": "Sync hit conflicts. Resolve them, then retry Create PR.",
+            "createPrIntentSyncing": "Syncing branch…"
           },
           "SourceControlAgentActionDialog": {
             "8e856842d1": "選択した agent を開始できませんでした。",
