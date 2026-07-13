@@ -2,8 +2,8 @@ import { useEffect, useState } from 'react'
 import { Loader2 } from 'lucide-react'
 import { Badge } from '../ui/badge'
 import { Button } from '../ui/button'
-import { translate } from '@/i18n/i18n'
-import { useAppStore } from '@/store'
+import { translate } from '../../i18n/i18n'
+import { useAppStore } from '../../store'
 import type { MobileRelayStatus } from '../../../../shared/mobile-relay-status'
 
 function relayStatusLabel(status: MobileRelayStatus): string {
