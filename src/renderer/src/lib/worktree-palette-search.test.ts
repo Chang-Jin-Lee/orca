@@ -5,6 +5,7 @@ import {
   isWorktreePaletteQueryTooLarge
 } from './worktree-palette-query-bounds'
 import type { Repo, Worktree } from '../../../shared/types'
+import type { HostedReviewInfo } from '../../../shared/hosted-review'
 
 function makeWorktree(overrides: Partial<Worktree> = {}): Worktree {
   return {
@@ -170,6 +171,147 @@ describe('worktree-palette-search', () => {
       text: 'Refresh the worktree quick jump palette',
       matchRange: { start: 21, end: 31 }
     })
+  })
+
+  it('matches the GitLab review title and number already selected by Checks', () => {
+    const review: HostedReviewInfo = {
+      provider: 'gitlab',
+      number: 17,
+      title: 'Reuse checks tab review metadata',
+      state: 'open',
+      url: 'https://gitlab.com/acme/orca/-/merge_requests/17',
+      status: 'success',
+      updatedAt: '2026-07-12T00:00:00Z',
+      mergeable: 'MERGEABLE'
+    }
+    const reviews = new Map([['wt-1', review]])
+
+    const titleResults = searchWorktrees(
+      [makeWorktree()],
+      'checks tab',
+      repoMap,
+      null,
+      null,
+      undefined,
+      reviews
+    )
+    const numberResults = searchWorktrees(
+      [makeWorktree()],
+      '!17',
+      repoMap,
+      null,
+      null,
+      undefined,
+      reviews
+    )
+
+    expect(titleResults[0].supportingText).toEqual({
+      labelKind: 'mr',
+      text: review.title,
+      matchRange: { start: 6, end: 16 }
+    })
+    expect(numberResults[0].supportingText).toEqual({
+      labelKind: 'mr',
+      text: 'MR !17',
+      matchRange: { start: 4, end: 6 }
+    })
+  })
+
+  it('does not search stale GitHub cache metadata when Checks selected another review', () => {
+    const review: HostedReviewInfo = {
+      provider: 'gitlab',
+      number: 17,
+      title: 'Current merge request',
+      state: 'open',
+      url: 'https://gitlab.com/acme/orca/-/merge_requests/17',
+      status: 'success',
+      updatedAt: '2026-07-12T00:00:00Z',
+      mergeable: 'MERGEABLE'
+    }
+
+    expect(
+      searchWorktrees(
+        [makeWorktree({ branch: 'refs/heads/feature/palette-refresh' })],
+        'stale github title',
+        repoMap,
+        {
+          '/repo/orca::feature/palette-refresh': {
+            data: { number: 99, title: 'Stale GitHub title' }
+          }
+        },
+        null,
+        undefined,
+        new Map([['wt-1', review]])
+      )
+    ).toEqual([])
+
+    expect(
+      searchWorktrees(
+        [makeWorktree({ linkedPR: 99 })],
+        '#99',
+        repoMap,
+        null,
+        null,
+        undefined,
+        new Map([['wt-1', review]])
+      )
+    ).toEqual([])
+  })
+
+  it('scopes PR and MR number sigils to their providers', () => {
+    const gitHubReview: HostedReviewInfo = {
+      provider: 'github',
+      number: 42,
+      title: 'GitHub pull request',
+      state: 'open',
+      url: 'https://github.com/acme/orca/pull/42',
+      status: 'success',
+      updatedAt: '2026-07-12T00:00:00Z',
+      mergeable: 'MERGEABLE'
+    }
+    const gitLabReview: HostedReviewInfo = {
+      provider: 'gitlab',
+      number: 17,
+      title: 'GitLab merge request',
+      state: 'open',
+      url: 'https://gitlab.com/acme/orca/-/merge_requests/17',
+      status: 'success',
+      updatedAt: '2026-07-12T00:00:00Z',
+      mergeable: 'MERGEABLE'
+    }
+
+    expect(
+      searchWorktrees(
+        [makeWorktree()],
+        '!42',
+        repoMap,
+        null,
+        null,
+        undefined,
+        new Map([['wt-1', gitHubReview]])
+      )
+    ).toEqual([])
+    expect(
+      searchWorktrees(
+        [makeWorktree()],
+        '#17',
+        repoMap,
+        null,
+        null,
+        undefined,
+        new Map([['wt-1', gitLabReview]])
+      )
+    ).toEqual([])
+    expect(
+      searchWorktrees(
+        [makeWorktree({ linkedIssue: 42 })],
+        '!42',
+        repoMap,
+        null,
+        null,
+        new Map([['wt-1', [{ port: 42 }]]])
+      )
+    ).toEqual([])
   })
 
   it('preserves input order when query matches a repo name', () => {
