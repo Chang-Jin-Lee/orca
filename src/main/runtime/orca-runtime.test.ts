@@ -28081,6 +28081,7 @@ describe('OrcaRuntimeService', () => {
     const worktreeId = `${TEST_REPO_ID}::${missingWorktreePath}`
     const { runtimeStore, removeWorktreeMeta } = createStaleRuntimeWorktreeStore(worktreeId)
     const runtime = new OrcaRuntimeService(runtimeStore as never)
+    const verifyStopped = vi.spyOn(runtime, 'verifyTerminalsStoppedForRemoval')
     const registeredWorktrees = [
       {
         path: TEST_REPO_PATH,
@@ -28117,6 +28118,7 @@ describe('OrcaRuntimeService', () => {
       })
       expect(runHook).not.toHaveBeenCalled()
       expect(removeWorktree).not.toHaveBeenCalled()
+      expect(verifyStopped).toHaveBeenCalledWith(worktreeId)
       expect(gitSpy).toHaveBeenCalledWith(['worktree', 'prune'], {
         cwd: TEST_REPO_PATH
       })

@@ -17315,6 +17315,7 @@ export class OrcaRuntimeService {
         removedMeta &&
         (await isRuntimeWorktreePathMissing(repo, canonicalWorktreePath, localWorktreeGitOptions))
       ) {
+        await this.verifyTerminalsStoppedForRemoval(removalTarget.id)
         const removalResult = await removeStaleLocalWorktreeRegistrationAfterFilesystemRemoval({
           canonicalWorktreePath,
           repoPath: repo.path,
@@ -17434,9 +17435,7 @@ export class OrcaRuntimeService {
       await closeLocalWatcherForWorktreePath(canonicalWorktreePath).catch((err) => {
         console.warn(`[filesystem-watcher] failed to close ${canonicalWorktreePath}:`, err)
       })
-      if (shouldTearDownPtys) {
-        await this.verifyTerminalsStoppedForRemoval(removalTarget.id)
-      }
+      await this.verifyTerminalsStoppedForRemoval(removalTarget.id)
       if (localProvider && shouldTearDownPtys) {
         // Why: once preflight proves normal deletion is clean, kill PTYs before
         // git-level removal so Windows handles cannot keep the directory busy. This also

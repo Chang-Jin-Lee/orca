@@ -1639,6 +1639,7 @@ export function registerWorktreeHandlers(
           removedMeta &&
           (await isAlreadyRemovedWorktreePath(repo, canonicalWorktreePath, localWorktreeGitOptions))
         ) {
+          await verifyTerminalsStopped(args.worktreeId)
           const removalResult = await removeStaleLocalWorktreeRegistrationAfterFilesystemRemoval({
             canonicalWorktreePath,
             repoPath: repo.path,
@@ -1780,8 +1781,8 @@ export function registerWorktreeHandlers(
 
         await closeLocalWatcherForRemoval(canonicalWorktreePath)
 
+        await verifyTerminalsStopped(args.worktreeId)
         if (shouldTearDownPtys) {
-          await verifyTerminalsStopped(args.worktreeId)
           // Why: once preflight proves normal deletion is clean, kill PTYs before
           // git-level removal so Windows handles cannot keep the directory busy.
           await killAllProcessesForWorktree(args.worktreeId, {

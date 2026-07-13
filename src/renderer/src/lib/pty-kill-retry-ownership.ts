@@ -13,6 +13,34 @@ export type PtyKillIdentity = {
 
 const MAX_RETRY_BACKOFF_MS = 30_000
 const retainedPtyKills = new Map<string, RetainedPtyKill>()
+let retryTimer: ReturnType<typeof setTimeout> | null = null
+
+function scheduleRetainedPtyKillRetries(): void {
+  if (retryTimer) {
+    clearTimeout(retryTimer)
+    retryTimer = null
+  }
+  let nextRetryAt = Number.POSITIVE_INFINITY
+  for (const retained of retainedPtyKills.values()) {
+    if (!retained.inFlight) {
+      nextRetryAt = Math.min(nextRetryAt, retained.nextRetryAt)
+    }
+  }
+  if (!Number.isFinite(nextRetryAt)) {
+    return
+  }
+  retryTimer = setTimeout(() => {
+    retryTimer = null
+    const now = Date.now()
+    for (const [id, retained] of retainedPtyKills) {
+      if (!retained.inFlight && retained.nextRetryAt <= now) {
+        void killPtyRetainingRetryOwnership(id, retained.diagnostic, retained.options).catch(
+          () => {}
+        )
+      }
+    }
+  }, Math.max(0, nextRetryAt - Date.now()))
+}
 
 /**
  * Keep exact PTY identity until the owning provider accepts shutdown. A rejected
@@ -47,17 +75,20 @@ export function killPtyRetainingRetryOwnership(
     .catch((error: unknown) => {
       retained.attempts += 1
       retained.nextRetryAt =
-        retained.attempts === 1
-          ? 0
-          : Date.now() +
-            Math.min(MAX_RETRY_BACKOFF_MS, 250 * 2 ** Math.min(retained.attempts - 1, 7))
-      console.warn(retained.diagnostic, error)
+        Date.now() +
+        Math.min(MAX_RETRY_BACKOFF_MS, 250 * 2 ** Math.min(retained.attempts - 1, 7))
+      // Why: automatic retries can outlive a disconnect; bound diagnostics so
+      // a long outage cannot become a log-backpressure loop.
+      if (retained.attempts <= 2 || retained.attempts === 8) {
+        console.warn(retained.diagnostic, error)
+      }
       throw error
     })
     .finally(() => {
       if (retained.inFlight === attempt) {
         retained.inFlight = null
       }
+      scheduleRetainedPtyKillRetries()
     })
   retained.inFlight = attempt
   return attempt
@@ -65,9 +96,8 @@ export function killPtyRetainingRetryOwnership(
 
 /** Retry on the next PTY lifecycle event; no polling or permanent timer is added. */
 export function retryRetainedPtyKills(): void {
-  const now = Date.now()
   for (const [id, retained] of retainedPtyKills) {
-    if (!retained.inFlight && retained.nextRetryAt <= now) {
+    if (!retained.inFlight) {
       void killPtyRetainingRetryOwnership(id, retained.diagnostic, retained.options).catch(() => {})
       return
     }
@@ -76,4 +106,5 @@ export function retryRetainedPtyKills(): void {
 
 export function releaseRetainedPtyKillOwnership(id: string): void {
   retainedPtyKills.delete(id)
+  scheduleRetainedPtyKillRetries()
 }

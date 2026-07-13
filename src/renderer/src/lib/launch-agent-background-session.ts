@@ -319,9 +319,7 @@ export async function launchAgentBackgroundSession(
     if (ptyId) {
       try {
         if (runtimeTarget.kind === 'environment' && runtimeTerminalHandle) {
-          await callRuntimeRpc(runtimeTarget, 'terminal.close', {
-            terminal: runtimeTerminalHandle
-          })
+          await backgroundCleanup.closeFailedAgentBackgroundRuntimeTerminal(runtimeTarget.environmentId, runtimeTerminalHandle)
         } else if (runtimeTarget.kind === 'local') {
           await backgroundCleanup.killFailedAgentBackgroundPty(ptyId, tab.id)
         }

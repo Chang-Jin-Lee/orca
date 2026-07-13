@@ -6672,6 +6672,7 @@ describe('registerWorktreeHandlers', () => {
     })
     expect(runHookMock).not.toHaveBeenCalled()
     expect(killAllProcessesForWorktreeMock).not.toHaveBeenCalled()
+    expect(runtimeStub.verifyTerminalsStoppedForRemoval).toHaveBeenCalledWith(worktreeId)
     expect(removeWorktreeMock).not.toHaveBeenCalled()
     expect(gitExecFileAsyncMock).toHaveBeenCalledWith(['worktree', 'prune'], {
       cwd: '/workspace/repo'

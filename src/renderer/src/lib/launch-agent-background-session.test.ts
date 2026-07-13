@@ -793,8 +793,25 @@ describe('launchAgentBackgroundSession', () => {
       activeRuntimeEnvironmentId: 'env-1',
       terminalMainSideEffectAuthority: undefined
     }
+    let closeAttempts = 0
+    mockRuntimeEnvironmentCall.mockImplementation(async (args) => {
+      if (args.method === 'terminal.close') {
+        closeAttempts += 1
+        if (closeAttempts === 1) {
+          throw new Error('runtime disconnected')
+        }
+        return { ok: true, result: { status: 'closed' } }
+      }
+      return {
+        ok: true,
+        result: { terminal: { handle: 'terminal-1', worktreeId: 'wt-1', title: null } }
+      }
+    })
     mockRuntimeEnvironmentSubscribe.mockRejectedValueOnce(new Error('subscription failed'))
     const { launchAgentBackgroundSession } = await import('./launch-agent-background-session')
+    const { retryRetainedRuntimeTerminalCloses } = await import(
+      './runtime-terminal-close-retry-ownership'
+    )
 
     await expect(
       launchAgentBackgroundSession({
@@ -810,6 +827,8 @@ describe('launchAgentBackgroundSession', () => {
       params: { terminal: 'terminal-1' },
       timeoutMs: undefined
     })
+    retryRetainedRuntimeTerminalCloses()
+    await vi.waitFor(() => expect(closeAttempts).toBe(2))
     expect(state.clearTabPtyId).toHaveBeenCalledWith('tab-1', 'remote:env-1@@terminal-1')
     expect(state.clearAgentLaunchConfig).toHaveBeenCalledWith(expect.stringMatching(/^tab-1:/))
     expect(mockCloseTab).toHaveBeenCalledWith('tab-1', { recordInteraction: false })
