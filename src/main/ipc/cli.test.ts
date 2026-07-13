@@ -6,6 +6,7 @@ const {
   wslInstallerMock,
   recordInstalledMock,
   recordRemovedMock,
+  invalidateRegistryMock,
   getDefaultWslDistroMock
 } = vi.hoisted(() => ({
   handlers: new Map<string, (...args: unknown[]) => unknown>(),
@@ -13,6 +14,7 @@ const {
   wslInstallerMock: vi.fn(),
   recordInstalledMock: vi.fn(),
   recordRemovedMock: vi.fn(),
+  invalidateRegistryMock: vi.fn(),
   getDefaultWslDistroMock: vi.fn()
 }))
 
@@ -21,7 +23,8 @@ vi.mock('../cli/cli-installer', () => ({ CliInstaller: vi.fn() }))
 vi.mock('../cli/wsl-cli-installer', () => ({ WslCliInstaller: wslInstallerMock }))
 vi.mock('../cli/wsl-cli-registration-registry', () => ({
   recordWslCliRegistrationInstalled: recordInstalledMock,
-  recordWslCliRegistrationRemoved: recordRemovedMock
+  recordWslCliRegistrationRemoved: recordRemovedMock,
+  invalidateWslCliRegistrationRegistry: invalidateRegistryMock
 }))
 vi.mock('../persistence', () => ({ getCanonicalUserDataPath: () => '/canonical-user-data' }))
 vi.mock('../startup/hydrate-shell-path', () => ({
@@ -54,6 +57,7 @@ describe('WSL CLI registration IPC', () => {
     wslInstallerMock.mockReset()
     recordInstalledMock.mockReset().mockResolvedValue(undefined)
     recordRemovedMock.mockReset().mockResolvedValue(undefined)
+    invalidateRegistryMock.mockReset().mockResolvedValue(undefined)
     getDefaultWslDistroMock.mockReset().mockReturnValue('Ubuntu')
     registerCliHandlers()
   })
@@ -90,5 +94,61 @@ describe('WSL CLI registration IPC', () => {
 
     await expect(getWslHandler('cli:installWsl')({})).resolves.toEqual({ state: 'unsupported' })
     expect(recordInstalledMock).not.toHaveBeenCalled()
+  })
+
+  it('keeps successful installation successful when advisory registry persistence fails', async () => {
+    const install = vi.fn(async () => ({ state: 'installed' }))
+    wslInstallerMock.mockImplementation(function MockWslCliInstaller() {
+      return { install }
+    })
+    recordInstalledMock.mockRejectedValueOnce(new Error('ENOSPC'))
+
+    await expect(getWslHandler('cli:installWsl')({})).resolves.toEqual({ state: 'installed' })
+    expect(invalidateRegistryMock).toHaveBeenCalledWith('/canonical-user-data')
+  })
+
+  it('keeps successful removal successful when advisory registry persistence fails', async () => {
+    const remove = vi.fn(async () => ({ state: 'not_installed' }))
+    wslInstallerMock.mockImplementation(function MockWslCliInstaller() {
+      return { remove }
+    })
+    recordRemovedMock.mockRejectedValueOnce(new Error('EACCES'))
+
+    await expect(getWslHandler('cli:removeWsl')({})).resolves.toEqual({ state: 'not_installed' })
+    expect(invalidateRegistryMock).toHaveBeenCalledWith('/canonical-user-data')
+  })
+
+  it('serializes a concurrent removal after installation and ownership persistence', async () => {
+    let finishInstall!: () => void
+    const install = vi.fn(
+      () =>
+        new Promise<{ state: 'installed' }>((resolve) => {
+          finishInstall = () => resolve({ state: 'installed' })
+        })
+    )
+    const remove = vi.fn(async () => ({ state: 'not_installed' as const }))
+    wslInstallerMock
+      .mockImplementationOnce(function MockInstallWslCliInstaller() {
+        return { install }
+      })
+      .mockImplementationOnce(function MockRemoveWslCliInstaller() {
+        return { remove }
+      })
+
+    const installation = getWslHandler('cli:installWsl')({}, { distro: 'Ubuntu' })
+    await vi.waitFor(() => expect(install).toHaveBeenCalledOnce())
+    const removal = getWslHandler('cli:removeWsl')({}, { distro: 'ubuntu' })
+    await Promise.resolve()
+    expect(remove).not.toHaveBeenCalled()
+
+    finishInstall()
+    await expect(installation).resolves.toEqual({ state: 'installed' })
+    await expect(removal).resolves.toEqual({ state: 'not_installed' })
+    expect(recordInstalledMock.mock.invocationCallOrder[0]).toBeLessThan(
+      remove.mock.invocationCallOrder[0]
+    )
+    expect(remove.mock.invocationCallOrder[0]).toBeLessThan(
+      recordRemovedMock.mock.invocationCallOrder[0]
+    )
   })
 })

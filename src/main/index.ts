@@ -85,6 +85,7 @@ import {
 import { maybeRedirectAppImageCliLaunch } from './startup/appimage-cli-redirect'
 import { maybeRedirectPackagedCliEntryLaunch } from './startup/packaged-cli-entry-redirect'
 import { startFirstWindowStartupServices } from './startup/first-window-startup-services'
+import { createWslCliReconciliationStartupBarrier } from './startup/wsl-cli-reconciliation-startup-barrier'
 import { getDevInstanceIdentity } from './startup/dev-instance-identity'
 import { hydrateShellPath, mergePathSegments } from './startup/hydrate-shell-path'
 import {
@@ -226,6 +227,8 @@ let keybindings: KeybindingService | null = null
 const expectedRendererReload = createWebContentsTimedFlag()
 const recoveryReloadInFlight = createWebContentsTimedFlag()
 let firstWindowStartupServicesReady: Promise<void> = Promise.resolve()
+let managedWslCliReconciliationReady: Promise<void> = Promise.resolve()
+let managedWslCliStartupBarrierReady: Promise<void> = Promise.resolve()
 // Why: GPU child crashes clustered right after launch indicate a broken driver;
 // track them so Orca can move this build onto software rendering.
 const gpuLaunchTimeMs = Date.now()
@@ -611,7 +614,9 @@ if (hasSingleInstanceLock) {
 }
 
 ipcMain.handle('app:awaitFirstWindowStartupServices', async () => {
-  await firstWindowStartupServicesReady
+  // Why: window rendering and local RPC startup stay independent, but restored
+  // WSL terminals get a bounded chance to receive launcher repairs first.
+  await Promise.all([firstWindowStartupServicesReady, managedWslCliStartupBarrierReady])
 })
 
 ipcMain.handle(
@@ -1605,16 +1610,30 @@ app.whenReady().then(async () => {
 
   // Why: managed WSL launchers live outside the Windows app bundle, so keep
   // their launcher and bridge contract synchronized across app updates.
-  const managedWslCliReconciliation = reconcileManagedWslCliRegistrations({
+  managedWslCliReconciliationReady = reconcileManagedWslCliRegistrations({
     isPackaged: app.isPackaged,
     userDataPath: getCanonicalUserDataPath()
-  }).catch((error) => {
-    console.warn(
-      '[wsl-cli] Managed registration reconciliation discovery failed:',
-      error instanceof Error ? error.message : String(error)
-    )
-    return []
   })
+    .then((results) => {
+      for (const result of results) {
+        if (result.outcome === 'failed') {
+          console.warn(
+            `[wsl-cli] ${result.distro} managed registration reconciliation failed: ${result.error}`
+          )
+        } else if (result.outcome === 'repaired') {
+          console.log(`[wsl-cli] Repaired managed registration in ${result.distro}.`)
+        }
+      }
+    })
+    .catch((error) => {
+      console.warn(
+        '[wsl-cli] Managed registration reconciliation discovery failed:',
+        error instanceof Error ? error.message : String(error)
+      )
+    })
+  managedWslCliStartupBarrierReady = createWslCliReconciliationStartupBarrier(
+    managedWslCliReconciliationReady
+  )
 
   const activeOrcaProfile = ensureActiveOrcaProfile()
   store = new Store({ dataFile: activeOrcaProfile.dataFile })
@@ -2065,23 +2084,14 @@ app.whenReady().then(async () => {
   })
   registerMobileHandlers(runtimeRpc)
 
-  // Why: restored WSL agents can emit heartbeat/reply traffic as soon as the
-  // runtime starts, so finish bounded reconciliation before making it reachable.
-  for (const result of await managedWslCliReconciliation) {
-    if (result.outcome === 'failed') {
-      console.warn(
-        `[wsl-cli] ${result.distro} managed registration reconciliation failed: ${result.error}`
-      )
-    } else if (result.outcome === 'repaired') {
-      console.log(`[wsl-cli] Repaired managed registration in ${result.distro}.`)
-    }
-  }
-
   if (!isServeMode) {
     startDesktopFirstWindowStartupServices()
   }
 
   if (serveOptions) {
+    // Why: headless serve has no renderer startup barrier, so settle managed
+    // WSL command reconciliation before exposing its runtime transport.
+    await managedWslCliReconciliationReady
     await startServeAgentHookServer()
     registerHeadlessPtyRuntime(
       runtime,

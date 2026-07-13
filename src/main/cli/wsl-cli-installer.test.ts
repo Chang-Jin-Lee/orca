@@ -476,6 +476,31 @@ describe('WslCliInstaller', () => {
     expect(conflictingBridge.getFile()).toBe(PRE_RC4_MANAGED_WSL_LAUNCHER)
   })
 
+  it('retains command ownership when only the bridge conflicts', async () => {
+    const nativeLauncher = 'C:\\Orca\\resources\\bin\\orca.exe'
+    const currentLauncher = _internals.buildWslLauncher(
+      nativeLauncher,
+      '/home/alice/.local/share/orca/orca-wsl-bridge.ps1'
+    )
+    const wsl = createWslRunner(currentLauncher, true, {
+      initialBridge: 'Write-Output "user-owned bridge"\n'
+    })
+    const installer = new WslCliInstaller({
+      platform: 'win32',
+      distro: 'Ubuntu',
+      hostInstaller: { getStatus: async () => makeHostStatus(nativeLauncher) },
+      wslRunner: wsl.runner
+    })
+
+    await expect(installer.repairManagedRegistration()).resolves.toMatchObject({
+      changed: false,
+      managed: true,
+      status: { state: 'conflict' }
+    })
+    expect(wsl.getBridge()).toBe('Write-Output "user-owned bridge"\n')
+    expect(wsl.getFile()).toBe(currentLauncher)
+  })
+
   it('moves a legacy-only managed registration to orca-ide without touching unmanaged names', async () => {
     const nativeLauncher = 'C:\\Orca\\resources\\bin\\orca.exe'
     const managedLegacy = createWslRunner(null, true, {

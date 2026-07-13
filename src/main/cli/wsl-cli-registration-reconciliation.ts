@@ -7,6 +7,7 @@ import {
   type WslCliRegistrationObservation
 } from './wsl-cli-registration-registry'
 import { WslCliInstaller } from './wsl-cli-installer'
+import { runSerializedWslCliRegistrationOperation } from './wsl-cli-registration-operation'
 
 type ManagedWslCliInstaller = {
   repairManagedRegistration: () => Promise<{
@@ -83,36 +84,37 @@ export async function reconcileManagedWslCliRegistrations(
   // Why: one unavailable distro must not prevent a managed registration in
   // another distro from receiving the current launcher and bridge contract.
   const results = await Promise.all(
-    distros.map(async (distro): Promise<WslCliRegistrationReconciliationResult> => {
-      try {
-        const repair = await createInstaller(distro).repairManagedRegistration()
-        return {
-          distro,
-          outcome: repair.changed ? 'repaired' : 'unchanged',
-          state: repair.status.state,
-          managed: repair.managed
-        }
-      } catch (error) {
-        return {
-          distro,
-          outcome: 'failed',
-          error: error instanceof Error ? error.message : String(error)
-        }
-      }
-    })
-  )
-
-  await registry.recordObservations(
-    results.flatMap((result): WslCliRegistrationObservation[] =>
-      result.outcome === 'failed'
-        ? []
-        : [
-            {
-              distro: result.distro,
-              inspected: result.state !== 'unsupported',
-              managed: result.managed
+    distros.map((distro) =>
+      runSerializedWslCliRegistrationOperation(
+        distro,
+        async (): Promise<WslCliRegistrationReconciliationResult> => {
+          try {
+            const repair = await createInstaller(distro).repairManagedRegistration()
+            const result = {
+              distro,
+              outcome: repair.changed ? ('repaired' as const) : ('unchanged' as const),
+              state: repair.status.state,
+              managed: repair.managed
             }
-          ]
+            // Why: ownership metadata must commit before a concurrent Settings
+            // operation can mutate this distro, or stale startup state can win.
+            await registry.recordObservations([
+              {
+                distro,
+                inspected: result.state !== 'unsupported',
+                managed: result.managed
+              }
+            ])
+            return result
+          } catch (error) {
+            return {
+              distro,
+              outcome: 'failed',
+              error: error instanceof Error ? error.message : String(error)
+            }
+          }
+        }
+      )
     )
   )
   return results

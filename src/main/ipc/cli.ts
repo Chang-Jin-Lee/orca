@@ -2,10 +2,12 @@ import { ipcMain } from 'electron'
 import type { CliInstallStatus } from '../../shared/cli-install-types'
 import { CliInstaller } from '../cli/cli-installer'
 import {
+  invalidateWslCliRegistrationRegistry,
   recordWslCliRegistrationInstalled,
   recordWslCliRegistrationRemoved
 } from '../cli/wsl-cli-registration-registry'
 import { WslCliInstaller } from '../cli/wsl-cli-installer'
+import { runSerializedWslCliRegistrationOperation } from '../cli/wsl-cli-registration-operation'
 import { getCanonicalUserDataPath } from '../persistence'
 import { hydrateShellPath, mergePathSegments } from '../startup/hydrate-shell-path'
 import { getDefaultWslDistro } from '../wsl'
@@ -16,6 +18,37 @@ function normalizeWslCliDistro(args?: { distro?: string | null }): string | unde
 
 function resolveWslCliDistro(args?: { distro?: string | null }): string | null {
   return normalizeWslCliDistro(args) ?? getDefaultWslDistro()
+}
+
+function runWslCliRegistrationOperation<T>(
+  distro: string | null,
+  operation: () => Promise<T>
+): Promise<T> {
+  return distro ? runSerializedWslCliRegistrationOperation(distro, operation) : operation()
+}
+
+async function persistWslCliRegistration(
+  operation: () => Promise<void>,
+  action: 'install' | 'remove'
+): Promise<void> {
+  try {
+    await operation()
+  } catch (error) {
+    // Why: the WSL file operation already succeeded; advisory metadata must
+    // not turn that success into a false Settings failure.
+    console.warn(
+      `[wsl-cli] Failed to persist ${action} registration metadata:`,
+      error instanceof Error ? error.message : String(error)
+    )
+    await invalidateWslCliRegistrationRegistry(getCanonicalUserDataPath()).catch(
+      (invalidateError) => {
+        console.warn(
+          '[wsl-cli] Failed to invalidate registration metadata:',
+          invalidateError instanceof Error ? invalidateError.message : String(invalidateError)
+        )
+      }
+    )
+  }
 }
 
 async function hydrateLocalShellPathForCli(force = false): Promise<void> {
@@ -49,7 +82,10 @@ export function registerCliHandlers(): void {
   ipcMain.handle(
     'cli:getWslInstallStatus',
     async (_event, args?: { distro?: string | null }): Promise<CliInstallStatus> => {
-      return new WslCliInstaller({ distro: resolveWslCliDistro(args) }).getStatus()
+      const distro = resolveWslCliDistro(args)
+      return runWslCliRegistrationOperation(distro, () =>
+        new WslCliInstaller({ distro }).getStatus()
+      )
     }
   )
 
@@ -57,11 +93,16 @@ export function registerCliHandlers(): void {
     'cli:installWsl',
     async (_event, args?: { distro?: string | null }): Promise<CliInstallStatus> => {
       const distro = resolveWslCliDistro(args)
-      const status = await new WslCliInstaller({ distro }).install()
-      if (distro && status.state === 'installed') {
-        await recordWslCliRegistrationInstalled(getCanonicalUserDataPath(), distro)
-      }
-      return status
+      return runWslCliRegistrationOperation(distro, async () => {
+        const status = await new WslCliInstaller({ distro }).install()
+        if (distro && status.state === 'installed') {
+          await persistWslCliRegistration(
+            () => recordWslCliRegistrationInstalled(getCanonicalUserDataPath(), distro),
+            'install'
+          )
+        }
+        return status
+      })
     }
   )
 
@@ -69,11 +110,16 @@ export function registerCliHandlers(): void {
     'cli:removeWsl',
     async (_event, args?: { distro?: string | null }): Promise<CliInstallStatus> => {
       const distro = resolveWslCliDistro(args)
-      const status = await new WslCliInstaller({ distro }).remove()
-      if (distro && status.state === 'not_installed') {
-        await recordWslCliRegistrationRemoved(getCanonicalUserDataPath(), distro)
-      }
-      return status
+      return runWslCliRegistrationOperation(distro, async () => {
+        const status = await new WslCliInstaller({ distro }).remove()
+        if (distro && status.state === 'not_installed') {
+          await persistWslCliRegistration(
+            () => recordWslCliRegistrationRemoved(getCanonicalUserDataPath(), distro),
+            'remove'
+          )
+        }
+        return status
+      })
     }
   )
 }

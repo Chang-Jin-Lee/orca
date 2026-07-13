@@ -147,8 +147,9 @@ export function listWslDistros(): string[] {
     wslDistroCache = normalizeWslListOutput(output).filter(isUserWslDistro)
     return wslDistroCache
   } catch {
-    wslDistroCache = []
-    return wslDistroCache
+    // Why: startup and Settings share this cache; a transient wsl.exe failure
+    // must remain retryable instead of hiding every distro until app restart.
+    return []
   }
 }
 
@@ -167,8 +168,9 @@ export async function listWslDistrosAsync(): Promise<string[]> {
     wslDistroCache = normalizeWslListOutput(output).filter(isUserWslDistro)
     return wslDistroCache
   } catch {
-    wslDistroCache = []
-    return wslDistroCache
+    // Why: do not poison later synchronous/default-distro callers when the
+    // asynchronous startup probe hits a transient WSL interop failure.
+    return []
   }
 }
 

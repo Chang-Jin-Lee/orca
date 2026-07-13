@@ -140,8 +140,13 @@ export class WslCliInstaller {
 
   async repairManagedRegistration(): Promise<ManagedWslCliRepairResult> {
     const status = await this.getStatus()
-    if (!status.supported || status.state === 'conflict') {
+    if (!status.supported) {
       return { changed: false, managed: false, status }
+    }
+    if (status.state === 'conflict') {
+      // Why: a user-owned bridge conflicts with repair, but the launcher is
+      // still Orca-managed and must remain registered for future reconciliation.
+      return { changed: false, managed: status.currentTarget !== null, status }
     }
 
     if (status.state === 'stale') {
