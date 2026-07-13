@@ -316,7 +316,7 @@ export function validateCommandAndFlags(specs: CommandSpec[], parsed: ParsedArgs
       throw new RuntimeClientError(
         'invalid_argument',
         `Unknown flag --${flag} for command: ${spec.path.join(' ')}`,
-        unknownFlagData(flag, effectiveAllowedFlags(spec))
+        unknownFlagData(flag, effectiveAllowedFlags(spec), spec.path)
       )
     }
   }

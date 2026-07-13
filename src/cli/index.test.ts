@@ -254,6 +254,22 @@ describe('unknown command surfaces a suggestion', () => {
     expect(stderr).not.toContain('Did you mean')
   })
 
+  it('keeps guessed commands out of JSON recovery', async () => {
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
+
+    await main(['worktree', 'lst', '--json'], '/tmp/repo')
+
+    expect(process.exitCode).toBe(1)
+    const response = JSON.parse(logSpy.mock.calls.flat().join('\n')) as {
+      error: { data?: { suggestions?: string[]; nextSteps?: string[] } }
+    }
+    expect(response.error.data?.suggestions).toBeUndefined()
+    expect(response.error.data?.nextSteps).toEqual([
+      'Run `orca help` or `orca agent-context --json` to inspect available commands before retrying.'
+    ])
+    logSpy.mockRestore()
+  })
+
   it('reports a mistyped pre-command flag without swallowing the command', async () => {
     await main(['--jso', 'worktree', 'list'], '/tmp/repo')
 
@@ -269,6 +285,25 @@ describe('unknown command surfaces a suggestion', () => {
     expect(process.exitCode).toBe(1)
     const stderr = errorSpy.mock.calls.map((call) => String(call[0])).join('\n')
     expect(stderr).toContain('Unknown flag --workspace for command: worktree list')
+  })
+
+  it('keeps guessed flags out of JSON recovery', async () => {
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
+
+    await main(['worktree', 'list', '--jso', '--json'], '/tmp/repo')
+
+    expect(process.exitCode).toBe(1)
+    const response = JSON.parse(logSpy.mock.calls.flat().join('\n')) as {
+      error: {
+        data?: { suggestions?: string[]; validFlags?: string[]; nextSteps?: string[] }
+      }
+    }
+    expect(response.error.data?.suggestions).toBeUndefined()
+    expect(response.error.data?.validFlags).toContain('json')
+    expect(response.error.data?.nextSteps).toEqual([
+      'Run `orca help worktree list` to inspect supported flags before retrying.'
+    ])
+    logSpy.mockRestore()
   })
 
   it('reports a pre-command typo when a global flag splits the command path', async () => {

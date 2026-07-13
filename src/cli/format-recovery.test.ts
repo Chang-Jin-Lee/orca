@@ -1,30 +1,49 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
-import { formatCliError } from './format'
+import { formatCliError, reportCliError } from './format'
 import { RuntimeClientError, RuntimeRpcFailureError } from './runtime-client'
 
 describe('CLI error recovery', () => {
-  it('prints did-you-mean next steps for an unknown-command error carrying data', () => {
-    const error = new RuntimeClientError('invalid_argument', 'Unknown command: worktree remov', {
-      suggestions: ['worktree rm'],
-      nextSteps: ['Did you mean: orca worktree rm']
+  it('renders human command suggestions separately from safe next steps', () => {
+    const error = new RuntimeClientError('invalid_argument', 'Unknown command: worktree lst', {
+      suggestions: ['worktree list'],
+      nextSteps: ['Run `orca help` to inspect available commands.']
     })
 
     const output = formatCliError(error)
 
-    expect(output).toContain('Unknown command: worktree remov')
-    expect(output).toContain('Next step: Did you mean: orca worktree rm')
+    expect(output).toContain('Unknown command: worktree lst')
+    expect(output).toContain('Did you mean: orca worktree list')
+    expect(output).toContain('Next step: Run `orca help`')
   })
 
-  it('prefers structured recovery over generic computer hints in text output', () => {
+  it('renders human flag suggestions separately from safe next steps', () => {
     const error = new RuntimeClientError('invalid_argument', 'Unknown flag --forcce', {
-      nextSteps: ['Did you mean: --force']
+      validFlags: ['force', 'json'],
+      suggestions: ['force'],
+      nextSteps: ['Run `orca help computer click` to inspect supported flags.']
     })
 
     const output = formatCliError(error, { commandPath: ['computer', 'click'] })
 
-    expect(output).toContain('Next step: Did you mean: --force')
+    expect(output).toContain('Did you mean: --force')
+    expect(output).toContain('Next step: Run `orca help computer click`')
     expect(output).not.toContain('Fix the command flags or RPC params')
+  })
+
+  it('strips human-only guesses from local JSON errors', () => {
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
+    const error = new RuntimeClientError('invalid_argument', 'Unknown command: worktree lst', {
+      suggestions: ['worktree list'],
+      nextSteps: ['Run `orca help` to inspect available commands.']
+    })
+
+    reportCliError(error, true)
+
+    const output = logSpy.mock.calls.flat().join('\n')
+    expect(output).not.toContain('worktree list')
+    expect(output).toContain('Run `orca help`')
+    logSpy.mockRestore()
   })
 
   it('prefers RPC recovery over generic computer hints in text output', () => {

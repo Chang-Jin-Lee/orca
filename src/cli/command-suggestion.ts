@@ -75,9 +75,11 @@ export function suggestCommands(specs: CommandSpec[], commandPath: string[]): st
 
 export function unknownCommandData(specs: CommandSpec[], commandPath: string[]): CommandErrorData {
   const suggestions = suggestCommands(specs, commandPath)
-  const nextSteps = suggestions.length
-    ? [`Did you mean: ${suggestions.map((path) => `orca ${path}`).join(', ')}`]
-    : []
+  // Why: agents receive nextSteps as recovery instructions, so only point them
+  // at read-only discovery instead of a guessed command they may execute.
+  const nextSteps = [
+    'Run `orca help` or `orca agent-context --json` to inspect available commands before retrying.'
+  ]
   return { suggestions, nextSteps }
 }
 
@@ -94,13 +96,16 @@ function suggestFlags(flag: string, validFlags: string[]): string[] {
 }
 
 // Why: include the accepted set so agents can recover without another help call.
-export function unknownFlagData(flag: string, validFlags: string[]): FlagErrorData {
+export function unknownFlagData(
+  flag: string,
+  validFlags: string[],
+  commandPath: readonly string[] = []
+): FlagErrorData {
   const sortedValid = [...validFlags].sort((a, b) => a.localeCompare(b))
   const suggestions = suggestFlags(flag, sortedValid)
-  const nextSteps: string[] = []
-  if (suggestions.length > 0) {
-    nextSteps.push(`Did you mean: ${suggestions.map((name) => `--${name}`).join(', ')}`)
-  }
-  nextSteps.push(`Valid flags: ${sortedValid.map((name) => `--${name}`).join(', ')}`)
+  const helpCommand = commandPath.length > 0 ? `orca help ${commandPath.join(' ')}` : 'orca help'
+  // Why: correcting a flag can activate behavior such as --force; machine
+  // recovery should direct agents to documentation instead of guessing intent.
+  const nextSteps = [`Run \`${helpCommand}\` to inspect supported flags before retrying.`]
   return { validFlags: sortedValid, suggestions, nextSteps }
 }

@@ -344,8 +344,10 @@ export function printHelp(specs: CommandSpec[], commandPath: string[] = []): voi
   }
 
   if (commandPath.length > 0) {
-    const { nextSteps } = unknownCommandData(specs, commandPath)
-    const recovery = nextSteps.map((step) => `Next step: ${step}`).join('\n')
+    const { suggestions } = unknownCommandData(specs, commandPath)
+    const recovery = suggestions.length
+      ? `Did you mean: ${suggestions.map((path) => `orca ${path}`).join(', ')}`
+      : ''
     console.log(`Unknown command: ${commandPath.join(' ')}${recovery ? `\n${recovery}` : ''}\n`)
   }
 

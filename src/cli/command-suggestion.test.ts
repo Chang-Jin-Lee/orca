@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest'
 
 import type { CommandSpec } from './args'
-import { levenshtein, suggestCommands, unknownCommandData } from './command-suggestion'
+import {
+  levenshtein,
+  suggestCommands,
+  unknownCommandData,
+  unknownFlagData
+} from './command-suggestion'
 import { COMMAND_SPECS } from './specs'
 
 const specs: CommandSpec[] = [
@@ -136,22 +141,38 @@ describe('production destructive command registry', () => {
 })
 
 describe('unknownCommandData', () => {
-  it('produces a human nextSteps line for a safe suggestion', () => {
+  it('keeps suggestions separate from machine-safe discovery guidance', () => {
     const data = unknownCommandData(specs, ['worktree', 'lst'])
     expect(data.suggestions).toContain('worktree list')
-    expect(data.nextSteps[0]).toContain('Did you mean')
-    expect(data.nextSteps[0]).toContain('orca worktree list')
+    expect(data.nextSteps).toEqual([
+      'Run `orca help` or `orca agent-context --json` to inspect available commands before retrying.'
+    ])
+    expect(data.nextSteps.join(' ')).not.toContain('worktree list')
   })
 
-  it('produces empty nextSteps when nothing is close', () => {
+  it('uses safe discovery guidance when nothing is close', () => {
     const data = unknownCommandData(specs, ['worktree', 'zzzzz'])
     expect(data.suggestions).toEqual([])
-    expect(data.nextSteps).toEqual([])
+    expect(data.nextSteps[0]).toContain('orca agent-context --json')
   })
 
-  it('does not emit nextSteps for a destructive typo', () => {
+  it('does not emit guessed nextSteps for a destructive typo', () => {
     const data = unknownCommandData(specs, ['worktree', 'remov'])
     expect(data.suggestions).toEqual([])
-    expect(data.nextSteps).toEqual([])
+    expect(data.nextSteps[0]).toContain('orca help')
+    expect(data.nextSteps.join(' ')).not.toContain('worktree rm')
+  })
+})
+
+describe('unknownFlagData', () => {
+  it('keeps flag guesses out of machine recovery instructions', () => {
+    const data = unknownFlagData('forcce', ['force', 'json'], ['worktree', 'rm'])
+
+    expect(data.suggestions).toContain('force')
+    expect(data.validFlags).toEqual(['force', 'json'])
+    expect(data.nextSteps).toEqual([
+      'Run `orca help worktree rm` to inspect supported flags before retrying.'
+    ])
+    expect(data.nextSteps.join(' ')).not.toContain('--force')
   })
 })

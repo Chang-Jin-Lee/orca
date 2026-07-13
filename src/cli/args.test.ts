@@ -277,7 +277,7 @@ describe('validateCommandAndFlags', () => {
     )
   })
 
-  it('enumerates valid flags and suggests a near-miss on unknown-flag errors', () => {
+  it('enumerates valid flags without guessing one in machine recovery', () => {
     const flagSpecs: CommandSpec[] = [
       {
         path: ['worktree', 'rm'],
@@ -292,32 +292,40 @@ describe('validateCommandAndFlags', () => {
       validateCommandAndFlags(flagSpecs, parsed)
       throw new Error('expected validateCommandAndFlags to throw')
     } catch (error) {
-      const data = (error as { data?: { validFlags: string[]; nextSteps: string[] } }).data
+      const data = (
+        error as {
+          data?: { validFlags: string[]; suggestions: string[]; nextSteps: string[] }
+        }
+      ).data
       expect(data?.validFlags).toContain('force')
       expect(data?.validFlags).toContain('json')
-      expect(data?.nextSteps.join('\n')).toContain('--force')
-      expect(data?.nextSteps.join('\n')).toContain('Valid flags:')
+      expect(data?.suggestions).toContain('force')
+      expect(data?.nextSteps).toEqual([
+        'Run `orca help worktree rm` to inspect supported flags before retrying.'
+      ])
+      expect(data?.nextSteps.join('\n')).not.toContain('--force')
     }
   })
 
-  it('attaches did-you-mean suggestions to unknown-command errors', () => {
+  it('keeps command guesses out of machine recovery instructions', () => {
     const suggestSpecs: CommandSpec[] = [
       {
-        path: ['worktree', 'rm'],
-        summary: 'Remove a worktree',
-        usage: 'orca worktree rm',
+        path: ['worktree', 'list'],
+        summary: 'List worktrees',
+        usage: 'orca worktree list',
         allowedFlags: []
       }
     ]
-    const parsed = parseArgs(['worktree', 'remov'])
+    const parsed = parseArgs(['worktree', 'lst'])
 
     try {
       validateCommandAndFlags(suggestSpecs, parsed)
       throw new Error('expected validateCommandAndFlags to throw')
     } catch (error) {
       const data = (error as { data?: { suggestions: string[]; nextSteps: string[] } }).data
-      expect(data?.suggestions).toContain('worktree rm')
-      expect(data?.nextSteps[0]).toContain('orca worktree rm')
+      expect(data?.suggestions).toContain('worktree list')
+      expect(data?.nextSteps[0]).toContain('orca agent-context --json')
+      expect(data?.nextSteps.join(' ')).not.toContain('worktree list')
     }
   })
 })

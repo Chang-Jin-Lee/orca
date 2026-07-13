@@ -82,9 +82,13 @@ export function formatCliError(error: unknown, context: CliErrorContext = {}): s
   }
   // Why: error-specific recovery must win over the generic computer fallback.
   if (error instanceof RuntimeClientError) {
+    const suggestion = humanSuggestionFromData(error.data)
     const nextSteps = nextStepsFromData(error.data)
-    if (nextSteps.length > 0) {
-      return formatMessageWithNextSteps(message, nextSteps)
+    if (suggestion || nextSteps.length > 0) {
+      return formatMessageWithNextSteps(
+        suggestion ? `${message}\n${suggestion}` : message,
+        nextSteps
+      )
     }
     if (error.code === 'invalid_argument' && context.commandPath?.[0] === 'computer') {
       return formatMessageWithNextSteps(
@@ -149,10 +153,38 @@ function nextStepsFromData(data: unknown): string[] {
   return []
 }
 
+function humanSuggestionFromData(data: unknown): string | undefined {
+  if (!data || typeof data !== 'object') {
+    return undefined
+  }
+  const suggestions = (data as { suggestions?: unknown }).suggestions
+  if (!Array.isArray(suggestions)) {
+    return undefined
+  }
+  const labels = suggestions.filter(
+    (suggestion): suggestion is string => typeof suggestion === 'string'
+  )
+  if (labels.length === 0) {
+    return undefined
+  }
+  const isFlagSuggestion = Array.isArray((data as { validFlags?: unknown }).validFlags)
+  return `Did you mean: ${labels.map((label) => (isFlagSuggestion ? `--${label}` : `orca ${label}`)).join(', ')}`
+}
+
+function agentFacingLocalData(data: unknown): unknown {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) {
+    return data
+  }
+  // Why: suggestions remain available for human formatting but must not enter
+  // the JSON recovery channel where an agent could treat them as instructions.
+  const { suggestions: _suggestions, ...agentFacingData } = data as Record<string, unknown>
+  return agentFacingData
+}
+
 function localCliErrorData(error: unknown, context: CliErrorContext): unknown {
   // Why: error-specific recovery must win over the generic computer fallback.
   if (error instanceof RuntimeClientError && error.data !== undefined) {
-    return error.data
+    return agentFacingLocalData(error.data)
   }
   if (
     error instanceof RuntimeClientError &&
