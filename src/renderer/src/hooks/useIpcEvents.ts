@@ -1434,6 +1434,7 @@ export function useIpcEvents(): void {
           launchConfig,
           launchToken,
           launchAgent,
+          viewMode,
           title,
           ptyId,
           activate,
@@ -1502,13 +1503,17 @@ export function useIpcEvents(): void {
                     ...(launchAgent
                       ? {
                           launchAgent,
-                          ...initialAgentTabViewModeProps(store.settings, {
-                            agent: launchAgent,
-                            nativeChatTranscriptIsLocalReadable:
-                              isNativeChatTranscriptLocalReadable(
-                                getConnectionIdFromState(store, worktreeId)
-                              )
-                          })
+                          // Why: a paired client resolved explicit mode before
+                          // PTY materialization; only omitted mode uses host defaults.
+                          ...(viewMode
+                            ? { viewMode }
+                            : initialAgentTabViewModeProps(store.settings, {
+                                agent: launchAgent,
+                                nativeChatTranscriptIsLocalReadable:
+                                  isNativeChatTranscriptLocalReadable(
+                                    getConnectionIdFromState(store, worktreeId)
+                                  )
+                              }))
                         }
                       : {}),
                     ...(cwd ? { startupCwd: cwd } : {}),

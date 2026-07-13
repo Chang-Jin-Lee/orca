@@ -20522,7 +20522,8 @@ describe('OrcaRuntimeService', () => {
       })
 
       const create = runtime.createMobileSessionTerminal(`id:${TEST_WORKTREE_ID}`, {
-        activate: true
+        activate: true,
+        viewMode: 'terminal'
       })
       let settled = false
       const settledCreate = create.finally(() => {
@@ -20568,6 +20569,7 @@ describe('OrcaRuntimeService', () => {
         leafId: pendingLeafId,
         status: 'ready',
         terminal: expect.stringMatching(/^term_/),
+        viewMode: 'terminal',
         isActive: true
       })
       expect(spawn).toHaveBeenCalledWith(
@@ -20585,7 +20587,8 @@ describe('OrcaRuntimeService', () => {
         expect.objectContaining({
           ptyId: 'pty-materialized',
           tabId: 'tab-pending',
-          leafId: pendingLeafId
+          leafId: pendingLeafId,
+          viewMode: 'terminal'
         })
       )
       expect(closeTerminal).not.toHaveBeenCalled()
