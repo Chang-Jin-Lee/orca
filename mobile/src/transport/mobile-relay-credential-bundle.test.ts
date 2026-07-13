@@ -43,6 +43,7 @@ const journal = {
       e2eeFraming: 2
     },
     installReqId: 'install-1',
+    resumeConfirmReqId: 'confirm-1',
     pendingResumeTokenHash: 'B'.repeat(43),
     winner: 'direct',
     authorizationMode: 'authenticated-direct'

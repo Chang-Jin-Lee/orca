@@ -31,6 +31,7 @@ const journal = {
       e2eeFraming: 2
     },
     installReqId: 'install-1',
+    resumeConfirmReqId: 'confirm-1',
     pendingResumeTokenHash: 'B'.repeat(43)
   },
   secrets: {
@@ -77,7 +78,9 @@ describe('recovering pairing relay candidate', () => {
       persistMove: async (relay) => {
         events.push(`persist:${relay.assignmentEpoch}`)
       },
-      now: () => 1
+      now: () => 1,
+      random: () => 0,
+      sleep: async () => {}
     })
 
     await expect(candidate.sendRequest('status.get')).resolves.toEqual(success())
@@ -98,5 +101,35 @@ describe('recovering pairing relay candidate', () => {
 
     await expect(candidate.sendRequest('status.get')).rejects.toEqual(new RelayOuterError(4404))
     expect(resolveDirector).not.toHaveBeenCalled()
+  })
+
+  it('bounds director recovery and applies full jitter to failures and target retries', async () => {
+    const stale = client(Promise.reject(new Error('HTTP 503')))
+    const target = client(Promise.resolve(success()))
+    const resolveDirector = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('HTTP 504'))
+      .mockRejectedValueOnce(new RelayOuterError(1006))
+      .mockImplementationOnce(async (relay) => ({
+        ...relay,
+        cellUrl: 'https://relay-c2.onorca.dev',
+        assignmentEpoch: 8
+      }))
+    const sleep = vi.fn(async () => {})
+    let connects = 0
+    const candidate = createRecoveringPairingRelayCandidate({
+      journal,
+      connect: () => (connects++ === 0 ? stale : target),
+      resolveDirector,
+      persistMove: vi.fn(async () => {}),
+      now: () => 1,
+      random: () => 0.5,
+      sleep,
+      maxRecoveryAttempts: 3
+    })
+
+    await expect(candidate.sendRequest('status.get')).resolves.toEqual(success())
+    expect(resolveDirector).toHaveBeenCalledTimes(3)
+    expect(sleep.mock.calls.map(([delay]) => delay)).toEqual([50, 100, 200])
   })
 })

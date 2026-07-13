@@ -25,6 +25,11 @@ export async function saveMobileRelayPairingJournal(
     throw new Error('mobile relay pairing journal identity mismatch')
   }
   const mutation = journalMutation.then(async () => {
+    const existingRaw = await AsyncStorage.getItem(JOURNAL_STORAGE_KEY)
+    const existing = existingRaw ? parseMetadata(existingRaw) : null
+    if (existing && existing.journalId !== metadata.journalId) {
+      throw new Error('mobile relay pairing recovery pending')
+    }
     // Why: metadata-first makes a crash before the keychain write recover as
     // an incomplete journal, never as an untracked bearer secret.
     await AsyncStorage.setItem(JOURNAL_STORAGE_KEY, JSON.stringify(metadata))
@@ -44,6 +49,7 @@ export async function loadMobileRelayPairingJournal(): Promise<MobileRelayPairin
   }
   const metadata = parseMetadata(rawMetadata)
   if (!metadata) {
+    await removeIncompleteJournal()
     return null
   }
   const rawSecrets = await SecureStore.getItemAsync(JOURNAL_SECRET_KEY, KEYCHAIN_OPTIONS)
@@ -53,9 +59,17 @@ export async function loadMobileRelayPairingJournal(): Promise<MobileRelayPairin
   }
   const secrets = parseSecrets(rawSecrets)
   if (!secrets || secrets.journalId !== metadata.journalId) {
+    await removeIncompleteJournal()
     return null
   }
   return { metadata, secrets }
+}
+
+async function removeIncompleteJournal(): Promise<void> {
+  // Why: metadata is the discoverable cleanup pointer; remove it before the
+  // native secret so a second crash can only leave a self-cleaning orphan.
+  await AsyncStorage.removeItem(JOURNAL_STORAGE_KEY)
+  await SecureStore.deleteItemAsync(JOURNAL_SECRET_KEY, KEYCHAIN_OPTIONS).catch(() => {})
 }
 
 export async function updateMobileRelayPairingJournal(

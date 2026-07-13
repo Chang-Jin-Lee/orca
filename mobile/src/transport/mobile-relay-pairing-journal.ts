@@ -31,6 +31,7 @@ export const MobileRelayPairingJournalMetadataSchema = z
       })
       .strict(),
     installReqId: z.string().min(1).max(128),
+    resumeConfirmReqId: z.string().min(1).max(128),
     pendingResumeTokenHash: Base64Url32ByteSchema,
     winner: z.enum(['direct', 'relay']).optional(),
     authorizationMode: z.enum(['authenticated-direct', 'relay-basis']).optional()
@@ -69,6 +70,7 @@ export function createMobileRelayPairingJournal(args: {
   const pendingResumeToken = encodeBase64Url(randomBytes(32))
   const journalId = `pair-${encodeBase64Url(randomBytes(16))}`
   const installReqId = `install-${encodeBase64Url(randomBytes(16))}`
+  const resumeConfirmReqId = `confirm-${encodeBase64Url(randomBytes(16))}`
   const { inviteToken, ...relayMetadata } = args.offer.relay
   return {
     metadata: MobileRelayPairingJournalMetadataSchema.parse({
@@ -84,6 +86,7 @@ export function createMobileRelayPairingJournal(args: {
       },
       relay: relayMetadata,
       installReqId,
+      resumeConfirmReqId,
       pendingResumeTokenHash: encodeBase64Url(sha256(decodeBase64Url(pendingResumeToken)))
     }),
     secrets: {

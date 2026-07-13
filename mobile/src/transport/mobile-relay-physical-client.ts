@@ -27,6 +27,8 @@ export function connectMobileRelayForPairing(args: {
   relay: PairingRelay
   deviceToken: string
   desktopPublicKeyB64: string
+  credential?: string
+  expectedCredentialKind?: 'invite' | 'resume'
   requestTimeoutMs?: number
   createSocket?: (url: string) => WebSocket
 }): PairingCandidateClient {
@@ -85,7 +87,7 @@ export function connectMobileRelayForPairing(args: {
         type: 'relay-auth',
         v: 1,
         mode: 'connect',
-        credential: args.relay.inviteToken
+        credential: args.credential ?? args.relay.inviteToken
       })
     )
   }
@@ -124,8 +126,8 @@ export function connectMobileRelayForPairing(args: {
     if (!parsed.data.ok) {
       throw new RelayOuterError(parsed.data.code)
     }
-    if (parsed.data.credentialKind !== 'invite') {
-      throw new Error('pairing invite resolved as an unexpected credential kind')
+    if (parsed.data.credentialKind !== (args.expectedCredentialKind ?? 'invite')) {
+      throw new Error('relay credential resolved as an unexpected credential kind')
     }
     outerReady = true
     channel.start()

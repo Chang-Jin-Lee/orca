@@ -130,6 +130,30 @@ describe('mobile relay pairing journal store', () => {
     expect(metadataRaw).toBeNull()
   })
 
+  it('cleans mismatched secret records and refuses to replace a recoverable journal', async () => {
+    const journal = createMobileRelayPairingJournal({
+      offer: offer as PairingOffer & { relay: NonNullable<PairingOffer['relay']> },
+      hostId: 'host-1',
+      hostName: 'Blue Whale',
+      randomBytes: (length) => new Uint8Array(length).fill(10)
+    })
+    metadataRaw = JSON.stringify(journal.metadata)
+    secretRaw = JSON.stringify({ ...journal.secrets, journalId: 'different-journal' })
+    await expect(loadMobileRelayPairingJournal()).resolves.toBeNull()
+    expect(metadataRaw).toBeNull()
+    expect(secretRaw).toBeNull()
+
+    await saveMobileRelayPairingJournal(journal)
+    const replacement = createMobileRelayPairingJournal({
+      offer: offer as PairingOffer & { relay: NonNullable<PairingOffer['relay']> },
+      hostId: 'host-2',
+      hostName: 'Red Panda',
+      randomBytes: (length) => new Uint8Array(length).fill(12)
+    })
+    await expect(saveMobileRelayPairingJournal(replacement)).rejects.toThrow(/recovery pending/)
+    await expect(loadMobileRelayPairingJournal()).resolves.toEqual(journal)
+  })
+
   it('clears metadata before deleting its secret and keeps relay unavailable on web', async () => {
     const journal = createMobileRelayPairingJournal({
       offer: offer as PairingOffer & { relay: NonNullable<PairingOffer['relay']> },
