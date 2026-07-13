@@ -22,26 +22,12 @@
         "worktree discovery",
         "Source Control status refresh"
       ],
-      "platforms": [
-        "macos",
-        "linux",
-        "windows"
-      ],
-      "providers": [
-        "local",
-        "ssh"
-      ],
-      "coveredPlatforms": [
-        "macos"
-      ],
-      "coveredProviders": [
-        "local",
-        "ssh"
-      ],
+      "platforms": ["macos", "linux", "windows"],
+      "providers": ["local", "ssh"],
+      "coveredPlatforms": ["macos"],
+      "coveredProviders": ["local", "ssh"],
       "coverageNotes": "Local deterministic evidence covers git-common classification, desktop watcher debounce counts, non-overlapping poller semantics, macOS native-watch fallback, preload cleanup, and Source Control active-visible repo filtering. Linux/Windows are covered at the shared poller layer by forcing the non-darwin path; live platform runs remain gaps.",
-      "motivatingLinks": [
-        "https://github.com/stablyai/orca/pull/7086"
-      ],
+      "motivatingLinks": ["https://github.com/stablyai/orca/pull/7086"],
       "invariant": "Index-only Git activity below the common Git directory must not emit worktrees:changed, invalidate worktree caches, or trigger fetchWorktrees fanout; structural add/remove/HEAD/gitdir/locked/config.worktree changes must still refresh worktrees and nudge Source Control; external head moves (commit, amend, reset) must reach background worktree rows through spawn-free metadata reads, never through structural fanout.",
       "oracle": "Classify exact git-common paths as structural, status-only, or ignored; count notifications from debounced watcher events; force the Linux/Windows poll path to emit allowlisted leaf events, detect linked HEAD rewrites independent of entry-directory mtime, and surface in-place index rewrites via the backstop re-stat; diff head identities from metadata-file reads and notify only real head moves; assert Source Control subscribes to both structural and status-only signals with active-repo and visibility filters.",
       "commands": [
