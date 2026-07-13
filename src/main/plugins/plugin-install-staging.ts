@@ -21,6 +21,7 @@ import {
 import { hashPluginTree } from './plugin-content-hash'
 import { publishPluginInstall } from './plugin-install-publication'
 import { readPluginManifestText } from './plugin-manifest-file'
+import { pluginInstallTrustError } from './plugin-install-trust'
 
 export type PluginInstallResult =
   | {
@@ -120,6 +121,7 @@ export async function installStagedPluginTree(input: {
   source: PluginInstallSource
   resolvedCommit: string | null
   expectedPluginKey?: string
+  blockedPluginReason?: (pluginKey: string) => string | null
 }): Promise<PluginInstallResult> {
   const sourceInspection = await inspectPluginInstallTree({
     rootDir: input.stagingDir,
@@ -128,6 +130,14 @@ export async function installStagedPluginTree(input: {
   })
   if (!sourceInspection.ok) {
     return sourceInspection
+  }
+  const trustError = pluginInstallTrustError(sourceInspection.pluginKey, input.source)
+  if (trustError) {
+    return { ok: false, error: trustError }
+  }
+  const blockedReason = input.blockedPluginReason?.(sourceInspection.pluginKey)
+  if (blockedReason) {
+    return { ok: false, error: `plugin is blocked by Orca's safety list: ${blockedReason}` }
   }
   let manifest = sourceInspection.manifest
   const pluginKey = sourceInspection.pluginKey

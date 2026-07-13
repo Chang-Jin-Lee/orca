@@ -160,6 +160,8 @@ import { buildHeadlessAutomationWorktreeCreateArgs } from './automations/headles
 import { AgentAwakeService } from './agent-awake-service'
 import { registerSystemResumeBroadcast } from './system-resume-broadcast'
 import { PluginService } from './plugins/plugin-service'
+import { PluginKillListService } from './plugins/plugin-kill-list-service'
+import { getPluginsDataDir } from './plugins/plugin-discovery'
 import { resolvePluginHostEntryPath } from './plugins/plugin-host-process'
 import { applyPluginConsent, applyPluginEnablement } from './plugins/plugin-enablement'
 import { setPluginServiceForRpc } from './runtime/rpc/methods/plugins'
@@ -229,6 +231,7 @@ let watcherShutdownPromise: Promise<void> | null = null
 let watcherShutdownDone = false
 let automations: AutomationService | null = null
 let pluginService: PluginService | null = null
+let pluginKillListService: PluginKillListService | null = null
 let keybindings: KeybindingService | null = null
 
 function emitPluginWorktreeLifecycle(event: RuntimeWorktreeLifecycleEvent): void {
@@ -1929,6 +1932,11 @@ app.whenReady().then(async () => {
     prepareForCodexLaunch: prepareCodexRuntimeHomeForLaunch,
     prepareForClaudeLaunch: (target) => claudeRuntimeAuth!.prepareForClaudeLaunch(target)
   })
+  const pluginSystemStartupStartedAt = performance.now()
+  pluginKillListService = new PluginKillListService({
+    pluginsDataDir: getPluginsDataDir(app.getPath('userData'))
+  })
+  await pluginKillListService.initialize()
   pluginService = new PluginService({
     userDataPath: app.getPath('userData'),
     hostVersion: app.getVersion(),
@@ -1939,7 +1947,20 @@ app.whenReady().then(async () => {
     getPluginConsents: () => normalizePluginConsents(store?.getSettings().pluginConsents),
     getDevPluginPaths: () => normalizePluginIdList(store?.getSettings().devPluginPaths),
     getKeybindings: () => keybindings?.getOverrides() ?? {},
+    getPluginKillListEntry: (pluginKey) => pluginKillListService?.find(pluginKey) ?? null,
     hostEntryPath: resolvePluginHostEntryPath(app.getAppPath(), app.isPackaged)
+  })
+  pluginKillListService.onChanged(() => {
+    void pluginService?.reconcileActivationState().catch((error) => {
+      console.warn('[plugins] failed to apply plugin safety-list refresh:', error)
+    })
+  })
+  store.onSettingsChanged((updates) => {
+    if (app.isPackaged && updates.pluginSystemEnabled === true) {
+      void pluginKillListService?.refresh().catch((error) => {
+        console.warn('[plugins] failed to refresh plugin safety list; using cached state:', error)
+      })
+    }
   })
   // Why: headless `orca serve` clients reach plugins through the runtime RPC
   // methods, which resolve the service via this module-level setter. Consent
@@ -1952,7 +1973,6 @@ app.whenReady().then(async () => {
   })
   // Lazy kernel: initialize() only discovers manifests — no worker forks, no
   // panel reads. Zero plugin code runs before an explicit trigger.
-  const pluginSystemStartupStartedAt = performance.now()
   void pluginService
     .initialize()
     .then(() => {
@@ -1964,6 +1984,11 @@ app.whenReady().then(async () => {
     .catch((error) => {
       console.warn('[plugins] failed to initialize plugin service:', error)
     })
+  if (app.isPackaged && store?.getSettings().pluginSystemEnabled === true) {
+    void pluginKillListService.refresh().catch((error) => {
+      console.warn('[plugins] failed to refresh plugin safety list; using cached state:', error)
+    })
+  }
   pluginService.onChanged((event) => {
     if (
       event.contentPacksChanged &&
@@ -2340,6 +2365,7 @@ app.on('will-quit', (e) => {
   // the allSettled barrier below — quitting before it resolves would let
   // Electron exit first and orphan the hosts.
   setPluginServiceForRpc(null)
+  pluginKillListService = null
   const pluginHostShutdown = pluginService?.dispose() ?? Promise.resolve()
   pluginService = null
   setUnreadDockBadgeCount(0)

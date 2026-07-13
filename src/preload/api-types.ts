@@ -947,6 +947,8 @@ export type PluginHostListEntry = {
   needsReconsent: boolean
   error?: string
   isDev: boolean
+  official: boolean
+  bundled: boolean
   capabilities: { kind: string; description: string }[]
   panels: PluginHostPanel[]
   commands: {
@@ -968,8 +970,9 @@ export type PluginHostListEntry = {
     }[]
   }[]
   restarts: number
+  blockedByKillList?: { reason: string; advisoryUrl?: string }
   source?: {
-    kind: 'local-path' | 'git' | 'marketplace'
+    kind: 'local-path' | 'git' | 'marketplace' | 'bundled'
     reference: string
     resolvedCommit: string | null
     contentHash: string

@@ -218,7 +218,8 @@ export class PluginService {
     return (
       this.contentPacksReady &&
       this.activationState(plugin) === 'approved' &&
-      !this.contentPacks.error(plugin.pluginKey)
+      !this.contentPacks.error(plugin.pluginKey) &&
+      !this.options.getPluginKillListEntry?.(plugin.pluginKey)
     )
   }
 
@@ -227,7 +228,12 @@ export class PluginService {
   }
 
   activationError(pluginKey: string): string | null {
-    return this.contentPacks.error(pluginKey) ?? this.workerController.activationError(pluginKey)
+    const blocked = this.options.getPluginKillListEntry?.(pluginKey)
+    return (
+      (blocked ? `Blocked by Orca's plugin safety list: ${blocked.reason}` : null) ??
+      this.contentPacks.error(pluginKey) ??
+      this.workerController.activationError(pluginKey)
+    )
   }
 
   /** Consented capability kinds for an approved plugin; null otherwise so

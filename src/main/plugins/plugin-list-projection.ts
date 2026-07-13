@@ -9,6 +9,11 @@ import { isInvalidDiscoveredPlugin } from './plugin-discovery'
 import type { PluginService } from './plugin-service'
 import { listPluginVmRecipeCommands } from '../../shared/plugins/plugin-vm-recipe-artifact'
 import type { PluginCommandAliasActionId } from '../../shared/plugins/plugin-command-actions'
+import {
+  isOfficialMarketplaceGitSource,
+  isOfficialOrganizationGitSource,
+  isOfficialPluginIdentity
+} from '../../shared/plugins/plugin-marketplace'
 
 /**
  * Wire projection of installed plugins for the renderer and serve RPC.
@@ -45,6 +50,8 @@ export type PluginListEntry = {
   needsReconsent: boolean
   error?: string
   isDev: boolean
+  official: boolean
+  bundled: boolean
   capabilities: { kind: PluginCapabilityKind; description: string }[]
   panels: PluginListPanelEntry[]
   commands: {
@@ -63,8 +70,9 @@ export type PluginListEntry = {
     commands: { phase: 'create' | 'suspend' | 'resume' | 'destroy'; command: string }[]
   }[]
   restarts: number
+  blockedByKillList?: { reason: string; advisoryUrl?: string }
   source?: {
-    kind: 'local-path' | 'git' | 'marketplace'
+    kind: 'local-path' | 'git' | 'marketplace' | 'bundled'
     reference: string
     resolvedCommit: string | null
     contentHash: string
@@ -92,6 +100,8 @@ export function buildPluginList(service: PluginService, lock: PluginLockfile): P
         needsReconsent: false,
         error: plugin.error,
         isDev: plugin.isDev,
+        official: false,
+        bundled: false,
         capabilities: [],
         panels: [],
         commands: [],
@@ -104,6 +114,7 @@ export function buildPluginList(service: PluginService, lock: PluginLockfile): P
     const activation = service.activationState(plugin)
     const worker = service.workerState(plugin.pluginKey)
     const activationError = service.activationError(plugin.pluginKey)
+    const killListEntry = service.options.getPluginKillListEntry?.(plugin.pluginKey) ?? null
     let status: PluginListStatus
     if (activation === 'disabled') {
       status = 'disabled'
@@ -127,6 +138,13 @@ export function buildPluginList(service: PluginService, lock: PluginLockfile): P
       candidateLockEntry.contentHash === plugin.contentHash
         ? candidateLockEntry
         : undefined
+    const bundled = lockEntry?.source.kind === 'bundled'
+    const official =
+      bundled ||
+      (lockEntry?.source.kind === 'marketplace' &&
+        isOfficialPluginIdentity(plugin.pluginKey) &&
+        isOfficialMarketplaceGitSource(lockEntry.source.marketplace.url) &&
+        isOfficialOrganizationGitSource(lockEntry.source.plugin.url))
     return {
       pluginKey: plugin.pluginKey,
       consentFingerprint: plugin.consentFingerprint,
@@ -140,6 +158,8 @@ export function buildPluginList(service: PluginService, lock: PluginLockfile): P
         ? { error: activationError ?? 'plugin worker crashed repeatedly' }
         : {}),
       isDev: plugin.isDev,
+      official,
+      bundled,
       capabilities: plugin.manifest.capabilities.map((capability) => ({
         kind: capability.kind,
         description: PLUGIN_CAPABILITY_DESCRIPTIONS[capability.kind]
@@ -166,6 +186,14 @@ export function buildPluginList(service: PluginService, lock: PluginLockfile): P
         commands: listPluginVmRecipeCommands(recipe)
       })),
       restarts: worker.restarts,
+      ...(killListEntry
+        ? {
+            blockedByKillList: {
+              reason: killListEntry.reason,
+              ...(killListEntry.advisoryUrl ? { advisoryUrl: killListEntry.advisoryUrl } : {})
+            }
+          }
+        : {}),
       ...(lockEntry
         ? {
             source: {
@@ -175,7 +203,9 @@ export function buildPluginList(service: PluginService, lock: PluginLockfile): P
                   ? lockEntry.source.path
                   : lockEntry.source.kind === 'git'
                     ? lockEntry.source.url
-                    : lockEntry.source.plugin.url,
+                    : lockEntry.source.kind === 'marketplace'
+                      ? lockEntry.source.plugin.url
+                      : `bundled:${lockEntry.source.bundleId}`,
               resolvedCommit: lockEntry.resolvedCommit,
               contentHash: lockEntry.contentHash,
               ...(lockEntry.source.kind === 'marketplace'

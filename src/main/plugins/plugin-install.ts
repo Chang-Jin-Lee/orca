@@ -67,6 +67,7 @@ export async function installPluginFromLocalPath(input: {
   pluginsDir: string
   sourcePath: string
   hostVersion: string
+  blockedPluginReason?: (pluginKey: string) => string | null
 }): Promise<PluginInstallResult> {
   return serializePluginMutation(input.pluginsDir, async () => {
     if (!existsSync(join(input.sourcePath, PLUGIN_MANIFEST_FILENAME))) {
@@ -77,9 +78,30 @@ export async function installPluginFromLocalPath(input: {
       stagingDir: input.sourcePath,
       hostVersion: input.hostVersion,
       source: { kind: 'local-path', path: input.sourcePath },
-      resolvedCommit: null
+      resolvedCommit: null,
+      blockedPluginReason: input.blockedPluginReason
     })
   })
+}
+
+export async function installBundledPlugin(input: {
+  pluginsDir: string
+  sourcePath: string
+  hostVersion: string
+  expectedPluginKey: string
+  blockedPluginReason?: (pluginKey: string) => string | null
+}): Promise<PluginInstallResult> {
+  return serializePluginMutation(input.pluginsDir, () =>
+    installStagedPluginTree({
+      pluginsDir: input.pluginsDir,
+      stagingDir: input.sourcePath,
+      hostVersion: input.hostVersion,
+      source: { kind: 'bundled', bundleId: input.expectedPluginKey },
+      resolvedCommit: null,
+      expectedPluginKey: input.expectedPluginKey,
+      blockedPluginReason: input.blockedPluginReason
+    })
+  )
 }
 
 export async function installPluginFromGit(input: {
@@ -88,6 +110,7 @@ export async function installPluginFromGit(input: {
   /** `#ref` suffix: branch, tag, or full commit SHA. Empty = default branch. */
   ref: string
   hostVersion: string
+  blockedPluginReason?: (pluginKey: string) => string | null
 }): Promise<PluginInstallResult> {
   if (!isAllowedPluginGitUrl(input.url)) {
     return { ok: false, error: 'plugin Git URL must use HTTPS or SSH' }
@@ -107,7 +130,8 @@ export async function installPluginFromGit(input: {
         stagingDir,
         hostVersion: input.hostVersion,
         source: { kind: 'git', url: input.url, ref },
-        resolvedCommit
+        resolvedCommit,
+        blockedPluginReason: input.blockedPluginReason
       })
     } catch (error) {
       return { ok: false, error: error instanceof Error ? error.message : String(error) }
@@ -124,6 +148,7 @@ export async function installPluginFromMarketplace(input: {
   expectedResolvedCommit: string
   marketplace: { url: string; ref: string; resolvedCommit: string }
   plugin: { url: string; ref: string }
+  blockedPluginReason?: (pluginKey: string) => string | null
 }): Promise<PluginInstallResult> {
   const source = pluginInstallSourceSchema.parse({
     kind: 'marketplace',
@@ -154,7 +179,8 @@ export async function installPluginFromMarketplace(input: {
         hostVersion: input.hostVersion,
         source,
         resolvedCommit,
-        expectedPluginKey: input.expectedPluginKey
+        expectedPluginKey: input.expectedPluginKey,
+        blockedPluginReason: input.blockedPluginReason
       })
     } catch (error) {
       return { ok: false, error: error instanceof Error ? error.message : String(error) }
@@ -171,9 +197,14 @@ export async function rollbackInstalledPlugin(input: {
   pluginsDir: string
   pluginKey: string
   hostVersion: string
+  blockedPluginReason?: (pluginKey: string) => string | null
 }): Promise<PluginInstallResult> {
   if (!isQualifiedPluginKey(input.pluginKey)) {
     return { ok: false, error: 'invalid qualified plugin key' }
+  }
+  const blockedReason = input.blockedPluginReason?.(input.pluginKey)
+  if (blockedReason) {
+    return { ok: false, error: `plugin is blocked by Orca's safety list: ${blockedReason}` }
   }
   return serializePluginMutation(input.pluginsDir, async () => {
     const pluginDir = join(input.pluginsDir, input.pluginKey)

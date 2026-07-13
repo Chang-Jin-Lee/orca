@@ -220,10 +220,23 @@ export function registerPluginHandlers(
     const parsed = parsePluginInstallArgs(args)
     const pluginsDir = getUserPluginsDir(pluginService.options.userDataPath)
     const hostVersion = pluginService.options.hostVersion
+    const blockedPluginReason = (pluginKey: string): string | null =>
+      pluginService.options.getPluginKillListEntry?.(pluginKey)?.reason ?? null
     const result =
       parsed.kind === 'local-path'
-        ? await installPluginFromLocalPath({ pluginsDir, sourcePath: parsed.path, hostVersion })
-        : await installPluginFromGit({ pluginsDir, url: parsed.url, ref: parsed.ref, hostVersion })
+        ? await installPluginFromLocalPath({
+            pluginsDir,
+            sourcePath: parsed.path,
+            hostVersion,
+            blockedPluginReason
+          })
+        : await installPluginFromGit({
+            pluginsDir,
+            url: parsed.url,
+            ref: parsed.ref,
+            hostVersion,
+            blockedPluginReason
+          })
     if (result.ok) {
       await pluginService.refresh()
     }

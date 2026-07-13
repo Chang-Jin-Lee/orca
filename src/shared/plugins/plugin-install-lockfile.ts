@@ -46,6 +46,10 @@ export const pluginInstallSourceSchema = z.discriminatedUnion('kind', [
         .refine(isAllowedPluginGitUrl, 'plugin Git URL must use HTTPS or SSH'),
       ref: z.string().min(1).max(4096)
     })
+  }),
+  z.object({
+    kind: z.literal('bundled'),
+    bundleId: z.string().refine(isQualifiedPluginKey, 'invalid bundled plugin identity')
   })
 ])
 
