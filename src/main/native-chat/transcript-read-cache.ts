@@ -91,7 +91,9 @@ export async function readNativeChatTranscriptCached(
 ): Promise<ReadTranscriptResult> {
   const filePath = await resolveSessionFilePath(agent, sessionId, { transcriptPath })
   if (!filePath) {
-    return { error: `No transcript found for ${agent} session ${sessionId}` }
+    // Retryable miss (session .jsonl not flushed yet, #8401). Return BEFORE the
+    // cache write below so a later real read is never masked by a cached miss.
+    return { error: `No transcript found for ${agent} session ${sessionId}`, notFound: true }
   }
 
   const key = cacheKey(agent, filePath)
@@ -104,7 +106,10 @@ export async function readNativeChatTranscriptCached(
   }
 
   const result = await readNativeChatTranscript(agent, sessionId, { filePath })
-  if (Number.isFinite(mtimeMs)) {
+  // Never cache a notFound miss (an ENOENT after resolve): the file may appear
+  // moments later, and a cached miss would keep the pane stuck on "No transcript
+  // found" until the mtime changed. Genuine parses/errors cache as before.
+  if (Number.isFinite(mtimeMs) && !('notFound' in result && result.notFound)) {
     setCached(key, { result, mtimeMs, bytes })
   }
   return result

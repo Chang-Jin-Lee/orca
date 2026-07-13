@@ -53,6 +53,14 @@ export type NativeChatLiveSession = NativeChatSession & {
 // Stable empty-base reference so a non-ready read doesn't churn the base axis.
 const EMPTY_MESSAGES: readonly NativeChatMessage[] = []
 
+// A just-created session's transcript is written lazily by the agent, so the
+// first read can race the first flush and return notFound (#8401). Retry with a
+// bounded exponential backoff (kept in 'loading', never 'error') until the file
+// appears, so the pane recovers on its own instead of sticking on "No transcript
+// found". The cap keeps a genuinely-never-appearing session to a light poll.
+const NOT_FOUND_RETRY_INITIAL_MS = 1000
+const NOT_FOUND_RETRY_MAX_MS = 10_000
+
 /** True when `whole`'s first `len` entries are referentially identical to
  *  `prefix` — i.e. `whole` is `prefix` extended at the tail, so the incremental
  *  assembler can splice just the suffix instead of resetting. */
@@ -167,25 +175,39 @@ export function useNativeChatLiveSession(
     setAppended([])
     setHasMore(false)
 
-    void transport
-      .readSession(agent, sessionId, limitRef.current, transcriptPath ?? undefined)
-      .then((result) => {
-        if (cancelled) {
-          return
-        }
-        if (result && 'error' in result) {
-          setRead({ phase: 'error', error: result.error })
-          return
-        }
-        const messages = result?.messages ?? []
-        setRead({ phase: 'ready', messages })
-        setHasMore(hasMoreNativeChatHistory(messages.length, limitRef.current))
-      })
-      .catch((err: unknown) => {
-        if (!cancelled) {
-          setRead({ phase: 'error', error: err instanceof Error ? err.message : String(err) })
-        }
-      })
+    // Backoff state for the notFound retry; both are cleared on teardown below.
+    let retryTimer: ReturnType<typeof setTimeout> | null = null
+    let retryDelayMs = NOT_FOUND_RETRY_INITIAL_MS
+
+    const attemptRead = (): void => {
+      void transport
+        .readSession(agent, sessionId, limitRef.current, transcriptPath ?? undefined)
+        .then((result) => {
+          if (cancelled) {
+            return
+          }
+          if (result && 'error' in result) {
+            if (result.notFound) {
+              // The transcript isn't flushed yet — stay in 'loading' and retry
+              // rather than hard-failing. The live watcher also polls for it.
+              retryTimer = setTimeout(attemptRead, retryDelayMs)
+              retryDelayMs = Math.min(retryDelayMs * 2, NOT_FOUND_RETRY_MAX_MS)
+              return
+            }
+            setRead({ phase: 'error', error: result.error })
+            return
+          }
+          const messages = result?.messages ?? []
+          setRead({ phase: 'ready', messages })
+          setHasMore(hasMoreNativeChatHistory(messages.length, limitRef.current))
+        })
+        .catch((err: unknown) => {
+          if (!cancelled) {
+            setRead({ phase: 'error', error: err instanceof Error ? err.message : String(err) })
+          }
+        })
+    }
+    attemptRead()
 
     const subscriptionId = nextSubscriptionId()
     const unsubscribe = transport.subscribe(
@@ -208,6 +230,12 @@ export function useNativeChatLiveSession(
 
     return () => {
       cancelled = true
+      if (retryTimer) {
+        // Stop a pending notFound retry so a session swap/unmount can't fire a
+        // stale read against the old session id.
+        clearTimeout(retryTimer)
+        retryTimer = null
+      }
       // Desktop returns a sync unsubscribe fn; the web RPC bridge returns a
       // Promise instead (and can't deliver streaming callbacks). Calling a
       // Promise as a function crashed the whole chat view, so resolve it first

@@ -813,7 +813,11 @@ export type AiVaultApi = {
   onWindowFocused: (callback: () => void) => () => void
 }
 
-export type NativeChatReadSessionResult = { messages: NativeChatMessage[] } | { error: string }
+export type NativeChatReadSessionResult =
+  | { messages: NativeChatMessage[] }
+  // `notFound` marks a RETRYABLE miss (the session .jsonl isn't flushed yet,
+  // #8401); the renderer stays in 'loading' and retries instead of hard-failing.
+  | { error: string; notFound?: true }
 
 /** Messages appended to a live-tailed transcript since the previous emit. */
 export type NativeChatAppendedMessages = NativeChatMessage[]

@@ -1,4 +1,4 @@
-import { appendFile, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { appendFile, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -235,5 +235,67 @@ describe('subscribeNativeChatTranscript', () => {
     expect(getActiveNativeChatWatcherCount()).toBe(before)
     // Must not throw.
     sub.unsubscribe()
+  })
+
+  it('installs the watcher once a not-yet-created session file appears (#8401 poll)', async () => {
+    // The transcript file does not exist at subscribe time (Claude Code's lazy
+    // first flush). The resolve-poll must pick it up once the agent writes it,
+    // instead of leaving the pane's live tail permanently deaf.
+    const root = await mkdtemp(join(tmpdir(), 'orca-native-chat-poll-'))
+    tempRoots.push(root)
+    const projectsDir = join(root, 'projects')
+    const projectDir = join(projectsDir, '-repo')
+    await mkdir(projectDir, { recursive: true })
+    const before = getActiveNativeChatWatcherCount()
+    const seen: NativeChatMessage[] = []
+
+    const sub = await subscribeNativeChatTranscript({
+      agent: 'claude',
+      sessionId: 'lazy-flush',
+      claudeProjectsDir: projectsDir,
+      onAppend: (messages) => seen.push(...messages),
+      debounceMs: 5,
+      resolvePollMs: 15
+    })
+
+    // No file yet → no watcher installed, but the poll is running.
+    expect(getActiveNativeChatWatcherCount()).toBe(before)
+
+    const target = join(projectDir, 'lazy-flush.jsonl')
+    await writeFile(target, claudeLine('u-1', 'user', 'first'))
+    await waitFor(() => seen.some((m) => m.id === 'u-1'))
+    expect(getActiveNativeChatWatcherCount()).toBe(before + 1)
+
+    // A later append on the now-watched file is tailed incrementally.
+    await appendFile(target, claudeLine('a-1', 'assistant', 'reply'))
+    await waitFor(() => seen.some((m) => m.id === 'a-1'))
+
+    sub.unsubscribe()
+    expect(getActiveNativeChatWatcherCount()).toBe(before)
+  })
+
+  it('stops the resolve-poll on unsubscribe before the file appears (no leak)', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'orca-native-chat-poll-cancel-'))
+    tempRoots.push(root)
+    const projectsDir = join(root, 'projects')
+    await mkdir(projectsDir, { recursive: true })
+    const before = getActiveNativeChatWatcherCount()
+
+    const sub = await subscribeNativeChatTranscript({
+      agent: 'claude',
+      sessionId: 'never-flushed',
+      claudeProjectsDir: projectsDir,
+      onAppend: () => {},
+      resolvePollMs: 10
+    })
+    // Tear down while still polling (file never created).
+    sub.unsubscribe()
+
+    // Even if the file appears later, the stopped poll installs no watcher.
+    const projectDir = join(projectsDir, '-repo')
+    await mkdir(projectDir, { recursive: true })
+    await writeFile(join(projectDir, 'never-flushed.jsonl'), claudeLine('u-1', 'user', 'x'))
+    await new Promise((resolve) => setTimeout(resolve, 40))
+    expect(getActiveNativeChatWatcherCount()).toBe(before)
   })
 })

@@ -238,6 +238,41 @@ describe('useNativeChatLiveSession — transport routing', () => {
     expect(latest?.error).toBe('runtime too old')
   })
 
+  it('retries a notFound read on backoff instead of surfacing an error (#8401)', async () => {
+    vi.useFakeTimers()
+    try {
+      const transport = getMockTransport('env-1')
+      // First read races the lazy first flush → retryable notFound; the flush
+      // lands before the backoff retry, which then reads the real transcript.
+      transport.readSession
+        .mockResolvedValueOnce({ error: 'No transcript found', notFound: true })
+        .mockResolvedValueOnce({ messages: [assistant('a-1', 'flushed')] })
+
+      await render({
+        paneKey: PANE,
+        agent: AGENT,
+        sessionId: SESSION,
+        runtimeEnvironmentId: 'env-1'
+      })
+
+      // notFound must NOT become an error: the pane stays loading and retries.
+      expect(latest?.status).toBe('loading')
+      expect(latest?.status).not.toBe('error')
+      expect(transport.readSession).toHaveBeenCalledTimes(1)
+
+      // Advance past the first backoff step so the retry fires and resolves.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1000)
+      })
+
+      expect(transport.readSession).toHaveBeenCalledTimes(2)
+      expect(latest?.status).toBe('ready')
+      expect(latest?.messages.map((m) => m.id)).toContain('a-1')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('never calls the transport when there is no session id', async () => {
     await render({ paneKey: PANE, agent: AGENT, sessionId: null, runtimeEnvironmentId: 'env-1' })
 

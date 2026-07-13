@@ -9,7 +9,19 @@ import {
 } from './transcript-line-decoders'
 import { decodeTranscriptStream } from './transcript-stream-lines'
 
-export type ReadTranscriptResult = { messages: NativeChatMessage[] } | { error: string }
+export type ReadTranscriptResult =
+  | { messages: NativeChatMessage[] }
+  // `notFound` marks a RETRYABLE miss (the session .jsonl isn't flushed yet — see
+  // #8401), distinct from a hard read/parse error. Callers may retry a notFound
+  // and must not cache it; a plain `error` is surfaced to the user immediately.
+  | { error: string; notFound?: true }
+
+// Why: a not-yet-created (or momentarily-vanished) transcript file surfaces as
+// ENOENT once resolve returns a path. That's the lazy-flush race, not a real
+// failure, so it becomes a retryable notFound; every other error stays hard.
+function isFileNotFoundError(err: unknown): boolean {
+  return err instanceof Error && 'code' in err && (err as NodeJS.ErrnoException).code === 'ENOENT'
+}
 
 export type ReadTranscriptOptions = ResolveSessionFileOptions & {
   /** Resolve directly to this file, skipping path discovery (used by tests). */
@@ -30,7 +42,9 @@ export async function readNativeChatTranscript(
 ): Promise<ReadTranscriptResult> {
   const filePath = options.filePath ?? (await resolveSessionFilePath(agent, sessionId, options))
   if (!filePath) {
-    return { error: `No transcript found for ${agent} session ${sessionId}` }
+    // The file hasn't been flushed yet (or was resolved away). Retryable, not a
+    // hard error — the caller polls/backs off until the lazy first write lands.
+    return { error: `No transcript found for ${agent} session ${sessionId}`, notFound: true }
   }
   try {
     if (agent === 'claude') {
@@ -44,6 +58,9 @@ export async function readNativeChatTranscript(
     }
     return { error: `Unsupported agent for native chat transcript: ${agent}` }
   } catch (err) {
+    if (isFileNotFoundError(err)) {
+      return { error: errorMessage(err), notFound: true }
+    }
     return { error: errorMessage(err) }
   }
 }

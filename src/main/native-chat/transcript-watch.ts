@@ -29,6 +29,9 @@ export type SubscribeNativeChatTranscriptArgs = ResolveSessionFileOptions & {
   filePath?: string
   /** Coalesce window for rapid fs.watch events (ms). Defaults to 40ms. */
   debounceMs?: number
+  /** Re-resolve interval while the session file doesn't exist yet (ms).
+   *  Defaults to RESOLVE_POLL_MS; overridable so tests run fast. */
+  resolvePollMs?: number
 }
 
 export type NativeChatTranscriptSubscription = {
@@ -41,6 +44,17 @@ export type NativeChatTranscriptSubscription = {
 // decoder is stateless per-line, so tailing reuses the same record→message
 // mapping the full reader uses.
 const DEFAULT_DEBOUNCE_MS = 40
+
+// Why: a just-created session's .jsonl is written lazily — an agent can take
+// from a few seconds to minutes to flush its first line (#8401) — so resolve can
+// return null right after subscribe. Re-resolve on a backing-off interval until
+// the file appears, then install the watcher; otherwise a live pane opened before
+// the first flush would never tail. The backoff keeps a long wait cheap (a fixed
+// fast poll would repeat the directory walk hundreds of times). Only runs while
+// the file is missing; a non-blank sessionId is required (blank has nothing to
+// resolve).
+const RESOLVE_POLL_INITIAL_MS = 1000
+const RESOLVE_POLL_MAX_MS = 10_000
 
 // Why: process-wide count of live FSWatchers opened by this module. The U4 leak
 // test asserts this returns to zero after unsubscribe so a forgotten handle is
@@ -125,13 +139,13 @@ async function readAppendedMessages(
 export async function subscribeNativeChatTranscript(
   args: SubscribeNativeChatTranscriptArgs
 ): Promise<NativeChatTranscriptSubscription> {
-  const { agent, sessionId, onAppend, debounceMs } = args
+  const { agent, sessionId, onAppend, debounceMs, resolvePollMs } = args
   const decode = lineDecoderForAgent(agent)
-  const filePath = args.filePath ?? (await resolveSessionFilePath(agent, sessionId, args))
+  const initialPath = args.filePath ?? (await resolveSessionFilePath(agent, sessionId, args))
 
-  if (!filePath || !decode) {
-    // Nothing watchable — return a no-op teardown so callers can unconditionally
-    // unsubscribe without null-checks.
+  if (!decode) {
+    // Unknown agent — nothing to decode. No-op teardown so callers can
+    // unconditionally unsubscribe without null-checks.
     return { unsubscribe: () => {} }
   }
 
@@ -145,9 +159,17 @@ export async function subscribeNativeChatTranscript(
   let reading = false
   let pendingReadRequested = false
   let debounceTimer: ReturnType<typeof setTimeout> | null = null
+  let resolvePollTimer: ReturnType<typeof setTimeout> | null = null
+  let watcher: FSWatcher | null = null
+  // The resolved path, set once the file exists (immediately, or via the poll).
+  let currentFilePath: string | null = initialPath
 
   async function drain(): Promise<void> {
     if (closed) {
+      return
+    }
+    const path = currentFilePath
+    if (path === null) {
       return
     }
     if (reading) {
@@ -161,12 +183,12 @@ export async function subscribeNativeChatTranscript(
       do {
         pendingReadRequested = false
         try {
-          const currentSize = await fileSize(filePath!)
+          const currentSize = await fileSize(path)
           if (currentSize < offset) {
             // Rotation/replacement/truncation: re-read from the top.
             offset = 0
           }
-          const { messages, consumedTo } = await readAppendedMessages(filePath!, offset, decode!)
+          const { messages, consumedTo } = await readAppendedMessages(path, offset, decode!)
           offset = consumedTo
           if (!closed && messages.length > 0) {
             onAppend(messages)
@@ -196,19 +218,76 @@ export async function subscribeNativeChatTranscript(
     }, debounceMs ?? DEFAULT_DEBOUNCE_MS)
   }
 
-  let watcher: FSWatcher
-  try {
-    watcher = watch(filePath, scheduleDrain)
-  } catch {
-    // File vanished between resolve and watch — return a no-op teardown.
-    return { unsubscribe: () => {} }
+  function stopResolvePoll(): void {
+    if (resolvePollTimer) {
+      clearTimeout(resolvePollTimer)
+      resolvePollTimer = null
+    }
   }
-  activeWatcherCount++
 
-  // Why: on some platforms fs.watch can miss the very first append that lands
-  // between offset-seed and watcher install. Kick one debounced drain so a
-  // turn written immediately after subscribe is still picked up.
-  scheduleDrain()
+  // Install the fs watcher on a now-present file. Returns false when watch()
+  // throws (the file vanished again), so the poll caller keeps trying.
+  function installWatcher(path: string): boolean {
+    if (closed) {
+      return false
+    }
+    let installed: FSWatcher
+    try {
+      installed = watch(path, scheduleDrain)
+    } catch {
+      return false
+    }
+    watcher = installed
+    currentFilePath = path
+    activeWatcherCount++
+    // Why: on some platforms fs.watch can miss the very first append that lands
+    // between offset-seed and watcher install. Kick one debounced drain so a
+    // turn written immediately after install is still picked up.
+    scheduleDrain()
+    return true
+  }
+
+  // Self-rescheduling backoff poll (setTimeout, not setInterval) so a slow resolve
+  // can't overlap the next tick and the delay grows toward the cap on a long wait.
+  function scheduleResolvePoll(delayMs: number): void {
+    if (closed || watcher) {
+      return
+    }
+    resolvePollTimer = setTimeout(() => {
+      resolvePollTimer = null
+      if (closed || watcher) {
+        return
+      }
+      void resolveSessionFilePath(agent, sessionId, args)
+        .then((resolved) => {
+          // Re-check after the async resolve: unsubscribe may have run, or a
+          // prior tick may have already installed the watcher (race-safe).
+          if (closed || watcher) {
+            return
+          }
+          if (resolved && installWatcher(resolved)) {
+            return
+          }
+          scheduleResolvePoll(Math.min(delayMs * 2, RESOLVE_POLL_MAX_MS))
+        })
+        .catch(() => {
+          // A transient resolve failure must not kill the poll; keep backing off.
+          scheduleResolvePoll(Math.min(delayMs * 2, RESOLVE_POLL_MAX_MS))
+        })
+    }, delayMs)
+  }
+
+  if (currentFilePath !== null) {
+    if (!installWatcher(currentFilePath)) {
+      // File vanished between resolve and watch — preserve the original no-op.
+      return { unsubscribe: () => {} }
+    }
+  } else if (sessionId.trim()) {
+    // #8401: the session .jsonl isn't flushed yet. Re-resolve on a backing-off
+    // interval and install the watcher once it appears (then re-read from the
+    // top). A blank sessionId has nothing to resolve, so it never polls.
+    scheduleResolvePoll(resolvePollMs ?? RESOLVE_POLL_INITIAL_MS)
+  }
 
   return {
     unsubscribe: () => {
@@ -216,12 +295,16 @@ export async function subscribeNativeChatTranscript(
         return
       }
       closed = true
+      stopResolvePoll()
       if (debounceTimer) {
         clearTimeout(debounceTimer)
         debounceTimer = null
       }
-      watcher.close()
-      activeWatcherCount--
+      if (watcher) {
+        watcher.close()
+        watcher = null
+        activeWatcherCount--
+      }
     }
   }
 }
