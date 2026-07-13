@@ -131,16 +131,28 @@ describe('verify-localization-catalog', () => {
     await expect(verifyLocalizationCatalog(root, { fix: false })).resolves.toBe(1)
   })
 
-  it('rejects unsupported reviewed upgrades and reviewed provenance downgrades', async () => {
+  it('rejects unsupported reviewed upgrades', async () => {
+    const { root } = makeProject({
+      sourceText:
+        "import { translate } from '@/i18n/i18n'\ntranslate('auto.example.fake', 'Fake')\n",
+      enCatalog: { auto: { example: { fake: 'Fake' } } },
+      esCatalog: { auto: { example: { fake: 'Falso' } } },
+      messages: {
+        'auto.example.fake': { state: 'reviewed', sourceHash: sourceHash('Fake') }
+      }
+    })
+    await expect(verifyLocalizationCatalog(root, { fix: false })).resolves.toBe(1)
+  })
+
+  it('rejects reviewed provenance downgrades', async () => {
     const reviewedValue = 'PR'
     const { root, localesDir } = makeProject({
       sourceText:
-        "import { translate } from '@/i18n/i18n'\ntranslate('auto.example.reviewed', 'PR')\ntranslate('auto.example.fake', 'Fake')\n",
-      enCatalog: { auto: { example: { reviewed: 'PR', fake: 'Fake' } } },
-      esCatalog: { auto: { example: { reviewed: reviewedValue, fake: 'Falso' } } },
+        "import { translate } from '@/i18n/i18n'\ntranslate('auto.example.reviewed', 'PR')\n",
+      enCatalog: { auto: { example: { reviewed: 'PR' } } },
+      esCatalog: { auto: { example: { reviewed: reviewedValue } } },
       messages: {
-        'auto.example.reviewed': { state: 'machine', sourceHash: sourceHash('PR') },
-        'auto.example.fake': { state: 'reviewed', sourceHash: sourceHash('Fake') }
+        'auto.example.reviewed': { state: 'machine', sourceHash: sourceHash('PR') }
       }
     })
     writeJson(path.join(root, 'config', 'localization-reviewed-corrections.json'), {
@@ -168,6 +180,18 @@ describe('verify-localization-catalog', () => {
       }
     })
     expect(readFileSync(path.join(localesDir, 'es.json'), 'utf8')).toContain(reviewedValue)
+    await expect(verifyLocalizationCatalog(root, { fix: false })).resolves.toBe(1)
+  })
+
+  it('rejects malformed reviewed-audit JSON without throwing', async () => {
+    const { root } = makeProject({ sourceText: '', enCatalog: {} })
+    writeFileSync(path.join(root, 'config', 'localization-reviewed-corrections.json'), '{invalid')
+    await expect(verifyLocalizationCatalog(root, { fix: false })).resolves.toBe(1)
+  })
+
+  it('rejects malformed translation-state JSON without throwing', async () => {
+    const { root } = makeProject({ sourceText: '', enCatalog: {} })
+    writeFileSync(path.join(root, 'config', 'localization-state', 'es.json'), '{invalid')
     await expect(verifyLocalizationCatalog(root, { fix: false })).resolves.toBe(1)
   })
 

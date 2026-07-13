@@ -8,6 +8,8 @@ import { main as bootstrapLocaleCatalog } from './bootstrap-locale-catalog.mjs'
 import { main as bootstrapLocalizationState } from './bootstrap-localization-state.mjs'
 import { main as repairLocaleCatalog } from './repair-locale-catalog.mjs'
 
+const DENIED_MIGRATION = { argv: [], environment: {} }
+
 function makeProject() {
   const root = mkdtempSync(path.join(tmpdir(), 'orca-legacy-localization-'))
   const localesDir = path.join(root, 'src', 'renderer', 'src', 'i18n', 'locales')
@@ -20,11 +22,11 @@ function makeProject() {
 
 describe('legacy localization rewrite guards', () => {
   it('refuses machine-translation bootstrap without migration opt-in', async () => {
-    await expect(bootstrapLocaleCatalog(makeProject(), 'es')).resolves.toBe(1)
+    await expect(bootstrapLocaleCatalog(makeProject(), 'es', DENIED_MIGRATION)).resolves.toBe(1)
   })
 
   it('refuses whole-catalog repair without migration opt-in', async () => {
-    await expect(repairLocaleCatalog(makeProject(), 'es')).resolves.toBe(1)
+    await expect(repairLocaleCatalog(makeProject(), 'es', DENIED_MIGRATION)).resolves.toBe(1)
   })
 
   it('refuses translation-state bootstrap without migration opt-in', async () => {

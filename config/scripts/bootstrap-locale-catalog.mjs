@@ -127,23 +127,26 @@ function parseLocaleArg(argv) {
   return argv[2]
 }
 
-export async function main(root = process.cwd(), locale = parseLocaleArg(process.argv)) {
-  if (!process.argv.includes(MIGRATION_FLAG) || process.env[MIGRATION_ENV] !== '1') {
+export async function main(root = process.cwd(), locale, dependencies = {}) {
+  const argv = dependencies.argv ?? process.argv
+  const environment = dependencies.environment ?? process.env
+  if (!argv.includes(MIGRATION_FLAG) || environment[MIGRATION_ENV] !== '1') {
     console.error(
       `Refusing to rewrite locale catalogs. Set ${MIGRATION_ENV}=1 and pass ${MIGRATION_FLAG} for migration-only use.`
     )
     return 1
   }
-  const config = LOCALE_CONFIG[locale]
+  const requestedLocale = locale ?? parseLocaleArg(argv)
+  const config = LOCALE_CONFIG[requestedLocale]
   if (!config) {
     console.error(
-      `Unsupported locale "${locale}". Supported: ${Object.keys(LOCALE_CONFIG).join(', ')}`
+      `Unsupported locale "${requestedLocale}". Supported: ${Object.keys(LOCALE_CONFIG).join(', ')}`
     )
     return 1
   }
 
   const enPath = path.join(root, LOCALES_DIR, 'en.json')
-  const localePath = path.join(root, LOCALES_DIR, `${locale}.json`)
+  const localePath = path.join(root, LOCALES_DIR, `${requestedLocale}.json`)
   const cachePath = path.join(root, LOCALES_DIR, config.cacheFile)
   const enCatalog = JSON.parse(await fs.readFile(enPath, 'utf8'))
   const localeCatalog = structuredClone(enCatalog)
@@ -170,7 +173,12 @@ export async function main(root = process.cwd(), locale = parseLocaleArg(process
     const restored = restorePlaceholders(translated, tokens)
     cache.set(
       value,
-      repairTranslatedValue({ key: '', enValue: value, localeValue: restored, locale })
+      repairTranslatedValue({
+        key: '',
+        enValue: value,
+        localeValue: restored,
+        locale: requestedLocale
+      })
     )
     await new Promise((resolve) => setTimeout(resolve, 200))
   })
@@ -192,12 +200,12 @@ export async function main(root = process.cwd(), locale = parseLocaleArg(process
         key: leaf.key,
         enValue: leaf.value,
         localeValue: cached,
-        locale
+        locale: requestedLocale
       })
     )
   }
 
-  repairCatalog(enCatalog, localeCatalog, locale)
+  repairCatalog(enCatalog, localeCatalog, requestedLocale)
 
   await fs.writeFile(localePath, `${JSON.stringify(localeCatalog, null, 2)}\n`, 'utf8')
   console.log(`Wrote ${localePath}`)

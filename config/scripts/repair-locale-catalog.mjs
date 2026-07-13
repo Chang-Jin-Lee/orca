@@ -59,14 +59,17 @@ export async function repairLocale(root, locale) {
   return { catalogRepairs, cacheRepairs }
 }
 
-export async function main(root = process.cwd(), locale = parseLocaleArg(process.argv)) {
-  if (!process.argv.includes(MIGRATION_FLAG) || process.env[MIGRATION_ENV] !== '1') {
+export async function main(root = process.cwd(), locale, dependencies = {}) {
+  const argv = dependencies.argv ?? process.argv
+  const environment = dependencies.environment ?? process.env
+  if (!argv.includes(MIGRATION_FLAG) || environment[MIGRATION_ENV] !== '1') {
     console.error(
       `Refusing to rewrite locale catalogs. Set ${MIGRATION_ENV}=1 and pass ${MIGRATION_FLAG} for migration-only use.`
     )
     return 1
   }
-  const locales = locale ? [locale] : ['ko', 'zh', 'ja', 'es']
+  const requestedLocale = locale ?? parseLocaleArg(argv)
+  const locales = requestedLocale ? [requestedLocale] : ['ko', 'zh', 'ja', 'es']
   const unsupported = locales.filter((code) => !LOCALE_CACHE_FILES[code])
   if (unsupported.length > 0) {
     console.error(`Unsupported locale(s): ${unsupported.join(', ')}`)

@@ -206,10 +206,26 @@ function validateStateEntry(
 }
 
 async function readReviewedAudit(root) {
-  const audit = JSON.parse(await fs.readFile(path.join(root, REVIEWED_AUDIT_PATH), 'utf8'))
+  const auditPath = path.join(root, REVIEWED_AUDIT_PATH)
+  let raw
+  try {
+    raw = await fs.readFile(auditPath, 'utf8')
+  } catch {
+    console.error(`Missing reviewed localization audit: ${normalizePath(root, auditPath)}`)
+    return null
+  }
+  let audit
+  try {
+    audit = JSON.parse(raw)
+  } catch (error) {
+    console.error('Reviewed localization audit is invalid:')
+    console.error(`invalid JSON (${error instanceof Error ? error.message : String(error)})`)
+    return null
+  }
   const errors = validateReviewedAudit(audit)
   if (errors.length > 0) {
-    throw new Error(`Reviewed localization audit is invalid:\n${errors.join('\n')}`)
+    console.error(`Reviewed localization audit is invalid:\n${errors.join('\n')}`)
+    return null
   }
   return audit
 }
@@ -223,7 +239,16 @@ async function verifyTranslationState(root, localeName, enCatalog, localeCatalog
     console.error(`Missing translation state: ${normalizePath(root, statePath)}`)
     return 1
   }
-  const document = JSON.parse(raw)
+  let document
+  try {
+    document = JSON.parse(raw)
+  } catch (error) {
+    console.error(`Translation state validation failed for ${localeName}.json:`)
+    console.error(
+      `${localeName}: invalid JSON (${error instanceof Error ? error.message : String(error)})`
+    )
+    return 1
+  }
   const errors = []
   if (Object.keys(document).join('|') !== 'version|locale|messages') {
     errors.push(`${localeName}: state document has invalid fields or ordering`)
@@ -512,6 +537,9 @@ export async function main(root = process.cwd(), options = parseArgs(process.arg
   console.log(`Verified ${staticReferences.length} localization key references against en.json.`)
 
   const reviewedAudit = await readReviewedAudit(root)
+  if (!reviewedAudit) {
+    return 1
+  }
   for (const locale of LOCALIZATION_LOCALES) {
     if (!reviewedAudit.messages[locale]) {
       console.error(`Reviewed audit is missing locale ${locale}.`)

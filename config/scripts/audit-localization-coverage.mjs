@@ -483,9 +483,10 @@ export async function main(root = process.cwd(), argv = process.argv.slice(2), p
   const absoluteSourceRoot = path.resolve(root, options.sourceRoot)
   const files =
     preparedSource?.files ?? (await collectLocalizationSourceFiles(root, absoluteSourceRoot))
-  const reports = preparedSource?.reports ?? []
+  const hasPreparedReports = preparedSource?.reports !== undefined
+  const reports = preparedSource?.reports ? [...preparedSource.reports] : []
 
-  if (!preparedSource) {
+  if (!hasPreparedReports) {
     for (const filePath of files) {
       const sourceText = await fs.readFile(filePath, 'utf8')
       reports.push(...collectLocalizationCandidates(filePath, sourceText, root))

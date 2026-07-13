@@ -161,4 +161,43 @@ describe('audit-localization-coverage allowlist schema', () => {
       ])
     ).resolves.toBe(1)
   })
+
+  it('collects reports when callers prepare only the source file list', async () => {
+    const { root, allowlistPath } = makeProject()
+    writeJson(path.join(root, allowlistPath), [
+      {
+        filePath: 'src/main/example.ts',
+        kind: 'object-property:message',
+        text: 'Hello from main',
+        dynamic: false,
+        count: 1,
+        classification: 'product-copy-pending-localization',
+        reason:
+          'Main-process product literal in src/main/example.ts is user-visible copy pending main-process localization: "Hello from main".'
+      }
+    ])
+    await expect(
+      auditLocalizationCoverage(
+        root,
+        ['--source-root', 'src/main', '--allowlist', allowlistPath, '--check'],
+        { files: [path.join(root, 'src', 'main', 'example.ts')] }
+      )
+    ).resolves.toBe(0)
+  })
+
+  it('does not overwrite an unreadable allowlist snapshot', async () => {
+    const { root, allowlistPath } = makeProject()
+    const absoluteAllowlistPath = path.join(root, allowlistPath)
+    writeFileSync(absoluteAllowlistPath, '{invalid', 'utf8')
+    await expect(
+      auditLocalizationCoverage(root, [
+        '--source-root',
+        'src/main',
+        '--allowlist',
+        allowlistPath,
+        '--snapshot-allowlist'
+      ])
+    ).rejects.toThrow()
+    expect(readFileSync(absoluteAllowlistPath, 'utf8')).toBe('{invalid')
+  })
 })

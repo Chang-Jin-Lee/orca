@@ -27,7 +27,11 @@ export async function writeAllowlistSnapshot(root, allowlistPath, reports) {
   let existing = []
   try {
     existing = await readAllowlist(root, allowlistPath)
-  } catch {}
+  } catch (error) {
+    if (error?.code !== 'ENOENT') {
+      throw error
+    }
+  }
   const existingBySignature = new Map(existing.map((entry) => [candidateSignature(entry), entry]))
   const currentEntries = [...counts.entries()].map(([signature, count]) => {
     const prior = existingBySignature.get(signature)

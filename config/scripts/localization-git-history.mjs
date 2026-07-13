@@ -65,6 +65,9 @@ async function readHistory(root, localePaths, onGitProcess) {
 }
 
 async function resolveBlobOids(root, specs, onGitProcess) {
+  if (specs.length === 0) {
+    return new Map()
+  }
   const child = startGit(root, ['cat-file', '--batch-check'], onGitProcess)
   const stderr = []
   child.stderr.setEncoding('utf8')
