@@ -61,11 +61,15 @@ import { resolveRepairedActiveTerminalTabId } from './terminal/active-terminal-r
 import { scheduleBackgroundTerminalWorktreeMeasure } from './terminal/background-terminal-worktree-visibility'
 import {
   applyBackgroundMountTabRestriction,
+  collectDeferredMountTabIds,
+  planColdActivationTabDeferral,
   pruneClosedBackgroundMountTabs,
+  revealActivationDeferredTabs,
   shouldMountBackgroundWorktreeTab,
   takeAllPendingBackgroundTerminalWorktreeMounts,
   takePendingBackgroundTerminalWorktreeMount
 } from './terminal/background-terminal-worktree-mount'
+import { hasRegisteredRuntimeTerminalTab } from '../runtime/sync-runtime-graph'
 import {
   getEffectiveLayoutForWorktree as getEffectiveLayout,
   anyMountedWorktreeHasLayout as computeAnyMountedWorktreeHasLayout
@@ -774,6 +778,9 @@ function Terminal(): React.JSX.Element | null {
   // wake/resume) must not instantiate a TerminalPane per saved tab. A worktree
   // absent from this map mounts all of its tabs.
   const backgroundMountTabIdsByWorktreeRef = useRef(new Map<string, ReadonlySet<string>>())
+  // Why: the cold-activation deferral decision must run once per activation
+  // transition, not on every re-render of an already-active worktree.
+  const lastActivationWorktreeIdRef = useRef<string | null>(null)
   useEffect(() => {
     const timers = measurableBackgroundWorktreeTimersRef.current
     const closeDialogDebounceTimers = closeDialogDebounceTimersRef.current
@@ -952,10 +959,88 @@ function Terminal(): React.JSX.Element | null {
   // with ptyId: null, and TerminalPane would call connectPanePty → pty:spawn,
   // creating a duplicate PTY for the same tab.
   if (renderedActiveWorktreeId && workspaceSessionReady) {
+    // A real activation supersedes any targeted background mount, but a cold
+    // activation must not mount every saved tab in one pass: each TerminalPane
+    // mount replays scrollback through xterm, attaches a WebGL renderer, and
+    // issues a sync-IPC snapshot read, so a whole-worktree stampede freezes
+    // the renderer for the entire activation. Hidden tabs defer like
+    // cold-parked tabs from birth and mount on first reveal.
+    const worktreeTabs = tabsByWorktree[renderedActiveWorktreeId] ?? []
+    const immediateTabIds = new Set<string>()
+    if (activeTabId) {
+      immediateTabIds.add(activeTabId)
+    }
+    // Why: on a fresh switch the global activeTabId can still point at the
+    // previous worktree for one pass; the remembered per-worktree tab is the
+    // one about to become visible.
+    const rememberedActiveTabId = activeTabIdByWorktree[renderedActiveWorktreeId]
+    if (rememberedActiveTabId) {
+      immediateTabIds.add(rememberedActiveTabId)
+    }
+    // Why groups: split mode shows one tab per group at once, so every
+    // group's active tab is user-visible and must not defer. group.activeTabId
+    // is a unified-tab id — map it to the terminal tab's entity id, keeping
+    // the raw id too in case older persisted groups stored entity ids.
+    const unifiedTabById = new Map(
+      (useAppStore.getState().unifiedTabsByWorktree[renderedActiveWorktreeId] ?? []).map(
+        (unifiedTab) => [unifiedTab.id, unifiedTab]
+      )
+    )
+    for (const group of groupsByWorktree[renderedActiveWorktreeId] ?? []) {
+      if (!group.activeTabId) {
+        continue
+      }
+      immediateTabIds.add(group.activeTabId)
+      const activeUnifiedTab = unifiedTabById.get(group.activeTabId)
+      if (activeUnifiedTab?.contentType === 'terminal') {
+        immediateTabIds.add(activeUnifiedTab.entityId)
+      }
+    }
+    for (const portal of activityTerminalPortals) {
+      if (portal.worktreeId === renderedActiveWorktreeId) {
+        immediateTabIds.add(portal.tabId)
+      }
+    }
+    // Why: a queued spawn needs a mounted pane to start its PTY.
+    for (const tab of worktreeTabs) {
+      if (tab.pendingActivationSpawn || pendingStartupByTabId[tab.id] !== undefined) {
+        immediateTabIds.add(tab.id)
+      }
+    }
+    if (lastActivationWorktreeIdRef.current !== renderedActiveWorktreeId) {
+      lastActivationWorktreeIdRef.current = renderedActiveWorktreeId
+      const tabById = new Map(worktreeTabs.map((tab) => [tab.id, tab]))
+      planColdActivationTabDeferral({
+        restrictions: backgroundMountTabIdsByWorktreeRef.current,
+        worktreeId: renderedActiveWorktreeId,
+        allTabIds: worktreeTabs.map((tab) => tab.id),
+        isTabLive: hasRegisteredRuntimeTerminalTab,
+        // Why the coverage gate: an unmounted tab's bells/titles/completions
+        // are owned by parked byte watchers; a tab they cannot cover must
+        // mount immediately, mirroring the cold-park eligibility rule.
+        isTabDeferrable: (tabId) => {
+          const tab = tabById.get(tabId)
+          return (
+            terminalParkingEnabled &&
+            tab !== undefined &&
+            canWatcherCoverParkedTerminalTab(renderedActiveWorktreeId, tab)
+          )
+        },
+        immediateTabIds
+      })
+    } else {
+      revealActivationDeferredTabs({
+        restrictions: backgroundMountTabIdsByWorktreeRef.current,
+        worktreeId: renderedActiveWorktreeId,
+        allTabIds: worktreeTabs.map((tab) => tab.id),
+        immediateTabIds
+      })
+    }
     mountedWorktreeIdsRef.current.add(renderedActiveWorktreeId)
-    // Why: a real activation supersedes any targeted background mount — the
-    // visible worktree needs all of its tabs.
-    backgroundMountTabIdsByWorktreeRef.current.delete(renderedActiveWorktreeId)
+  } else {
+    // Why: the next ready activation must re-run the deferral decision even
+    // if it re-activates the same worktree the session started on.
+    lastActivationWorktreeIdRef.current = null
   }
   pruneClosedBackgroundMountTabs(
     backgroundMountTabIdsByWorktreeRef.current,
@@ -1011,10 +1096,34 @@ function Terminal(): React.JSX.Element | null {
             }
           }
         }
+        // Why: mount-restricted (activation-deferred / targeted-background)
+        // tabs are unmounted like parked ones; the same byte watchers own
+        // their side effects until first reveal.
+        const deferredTabIds = collectDeferredMountTabIds(
+          backgroundMountTabIdsByWorktreeRef.current.get(workspace.id) ?? null,
+          tabs.map((tab) => tab.id)
+        )
+        for (const tab of tabs) {
+          if (
+            deferredTabIds.has(tab.id) &&
+            !parkedTabIds.has(tab.id) &&
+            canWatcherCoverParkedTerminalTab(workspace.id, tab) &&
+            !findActivityTerminalPortal(activityTerminalPortals, {
+              worktreeId: workspace.id,
+              tabId: tab.id
+            })
+          ) {
+            parkedTabIds.add(tab.id)
+          }
+        }
       }
       syncParkedTerminalTabWatchers({ worktreeId: workspace.id, tabs, parkedTabIds })
     }
   }, [
+    // Why activeTabId: revealing a deferred tab mutates the mount restriction
+    // during the same render; the watcher sync must re-run in that flush so
+    // the revealed tab's watcher disposes before its pane attaches.
+    activeTabId,
     activeView,
     activityTerminalPortals,
     anyMountedWorktreeHasLayout,

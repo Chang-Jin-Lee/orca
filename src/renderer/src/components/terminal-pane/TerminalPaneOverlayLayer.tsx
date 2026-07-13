@@ -11,7 +11,10 @@ import {
 } from '../activity/activity-terminal-portal'
 import TerminalPane from './TerminalPane'
 import { closeTerminalTab } from '../terminal/terminal-tab-actions'
-import { shouldMountBackgroundWorktreeTab } from '../terminal/background-terminal-worktree-mount'
+import {
+  collectDeferredMountTabIds,
+  shouldMountBackgroundWorktreeTab
+} from '../terminal/background-terminal-worktree-mount'
 import { useNativeChatToggleShortcut } from '../native-chat/use-native-chat-toggle-shortcut'
 import { shouldDeferParkedPtyExitTabClose } from './terminal-parked-tab-watchers'
 import { useTerminalTabColdParking } from './use-terminal-tab-cold-parking'
@@ -363,6 +366,16 @@ const TerminalPaneOverlayLayer = memo(function TerminalPaneOverlayLayer({
     return entries
   }, [groupActiveTabById, unifiedTabs])
 
+  // Why: mount-restricted tabs render no pane (the filter below), so they
+  // need parked-watcher coverage exactly like cold-parked tabs.
+  const deferredMountTabIds = useMemo(
+    () =>
+      collectDeferredMountTabIds(
+        backgroundMountTabIds,
+        terminalTabs.map((tab) => tab.id)
+      ),
+    [backgroundMountTabIds, terminalTabs]
+  )
   const parkedTerminalTabIds = useTerminalTabColdParking({
     worktreeId,
     terminalTabs,
@@ -370,7 +383,8 @@ const TerminalPaneOverlayLayer = memo(function TerminalPaneOverlayLayer({
     isWorktreeActive,
     coldParkTerminalPanes,
     shouldMeasureHiddenWorktree,
-    activityTerminalPortals
+    activityTerminalPortals,
+    deferredMountTabIds
   })
 
   if (!worktreePath) {

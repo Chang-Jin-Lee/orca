@@ -53,6 +53,9 @@ export function useTerminalTabColdParking(args: {
    *  mounted for their first xterm fit, mirroring the worktree-level guard. */
   shouldMeasureHiddenWorktree: boolean
   activityTerminalPortals: ActivityTerminalPortalTarget[]
+  /** Tabs the mount restriction keeps unmounted (activation deferral /
+   *  targeted background mounts) — parked-equivalent for watcher purposes. */
+  deferredMountTabIds?: ReadonlySet<string>
 }): ReadonlySet<string> {
   const {
     worktreeId,
@@ -61,7 +64,8 @@ export function useTerminalTabColdParking(args: {
     isWorktreeActive,
     coldParkTerminalPanes,
     shouldMeasureHiddenWorktree,
-    activityTerminalPortals
+    activityTerminalPortals,
+    deferredMountTabIds
   } = args
   const pendingStartupByTabId = useAppStore((state) => state.pendingStartupByTabId)
   const terminalParkingEnabled = useAppStore(
@@ -212,6 +216,17 @@ export function useTerminalTabColdParking(args: {
       ) {
         parked.add(terminalTab.id)
       }
+      // Why: mount-restricted tabs render no pane regardless of the park
+      // policy (the layer filters them out before parking is consulted), so
+      // the watchers must own their side effects. The measure probe never
+      // mounts them either, hence no shouldMeasureHiddenWorktree gate.
+      if (
+        deferredMountTabIds?.has(terminalTab.id) &&
+        !hasActivityTerminalPortal &&
+        canWatcherCoverParkedTerminalTab(worktreeId, terminalTab)
+      ) {
+        parked.add(terminalTab.id)
+      }
     }
     return parked
   }, [
@@ -219,6 +234,7 @@ export function useTerminalTabColdParking(args: {
     assignments,
     coldParkTerminalPanes,
     coldParkedTerminalTabIds,
+    deferredMountTabIds,
     isWorktreeActive,
     shouldMeasureHiddenWorktree,
     terminalTabs,
