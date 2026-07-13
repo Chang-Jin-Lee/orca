@@ -141,6 +141,11 @@ export const mobileSessionFrameStyles = StyleSheet.create({
     position: 'relative',
     overflow: 'hidden'
   },
+  terminalPaneArea: {
+    flex: 1,
+    minHeight: 0,
+    position: 'relative'
+  },
   terminalPane: {
     ...StyleSheet.absoluteFillObject
   },

@@ -12,6 +12,7 @@ export async function createBlankWorkspace(args: {
   baseName: string
   startupCommand: string | undefined
   createdWithAgentId: TuiAgent | undefined
+  launchParams?: Record<string, unknown>
   comment: string | undefined
   setupDecision: WorkspaceCreateSetupDecision
 }): Promise<WorktreeCreateResult> {
@@ -19,14 +20,15 @@ export async function createBlankWorkspace(args: {
     client: args.client,
     baseName: args.baseName,
     buildParams: (name) => {
+      const launchParams = args.launchParams ?? {
+        startupCommand: args.startupCommand,
+        ...(args.createdWithAgentId ? { createdWithAgent: args.createdWithAgentId } : {})
+      }
       const params: Record<string, unknown> = {
         repo: `id:${args.repoId}`,
-        startupCommand: args.startupCommand,
         setupDecision: args.setupDecision,
-        name
-      }
-      if (args.createdWithAgentId) {
-        params.createdWithAgent = args.createdWithAgentId
+        name,
+        ...launchParams
       }
       if (args.comment) {
         params.comment = args.comment
