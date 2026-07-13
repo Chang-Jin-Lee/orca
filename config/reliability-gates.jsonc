@@ -3493,7 +3493,8 @@
         "pnpm exec vitest run --config config/vitest.config.ts src/main/runtime/orca-runtime.test.ts src/main/ipc/worktrees.test.ts src/main/ipc/pty.test.ts src/main/ipc/runtime-environments.test.ts src/main/runtime/rpc/terminal-close-generation.test.ts src/main/persistence.test.ts src/main/ssh/ssh-relay-session.test.ts src/main/ipc/ssh.test.ts src/renderer/src/store/slices/worktrees.test.ts",
         "pnpm exec vitest run --config config/vitest.config.ts src/main/providers/local-pty-provider.test.ts src/main/daemon/daemon-pty-adapter.test.ts src/main/daemon/session.test.ts src/main/daemon/pty-subprocess.test.ts src/main/daemon/terminal-host.test.ts src/main/daemon/terminal-host-session-reaping-leak.test.ts src/main/daemon/daemon-server.test.ts src/main/ipc/pty.test.ts src/main/ipc/runtime-terminal-close-retry-owner.test.ts src/main/runtime/orca-runtime.test.ts",
         "pnpm exec vitest run --config config/vitest.config.ts src/main/providers/local-pty-provider.test.ts src/main/daemon/daemon-pty-adapter.test.ts src/main/daemon/daemon-pty-router.test.ts src/main/daemon/degraded-daemon-pty-provider.test.ts src/main/daemon/session.test.ts src/main/daemon/pty-subprocess.test.ts src/main/daemon/terminal-host.test.ts src/main/daemon/terminal-host-session-reaping-leak.test.ts src/main/daemon/daemon-server.test.ts src/main/ipc/pty.test.ts src/main/ipc/runtime-terminal-close-retry-owner.test.ts src/main/runtime/orca-runtime.test.ts",
-        "pnpm exec vitest run --config config/vitest.config.ts src/main/daemon/daemon-session-exit-fence.test.ts"
+        "pnpm exec vitest run --config config/vitest.config.ts src/main/daemon/daemon-session-exit-fence.test.ts",
+        "pnpm exec vitest run --config config/vitest.config.ts src/main/providers/local-pty-process-exit-proof.test.ts src/main/runtime/worktree-teardown.test.ts"
       ],
       "testFiles": [
         "config/scripts/build-relay-windows-node-pty-patch.test.mjs",
@@ -3509,6 +3510,7 @@
         "src/shared/ssh-pty-id.test.ts",
         "src/shared/ssh-types.test.ts",
         "src/main/providers/local-pty-provider.test.ts",
+        "src/main/providers/local-pty-process-exit-proof.test.ts",
         "src/main/daemon/daemon-pty-adapter.test.ts",
         "src/main/daemon/daemon-session-exit-fence.test.ts",
         "src/main/daemon/daemon-pty-router.test.ts",
@@ -3538,7 +3540,8 @@
         "src/renderer/src/store/slices/worktrees.test.ts",
         "src/main/ipc/runtime-environments.test.ts",
         "src/main/runtime/rpc/terminal-close-generation.test.ts",
-        "src/main/ipc/ssh.test.ts"
+        "src/main/ipc/ssh.test.ts",
+        "src/main/runtime/worktree-teardown.test.ts"
       ],
       "assertionRefs": [
         {
@@ -3572,6 +3575,8 @@
             "graceful fallback throws stay contained and re-arm instead of reaching relay-global uncaughtException",
             "native close throws followed by OS process-death proof reap immediate and stale-spawn fallback owners without another timer",
             "whole-relay shutdown retries native failure and waits for exit proof before clearing ownership",
+            "cold concurrent spawn requests share one native-addon import instead of failing nondeterministically",
+            "graceful fallback and whole-relay native throws accept OS death proof with zero retained timers",
             "51 concurrent spawn requests produce exactly 50 live PTYs and one cap rejection",
             "explicit shutdown retains one managed PTY until onExit or OS liveness proves the child is gone"
           ]
@@ -3645,6 +3650,7 @@
           "assertions": [
             "a synchronous Windows native kill throw retains PTY ownership and listeners so retry can succeed",
             "an accepted native kill retains the PTY until an exit callback proves physical shutdown",
+            "ESRCH reaps an exact native owner after accepted or throwing kill when node-pty omits onExit",
             "a stale pane identity is rejected before the local PTY can be killed",
             "immediate POSIX local shutdown uses SIGKILL while Windows remains signal-free"
           ]
@@ -3656,7 +3662,8 @@
             "accepted daemon shutdown remains provider-visible until physical exit proof",
             "preserved pre-v22 sessions fail closed when restart cannot recover pane identity for attach or shutdown",
             "a stale daemon list started before same-id replacement completion cannot finalize the old exit",
-            "a protocol-v23 exit from an older immutable session generation is rejected without probing"
+            "a protocol-v23 exit from an older immutable session generation is rejected without probing",
+            "authoritative list absence clears active ownership and every exit-fence map"
           ]
         },
         {
@@ -3664,7 +3671,7 @@
           "assertions": [
             "same-id admission completion invalidates a stale absent-list snapshot and recognizes the older immutable generation",
             "2,000 finalized session identities leave zero admission, revision, generation, or pending-exit entries",
-            "an admission finishing after dispose-style clear cannot recreate fence state"
+            "an admission finishing after dispose-style clear cannot publish generation state or recreate any map"
           ]
         },
         {
@@ -3739,7 +3746,21 @@
           "file": "src/renderer/src/components/terminal-pane/pty-pre-handler-buffer.test.ts",
           "assertions": [
             "ownerless pre-handler exits evict oldest state at the 64-id bound",
-            "an evicted legitimate exit triggers one targeted liveness readback and disconnects the dead pane"
+            "an evicted legitimate exit triggers one targeted liveness readback and disconnects the dead pane",
+            "100 unrelated registrations after overflow trigger zero liveness IPC"
+          ]
+        },
+        {
+          "file": "src/main/ipc/ssh.test.ts",
+          "assertions": [
+            "target removal retains metadata and the live relay when PTY exit proof fails",
+            "successful target removal exit-proofs every PTY and force-stops the grace-zero relay before metadata deletion"
+          ]
+        },
+        {
+          "file": "src/main/runtime/worktree-teardown.test.ts",
+          "assertions": [
+            "worktree cleanup never clears PTY state merely because an exit-proof provider accepted shutdown"
           ]
         },
         {
@@ -4053,6 +4074,42 @@
           "result": "passed",
           "durationSeconds": 2,
           "summary": "215 tests passed, including immediate and stale-spawn fallback native-throw paths that accept independent OS death proof, release ownership, and retain zero retry timers."
+        },
+        {
+          "date": "2026-07-13",
+          "runner": "local",
+          "platform": "macos",
+          "command": "pnpm exec vitest run --config config/vitest.config.ts config/scripts/build-relay-windows-node-pty-patch.test.mjs src/main/ssh/ssh-relay-native-deps-install.test.ts src/relay/node-pty-windows-pre-ready-shutdown.test.ts src/relay/pty-handler.test.ts src/renderer/src/components/terminal-pane/pty-transport.test.ts src/renderer/src/store/slices/repos-remove-project-purge-leak.test.ts src/renderer/src/store/slices/repos.test.ts src/renderer/src/store/slices/repos-runtime-vm-removal.test.ts src/renderer/src/lib/ephemeral-vm-runtime-cleanup.test.ts",
+          "result": "passed",
+          "durationSeconds": 2,
+          "summary": "217 tests passed: cold concurrent relay spawn coalesced one native-addon load, and immediate, stale, graceful, and whole-relay native-throw paths released OS-proven-dead owners with zero retry timers."
+        },
+        {
+          "date": "2026-07-13",
+          "runner": "local",
+          "platform": "macos",
+          "command": "pnpm exec vitest run --config config/vitest.config.ts src/main/providers/local-pty-provider.test.ts src/main/daemon/daemon-pty-adapter.test.ts src/main/daemon/daemon-pty-router.test.ts src/main/daemon/degraded-daemon-pty-provider.test.ts src/main/daemon/session.test.ts src/main/daemon/pty-subprocess.test.ts src/main/daemon/terminal-host.test.ts src/main/daemon/terminal-host-session-reaping-leak.test.ts src/main/daemon/daemon-server.test.ts src/main/ipc/pty.test.ts src/main/ipc/runtime-terminal-close-retry-owner.test.ts src/main/runtime/orca-runtime.test.ts",
+          "result": "passed",
+          "durationSeconds": 9,
+          "summary": "1428 daemon/provider/runtime tests passed, including authoritative daemon absence cleanup, post-clear admission publication fencing, and local native OS-death proof without onExit."
+        },
+        {
+          "date": "2026-07-13",
+          "runner": "local",
+          "platform": "macos",
+          "command": "pnpm exec vitest run --config config/vitest.config.ts src/main/runtime/orca-runtime.test.ts src/main/ipc/worktrees.test.ts src/main/ipc/pty.test.ts src/main/ipc/runtime-environments.test.ts src/main/runtime/rpc/terminal-close-generation.test.ts src/main/persistence.test.ts src/main/ssh/ssh-relay-session.test.ts src/main/ipc/ssh.test.ts src/renderer/src/store/slices/worktrees.test.ts",
+          "result": "passed",
+          "durationSeconds": 10,
+          "summary": "1887 host/runtime tests passed, including SSH target removal preserving metadata on failed exit proof and force-stopping the relay only after confirmed PTY teardown."
+        },
+        {
+          "date": "2026-07-13",
+          "runner": "local",
+          "platform": "macos",
+          "command": "pnpm exec vitest run --config config/vitest.config.ts src/main/providers/local-pty-process-exit-proof.test.ts src/main/runtime/worktree-teardown.test.ts",
+          "result": "passed",
+          "durationSeconds": 1,
+          "summary": "11 tests passed: only ESRCH proved local process death, and worktree cleanup preserved state after rejected or merely accepted unproved shutdown."
         }
       ],
       "runtimeBudget": {
@@ -4065,11 +4122,11 @@
       },
       "redGreenEvidence": {
         "status": "partial",
-        "evidence": "The built relay artifact harness records the vanilla npm dependency at close=0, native-kill=0, deferred=1 and the shipped patched artifact at close=1, native-kill=1, deferred=0. Accepted local, daemon, and relay kills now remain provider-visible until onExit or conservative OS liveness proves physical exit; retries stay signal-free on Windows. Injected daemon native failures propagate without reaping the live session, whole-process daemon and relay drains retain listeners and retry ownership until exit proof or the bounded process-exit deadline, and an older 5-second graceful timer is replaced by the shutdown cadence. RPC drain rejection is contained before explicit detached-process exit. Stale relay spawns retain one timer beyond the eighth failure, graceful fallback throws stay below relay-global uncaughtException, and 51 concurrent relay spawn requests deterministically create 50 live PTYs plus one cap rejection. The former 65-id renderer oracle proved the oldest still-live owner was dropped; the corrected oracle retries all 65. A disconnected SSH provider retains its lease without a synthetic exit, and a stale durable lease is rejected before attach when its persisted generation differs from the relay boot. A real worktree-removal preflight deterministically rejects a late matching-host admission while allowing an unrelated host removal; duplicate-id runtime SSH cleanup is host-qualified."
+        "evidence": "The built relay artifact harness records the vanilla npm dependency at close=0, native-kill=0, deferred=1 and the shipped patched artifact at close=1, native-kill=1, deferred=0. Accepted local, daemon, and relay kills now remain provider-visible until onExit or conservative OS liveness proves physical exit; retries stay signal-free on Windows. Injected daemon native failures propagate without reaping the live session, while ESRCH after accepted or throwing native close reaps the exact local/relay owner even when node-pty omits onExit. Whole-process daemon and relay drains retain listeners and retry ownership until exit proof or the bounded process-exit deadline, and an older 5-second graceful timer is replaced by the shutdown cadence. RPC drain rejection is contained before explicit detached-process exit. Stale relay spawns retain one timer beyond the eighth failure, graceful fallback throws stay below relay-global uncaughtException, and a standalone cold 51-request relay admission deterministically creates 50 live PTYs plus one cap rejection through one shared addon load. Protocol-v23 generations plus epoch-bound admission publication reject old exits, stale absence, and post-clear completion; authoritative absence releases every map. The former 65-id renderer oracle proved the oldest still-live owner was dropped; exact evicted-id tombstones recover it without probing 100 unrelated later registrations. A disconnected SSH provider retains its lease without a synthetic exit, and target removal preserves metadata unless every PTY is exit-proved before the grace-zero relay is force-stopped. A real worktree-removal preflight deterministically rejects a late matching-host admission while allowing an unrelated host removal; fallback cleanup no longer erases state after unproved shutdown."
       },
       "performanceBudget": {
         "required": true,
-        "evidence": "Shutdown removes ownerless deferred retention and preserves at most one provider entry plus one timer per PTY until physical exit is proved or the bounded whole-process drain ends. Wait completion is event-driven from map deletion, not polled; daemon/relay retry cadence is 100 ms only during the four-second process drain, keeps one timer per still-live PTY, and caps native-failure logs at attempts 1, 2, and 8. Accepted POSIX signals are followed by conservative exit-proof polling without repeated signals, while Windows close remains signal-free and repeats only while unproved. Relay admission rechecks the 50-session cap after asynchronous module load and before synchronous spawn/store; 51 concurrent calls create exactly 50 PTYs with no oversubscription. Failed local and SSH kills coalesce in main by exact live PTY id, while failed remote-runtime closes coalesce by environment, runtime generation, and handle: distinct durable records correspond one-for-one with still-unconfirmed provider resources and survive renderer/app restart. Each main-owned retry map owns one shared one-shot timer for its earliest deadline, retries all due owners, caps backoff at 30 seconds, and logs only attempts 1, 2, and 8 to prevent outage backpressure. Successful SSH-target and runtime-environment removal release unreachable records and cancel the last retry timer; provider replacement rebinds the same generation but relay/runtime generation replacement drops stale intent before touching a reused id. The deterministic 65-local plus 65-remote-runtime burst performs zero synchronous full-store flushes: 260 O(1) append records stay below 100 KiB and 1 KiB each, survive immediate add/remove reloads, and compact to one checkpoint after the full-state save; a two-crash oracle proves a torn final record forces an atomic recovered checkpoint before a new owner is added, while a monotonic revision fences the rare full-store I/O-failure fallback against older journal records. Remote-runtime close adds one generation status probe per teardown attempt and is not on input, output, render, polling, or startup-visible paths. Pre-handler exits remain capped at 64. Worktree-create, worktree-removal, whole-project, and host-scoped admissions retain one promise only per active operation; unresolved selection retains scope-generation history only while at least one selection is active and clears it at zero. Targeted runtime stop performs two liveness snapshots against only the selected provider, while foreground probes are limited to the target worktree; whole-project inventory retains the all-provider fanout."
+        "evidence": "Shutdown removes ownerless deferred retention and preserves at most one provider entry plus one timer per PTY until physical exit is proved or the bounded whole-process drain ends. Wait completion is event-driven from map deletion, not polled; daemon/relay retry cadence is 100 ms only during the four-second process drain, keeps one timer per still-live PTY, and caps native-failure logs at attempts 1, 2, and 8. Accepted POSIX signals are followed by conservative exit-proof polling without repeated signals, while Windows close remains signal-free and repeats only while unproved. Relay admission shares one in-flight native-addon import, rechecks the 50-session cap after that await and before synchronous spawn/store, and creates exactly 50 PTYs from 51 cold concurrent calls. Failed local and SSH kills coalesce in main by exact live PTY id, while failed remote-runtime closes coalesce by environment, runtime generation, and handle: distinct durable records correspond one-for-one with still-unconfirmed provider resources and survive renderer/app restart. Each main-owned retry map owns one shared one-shot timer for its earliest deadline, retries all due owners, caps backoff at 30 seconds, and logs only attempts 1, 2, and 8 to prevent outage backpressure. Successful SSH-target and runtime-environment removal release unreachable records and cancel the last retry timer; provider replacement rebinds the same generation but relay/runtime generation replacement drops stale intent before touching a reused id. Daemon listProcesses is a diagnostic path; its added O(active PTYs) snapshot releases absent session maps and does not touch input/output/render loops. The deterministic 65-local plus 65-remote-runtime burst performs zero synchronous full-store flushes: 260 O(1) append records stay below 100 KiB and 1 KiB each, survive immediate add/remove reloads, and compact to one checkpoint after the full-state save; a two-crash oracle proves a torn final record forces an atomic recovered checkpoint before a new owner is added, while a monotonic revision fences the rare full-store I/O-failure fallback against older journal records. Remote-runtime close adds one generation status probe per teardown attempt and is not on input, output, render, polling, or startup-visible paths. Pre-handler exits retain at most 64 payloads plus 1,024 id-only eviction tombstones; 100 unrelated registrations after overflow perform zero liveness calls. Worktree-create, worktree-removal, whole-project, and host-scoped admissions retain one promise only per active operation; unresolved selection retains scope-generation history only while at least one selection is active and clears it at zero. Targeted runtime stop performs two liveness snapshots against only the selected provider, while foreground probes are limited to the target worktree; whole-project inventory retains the all-provider fanout."
       },
       "promotionCriteria": [
         "Run the deterministic command across the required CI platforms without flakes.",

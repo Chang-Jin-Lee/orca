@@ -640,19 +640,19 @@ describe('DaemonPtyAdapter (IPtyProvider)', () => {
         readAppliedSize(sessionId: string): Promise<{ status: 'alive' | 'absent' | 'unknown' }>
         handleExitEvent(sessionId: string, code: number): Promise<void>
         exitFence: {
-          beginAdmission(sessionId: string): () => void
-          rememberGeneration(sessionId: string, generation: string): void
+          beginAdmission(sessionId: string): { complete(): void }
+          rememberGeneration(sessionId: string, generation: string): boolean
           getPending(sessionId: string): { code: number } | undefined
         }
       }
-      const completeAdmission = internals.exitFence.beginAdmission(id)
+      const admission = internals.exitFence.beginAdmission(id)
       vi.spyOn(internals, 'readAppliedSize').mockResolvedValueOnce({ status: 'unknown' })
       await internals.handleExitEvent(id, 7)
 
       const request = vi.spyOn(internals.client, 'request')
       request.mockResolvedValueOnce({ sessions: [] })
       const staleList = adapter.listProcesses()
-      completeAdmission()
+      admission.complete()
       internals.exitFence.rememberGeneration(id, 'replacement-generation')
       await staleList
 
@@ -735,6 +735,29 @@ describe('DaemonPtyAdapter (IPtyProvider)', () => {
       expect(procs[0]).toHaveProperty('id')
       expect(procs[0]).toHaveProperty('cwd')
       expect(procs[0]).toHaveProperty('title')
+    })
+
+    it('reaps active ownership when an authoritative list omits the session', async () => {
+      const exits: { id: string; code: number }[] = []
+      adapter.onExit((payload) => exits.push(payload))
+      const { id } = await adapter.spawn({ sessionId: 'authoritative-absence', cols: 80, rows: 24 })
+      const internals = adapter as unknown as {
+        client: { request<T>(type: string, payload: unknown): Promise<T> }
+        exitFence: {
+          revisions: Map<string, number>
+          sessionGenerations: Map<string, string>
+          pendingExits: Map<string, unknown>
+        }
+      }
+      vi.spyOn(internals.client, 'request').mockResolvedValueOnce({ sessions: [] })
+
+      await adapter.listProcesses()
+
+      expect(adapter.hasPty(id)).toBe(false)
+      expect(exits).toContainEqual({ id, code: -1 })
+      expect(internals.exitFence.revisions.size).toBe(0)
+      expect(internals.exitFence.sessionGenerations.size).toBe(0)
+      expect(internals.exitFence.pendingExits.size).toBe(0)
     })
   })
 

@@ -63,6 +63,7 @@ import { recognizeAgentProcessFromCommandLine } from '../../shared/agent-process
 import { readWindowsConptyProcessIds } from './windows-conpty-process-membership'
 import { shouldUseShellReadyStartupDelivery } from '../../shared/codex-startup-delivery'
 import { assertSafeAgentStartupCwd, resolveSafePtyDefaultCwd } from './pty-default-cwd'
+import { isLocalPtyProcessProvablyExited } from './local-pty-process-exit-proof'
 import { ORCA_HERMES_STARTUP_QUERY_ENV } from '../../shared/hermes-startup-query'
 import {
   assertPtyPaneIdentity,
@@ -932,6 +933,8 @@ export class LocalPtyProvider implements IPtyProvider {
     ptyShutdownInProgress.add(id)
     let exitCode = -1
     let exitObserved = false
+    let osExitProved = false
+    let nativeKillAccepted = false
     try {
       // Why: a renderer or paired/mobile close is destructive. POSIX's
       // default SIGHUP can be ignored; Windows node-pty requires no argument.
@@ -940,22 +943,29 @@ export class LocalPtyProvider implements IPtyProvider {
       } else {
         proc.kill()
       }
+      nativeKillAccepted = true
     } catch (error) {
       if (!ptyExitDuringShutdown.has(id)) {
-        throw error
+        if (!isLocalPtyProcessProvablyExited(proc.pid)) {
+          throw error
+        }
+        osExitProved = true
       }
     } finally {
       ptyShutdownInProgress.delete(id)
       exitCode = ptyExitDuringShutdown.get(id) ?? -1
-      exitObserved = ptyExitDuringShutdown.has(id)
+      exitObserved = ptyExitDuringShutdown.has(id) || osExitProved
       ptyExitDuringShutdown.delete(id)
+    }
+    if (!exitObserved) {
+      exitObserved = isLocalPtyProcessProvablyExited(proc.pid)
     }
     // Why: kill returning is request acceptance, not process-death proof. Keep
     // the native entry and listeners until onExit (possibly async) confirms it.
     runPtyCleanup(id)
     if (exitObserved) {
       disposePtyListeners(id)
-      destroyPtyProcess(proc, { alreadyKilled: true })
+      destroyPtyProcess(proc, { alreadyKilled: nativeKillAccepted })
       clearPtyState(id, proc)
       this.opts.onExit?.(id, exitCode)
       for (const cb of exitListeners) {

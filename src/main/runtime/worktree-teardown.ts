@@ -79,11 +79,14 @@ async function sweepProviderByPrefix(
     }
     try {
       await provider.shutdown(s.id, { immediate: true })
+      if (provider.requiresShutdownExitProof && provider.hasPty?.(s.id) !== false) {
+        continue
+      }
       clearStoppedPtyState(s.id, onPtyStopped)
       killed += 1
     } catch {
-      // Already dead, or the backend dropped the session — treat as success.
-      killed += 1
+      // Why: rejection is not absence proof. Preserve state so the retained
+      // owner or a later sweep can target the exact process again.
     }
   }
   return killed
@@ -99,6 +102,12 @@ async function sweepRegistryForWorktree(
   for (const entry of entries) {
     try {
       await localProvider.shutdown(entry.ptyId, { immediate: true })
+      if (
+        localProvider.requiresShutdownExitProof &&
+        localProvider.hasPty?.(entry.ptyId) !== false
+      ) {
+        continue
+      }
       clearStoppedPtyState(entry.ptyId, onPtyStopped)
       killed += 1
     } catch {

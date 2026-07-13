@@ -99,6 +99,14 @@ describe('pre-handler PTY buffer', () => {
     const handler = vi.fn()
     const hasPty = vi.fn(async () => false)
 
+    for (let index = 0; index < 100; index += 1) {
+      reconcilePreHandlerPtyExitAfterOverflow(
+        `unrelated-live-pty-${index}`,
+        hasPty,
+        handler,
+        () => true
+      )
+    }
     reconcilePreHandlerPtyExitAfterOverflow('pty-exit-0', hasPty, handler, () => true)
     await Promise.resolve()
 

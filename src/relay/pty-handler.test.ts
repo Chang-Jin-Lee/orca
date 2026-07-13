@@ -1509,6 +1509,55 @@ describe('PtyHandler', () => {
     }
   })
 
+  it('reaps graceful fallback when native throw is followed by OS exit proof', async () => {
+    const killSpy = vi
+      .fn()
+      .mockImplementationOnce(() => {})
+      .mockImplementationOnce(() => {
+        throw new Error('native handle already closed')
+      })
+    mockPtySpawn.mockReturnValue({
+      ...mockPtyInstance,
+      kill: killSpy,
+      onData: vi.fn(),
+      onExit: vi.fn()
+    })
+    const aliveSpy = vi.spyOn(ptyShellUtils, 'isProcessAlive').mockReturnValue(false)
+    try {
+      await dispatcher.callRequest('pty.spawn', {})
+      await dispatcher.callRequest('pty.shutdown', { id: 'pty-1', immediate: false })
+      vi.advanceTimersByTime(5000)
+    } finally {
+      aliveSpy.mockRestore()
+    }
+
+    expect(handler.activePtyCount).toBe(0)
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('completes whole-relay shutdown when native throw follows OS exit proof', async () => {
+    mockPtySpawn.mockReturnValue({
+      ...mockPtyInstance,
+      kill: vi.fn(() => {
+        throw new Error('native handle already closed')
+      }),
+      onData: vi.fn(),
+      onExit: vi.fn()
+    })
+    const aliveSpy = vi.spyOn(ptyShellUtils, 'isProcessAlive').mockReturnValue(false)
+    const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
+    try {
+      await dispatcher.callRequest('pty.spawn', {})
+      await expect(handler.shutdownAndWait(1000)).resolves.toBeUndefined()
+    } finally {
+      aliveSpy.mockRestore()
+      stderr.mockRestore()
+    }
+
+    expect(handler.activePtyCount).toBe(0)
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
   it('throws for attach on nonexistent PTY', async () => {
     await expect(dispatcher.callRequest('pty.attach', { id: 'pty-999' })).rejects.toThrow(
       'PTY "pty-999" not found'

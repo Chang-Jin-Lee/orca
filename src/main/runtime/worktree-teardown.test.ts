@@ -19,6 +19,7 @@ function createProviderStub(
     attach: vi.fn(),
     write: vi.fn(),
     resize: vi.fn(),
+    hasPty: vi.fn(() => false),
     shutdown: vi.fn().mockResolvedValue(undefined),
     sendSignal: vi.fn(),
     getCwd: vi.fn(),
@@ -122,6 +123,21 @@ describe('killAllProcessesForWorktree', () => {
 
     expect(result.providerStopped).toBe(1)
     expect(onPtyStopped).toHaveBeenCalledWith('w1@@aaaa')
+  })
+
+  it('preserves cleanup ownership when shutdown acceptance lacks exit proof', async () => {
+    const localProvider = createProviderStub(async () => [
+      { id: 'w1@@alive', cwd: '/tmp/w1', title: 'shell' }
+    ])
+    Object.defineProperty(localProvider, 'requiresShutdownExitProof', { value: true })
+    ;(localProvider.hasPty as unknown as ReturnType<typeof vi.fn>).mockReturnValue(true)
+    listRegisteredPtysMock.mockReturnValue([])
+    const onPtyStopped = vi.fn()
+
+    const result = await killAllProcessesForWorktree('w1', { localProvider, onPtyStopped })
+
+    expect(result.providerStopped).toBe(0)
+    expect(onPtyStopped).not.toHaveBeenCalled()
   })
 
   it('does not carry state between successive calls with distinct providers', async () => {

@@ -9,7 +9,8 @@ const {
   mkdirSyncMock,
   writeFileSyncMock,
   spawnMock,
-  resolveAgentForegroundProcessMock
+  resolveAgentForegroundProcessMock,
+  isLocalPtyProcessProvablyExitedMock
 } = vi.hoisted(() => ({
   existsSyncMock: vi.fn(),
   statSyncMock: vi.fn(),
@@ -17,7 +18,8 @@ const {
   mkdirSyncMock: vi.fn(),
   writeFileSyncMock: vi.fn(),
   spawnMock: vi.fn(),
-  resolveAgentForegroundProcessMock: vi.fn()
+  resolveAgentForegroundProcessMock: vi.fn(),
+  isLocalPtyProcessProvablyExitedMock: vi.fn(() => false)
 }))
 
 vi.mock('fs', () => ({
@@ -38,6 +40,10 @@ vi.mock('electron', () => ({
 
 vi.mock('node-pty', () => ({
   spawn: spawnMock
+}))
+
+vi.mock('./local-pty-process-exit-proof', () => ({
+  isLocalPtyProcessProvablyExited: isLocalPtyProcessProvablyExitedMock
 }))
 
 // Resolve PowerShell family names to deterministic absolute paths (the fs mock
@@ -124,6 +130,8 @@ describe('LocalPtyProvider', () => {
     mkdirSyncMock.mockReset()
     writeFileSyncMock.mockReset()
     resolveAgentForegroundProcessMock.mockReset()
+    isLocalPtyProcessProvablyExitedMock.mockReset()
+    isLocalPtyProcessProvablyExitedMock.mockReturnValue(false)
     resolveAgentForegroundProcessMock.mockImplementation(
       async (_pid: number, fallbackProcess: string | null) => fallbackProcess
     )
@@ -1067,6 +1075,38 @@ describe('LocalPtyProvider', () => {
       await expect(provider.shutdown(id, { immediate: true })).resolves.toBeUndefined()
       expect(kill).toHaveBeenCalledTimes(2)
       expect(provider.hasPty(id)).toBe(false)
+    })
+
+    it('reaps an exact native owner when kill throws after OS exit proof', async () => {
+      Object.defineProperty(process, 'platform', { configurable: true, value: 'win32' })
+      const exits = vi.fn()
+      const destroy = vi.fn()
+      provider.onExit(exits)
+      mockProc.kill.mockImplementation(() => {
+        throw new Error('native handle already closed')
+      })
+      spawnMock.mockReturnValue({ ...mockProc, destroy })
+      isLocalPtyProcessProvablyExitedMock.mockReturnValue(true)
+      const { id } = await provider.spawn({ cols: 80, rows: 24 })
+
+      await expect(provider.shutdown(id, { immediate: true })).resolves.toBeUndefined()
+
+      expect(provider.hasPty(id)).toBe(false)
+      expect(exits).toHaveBeenCalledWith({ id, code: -1 })
+      expect(destroy).toHaveBeenCalledOnce()
+    })
+
+    it('reaps an accepted kill when OS exit proof replaces a missing onExit', async () => {
+      mockProc.kill.mockImplementation(() => {})
+      isLocalPtyProcessProvablyExitedMock.mockReturnValue(true)
+      const { id } = await provider.spawn({ cols: 80, rows: 24 })
+
+      await provider.shutdown(id, { immediate: true })
+
+      expect(provider.hasPty(id)).toBe(false)
+      expect(await provider.listProcesses()).not.toEqual(
+        expect.arrayContaining([expect.objectContaining({ id })])
+      )
     })
 
     it('cancels pending shell-ready startup delivery on forced shutdown', async () => {

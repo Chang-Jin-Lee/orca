@@ -22,7 +22,10 @@ const preHandlerPtyExit = new Map<string, number>()
 const PRE_HANDLER_PTY_DATA_MAX_BYTES = 512 * 1024
 const PRE_HANDLER_PTY_DATA_MAX_PTYS = 64
 const PRE_HANDLER_PTY_EXIT_MAX_PTYS = 64
-let preHandlerPtyExitOverflowed = false
+// Why: evicted exits retain only a bounded id tombstone, not output. A larger
+// window avoids turning one overflow into liveness IPC for unrelated panes.
+const PRE_HANDLER_PTY_EVICTED_EXIT_MAX_PTYS = 1_024
+const preHandlerPtyEvictedExitIds = new Set<string>()
 // Why: legit pre-attach windows drain within milliseconds and hold little
 // data. Sustained accumulation means a pane lost its data handler (the
 // frozen-pane detach/attach race) — leave a breadcrumb for trace capture.
@@ -97,7 +100,13 @@ export function bufferPreHandlerPtyExit(ptyId: string, code: number): void {
     const oldestPtyId = preHandlerPtyExit.keys().next().value
     if (typeof oldestPtyId === 'string') {
       preHandlerPtyExit.delete(oldestPtyId)
-      preHandlerPtyExitOverflowed = true
+      preHandlerPtyEvictedExitIds.add(oldestPtyId)
+      if (preHandlerPtyEvictedExitIds.size > PRE_HANDLER_PTY_EVICTED_EXIT_MAX_PTYS) {
+        const oldestEvictedId = preHandlerPtyEvictedExitIds.values().next().value
+        if (typeof oldestEvictedId === 'string') {
+          preHandlerPtyEvictedExitIds.delete(oldestEvictedId)
+        }
+      }
     }
   }
   preHandlerPtyExit.set(ptyId, code)
@@ -119,7 +128,7 @@ export function reconcilePreHandlerPtyExitAfterOverflow(
   handler: (code: number) => void,
   isCurrent: () => boolean
 ): void {
-  if (!preHandlerPtyExitOverflowed || !hasPty) {
+  if (!preHandlerPtyEvictedExitIds.delete(ptyId) || !hasPty) {
     return
   }
   // Why: the bounded exit buffer may evict a legitimate pre-registration exit.
@@ -141,5 +150,6 @@ export function clearPreHandlerPtyData(ptyId: string): void {
 export function clearPreHandlerPtyState(ptyId: string): void {
   preHandlerPtyData.delete(ptyId)
   preHandlerPtyExit.delete(ptyId)
+  preHandlerPtyEvictedExitIds.delete(ptyId)
   warnedLostHandlerPtyIds.delete(ptyId)
 }

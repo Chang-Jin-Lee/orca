@@ -8,9 +8,9 @@ describe('DaemonSessionExitFence', () => {
     fence.defer('same-id', { code: 7, sessionGeneration: 'old-generation' })
     const staleListSnapshot = fence.snapshot('same-id')
 
-    const completeAdmission = fence.beginAdmission('same-id')
-    fence.rememberGeneration('same-id', 'replacement-generation')
-    completeAdmission()
+    const admission = fence.beginAdmission('same-id')
+    fence.rememberGeneration('same-id', 'replacement-generation', admission)
+    admission.complete()
 
     expect(fence.isStable('same-id', staleListSnapshot)).toBe(false)
     expect(fence.isStaleGeneration('same-id', 'old-generation')).toBe(true)
@@ -24,10 +24,10 @@ describe('DaemonSessionExitFence', () => {
     const fence = new DaemonSessionExitFence()
     for (let i = 0; i < 2_000; i++) {
       const id = `session-${i}`
-      const completeAdmission = fence.beginAdmission(id)
-      fence.rememberGeneration(id, `generation-${i}`)
+      const admission = fence.beginAdmission(id)
+      fence.rememberGeneration(id, `generation-${i}`, admission)
       fence.defer(id, { code: i })
-      completeAdmission()
+      admission.complete()
       fence.forget(id)
     }
     const internals = fence as unknown as Record<
@@ -43,10 +43,11 @@ describe('DaemonSessionExitFence', () => {
 
   it('does not recreate fence state when an admission completes after clear', () => {
     const fence = new DaemonSessionExitFence()
-    const completeAdmission = fence.beginAdmission('late-session')
+    const admission = fence.beginAdmission('late-session')
     fence.clear()
 
-    completeAdmission()
+    expect(fence.rememberGeneration('late-session', 'late-generation', admission)).toBe(false)
+    admission.complete()
 
     expect(fence.snapshot('late-session')).toBeUndefined()
   })

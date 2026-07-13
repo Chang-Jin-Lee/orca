@@ -735,6 +735,21 @@ async function attemptRetainedPtyShutdownForCaller(retained: RetainedPtyShutdown
   }
 }
 
+export async function shutdownPtyWithRetainedOwnership(args: {
+  id: string
+  connectionId?: string | null
+  provider: IPtyProvider
+  options: PtyShutdownOptions
+}): Promise<void> {
+  const retained = args.connectionId
+    ? retainSshPtyShutdown(args.id, args.connectionId, args.provider, args.options)
+    : retainLocalPtyShutdown(args.id, args.options)
+  if (!retained) {
+    throw new Error('PTY shutdown could not retain ownership')
+  }
+  await attemptRetainedPtyShutdownForCaller(retained)
+}
+
 function mergePtyShutdownOptions(
   current: PtyShutdownOptions,
   incoming: PtyShutdownOptions
@@ -5519,13 +5534,12 @@ export function registerPtyHandlers(
       const shutdownProvider = provider ?? getProviderForPty(args.id)
       // Why: the first request and every retry need one generation-fenced owner;
       // a separate direct path can accept a stale provider's late completion.
-      const retained = connectionId
-        ? retainSshPtyShutdown(args.id, connectionId, shutdownProvider, shutdownOptions)
-        : retainLocalPtyShutdown(args.id, shutdownOptions)
-      if (!retained) {
-        throw new Error('PTY shutdown could not retain ownership')
-      }
-      await attemptRetainedPtyShutdownForCaller(retained)
+      await shutdownPtyWithRetainedOwnership({
+        id: args.id,
+        connectionId,
+        provider: shutdownProvider,
+        options: shutdownOptions
+      })
     }
   )
 

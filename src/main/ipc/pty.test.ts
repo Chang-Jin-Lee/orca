@@ -11951,9 +11951,14 @@ describe('registerPtyHandlers', () => {
       rows: 24
     })) as { id: string }
 
-    await expect(handlers.get('pty:kill')!(null, { id: spawnResult.id })).rejects.toThrow(
-      'already dead'
-    )
+    const processProbe = vi.spyOn(process, 'kill').mockImplementation(() => true)
+    try {
+      await expect(handlers.get('pty:kill')!(null, { id: spawnResult.id })).rejects.toThrow(
+        'already dead'
+      )
+    } finally {
+      processProbe.mockRestore()
+    }
 
     expect((await getLocalPtyProvider().listProcesses()).map(({ id }) => id)).toContain(
       spawnResult.id

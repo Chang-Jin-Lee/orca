@@ -3,6 +3,12 @@ export type PendingDaemonExit = {
   sessionGeneration?: string
 }
 
+export type DaemonSessionAdmission = {
+  sessionId: string
+  isCurrent: () => boolean
+  complete: () => void
+}
+
 export class DaemonSessionExitFence {
   // Why global-monotonic: forgetting and then reusing the same id must not
   // recreate a revision that an older async list snapshot can mistake as live.
@@ -13,12 +19,13 @@ export class DaemonSessionExitFence {
   private sessionGenerations = new Map<string, string>()
   private pendingExits = new Map<string, PendingDaemonExit>()
 
-  beginAdmission(sessionId: string): () => void {
+  beginAdmission(sessionId: string): DaemonSessionAdmission {
     const admissionEpoch = this.clearEpoch
     this.bump(sessionId)
     this.admissions.set(sessionId, (this.admissions.get(sessionId) ?? 0) + 1)
     let completed = false
-    return () => {
+    const isCurrent = (): boolean => !completed && admissionEpoch === this.clearEpoch
+    const complete = (): void => {
       if (completed) {
         return
       }
@@ -36,14 +43,23 @@ export class DaemonSessionExitFence {
       }
       this.bump(sessionId)
     }
+    return { sessionId, isCurrent, complete }
   }
 
-  rememberGeneration(sessionId: string, generation: string | undefined): void {
+  rememberGeneration(
+    sessionId: string,
+    generation: string | undefined,
+    admission?: DaemonSessionAdmission
+  ): boolean {
+    if (admission && (admission.sessionId !== sessionId || !admission.isCurrent())) {
+      return false
+    }
     if (!generation || this.sessionGenerations.get(sessionId) === generation) {
-      return
+      return true
     }
     this.sessionGenerations.set(sessionId, generation)
     this.bump(sessionId)
+    return true
   }
 
   isStaleGeneration(sessionId: string, generation: string | undefined): boolean {

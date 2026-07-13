@@ -5,7 +5,11 @@ import { basename } from 'node:path'
 import { existsSync } from 'node:fs'
 import { DaemonClient } from './client'
 import { getMacDaemonSystemResolverHealth } from './daemon-health'
-import { DaemonSessionExitFence, type PendingDaemonExit } from './daemon-session-exit-fence'
+import {
+  DaemonSessionExitFence,
+  type DaemonSessionAdmission,
+  type PendingDaemonExit
+} from './daemon-session-exit-fence'
 import { HistoryManager } from './history-manager'
 import { HistoryReader, type ColdRestoreInfo } from './history-reader'
 import { mintPtySessionId, parsePtySessionId } from './pty-session-id'
@@ -194,39 +198,26 @@ export class DaemonPtyAdapter implements IPtyProvider {
 
   async spawn(opts: PtySpawnOptions): Promise<PtySpawnResult> {
     const sessionId = opts.sessionId ?? mintPtySessionId(opts.worktreeId)
-    const completeAdmission = this.exitFence.beginAdmission(sessionId)
+    this.assertSpawnAllowed(sessionId, opts)
+    if (opts.isNewSession) {
+      await this.replaceUnhealthyMacResolverDaemonBeforeNewPty()
+    }
+    const admission = this.exitFence.beginAdmission(sessionId)
     try {
-      return await this.withDaemonRetry(() => this.doSpawn({ ...opts, sessionId }))
+      return await this.withDaemonRetry(() => this.doSpawn({ ...opts, sessionId }, admission))
     } finally {
-      completeAdmission()
+      admission.complete()
       await this.reconcilePendingExitAfterAdmission(sessionId)
     }
   }
 
-  private async doSpawn(opts: PtySpawnOptions): Promise<PtySpawnResult> {
+  private async doSpawn(
+    opts: PtySpawnOptions,
+    admission: DaemonSessionAdmission
+  ): Promise<PtySpawnResult> {
     const sessionId = opts.sessionId!
     const requestedIdentity = getPtyPaneIdentityFromEnv(opts.env)
-
-    if (this.killedSessionTombstones.has(sessionId)) {
-      throw new TerminalKilledError(sessionId)
-    }
-    if (this.protocolVersion < 22 && this.activeSessionIds.has(sessionId)) {
-      const knownIdentity = this.paneIdentityBySessionId.get(sessionId)
-      if (knownIdentity) {
-        assertPtyPaneIdentity(sessionId, knownIdentity, {
-          expectedPaneKey: requestedIdentity.paneKey ?? undefined,
-          expectedTabId: requestedIdentity.tabId ?? undefined
-        })
-      } else if (requestedIdentity.paneKey || requestedIdentity.tabId) {
-        // Why: preserved legacy daemons cannot report identity, so attaching a
-        // new pane by a reused ID could later authorize killing the old pane.
-        throw new Error(`Legacy PTY identity unavailable for "${sessionId}"`)
-      }
-    }
-
-    if (opts.isNewSession) {
-      await this.replaceUnhealthyMacResolverDaemonBeforeNewPty()
-    }
+    this.assertSpawnAllowed(sessionId, opts)
 
     await this.ensureConnected()
     // Why before createOrAttach: a preserved v19 daemon may remember this
@@ -298,9 +289,14 @@ export class DaemonPtyAdapter implements IPtyProvider {
         ...(historySeed ? { historySeed } : {})
       })
 
+    if (!admission.isCurrent()) {
+      throw new Error(`Daemon PTY admission superseded for "${sessionId}"`)
+    }
     let scrollback = restoreInfo ? getRecoveredHistorySeed(restoreInfo) : null
     let result = await createOrAttach(scrollback)
-    this.exitFence.rememberGeneration(sessionId, result.sessionGeneration)
+    if (!this.exitFence.rememberGeneration(sessionId, result.sessionGeneration, admission)) {
+      throw new Error(`Daemon PTY admission superseded for "${sessionId}"`)
+    }
     this.paneIdentityBySessionId.set(sessionId, requestedIdentity)
     const launchIdentity = (): { launchAgent?: NonNullable<typeof result.launchAgent> } =>
       result.launchAgent ? { launchAgent: result.launchAgent } : {}
@@ -356,7 +352,9 @@ export class DaemonPtyAdapter implements IPtyProvider {
         effectiveCols = restoreInfo.cols
         effectiveRows = restoreInfo.rows
         result = await createOrAttach(scrollback)
-        this.exitFence.rememberGeneration(sessionId, result.sessionGeneration)
+        if (!this.exitFence.rememberGeneration(sessionId, result.sessionGeneration, admission)) {
+          throw new Error(`Daemon PTY admission superseded for "${sessionId}"`)
+        }
         pid = typeof result.pid === 'number' && result.pid > 0 ? result.pid : null
         this.initialCwds.set(sessionId, effectiveCwd)
       }
@@ -474,8 +472,29 @@ export class DaemonPtyAdapter implements IPtyProvider {
     }
   }
 
+  private assertSpawnAllowed(sessionId: string, opts: PtySpawnOptions): void {
+    if (this.killedSessionTombstones.has(sessionId)) {
+      throw new TerminalKilledError(sessionId)
+    }
+    if (this.protocolVersion >= 22 || !this.activeSessionIds.has(sessionId)) {
+      return
+    }
+    const requestedIdentity = getPtyPaneIdentityFromEnv(opts.env)
+    const knownIdentity = this.paneIdentityBySessionId.get(sessionId)
+    if (knownIdentity) {
+      assertPtyPaneIdentity(sessionId, knownIdentity, {
+        expectedPaneKey: requestedIdentity.paneKey ?? undefined,
+        expectedTabId: requestedIdentity.tabId ?? undefined
+      })
+    } else if (requestedIdentity.paneKey || requestedIdentity.tabId) {
+      // Why: preserved legacy daemons cannot report identity, so attaching a
+      // new pane by a reused ID could later authorize killing the old pane.
+      throw new Error(`Legacy PTY identity unavailable for "${sessionId}"`)
+    }
+  }
+
   async attach(id: string): Promise<void> {
-    const completeAdmission = this.exitFence.beginAdmission(id)
+    const admission = this.exitFence.beginAdmission(id)
     try {
       await this.ensureConnected()
       if (!this.supportsAuthoritativeBufferSnapshots) {
@@ -487,9 +506,11 @@ export class DaemonPtyAdapter implements IPtyProvider {
         cols: 80,
         rows: 24
       })
-      this.exitFence.rememberGeneration(id, result.sessionGeneration)
+      if (!this.exitFence.rememberGeneration(id, result.sessionGeneration, admission)) {
+        throw new Error(`Daemon PTY admission superseded for "${id}"`)
+      }
     } finally {
-      completeAdmission()
+      admission.complete()
       await this.reconcilePendingExitAfterAdmission(id)
     }
   }
@@ -822,6 +843,9 @@ export class DaemonPtyAdapter implements IPtyProvider {
   }
 
   async listProcesses(): Promise<PtyProcessInfo[]> {
+    const activeSnapshots = new Map(
+      [...this.activeSessionIds].map((id) => [id, this.exitFence.snapshot(id)])
+    )
     const pendingSnapshots = new Map(
       this.exitFence.pendingEntries().map(([id]) => [id, this.exitFence.snapshot(id)])
     )
@@ -841,6 +865,11 @@ export class DaemonPtyAdapter implements IPtyProvider {
     const liveIds = new Set(
       result.sessions.filter((session) => session.isAlive).map((session) => session.sessionId)
     )
+    for (const [id, snapshot] of activeSnapshots) {
+      if (!liveIds.has(id) && this.exitFence.isStable(id, snapshot)) {
+        this.finalizeExitEvent(id, this.exitFence.getPending(id)?.code ?? -1)
+      }
+    }
     for (const [id, exit] of this.exitFence.pendingEntries()) {
       if (liveIds.has(id)) {
         this.exitFence.clearPending(id)

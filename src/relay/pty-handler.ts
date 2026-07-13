@@ -48,16 +48,25 @@ function killPtyForShutdown(managed: ManagedPty, signal: 'SIGTERM' | 'SIGKILL'):
 // when the native module is unavailable. The static type import lets vitest
 // intercept it in tests.
 let ptyModule: typeof NodePty | null = null
+let ptyModuleLoad: Promise<typeof NodePty | null> | null = null
 async function loadPty(): Promise<typeof NodePty | null> {
   if (ptyModule) {
     return ptyModule
   }
-  try {
-    ptyModule = await import('node-pty')
-    return ptyModule
-  } catch {
-    return null
+  if (!ptyModuleLoad) {
+    // Why: 51 cold concurrent spawns must share one native-addon load; some
+    // loaders reject overlapping evaluation even though the module is valid.
+    ptyModuleLoad = import('node-pty')
+      .then((loaded) => {
+        ptyModule = loaded
+        return loaded
+      })
+      .catch(() => null)
+      .finally(() => {
+        ptyModuleLoad = null
+      })
   }
+  return ptyModuleLoad
 }
 
 type ManagedPty = {
