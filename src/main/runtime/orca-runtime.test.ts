@@ -22253,11 +22253,16 @@ describe('OrcaRuntimeService', () => {
       listProcesses
     })
     syncSinglePty(runtime, 'pty-1')
+    runtime.registerPty('pty-ssh-unrelated', 'repo-1::/tmp/ssh-worktree', 'target-b')
 
     await expect(
       runtime.stopTerminalsForWorktree('id:repo-1::/tmp/worktree-a', { hostId: 'local' })
     ).resolves.toEqual({ stopped: 1 })
     expect(listProcesses.mock.calls).toEqual([[null], [null]])
+    expect(runtime['ptysById'].get('pty-ssh-unrelated')).toMatchObject({
+      connected: true,
+      connectionId: 'target-b'
+    })
   })
 
   it('blocks paired terminal admission until project stop and removal are atomic', async () => {

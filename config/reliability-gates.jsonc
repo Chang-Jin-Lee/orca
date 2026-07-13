@@ -3889,7 +3889,7 @@
             "project removal drains create-first worktree creation before its ownership snapshot and rejects removal-first worktree creation",
             "host-scoped project removal drains create-first work and rejects removal-first creation before mutating one duplicate-host row",
             "duplicate repo and worktree ids isolate admissions and PTY liveness by execution host while whole-project removal still drains every host scope",
-            "host-scoped terminal stop succeeds when an unrelated provider liveness path is unavailable",
+            "host-scoped terminal stop succeeds when an unrelated provider is unavailable without disconnecting that host's cached PTYs",
             "worktree removal rejects a late renderer terminal admission while destructive preflight is still pending",
             "already-missing exceptional removal verifies terminal stop before metadata purge",
             "failed and concurrent admissions release without deadlocking project removal",

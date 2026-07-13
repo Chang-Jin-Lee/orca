@@ -20637,6 +20637,9 @@ export class OrcaRuntimeService {
       this.refreshPtyForegroundAgent(session.id)
     }
     for (const pty of this.ptysById.values()) {
+      if (connectionId !== undefined && pty.connectionId !== connectionId) {
+        continue
+      }
       if (!livePtyIds.has(pty.ptyId) && !this.leafExistsForPty(pty.ptyId)) {
         pty.connected = false
         pty.disconnectedAt ??= Date.now()
