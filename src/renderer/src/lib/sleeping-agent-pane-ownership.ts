@@ -1,5 +1,8 @@
 import type { useAppStore } from '@/store'
-import type { SleepingAgentSessionRecord } from '../../../shared/agent-session-resume'
+import {
+  getAgentSessionOwnershipKey,
+  type SleepingAgentSessionRecord
+} from '../../../shared/agent-session-resume'
 import type {
   TerminalLayoutSnapshot,
   TerminalPaneLayoutNode,
@@ -9,8 +12,16 @@ import { parseLegacyNumericPaneKey, parsePaneKey } from '../../../shared/stable-
 
 type AppStoreState = ReturnType<typeof useAppStore.getState>
 
+// Key ownership on the resumable base, sharing the host's ownership-key string so
+// renderer and host agree: two custom ids on one base collapse to one owner, and
+// the provider-session key type ('session_id' vs 'conversation_id') is implied by
+// the base, so it drops out of the key. `agent` is the base on legacy records.
 export function getProviderSessionClaimKey(record: SleepingAgentSessionRecord): string {
-  return `${record.worktreeId}\0${record.agent}\0${record.providerSession.key}\0${record.providerSession.id}`
+  return getAgentSessionOwnershipKey({
+    worktreeId: record.worktreeId,
+    baseAgent: record.baseAgent ?? record.agent,
+    providerSessionId: record.providerSession.id
+  })
 }
 
 export function isPassiveCompletedHibernationEvidence(record: SleepingAgentSessionRecord): boolean {

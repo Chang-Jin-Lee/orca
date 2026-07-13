@@ -31,7 +31,12 @@ import {
 } from './pty-pre-handler-buffer'
 import { createPtyInputWriteQueue } from './pty-input-write-queue'
 import type { PtyDataMeta } from './pty-dispatcher'
-import type { IpcPtyTransportOptions, PtyConnectResult, PtyTransport } from './pty-transport-types'
+import type {
+  IpcPtyTransportOptions,
+  PtyConnectAgentLaunchFailure,
+  PtyConnectResult,
+  PtyTransport
+} from './pty-transport-types'
 import { createBellDetector } from '../../../../shared/terminal-bell-detector'
 import {
   hasTerminalDisplayContent,
@@ -503,6 +508,8 @@ export function createIpcPtyTransport(opts: IpcPtyTransportOptions = {}): PtyTra
     launchConfig,
     launchToken,
     launchAgent,
+    agentLaunch,
+    legacyResumeRecordedConnectionId,
     startupCommandDelivery,
     connectionId,
     worktreeId,
@@ -732,25 +739,58 @@ export function createIpcPtyTransport(opts: IpcPtyTransportOptions = {}): PtyTra
         // resolve cwd on the remote host.
         const shouldSendLocalCwdFallback =
           cwdFallback === 'worktree' && !connectionId && !admittedSessionId
-        const result = await window.api.pty.spawn({
+        const resolvedAgentLaunch = options.agentLaunch ?? agentLaunch
+        // Why: `null` (a local legacy record) is a meaningful value distinct from
+        // "not provided", so resolve the per-call override before the construction
+        // default without collapsing null via `??`.
+        const resolvedLegacyRecordedConnectionId =
+          options.legacyResumeRecordedConnectionId !== undefined
+            ? options.legacyResumeRecordedConnectionId
+            : legacyResumeRecordedConnectionId
+        // The agentLaunch overload may resolve to a pre-spawn typed failure with
+        // no PTY; the conditional spread erases that at the type level, so widen
+        // back to the union we narrow below.
+        const result = (await window.api.pty.spawn({
           cols: options.cols ?? 80,
           rows: options.rows ?? 24,
           cwd,
           ...(shouldSendLocalCwdFallback ? { cwdFallback } : {}),
           env: options.env ?? env,
-          command: options.command ?? command,
-          ...((options.launchConfig ?? launchConfig)
-            ? { launchConfig: options.launchConfig ?? launchConfig }
-            : {}),
-          ...((options.launchToken ?? launchToken)
-            ? { launchToken: options.launchToken ?? launchToken }
-            : {}),
-          ...((options.launchAgent ?? launchAgent)
-            ? { launchAgent: options.launchAgent ?? launchAgent }
-            : {}),
-          ...((options.startupCommandDelivery ?? startupCommandDelivery)
-            ? { startupCommandDelivery: options.startupCommandDelivery ?? startupCommandDelivery }
-            : {}),
+          // Why: on the host-resolved agentLaunch path the host owns command,
+          // launchConfig, and token assembly and ignores these client fields, so
+          // we send only the request; the legacy/resume path keeps sending the
+          // resolved command and any stored config/token. Exception: a pre-U5
+          // legacy record's captured config + recorded owner ride ALONGSIDE the
+          // resume variant (one-release handoff) so the host can prove and ingest
+          // them on first resume; it ignores them until its ingest lands.
+          ...(resolvedAgentLaunch
+            ? {
+                agentLaunch: resolvedAgentLaunch,
+                ...((options.launchConfig ?? launchConfig)
+                  ? { launchConfig: options.launchConfig ?? launchConfig }
+                  : {}),
+                ...(resolvedLegacyRecordedConnectionId !== undefined
+                  ? { legacyResumeRecordedConnectionId: resolvedLegacyRecordedConnectionId }
+                  : {})
+              }
+            : {
+                command: options.command ?? command,
+                ...((options.launchConfig ?? launchConfig)
+                  ? { launchConfig: options.launchConfig ?? launchConfig }
+                  : {}),
+                ...((options.launchToken ?? launchToken)
+                  ? { launchToken: options.launchToken ?? launchToken }
+                  : {}),
+                ...((options.launchAgent ?? launchAgent)
+                  ? { launchAgent: options.launchAgent ?? launchAgent }
+                  : {}),
+                ...((options.startupCommandDelivery ?? startupCommandDelivery)
+                  ? {
+                      startupCommandDelivery:
+                        options.startupCommandDelivery ?? startupCommandDelivery
+                    }
+                  : {})
+              }),
           ...(connectionId ? { connectionId } : {}),
           ...(admittedSessionId ? { sessionId: admittedSessionId } : {}),
           // Why: hidden-at-spawn mark must land in main before the PTY's
@@ -764,11 +804,21 @@ export function createIpcPtyTransport(opts: IpcPtyTransportOptions = {}): PtyTra
           ...(projectRuntime ? { projectRuntime } : {}),
           ...(terminalColorQueryReplies ? { terminalColorQueryReplies } : {}),
           ...(telemetry ? { telemetry } : {})
-        })
-        const spawnResult = result as PtyConnectResult & { isReattach?: boolean }
+        })) as (PtyConnectResult & { isReattach?: boolean }) | PtyConnectAgentLaunchFailure
+        // Pre-spawn agentLaunch failure/rejection: the host created no PTY, so
+        // there is no id. Surface the outcome so the caller shows the localized
+        // affordance and creates no pane.
+        if (!('id' in result)) {
+          connected = false
+          ptyId = null
+          return { agentLaunch: result.agentLaunch } satisfies PtyConnectAgentLaunchFailure
+        }
+        const spawnResult = result
         const resultLaunchAgent = isTuiAgent(spawnResult.launchAgent)
           ? spawnResult.launchAgent
           : undefined
+        const launchedOutcome =
+          spawnResult.agentLaunch?.status === 'launched' ? spawnResult.agentLaunch : undefined
 
         // If destroyed while the connect was in flight, bail — and kill only
         // what this connect CREATED. A fresh spawn is ours to reap, but a
@@ -820,14 +870,27 @@ export function createIpcPtyTransport(opts: IpcPtyTransportOptions = {}): PtyTra
             pendingEscapeTailAnsi: spawnResult.pendingEscapeTailAnsi
           } satisfies PtyConnectResult
         }
-        if (resultLaunchAgent || spawnResult.launchConfig || spawnResult.startupCwdFallback) {
+        if (
+          resultLaunchAgent ||
+          spawnResult.launchConfig ||
+          spawnResult.startupCwdFallback ||
+          spawnResult.launchNotices ||
+          launchedOutcome
+        ) {
           return {
             id: spawnResult.id,
             ...(resultLaunchAgent ? { launchAgent: resultLaunchAgent } : {}),
             ...(spawnResult.launchConfig ? { launchConfig: spawnResult.launchConfig } : {}),
             ...(spawnResult.startupCwdFallback
               ? { startupCwdFallback: spawnResult.startupCwdFallback }
-              : {})
+              : {}),
+            ...(spawnResult.launchNotices ? { launchNotices: spawnResult.launchNotices } : {}),
+            ...(launchedOutcome ? { agentLaunch: launchedOutcome } : {}),
+            // Why: forward the host-resolved followup/draft prompt so the
+            // pty-connection paste writer can deliver it after readiness. Present
+            // only when the host could not fold the prompt into the launch command.
+            ...(spawnResult.followupPrompt ? { followupPrompt: spawnResult.followupPrompt } : {}),
+            ...(spawnResult.draftPrompt ? { draftPrompt: spawnResult.draftPrompt } : {})
           } satisfies PtyConnectResult
         }
         return spawnResult.id

@@ -8,6 +8,7 @@ import {
 import {
   AI_VAULT_SESSION_DRAG_END_EVENT,
   AI_VAULT_SESSION_DRAG_START_EVENT,
+  buildAiVaultResumeEntryFromDragPayload,
   clearAiVaultSessionDragData,
   hasAiVaultSessionDragData,
   readAiVaultSessionDragData
@@ -199,12 +200,19 @@ export default function AiVaultSessionDropLayer({
         return true
       }
 
+      // Desktop drops ride the host-owned resume-via-arm (the host re-validates the
+      // echoed identity + assembles the command); the client `command` stays for the
+      // web-runtime drop, which cannot carry a vaultResume request yet.
+      const resumeEntry = buildAiVaultResumeEntryFromDragPayload(payload)
       const launchResult = launchAiVaultSessionInNewTab({
         agent: payload.agent,
         worktreeId,
         command: payload.command,
         ...(payload.env ? { env: payload.env } : {}),
         ...(payload.launchConfig ? { launchConfig: payload.launchConfig } : {}),
+        ...(resumeEntry
+          ? { agentLaunch: { vaultResume: { operation: 'resume', entry: resumeEntry } } }
+          : {}),
         targetGroupId: dropTarget.groupId,
         splitDirection: dropTarget.zone === 'center' ? undefined : dropTarget.zone
       })

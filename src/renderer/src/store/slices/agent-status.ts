@@ -14,17 +14,20 @@ import {
 } from '../../../../shared/agent-status-types'
 import {
   getAgentResumeArgv,
+  getAgentSessionOwnershipKey,
   isResumableTuiAgent,
   type AgentProviderSessionMetadata,
+  type ResumableTuiAgent,
   type SleepingAgentLaunchConfig,
   type SleepingAgentSessionRecord
 } from '../../../../shared/agent-session-resume'
+import { resolveTuiAgentBaseAgent } from '../../../../shared/custom-tui-agents'
+import { isCommandCodeNewTurnWhileWorking } from '../../../../shared/command-code-turn-boundary'
 import {
   resolveAgentStatusIdentity,
   shouldSuppressInheritedTerminalStatus
 } from '../../../../shared/agent-status-identity'
-import { isCommandCodeNewTurnWhileWorking } from '../../../../shared/command-code-turn-boundary'
-import type { TerminalTab } from '../../../../shared/types'
+import type { TerminalTab, TuiAgent } from '../../../../shared/types'
 import { isExplicitAgentStatusFresh } from '@/lib/agent-status'
 import {
   getAgentRowGeneratedTitleText,
@@ -425,9 +428,37 @@ function retainedAgentEntryFromLive(
   }
 }
 
+// Provider-session ownership key ({baseAgent, providerSessionId}, §579) for a
+// retained/live row, or null when the row has no session id or no resumable base
+// (e.g. the 'unknown' hook type). Sharing getAgentSessionOwnershipKey keeps this
+// renderer dedupe aligned with the host/persistence ownership key.
+function providerOwnershipKeyForEntry(
+  entry: RetainedAgentEntry,
+  settings: AppState['settings']
+): string | null {
+  const sessionId = entry.entry.providerSession?.id
+  if (!sessionId) {
+    return null
+  }
+  const base = resolveTuiAgentBaseAgent(
+    entry.agentType as TuiAgent,
+    settings?.customTuiAgents,
+    settings?.deletedCustomTuiAgents
+  )
+  if (!base || !isResumableTuiAgent(base)) {
+    return null
+  }
+  return getAgentSessionOwnershipKey({
+    worktreeId: entry.worktreeId,
+    baseAgent: base,
+    providerSessionId: sessionId
+  })
+}
+
 function shouldReplaceRetainedWithLive(
   retained: RetainedAgentEntry | undefined,
-  live: RetainedAgentEntry
+  live: RetainedAgentEntry,
+  settings: AppState['settings']
 ): boolean {
   if (!retained) {
     return true
@@ -437,8 +468,18 @@ function shouldReplaceRetainedWithLive(
   }
   const retainedSessionId = retained.entry.providerSession?.id
   const liveSessionId = live.entry.providerSession?.id
-  if (retainedSessionId && liveSessionId && retainedSessionId !== liveSessionId) {
-    return live.entry.updatedAt >= retained.entry.updatedAt
+  if (retainedSessionId && liveSessionId) {
+    // A genuinely new provider-session owner replaces even on an updatedAt tie.
+    // Key on {baseAgent, providerSessionId} when both bases resolve so two custom
+    // ids on one base+session stay one owner (§579); otherwise fall back to the
+    // raw session id so non-resumable rows keep their prior distinct-session rule.
+    const retainedKey = providerOwnershipKeyForEntry(retained, settings)
+    const liveKey = providerOwnershipKeyForEntry(live, settings)
+    const differentOwner =
+      retainedKey && liveKey ? retainedKey !== liveKey : retainedSessionId !== liveSessionId
+    if (differentOwner) {
+      return live.entry.updatedAt >= retained.entry.updatedAt
+    }
   }
   return live.entry.updatedAt > retained.entry.updatedAt
 }
@@ -450,6 +491,27 @@ function normalizePaneKeySet(
     return null
   }
   return paneKeys instanceof Set ? paneKeys : new Set(paneKeys)
+}
+
+// Why: preserve the ORIGINALLY requested identity (a custom id, or a built-in)
+// on the record so a resume re-applies that custom config and the resumed tab
+// re-displays it. The tab's launchAgent holds the requested id the host receipt
+// echoed at launch; accept it only when it resolves to the captured resumable
+// base, so a stale/mismatched tab id can never repoint the ownership key.
+function resolveCapturedRequestedAgent(
+  state: AppState,
+  baseAgent: ResumableTuiAgent,
+  tab: TerminalTab | undefined
+): TuiAgent {
+  const requested = tab?.launchAgent
+  return requested &&
+    resolveTuiAgentBaseAgent(
+      requested,
+      state.settings?.customTuiAgents,
+      state.settings?.deletedCustomTuiAgents
+    ) === baseAgent
+    ? requested
+    : baseAgent
 }
 
 function sleepingRecordFromEntry(args: {
@@ -474,6 +536,8 @@ function sleepingRecordFromEntry(args: {
     ...(tab ? { tabId: tab.id } : {}),
     worktreeId: args.worktreeId,
     agent,
+    requestedAgent: resolveCapturedRequestedAgent(args.state, agent, tab),
+    baseAgent: agent,
     providerSession: args.entry.providerSession,
     prompt: args.entry.prompt,
     state: args.entry.state,
@@ -2254,7 +2318,7 @@ export const createAgentStatusSlice: StateCreator<AppState, [], [], AgentStatusS
           if (
             retained.entry.paneKey === paneKey &&
             !liveEntry &&
-            shouldReplaceRetainedWithLive(retainedEvidence.get(paneKey), retained)
+            shouldReplaceRetainedWithLive(retainedEvidence.get(paneKey), retained, s.settings)
           ) {
             retainedEvidence.set(paneKey, retained)
           }
@@ -2308,7 +2372,7 @@ export const createAgentStatusSlice: StateCreator<AppState, [], [], AgentStatusS
           delete nextRetained[paneKey]
         }
         for (const [key, retained] of retainedEvidence) {
-          if (shouldReplaceRetainedWithLive(nextRetained[key], retained)) {
+          if (shouldReplaceRetainedWithLive(nextRetained[key], retained, s.settings)) {
             nextRetained[key] = retained
           }
         }
@@ -2380,7 +2444,11 @@ export const createAgentStatusSlice: StateCreator<AppState, [], [], AgentStatusS
             if (
               allowedPaneKeys.has(retained.entry.paneKey) &&
               !liveEntryByPaneKey.has(retained.entry.paneKey) &&
-              shouldReplaceRetainedWithLive(retainedEvidence.get(retained.entry.paneKey), retained)
+              shouldReplaceRetainedWithLive(
+                retainedEvidence.get(retained.entry.paneKey),
+                retained,
+                s.settings
+              )
             ) {
               retainedEvidence.set(retained.entry.paneKey, retained)
             }
@@ -2460,7 +2528,7 @@ export const createAgentStatusSlice: StateCreator<AppState, [], [], AgentStatusS
           }
         }
         for (const [paneKey, retained] of retainedEvidence) {
-          if (shouldReplaceRetainedWithLive(nextRetained[paneKey], retained)) {
+          if (shouldReplaceRetainedWithLive(nextRetained[paneKey], retained, s.settings)) {
             nextRetained[paneKey] = retained
           }
         }

@@ -1,8 +1,9 @@
-import type { TerminalTab, TuiAgent, Worktree } from '../../../shared/types'
+import type { BuiltInTuiAgent, TerminalTab, TuiAgent, Worktree } from '../../../shared/types'
 import type { AgentStatusState, AgentType } from '../../../shared/agent-status-types'
 import { tabHasLivePty } from './tab-has-live-pty'
 import type { WorktreeStatus } from './worktree-status'
 import { tuiAgentToAgentKind } from '../../../shared/agent-kind'
+import { resolveTuiAgentBaseAgent } from '../../../shared/custom-tui-agents'
 import type { AgentKind } from '../../../shared/telemetry-events'
 
 // Re-export from shared module so existing renderer imports continue to work.
@@ -145,11 +146,11 @@ export function formatAgentTypeLabel(agentType: AgentType | null | undefined): s
 // agentType: "weirdo") by checking membership in an explicit record. A
 // blind `as TuiAgent` cast would pass values through that AgentIcon can't
 // render, producing a broken icon or falling back to an unrelated glyph.
-// Why: modeled as `Record<TuiAgent, true>` rather than a Set so the TypeScript
-// compiler fails to build when a TuiAgent member is added to shared/types.ts
-// without being added here — a Set<TuiAgent> is structurally permissive and
-// would silently accept a subset of the union.
-const ICONABLE_AGENT_TYPES: Record<TuiAgent, true> = {
+// Why: modeled as `Record<BuiltInTuiAgent, true>` rather than a Set so the
+// TypeScript compiler fails to build when a built-in is added to
+// shared/types.ts without being added here — a Set would silently accept a
+// subset, and a widened TuiAgent key would degrade to an index signature.
+const ICONABLE_AGENT_TYPES: Record<BuiltInTuiAgent, true> = {
   claude: true,
   'claude-agent-teams': true,
   openclaude: true,
@@ -200,7 +201,9 @@ export function agentTypeToIconAgent(agentType: AgentType | null | undefined): T
 // identical agent_kind values on `agent_prompt_sent`.
 export function agentKindForAgentType(agentType: AgentType | null | undefined): AgentKind {
   const tuiAgent = agentTypeToIconAgent(agentType)
-  return tuiAgent ? tuiAgentToAgentKind(tuiAgent) : 'other'
+  // agentTypeToIconAgent only yields built-ins, so the catalog-free base lookup
+  // is exact here.
+  return tuiAgent ? tuiAgentToAgentKind(resolveTuiAgentBaseAgent(tuiAgent)) : 'other'
 }
 
 // Why: the freshness gate moved into the pane-agent-evidence resolvers; the

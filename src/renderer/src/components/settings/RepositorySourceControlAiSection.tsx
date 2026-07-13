@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import type React from 'react'
 import type { Repo, TuiAgent } from '../../../../shared/types'
+import { toLegacyAutoPreference } from '../../../../shared/tui-agent-selection'
 import { CUSTOM_AGENT_ID } from '../../../../shared/commit-message-agent-spec'
 import type { RepoSourceControlAiOverrides } from '../../../../shared/source-control-ai-types'
 import {
@@ -393,7 +394,7 @@ export function RepositorySourceControlAiSection({
         repoId={repo.id}
         repoAi={repoAi}
         source={source}
-        defaultTuiAgent={settings?.defaultTuiAgent}
+        defaultTuiAgent={toLegacyAutoPreference(settings?.defaultTuiAgent)}
         isSaving={isSaving}
         actionDirtyById={actionDirtyById}
         onActionModeChange={updateActionMode}

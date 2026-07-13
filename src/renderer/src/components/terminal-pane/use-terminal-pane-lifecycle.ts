@@ -48,7 +48,7 @@ import type {
   TuiAgent
 } from '../../../../shared/types'
 import type { TerminalPaneSplitSource } from '../../../../shared/feature-education-telemetry'
-import type { EventProps } from '../../../../shared/telemetry-events'
+import type { StartupLaunchTelemetry } from '../../lib/worktree-activation'
 import type { StartupCommandDelivery } from '../../../../shared/codex-startup-delivery'
 import type { SleepingAgentLaunchConfig } from '../../../../shared/agent-session-resume'
 import { resolveTerminalFontWeights } from '../../../../shared/terminal-fonts'
@@ -222,7 +222,7 @@ type UseTerminalPaneLifecycleDeps = {
     initialAgentStatus?: { agent: TuiAgent; prompt: string }
     /** Telemetry payload for `agent_started`. Forwarded to `pty:spawn`
      *  so main fires the event only after the spawn succeeds. */
-    telemetry?: EventProps<'agent_started'>
+    telemetry?: StartupLaunchTelemetry
     /** Show the restored-session banner when this startup command mounts. */
     showSessionRestoredBanner?: boolean
     /** Initial startup may be paired with a setup split that changes its grid. */
