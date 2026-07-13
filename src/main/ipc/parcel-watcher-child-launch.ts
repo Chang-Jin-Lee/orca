@@ -37,9 +37,9 @@ export function launchWatcherChild(
   const faultHarnessPidFile = process.env.ORCA_WATCHER_CHILD_PID_FILE
   if (faultHarnessPidFile && child.pid) {
     try {
-      // Why: the real fault harness must target only the native watcher child,
-      // including on Windows hosts where portable process-tree discovery is unavailable.
-      writeFileSync(faultHarnessPidFile, String(child.pid))
+      // Why: exclusive creation lets the harness identify the child without a
+      // leaked test-only environment variable clobbering an existing file.
+      writeFileSync(faultHarnessPidFile, String(child.pid), { flag: 'wx' })
     } catch {
       // Fault-injection observability must never affect watcher availability.
     }

@@ -1234,6 +1234,7 @@ jobs:
             Write-Warning 'Restored pre-rebuild installer; this release ships with unsigned inner binaries.'
           }
       # ── End Windows inner-binary signing ───────────────────────────────
+
       - name: Upload unsigned Windows installer for SignPath
         if: matrix.platform == 'win'
         id: upload-unsigned-windows-installer

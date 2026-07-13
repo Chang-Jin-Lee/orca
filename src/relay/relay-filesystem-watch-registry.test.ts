@@ -1,4 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { join } from 'node:path'
+import { tmpdir } from 'node:os'
 import { WatcherProcessFailure } from '../main/ipc/parcel-watcher-process-failure'
 import type {
   WatcherProcessCallback,
@@ -7,6 +9,7 @@ import type {
 } from '../main/ipc/parcel-watcher-process-subscription'
 import type { RelayDispatcher, RequestContext } from './dispatcher'
 import { RelayFilesystemWatchRegistry } from './relay-filesystem-watch-registry'
+import { createRelayWatcherProcessPool } from './relay-watcher-process-pool'
 
 type InstalledWatch = {
   callback: WatcherProcessCallback
@@ -141,5 +144,27 @@ describe('RelayFilesystemWatchRegistry', () => {
     await second
     expect(sharedSignal?.aborted).toBe(true)
     expect(rejectSubscribe).toBeDefined()
+  })
+})
+
+describe('createRelayWatcherProcessPool', () => {
+  it('fails closed instead of loading the native watcher in the relay process', async () => {
+    const previousVitest = process.env.VITEST
+    process.env.VITEST = 'true'
+    const pool = createRelayWatcherProcessPool(
+      join(tmpdir(), `missing-relay-watcher-${process.pid}.js`)
+    )
+    try {
+      await expect(pool.subscribe('/repo', vi.fn(), {}, {})).rejects.toMatchObject({
+        code: 'entry_missing'
+      })
+    } finally {
+      pool.dispose()
+      if (previousVitest === undefined) {
+        delete process.env.VITEST
+      } else {
+        process.env.VITEST = previousVitest
+      }
+    }
   })
 })

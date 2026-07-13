@@ -1,4 +1,3 @@
-import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { RuntimeWatcherProcessPool } from '../main/ipc/runtime-watcher-process-pool'
 import { WatcherProcessSupervisor } from '../main/ipc/parcel-watcher-process-supervisor'
@@ -19,9 +18,9 @@ export function createRelayWatcherProcessPool(
     createSupervisor: () =>
       new WatcherProcessSupervisor({
         entryPath,
-        // Why: source-level Vitest mocks Parcel in-process, while built relay
-        // tests have the adjacent child and must exercise the real process boundary.
-        useInProcessVitestFallback: !existsSync(entryPath)
+        // Why: a leaked VITEST environment must never move the native addon
+        // back into the relay when its crash-isolation child is missing.
+        useInProcessVitestFallback: false
       })
   })
 }

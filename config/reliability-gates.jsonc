@@ -3824,7 +3824,8 @@
             "IPC disconnect recovery restores every existing root before accepting new setup",
             "queued abort removes one request without restarting healthy roots, while active abort or crawl-scoped timeout restores the shard",
             "a crash-resubscribe crawl deadline ends only the stuck root and tears down its shard process",
-            "missing built entries fail closed and unavailable canary storage remains optional"
+            "missing built entries fail closed and unavailable canary storage remains optional",
+            "fault-harness PID reporting cannot clobber an existing filesystem path"
           ]
         },
         {
@@ -3900,7 +3901,8 @@
           "assertions": [
             "replacement emits overflow before later ordered events",
             "terminal shard failure preserves same-root clients through recovery",
-            "pending setup aborts only after the last same-root client leaves"
+            "pending setup aborts only after the last same-root client leaves",
+            "a missing child fails closed even if the relay inherits a VITEST environment"
           ]
         },
         {
@@ -3950,8 +3952,8 @@
           "platform": "macos",
           "command": "pnpm exec vitest run --config config/vitest.config.ts src/relay/relay-filesystem-watch-registry.test.ts src/relay/fs-handler.test.ts src/relay/subprocess.test.ts src/main/ssh/ssh-relay-versioned-install.test.ts config/scripts/package-electron-runtime-contract.test.mjs",
           "result": "passed",
-          "durationSeconds": 5.03,
-          "summary": "Five relay registry, handler, bundled subprocess, install, and package contract files passed with 113 tests."
+          "durationSeconds": 4.5,
+          "summary": "Five relay registry, handler, bundled subprocess, install, and package contract files passed with 114 tests."
         },
         {
           "date": "2026-07-12",
@@ -3968,8 +3970,8 @@
           "platform": "macos",
           "command": "pnpm exec vitest run --config config/vitest.config.ts src/main/ipc/parcel-watcher-process.test.ts src/main/ipc/runtime-watcher-process-pool.test.ts src/main/ipc/parcel-watcher-process-entry.test.ts src/main/ipc/parcel-watcher-event-delivery.test.ts src/main/ipc/filesystem-watcher-local-unsubscribe.test.ts src/main/ipc/filesystem-watcher-wsl.test.ts src/main/runtime/file-watcher-host.test.ts src/main/runtime/rpc/methods/files.test.ts src/main/providers/ssh-filesystem-provider.test.ts src/renderer/src/runtime/runtime-file-client.test.ts",
           "result": "passed",
-          "durationSeconds": 1.73,
-          "summary": "10 focused supervisor, pool, child-entry, delivery, desktop/WSL cleanup, runtime-host, RPC, SSH ownership, and renderer-client test files passed with 222 tests."
+          "durationSeconds": 1.7,
+          "summary": "10 focused supervisor, pool, child-entry, delivery, desktop/WSL cleanup, runtime-host, RPC, SSH ownership, and renderer-client test files passed with 223 tests."
         },
         {
           "date": "2026-07-12",

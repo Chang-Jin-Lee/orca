@@ -35,6 +35,7 @@ import { scanWorkspaceSpaceDirectory } from './workspace-space-scan'
 import { buildRelayCommandEnv } from './relay-command-env'
 import { assertNoClobberRenameDestinationAvailable } from '../shared/filesystem-rename-collision'
 import { RelayFilesystemWatchRegistry } from './relay-filesystem-watch-registry'
+import type { RelayWatcherProcessPool } from './relay-watcher-process-pool'
 
 async function isDirectoryEntry(
   dirPath: string,
@@ -79,9 +80,13 @@ export class FsHandler {
   private streamRegistry = new RelayStreamRegistry()
   private listFilesScans = new ListFilesScanCoordinator()
 
-  constructor(dispatcher: RelayDispatcher, _context: RelayContext) {
+  constructor(
+    dispatcher: RelayDispatcher,
+    _context: RelayContext,
+    watcherPool?: RelayWatcherProcessPool
+  ) {
     this.dispatcher = dispatcher
-    this.watchRegistry = new RelayFilesystemWatchRegistry(dispatcher)
+    this.watchRegistry = new RelayFilesystemWatchRegistry(dispatcher, watcherPool)
     this.registerHandlers()
     this.dispatcher.onClientDetached?.(() => {
       // Why: a detached client's fs.streamAck frames will never arrive; wake

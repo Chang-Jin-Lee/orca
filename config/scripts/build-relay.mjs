@@ -2,7 +2,7 @@
 /**
  * Bundle the relay daemon and its crash-isolated watcher child per platform.
  *
- * The relay runs on remote hosts via `node relay.js`, so it must be a
+ * The relay runs on remote hosts via `node relay.js`, so both outputs use
  * self-contained CommonJS bundles with no external dependencies beyond
  * Node.js built-ins. Native addons (node-pty, @parcel/watcher) are
  * marked external and expected to be installed on the remote or

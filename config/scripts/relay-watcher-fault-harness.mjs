@@ -157,7 +157,12 @@ async function waitForWatcherPid(pidFile, previousPid, stderr) {
   return pollUntil(
     async () => {
       const pid = Number((await readFile(pidFile, 'utf8')).trim())
-      return Number.isInteger(pid) && pid > 0 && pid !== previousPid ? pid : undefined
+      if (!Number.isInteger(pid) || pid <= 0 || pid === previousPid) {
+        return undefined
+      }
+      // Why: replacement children reuse this exclusive path after fault injection.
+      await rm(pidFile, { force: true })
+      return pid
     },
     previousPid ? 'replacement watcher child pid' : 'initial watcher child pid',
     stderr
