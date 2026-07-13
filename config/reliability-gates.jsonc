@@ -4121,6 +4121,219 @@
         "The installed-dependency and packaged-relay harnesses bypass native construction and prove dispatch/ownership shape, not Windows native handle release."
       ],
       "demotionRule": "Keep non-blocking or quarantine if the dependency harness becomes platform-sensitive or flakes without a product defect."
+    },
+    {
+      "id": "runtime-files.watcher-process-isolation",
+      "title": "Runtime file watcher faults stay process-isolated and recover without host starvation",
+      "maturity": "experimental",
+      "protection": "partial",
+      "owner": "runtime-platform",
+      "layer": "process-rpc-contract",
+      "surfaces": [
+        "headless orca serve",
+        "paired file explorer",
+        "runtime editor external-change detection",
+        "desktop filesystem watcher"
+      ],
+      "platforms": [
+        "macos",
+        "linux",
+        "windows"
+      ],
+      "providers": [
+        "local",
+        "remote-runtime",
+        "ssh"
+      ],
+      "coveredPlatforms": [
+        "macos"
+      ],
+      "coveredProviders": [
+        "local",
+        "remote-runtime",
+        "ssh"
+      ],
+      "coverageNotes": "Deterministic tests cover a four-child healthy runtime pool plus at most four bounded quarantine children, one quarantine attempt per watch lifetime, queue-aware cancellation, bounded initial and crash-resubscribe crawls, physical desktop-install abort, stale-generation rejection, per-child stat bounds, final-overflow RPC delivery, and renderer eviction before terminal callbacks can retry. A built-entry macOS harness drives the real supervisor, kills its child with SIGSEGV, then requires automatic resubscription and a later event. Windows keeps the existing fs.watch runtime path; SSH shared-watch setup uses registration-owned cancellation so one caller cannot cancel another caller's watch.",
+      "motivatingLinks": [
+        "https://github.com/stablyai/orca/issues/5308",
+        "https://github.com/stablyai/orca/issues/7547",
+        "https://github.com/stablyai/orca/issues/8212"
+      ],
+      "invariant": "Local runtime roots use at most four shared watcher children while healthy and at most four additional quarantine children after shard failure. Cancelling queued setup removes only that request; cancelling an active crawl restarts one shard and restores its healthy records. Setup deadlines start only when the child owns the crawl; the runtime RPC transport owns the normal 15-second initial budget, while a 60-second recovery deadline quarantines a root that would otherwise pin its shard. A crash-fused shared shard moves affected roots into the bounded quarantine pool, and a second fused quarantine ends those watch lifetimes instead of spawning replacements indefinitely. Every interrupted setup emits overflow after recovery, directory metadata work stays bounded to eight concurrent operations per child, destructive desktop cleanup physically aborts pending native setup, and terminal renderer watches are evicted before error callbacks can retry.",
+      "oracle": "Fill the four-child healthy pool with multiple roots, inject IPC disconnect-before-exit, queued and active setup cancellation, initial and crash-resubscribe timeouts, and shard-level terminal failure, then assert healthy roots are restored, affected roots spread across no more than four quarantine supervisors, a second quarantine fuse creates no replacement, stale generations stop delivering, and existing same-root clients receive overflow plus later events without error/end. Abort a pending desktop install and require worktree close and app shutdown to settle before the native crawl resolves. Synchronously retry from a renderer terminal-error callback and require a fresh stream that survives the old stream's end. Run eight simultaneous metadata batches in one child and assert no more than eight stats are active there. Drive a real built child through the source supervisor, kill it with SIGSEGV, and require automatic resubscription plus a post-crash event while the harness parent remains alive.",
+      "commands": [
+        "pnpm exec vitest run --config config/vitest.config.ts src/main/ipc/parcel-watcher-process.test.ts src/main/ipc/runtime-watcher-process-pool.test.ts src/main/ipc/parcel-watcher-process-entry.test.ts src/main/ipc/parcel-watcher-event-delivery.test.ts src/main/ipc/filesystem-watcher-local-unsubscribe.test.ts src/main/ipc/filesystem-watcher-wsl.test.ts src/main/runtime/file-watcher-host.test.ts src/main/runtime/rpc/methods/files.test.ts src/main/providers/ssh-filesystem-provider.test.ts src/renderer/src/runtime/runtime-file-client.test.ts",
+        "pnpm run build:electron-vite",
+        "node config/scripts/runtime-file-watcher-fault-harness.mjs",
+        "ELECTRON_RUN_AS_NODE=1 pnpm exec electron config/scripts/runtime-file-watcher-fault-harness.mjs"
+      ],
+      "testFiles": [
+        "src/main/ipc/parcel-watcher-process.test.ts",
+        "src/main/ipc/runtime-watcher-process-pool.test.ts",
+        "src/main/ipc/parcel-watcher-process-entry.test.ts",
+        "src/main/ipc/parcel-watcher-event-delivery.test.ts",
+        "src/main/ipc/filesystem-watcher-local-unsubscribe.test.ts",
+        "src/main/ipc/filesystem-watcher-wsl.test.ts",
+        "src/main/runtime/file-watcher-host.test.ts",
+        "src/main/runtime/rpc/methods/files.test.ts",
+        "src/main/providers/ssh-filesystem-provider.test.ts",
+        "src/renderer/src/runtime/runtime-file-client.test.ts",
+        "config/scripts/runtime-file-watcher-fault-harness.mjs"
+      ],
+      "assertionRefs": [
+        {
+          "file": "src/main/ipc/parcel-watcher-process.test.ts",
+          "assertions": [
+            "initial-subscribe crashes complete with an interruption refresh",
+            "IPC disconnect recovery restores every existing root before accepting new setup",
+            "queued abort removes one request without restarting healthy roots, while active abort or crawl-scoped timeout restores the shard",
+            "a crash-resubscribe crawl deadline ends only the stuck root and tears down its shard process",
+            "missing built entries fail closed and unavailable canary storage remains optional"
+          ]
+        },
+        {
+          "file": "src/main/ipc/runtime-watcher-process-pool.test.ts",
+          "assertions": [
+            "healthy roots spread across at most four shared supervisors before sharing",
+            "a supervisor-scoped failure spreads affected roots across at most four quarantine supervisors",
+            "a second fused quarantine creates no further replacement for that watch lifetime",
+            "a root-specific failure preserves healthy shard assignments",
+            "a live root whose crash-resubscribe times out moves to quarantine",
+            "an older same-root teardown cannot erase a newer watch lease's assignment"
+          ]
+        },
+        {
+          "file": "src/main/ipc/parcel-watcher-process-entry.test.ts",
+          "assertions": [
+            "queued cancellation removes the request before Parcel starts its crawl",
+            "active cancellation requests one host restart and emits no stale subscribed acknowledgement",
+            "runtime batches receive directory metadata before child IPC",
+            "an FSEvents dropped-events error is reported as recoverable and later events continue",
+            "batches above the configured event limit become one overflow before stat or IPC fanout",
+            "while process.send is backpressured, later bursts retain at most one bounded pending batch and collapse excess paths to overflow",
+            "unsubscribe discards pending delivery before it can perform stale stat work"
+          ]
+        },
+        {
+          "file": "src/main/ipc/parcel-watcher-event-delivery.test.ts",
+          "assertions": [
+            "eight concurrent root batches never exceed eight active directory metadata stats within one child"
+          ]
+        },
+        {
+          "file": "src/main/ipc/filesystem-watcher-local-unsubscribe.test.ts",
+          "assertions": [
+            "worktree deletion physically aborts pending native setup and settles before its crawl resolves",
+            "app shutdown physically aborts pending native setup and releases a late native handle"
+          ]
+        },
+        {
+          "file": "src/main/runtime/file-watcher-host.test.ts",
+          "assertions": [
+            "same-root clients share one physical watch and one client abort cannot cancel another owner's setup",
+            "shard failure preserves existing subscribers through isolated recovery and rejects stale-generation events",
+            "only failed isolated recovery ends subscribers, after a conservative overflow"
+          ]
+        },
+        {
+          "file": "src/main/runtime/rpc/methods/files.test.ts",
+          "assertions": [
+            "pre-ready transport abort reaches RuntimeFileCommands as the owning AbortSignal",
+            "terminal watcher loss flushes a final overflow change before error/end and unregisters cleanup"
+          ]
+        },
+        {
+          "file": "src/main/providers/ssh-filesystem-provider.test.ts",
+          "assertions": [
+            "an SSH caller abort rejects promptly without cancelling another same-root subscriber's shared setup",
+            "the physical relay request is cancelled when the last pending subscriber leaves",
+            "provider disposal cancels pending setup and sends one remote unwatch"
+          ]
+        },
+        {
+          "file": "src/renderer/src/runtime/runtime-file-client.test.ts",
+          "assertions": [
+            "terminal error evicts the shared renderer watch before an error callback can synchronously retry",
+            "the old stream's later end cannot evict or orphan the replacement stream",
+            "the end response releases retained preload and main-process subscription bookkeeping",
+            "a later same-root listener opens a fresh server subscription instead of reusing a dead stream"
+          ]
+        },
+        {
+          "file": "config/scripts/runtime-file-watcher-fault-harness.mjs",
+          "assertions": [
+            "the built watcher entry delivers an event before fault injection",
+            "the harness parent survives watcher-child SIGSEGV",
+            "the real supervisor automatically replaces the child, resubscribes, and delivers a post-crash event"
+          ]
+        }
+      ],
+      "evidenceRuns": [
+        {
+          "date": "2026-07-12",
+          "runner": "local",
+          "platform": "macos",
+          "command": "pnpm exec vitest run --config config/vitest.config.ts src/main/ipc/parcel-watcher-process.test.ts src/main/ipc/runtime-watcher-process-pool.test.ts src/main/ipc/parcel-watcher-process-entry.test.ts src/main/ipc/parcel-watcher-event-delivery.test.ts src/main/ipc/filesystem-watcher-local-unsubscribe.test.ts src/main/ipc/filesystem-watcher-wsl.test.ts src/main/runtime/file-watcher-host.test.ts src/main/runtime/rpc/methods/files.test.ts src/main/providers/ssh-filesystem-provider.test.ts src/renderer/src/runtime/runtime-file-client.test.ts",
+          "result": "passed",
+          "durationSeconds": 1.73,
+          "summary": "10 focused supervisor, pool, child-entry, delivery, desktop/WSL cleanup, runtime-host, RPC, SSH ownership, and renderer-client test files passed with 222 tests."
+        },
+        {
+          "date": "2026-07-12",
+          "runner": "local",
+          "platform": "macos",
+          "command": "node config/scripts/runtime-file-watcher-fault-harness.mjs",
+          "result": "passed",
+          "durationSeconds": 5,
+          "summary": "All 26 built-entry SIGSEGV injections preserved the parent, replaced and resubscribed the child, and delivered a post-crash event; watcher-canary temp-directory count remained 6 before and after the final five-run leak check."
+        },
+        {
+          "date": "2026-07-11",
+          "runner": "local",
+          "platform": "macos",
+          "command": "node config/scripts/runtime-file-watcher-fault-harness.mjs",
+          "result": "passed",
+          "durationSeconds": 0.3,
+          "summary": "The source-bundled real supervisor delivered through the built child before and after SIGSEGV; the parent survived and automatic resubscription used a replacement PID."
+        },
+        {
+          "date": "2026-07-11",
+          "runner": "local",
+          "platform": "macos",
+          "command": "node config/scripts/runtime-file-watcher-fault-harness.mjs",
+          "result": "passed",
+          "durationSeconds": 2.2,
+          "summary": "Ten consecutive invocations survived, automatically replaced and resubscribed the child, and delivered a post-crash event. The watcher-canary temp-directory count remained 8 before and after the loop."
+        }
+      ],
+      "runtimeBudget": {
+        "p95Seconds": 60,
+        "scope": "focused process/RPC contract tests plus built child fault harness"
+      },
+      "flakeHistory": {
+        "status": "unknown",
+        "evidence": "New deterministic unit coverage and ten consecutive local built-entry harness passes; still below the CI and soak history required for promotion."
+      },
+      "redGreenEvidence": {
+        "status": "partial",
+        "evidence": "Red tests reproduced the reviewed failures: IPC disconnect-before-exit orphaned existing roots, queue-admission deadlines cascaded shard replacement, a fused shard created one child per root, destructive desktop cleanup waited indefinitely for native setup, and synchronous renderer retry joined a terminal stream. Earlier red coverage also reproduced missing-entry fail-open, terminal recovery loss, stale same-root lease deletion, and unbounded per-child stat lanes. The bounded quarantine and cancellation rewrite passes those contracts, and the real-supervisor built-entry harness survives SIGSEGV with automatic replacement. CI/soak history is still absent."
+      },
+      "performanceBudget": {
+        "required": true,
+        "evidence": "Healthy operation is capped at four shared child processes instead of one child per root; based on the prior 51.9 MiB one-child measurement this bounds the unremeasured eight-root healthy ceiling near 207.6 MiB rather than the rejected 388.7 MiB per-root design. Degraded operation adds at most four quarantine children, distributes affected roots by least load, disposes empty slots, and permits no replacement after a quarantine shard itself fuses. Each child caps directory stats at eight across its assigned roots (at most 32 healthy or 64 total logical stat operations), each subscription retains at most one active plus one bounded pending batch, and no polling or serve-process stat fanout is added."
+      },
+      "promotionCriteria": [
+        "Run the built-entry SIGSEGV harness in soak for at least 100 consecutive passes or 14 days on macOS.",
+        "Add an eight-root/six-writer event-loop-delay soak artifact with an explicit latency budget.",
+        "Add a packaged orca serve pairing scenario that proves a connected client refreshes after child replacement."
+      ],
+      "knownGaps": [
+        "The fault harness bundles the real source supervisor and drives the built child, but it does not launch a packaged orca serve pairing session or exercise app.asar path resolution.",
+        "The four-child healthy and four-child quarantine memory ceilings are inferred from the earlier one-child measurement; direct degraded-state RSS plus sustained six-writer event-loop-delay and CPU soak evidence is still absent.",
+        "Linux native watcher fault containment is source-equivalent but not live fault-injected in this evidence run.",
+        "Windows runtime watches bypass this path; SSH registration ownership is deterministic-contract tested but not live-relay fault-injected."
+      ],
+      "demotionRule": "Demote or quarantine if the fault harness flakes without a product or harness bug, if healthy operation exceeds four runtime watcher children, if total healthy plus quarantine operation exceeds eight, if quarantine children outlive their roots or repeat after fusing, if event delivery becomes unbounded, or if metadata/stat work returns to the serve process."
     }
   ]
 }
