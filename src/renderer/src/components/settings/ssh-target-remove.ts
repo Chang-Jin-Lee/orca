@@ -1,5 +1,4 @@
 import { SSH_TERMINATE_RECONNECT_REQUIRED } from '../../../../shared/constants'
-import { releaseRetainedPtyKillsForSshTarget } from '@/lib/pty-kill-retry-ownership'
 
 export type SshTargetRemoveApi = {
   terminateSessions: (args: { targetId: string }) => Promise<unknown>
@@ -35,5 +34,4 @@ export async function removeSshTargetWithBestEffortCleanup(
     }
   }
   await api.removeTarget({ id })
-  releaseRetainedPtyKillsForSshTarget(id)
 }

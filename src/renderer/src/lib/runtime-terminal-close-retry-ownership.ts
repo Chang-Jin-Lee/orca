@@ -9,19 +9,3 @@ export function closeRuntimeTerminalRetainingRetryOwnership(
   // Why: main owns durable retry intent, so renderer loss cannot orphan the handle.
   return callRuntimeRpc(target, 'terminal.close', { terminal: handle })
 }
-
-export function retryRetainedRuntimeTerminalCloses(): void {
-  // Main retries on provider availability and bounded backoff.
-}
-
-export function releaseRetainedRuntimeTerminalClose(
-  target: EnvironmentTarget,
-  handle: string
-): void {
-  void target
-  void handle
-}
-
-export function releaseRetainedRuntimeTerminalClosesForEnvironment(environmentId: string): void {
-  void environmentId
-}

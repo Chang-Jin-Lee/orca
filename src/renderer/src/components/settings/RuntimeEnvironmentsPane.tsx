@@ -56,7 +56,6 @@ import { unwrapRuntimeRpcResult } from '@/runtime/runtime-rpc-client'
 import { useAppStore } from '@/store'
 import { translate } from '@/i18n/i18n'
 import { cn } from '@/lib/utils'
-import { releaseRetainedRuntimeTerminalClosesForEnvironment } from '@/lib/runtime-terminal-close-retry-ownership'
 
 const LOCAL_RUNTIME_VALUE = '__local__'
 const NO_RUNTIME_VALUE = '__none__'
@@ -498,7 +497,6 @@ export function RuntimeEnvironmentsPane({
         }
         if (!allowLocalRuntime) {
           await loadEnvironments()
-          releaseRetainedRuntimeTerminalClosesForEnvironment(environment.id)
           if (mountedRef.current) {
             toast.success(
               translate(
@@ -512,7 +510,6 @@ export function RuntimeEnvironmentsPane({
         }
       }
       await window.api.runtimeEnvironments.remove({ selector: environment.id })
-      releaseRetainedRuntimeTerminalClosesForEnvironment(environment.id)
       await loadEnvironments()
       if (mountedRef.current) {
         toast.success(

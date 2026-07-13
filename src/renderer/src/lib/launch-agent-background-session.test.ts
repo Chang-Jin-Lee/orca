@@ -484,7 +484,6 @@ describe('launchAgentBackgroundSession', () => {
       .mockRejectedValueOnce(new Error('provider unavailable'))
       .mockResolvedValueOnce(undefined)
     const { launchAgentBackgroundSession } = await import('./launch-agent-background-session')
-    const { retryRetainedPtyKills } = await import('./pty-kill-retry-ownership')
 
     await expect(
       launchAgentBackgroundSession({
@@ -495,7 +494,6 @@ describe('launchAgentBackgroundSession', () => {
     ).rejects.toThrow('subscription setup failed')
 
     expect(mockKill).toHaveBeenCalledWith('pty-1', { expectedTabId: 'tab-1' })
-    retryRetainedPtyKills()
     expect(mockKill).toHaveBeenCalledTimes(1)
     expect(mockCloseTab).toHaveBeenCalledWith('tab-1', { recordInteraction: false })
   })
@@ -809,8 +807,6 @@ describe('launchAgentBackgroundSession', () => {
     })
     mockRuntimeEnvironmentSubscribe.mockRejectedValueOnce(new Error('subscription failed'))
     const { launchAgentBackgroundSession } = await import('./launch-agent-background-session')
-    const { retryRetainedRuntimeTerminalCloses } =
-      await import('./runtime-terminal-close-retry-ownership')
 
     await expect(
       launchAgentBackgroundSession({
@@ -826,7 +822,6 @@ describe('launchAgentBackgroundSession', () => {
       params: { terminal: 'terminal-1' },
       timeoutMs: undefined
     })
-    retryRetainedRuntimeTerminalCloses()
     expect(closeAttempts).toBe(1)
     expect(state.clearTabPtyId).toHaveBeenCalledWith('tab-1', 'remote:env-1@@terminal-1')
     expect(state.clearAgentLaunchConfig).toHaveBeenCalledWith(expect.stringMatching(/^tab-1:/))

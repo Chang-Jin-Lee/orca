@@ -4,17 +4,12 @@ const callRuntimeRpc = vi.hoisted(() => vi.fn())
 
 vi.mock('@/runtime/runtime-rpc-client', () => ({ callRuntimeRpc }))
 
-import {
-  closeRuntimeTerminalRetainingRetryOwnership,
-  releaseRetainedRuntimeTerminalClose,
-  releaseRetainedRuntimeTerminalClosesForEnvironment
-} from './runtime-terminal-close-retry-ownership'
+import { closeRuntimeTerminalRetainingRetryOwnership } from './runtime-terminal-close-retry-ownership'
 
 const TARGET = { kind: 'environment' as const, environmentId: 'env-1' }
 
 describe('runtime terminal close retry ownership', () => {
   afterEach(() => {
-    releaseRetainedRuntimeTerminalClose(TARGET, 'terminal-1')
     callRuntimeRpc.mockReset()
     vi.restoreAllMocks()
     vi.useRealTimers()
@@ -38,7 +33,6 @@ describe('runtime terminal close retry ownership', () => {
     await closeRuntimeTerminalRetainingRetryOwnership(TARGET, 'terminal-2').catch(() => {})
     expect(vi.getTimerCount()).toBe(0)
 
-    releaseRetainedRuntimeTerminalClosesForEnvironment(TARGET.environmentId)
     expect(vi.getTimerCount()).toBe(0)
     await vi.advanceTimersByTimeAsync(30_000)
     expect(callRuntimeRpc).toHaveBeenCalledTimes(2)

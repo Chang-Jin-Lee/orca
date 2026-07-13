@@ -29,10 +29,6 @@ import {
 } from './terminal-delivery-watchdog'
 import { recordTerminalFreezeBreadcrumb } from './terminal-freeze-breadcrumbs'
 import { installTerminalFreezeReport } from './terminal-freeze-report'
-import {
-  releaseRetainedPtyKillOwnership,
-  retryRetainedPtyKills
-} from '@/lib/pty-kill-retry-ownership'
 
 // ── Singleton PTY event dispatcher ───────────────────────────────────
 // One global IPC listener per channel, routes events to transports by
@@ -139,9 +135,6 @@ export function reattachPtyDispatcherPushListeners(): void {
 }
 
 export function ensurePtyDispatcher(): void {
-  // Why: a prior provider disconnect can reject shutdown while retaining the
-  // exact PTY id. A later terminal lifecycle event is the safe retry trigger.
-  retryRetainedPtyKills()
   if (ptyDispatcherAttached) {
     return
   }
@@ -239,7 +232,6 @@ function attachPtySecondaryPushListeners(unsubscribes: (() => void)[]): void {
       // cumulative totals too so a reused id restarts at zero on both sides.
       clearProcessedPtyCharTotal(payload.id)
       clearReceivedPtyCharTotal(payload.id)
-      releaseRetainedPtyKillOwnership(payload.id)
       const handler = ptyExitHandlers.get(payload.id)
       if (handler) {
         clearPreHandlerPtyState(payload.id)

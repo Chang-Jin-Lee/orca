@@ -17,15 +17,3 @@ export function killPtyRetainingRetryOwnership(
       throw error
     })
 }
-
-export function retryRetainedPtyKills(): void {
-  // Main retries on provider availability and bounded backoff.
-}
-
-export function releaseRetainedPtyKillOwnership(id: string): void {
-  void id
-}
-
-export function releaseRetainedPtyKillsForSshTarget(targetId: string): void {
-  void targetId
-}
