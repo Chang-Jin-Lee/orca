@@ -229,6 +229,10 @@ const recoveryReloadInFlight = createWebContentsTimedFlag()
 let firstWindowStartupServicesReady: Promise<void> = Promise.resolve()
 let managedWslCliReconciliationReady: Promise<void> = Promise.resolve()
 let managedWslCliStartupBarrierReady: Promise<void> = Promise.resolve()
+// Why: the serve barrier fails open at its budget, so headless clients need the
+// reconciliation state at ready time to know a WSL PTY launch may still race an
+// un-migrated registration. 'settled' covers the off-Windows no-op fast path.
+let managedWslCliReconciliationStatus: 'pending' | 'settled' | 'failed' = 'settled'
 // Why: GPU child crashes clustered right after launch indicate a broken driver;
 // track them so Orca can move this build onto software rendering.
 const gpuLaunchTimeMs = Date.now()
@@ -1384,6 +1388,9 @@ async function printServeReady(options: ServeOptions): Promise<void> {
         type: 'orca_server_ready',
         runtimeId: runtime.getRuntimeId(),
         endpoint,
+        // Why: the WSL reconciliation barrier fails open, so 'pending' warns clients
+        // it outlived the startup budget and a WSL PTY launch may still race a repair.
+        managedWslCliReconciliation: managedWslCliReconciliationStatus,
         pairing: pairing.available
           ? {
               url: pairing.pairingUrl,
@@ -1610,6 +1617,7 @@ app.whenReady().then(async () => {
 
   // Why: managed WSL launchers live outside the Windows app bundle, so keep
   // their launcher and bridge contract synchronized across app updates.
+  managedWslCliReconciliationStatus = 'pending'
   managedWslCliReconciliationReady = reconcileManagedWslCliRegistrations({
     isPackaged: app.isPackaged,
     userDataPath: getCanonicalUserDataPath(),
@@ -1625,8 +1633,10 @@ app.whenReady().then(async () => {
           console.log(`[wsl-cli] Repaired managed registration in ${result.distro}.`)
         }
       }
+      managedWslCliReconciliationStatus = 'settled'
     })
     .catch((error) => {
+      managedWslCliReconciliationStatus = 'failed'
       console.warn(
         '[wsl-cli] Managed registration reconciliation discovery failed:',
         error instanceof Error ? error.message : String(error)
@@ -2090,9 +2100,13 @@ app.whenReady().then(async () => {
   }
 
   if (serveOptions) {
-    // Why: headless serve has no renderer startup barrier, so settle managed
-    // WSL command reconciliation before exposing its runtime transport.
-    await managedWslCliReconciliationReady
+    // Why: give managed WSL launchers a brief chance to migrate before headless
+    // PTYs become reachable without letting slow repairs withhold all RPC readiness.
+    logStartupMilestone('wsl-cli-barrier-start')
+    await managedWslCliStartupBarrierReady
+    logStartupMilestone('wsl-cli-barrier-resolved', {
+      reconciliation: managedWslCliReconciliationStatus
+    })
     await startServeAgentHookServer()
     registerHeadlessPtyRuntime(
       runtime,
