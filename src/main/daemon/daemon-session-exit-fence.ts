@@ -74,6 +74,10 @@ export class DaemonSessionExitFence {
     )
   }
 
+  isAdmissionActive(sessionId: string): boolean {
+    return this.admissions.has(sessionId)
+  }
+
   snapshot(sessionId: string): number | undefined {
     return this.revisions.get(sessionId)
   }

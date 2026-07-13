@@ -25,10 +25,12 @@ describe('DaemonSessionExitFence', () => {
     fence.rememberGeneration('same-id', 'old-generation')
 
     const admission = fence.beginAdmission('same-id')
+    expect(fence.isAdmissionActive('same-id')).toBe(true)
     expect(fence.isStaleGeneration('same-id', 'replacement-generation')).toBe(false)
 
     fence.rememberGeneration('same-id', 'replacement-generation', admission)
     admission.complete()
+    expect(fence.isAdmissionActive('same-id')).toBe(false)
     expect(fence.isStaleGeneration('same-id', 'old-generation')).toBe(true)
   })
 

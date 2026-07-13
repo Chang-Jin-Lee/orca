@@ -56,6 +56,7 @@ type ConnectedClient = {
 
 type SessionStreamRoute = {
   clientId: string
+  active: boolean
 }
 
 export class DaemonServer {
@@ -350,7 +351,7 @@ export class DaemonServer {
     switch (request.type) {
       case 'createOrAttach': {
         const p = request.payload
-        const streamRoute: SessionStreamRoute = { clientId }
+        const streamRoute: SessionStreamRoute = { clientId, active: true }
         const previousStreamRoute = this.streamRouteBySessionId.get(p.sessionId)
         // Why before host subscription: node-pty may flush data and exit
         // synchronously, so routing ownership must exist before callbacks run.
@@ -408,6 +409,7 @@ export class DaemonServer {
                 sessionIdSuffix: p.sessionId.slice(-10)
               })
               this.transientFactRelay.onSessionExit(p.sessionId)
+              streamRoute.active = false
               if (this.streamRouteBySessionId.get(p.sessionId) === streamRoute) {
                 this.streamRouteBySessionId.delete(p.sessionId)
               }
@@ -416,10 +418,11 @@ export class DaemonServer {
           }
         })
         const result = await pendingResult.catch((error: unknown) => {
+          streamRoute.active = false
           // Why identity-fenced rollback: a failed older attach must not
           // erase a newer concurrent route for the reused session id.
           if (this.streamRouteBySessionId.get(p.sessionId) === streamRoute) {
-            if (previousStreamRoute) {
+            if (previousStreamRoute?.active) {
               this.streamRouteBySessionId.set(p.sessionId, previousStreamRoute)
             } else {
               this.streamRouteBySessionId.delete(p.sessionId)

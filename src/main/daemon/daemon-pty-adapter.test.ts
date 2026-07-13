@@ -31,7 +31,10 @@ function createTestDir(): string {
   return mkdtempSync(join(tmpdir(), 'daemon-adapter-test-'))
 }
 
-function createMockSubprocess(dataOnSubscribe?: string): SubprocessHandle & {
+function createMockSubprocess(
+  dataOnSubscribe?: string,
+  exitOnSubscribe?: number
+): SubprocessHandle & {
   pause: ReturnType<typeof vi.fn<() => void>>
   resume: ReturnType<typeof vi.fn<() => void>>
   _simulateData: (data: string) => void
@@ -59,6 +62,9 @@ function createMockSubprocess(dataOnSubscribe?: string): SubprocessHandle & {
     },
     onExit(cb) {
       onExitCb = cb
+      if (exitOnSubscribe !== undefined) {
+        cb(exitOnSubscribe)
+      }
     },
     dispose: vi.fn(),
     _simulateData(data: string) {
@@ -96,9 +102,11 @@ describe('DaemonPtyAdapter (IPtyProvider)', () => {
     command?: string
   } | null
   let subprocessDataOnSubscribe: string | undefined
+  let subprocessExitOnSubscribe: number | undefined
 
   beforeEach(async () => {
     subprocessDataOnSubscribe = undefined
+    subprocessExitOnSubscribe = undefined
     dir = createTestDir()
     socketPath = getDaemonSocketPath(dir)
     tokenPath = join(dir, 'test.token')
@@ -108,7 +116,7 @@ describe('DaemonPtyAdapter (IPtyProvider)', () => {
       tokenPath,
       spawnSubprocess: (opts) => {
         lastSpawnOpts = opts
-        lastSubprocess = createMockSubprocess(subprocessDataOnSubscribe)
+        lastSubprocess = createMockSubprocess(subprocessDataOnSubscribe, subprocessExitOnSubscribe)
         return lastSubprocess
       }
     })
@@ -131,6 +139,32 @@ describe('DaemonPtyAdapter (IPtyProvider)', () => {
       const result = await adapter.spawn({ cols: 80, rows: 24 })
       expect(result.id).toBeDefined()
       expect(typeof result.id).toBe('string')
+    })
+
+    it('rejects a session that exits synchronously before its create reply publishes', async () => {
+      subprocessExitOnSubscribe = 0
+
+      await expect(
+        adapter.spawn({ sessionId: 'synchronous-admission-exit', cols: 80, rows: 24 })
+      ).rejects.toThrow('Daemon PTY exited during admission')
+
+      const daemon = server as unknown as {
+        host: { listSessions(): unknown[] }
+        streamRouteBySessionId: Map<string, unknown>
+      }
+      const internals = adapter as unknown as {
+        exitFence: Record<
+          'revisions' | 'admissions' | 'sessionGenerations' | 'pendingExits',
+          Map<string, unknown>
+        >
+      }
+      expect(adapter.hasPty('synchronous-admission-exit')).toBe(false)
+      expect(daemon.host.listSessions()).toHaveLength(0)
+      expect(daemon.streamRouteBySessionId.size).toBe(0)
+      expect(internals.exitFence.revisions.size).toBe(0)
+      expect(internals.exitFence.admissions.size).toBe(0)
+      expect(internals.exitFence.sessionGenerations.size).toBe(0)
+      expect(internals.exitFence.pendingExits.size).toBe(0)
     })
 
     it('fails closed when a preserved legacy session has no observable pane identity', async () => {
@@ -606,7 +640,7 @@ describe('DaemonPtyAdapter (IPtyProvider)', () => {
       const internals = adapter as unknown as {
         readAppliedSize(sessionId: string): Promise<{ status: 'alive' | 'absent' | 'unknown' }>
         handleExitEvent(sessionId: string, code: number, sessionGeneration?: string): Promise<void>
-        reconcilePendingExitAfterAdmission(sessionId: string): Promise<void>
+        reconcilePendingExitAfterAdmission(sessionId: string): Promise<boolean>
         exitFence: {
           beginAdmission(sessionId: string): {
             complete(): void
@@ -653,7 +687,7 @@ describe('DaemonPtyAdapter (IPtyProvider)', () => {
           sessionGeneration?: string
         }>
         handleExitEvent(sessionId: string, code: number, sessionGeneration?: string): Promise<void>
-        reconcilePendingExitAfterAdmission(sessionId: string): Promise<void>
+        reconcilePendingExitAfterAdmission(sessionId: string): Promise<boolean>
         exitFence: {
           beginAdmission(sessionId: string): { complete(): void }
           rememberGeneration(
@@ -687,6 +721,35 @@ describe('DaemonPtyAdapter (IPtyProvider)', () => {
 
       expect(adapter.hasPty(id)).toBe(false)
       expect(exits).toEqual([{ id, code: 11 }])
+    })
+
+    it('releases unknown deferred exits after failed admissions publish no owner', async () => {
+      const internals = adapter as unknown as {
+        readAppliedSize(sessionId: string): Promise<{ status: 'alive' | 'absent' | 'unknown' }>
+        reconcilePendingExitAfterAdmission(sessionId: string): Promise<boolean>
+        exitFence: {
+          beginAdmission(sessionId: string): { complete(): void }
+          defer(sessionId: string, exit: { code: number }): void
+          revisions: Map<string, unknown>
+          admissions: Map<string, unknown>
+          sessionGenerations: Map<string, unknown>
+          pendingExits: Map<string, unknown>
+        }
+      }
+      vi.spyOn(internals, 'readAppliedSize').mockResolvedValue({ status: 'unknown' })
+
+      for (let index = 0; index < 100; index++) {
+        const sessionId = `failed-admission-${index}`
+        const admission = internals.exitFence.beginAdmission(sessionId)
+        internals.exitFence.defer(sessionId, { code: index })
+        admission.complete()
+        await expect(internals.reconcilePendingExitAfterAdmission(sessionId)).resolves.toBe(true)
+      }
+
+      expect(internals.exitFence.revisions.size).toBe(0)
+      expect(internals.exitFence.admissions.size).toBe(0)
+      expect(internals.exitFence.sessionGenerations.size).toBe(0)
+      expect(internals.exitFence.pendingExits.size).toBe(0)
     })
 
     it('retains an unknown exit until authoritative listing reconciles it', async () => {

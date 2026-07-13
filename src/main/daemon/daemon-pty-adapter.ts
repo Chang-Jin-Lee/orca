@@ -203,12 +203,15 @@ export class DaemonPtyAdapter implements IPtyProvider {
       await this.replaceUnhealthyMacResolverDaemonBeforeNewPty()
     }
     const admission = this.exitFence.beginAdmission(sessionId)
+    let result: PtySpawnResult
     try {
-      return await this.withDaemonRetry(() => this.doSpawn({ ...opts, sessionId }, admission))
-    } finally {
-      admission.complete()
-      await this.reconcilePendingExitAfterAdmission(sessionId)
+      result = await this.withDaemonRetry(() => this.doSpawn({ ...opts, sessionId }, admission))
+    } catch (error) {
+      await this.finishAdmission(sessionId, admission, false)
+      throw error
     }
+    await this.finishAdmission(sessionId, admission, true)
+    return result
   }
 
   private async doSpawn(
@@ -509,10 +512,11 @@ export class DaemonPtyAdapter implements IPtyProvider {
       if (!this.exitFence.rememberGeneration(id, result.sessionGeneration, admission)) {
         throw new Error(`Daemon PTY admission superseded for "${id}"`)
       }
-    } finally {
-      admission.complete()
-      await this.reconcilePendingExitAfterAdmission(id)
+    } catch (error) {
+      await this.finishAdmission(id, admission, false)
+      throw error
     }
+    await this.finishAdmission(id, admission, true)
   }
 
   hasPty(id: string): boolean {
@@ -1473,6 +1477,13 @@ export class DaemonPtyAdapter implements IPtyProvider {
     if (this.exitFence.isStaleGeneration(sessionId, sessionGeneration)) {
       return
     }
+    const exit: PendingDaemonExit = { code, ...(sessionGeneration ? { sessionGeneration } : {}) }
+    if (this.exitFence.isAdmissionActive(sessionId)) {
+      // Why before any readback await: create replies and stream exits use
+      // separate sockets, so admission completion must see the queued exit.
+      this.exitFence.defer(sessionId, exit)
+      return
+    }
     const fenceSnapshot = this.exitFence.snapshot(sessionId)
     // Why: control and stream sockets can reorder a replacement create reply
     // ahead of the old process's queued exit. Targeted liveness proof prevents
@@ -1486,7 +1497,6 @@ export class DaemonPtyAdapter implements IPtyProvider {
       this.exitFence.clearPending(sessionId)
       return
     }
-    const exit: PendingDaemonExit = { code, ...(sessionGeneration ? { sessionGeneration } : {}) }
     if (!this.exitFence.isStable(sessionId, fenceSnapshot)) {
       this.exitFence.defer(sessionId, exit)
       // Why: admission may have completed while the old readback was in
@@ -1534,22 +1544,42 @@ export class DaemonPtyAdapter implements IPtyProvider {
     }
   }
 
-  private async reconcilePendingExitAfterAdmission(sessionId: string): Promise<void> {
+  private async reconcilePendingExitAfterAdmission(sessionId: string): Promise<boolean> {
     const pending = this.exitFence.getPending(sessionId)
     if (!pending || this.exitFence.isStaleGeneration(sessionId, pending.sessionGeneration)) {
       this.exitFence.clearPending(sessionId)
-      return
+      return false
     }
     const fenceSnapshot = this.exitFence.snapshot(sessionId)
     const readback = await this.readAppliedSize(sessionId)
     if (!this.exitFence.isStable(sessionId, fenceSnapshot)) {
-      return
+      return false
     }
     if (readback.status === 'alive') {
       this.exitFence.rememberGeneration(sessionId, readback.sessionGeneration)
       this.exitFence.clearPending(sessionId)
+      return false
     } else if (readback.status === 'absent') {
       this.finalizeExitEvent(sessionId, pending.code)
+      return true
+    } else if (!this.activeSessionIds.has(sessionId)) {
+      // Why: the exit event is authoritative for an admission that never
+      // published ownership; an inconclusive probe must not retain fence maps.
+      this.finalizeExitEvent(sessionId, pending.code)
+      return true
+    }
+    return false
+  }
+
+  private async finishAdmission(
+    sessionId: string,
+    admission: DaemonSessionAdmission,
+    rejectIfExited: boolean
+  ): Promise<void> {
+    admission.complete()
+    const exited = await this.reconcilePendingExitAfterAdmission(sessionId)
+    if (rejectIfExited && exited) {
+      throw new Error(`Daemon PTY exited during admission for "${sessionId}"`)
     }
   }
 }

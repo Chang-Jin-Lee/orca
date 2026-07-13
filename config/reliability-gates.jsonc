@@ -3668,6 +3668,8 @@
             "a protocol-v23 exit from an older immutable session generation is rejected without probing",
             "a replacement-generation exit emitted before its create reply is deferred and finalized after admission",
             "an older alive readback cannot erase a newer deferred replacement-generation exit",
+            "a synchronous generation-qualified exit rejects the dead spawn result before callers can republish ownership",
+            "100 failed admissions with unknown readback and no published owner release every exit-fence map",
             "authoritative list absence clears active ownership and every exit-fence map"
           ]
         },
@@ -3675,7 +3677,7 @@
           "file": "src/main/daemon/daemon-session-exit-fence.test.ts",
           "assertions": [
             "same-id admission completion invalidates a stale absent-list snapshot and recognizes the older immutable generation",
-            "generation mismatch classification is deferred while same-id admission can still publish a replacement generation",
+            "generation mismatch classification is deferred while same-id admission is observably active and can still publish a replacement generation",
             "2,000 finalized session identities leave zero admission, revision, generation, or pending-exit entries",
             "an admission finishing after dispose-style clear cannot publish generation state or recreate any map"
           ]
@@ -3685,7 +3687,8 @@
           "assertions": [
             "one immutable protocol-v23 generation crosses create, list, size, and exit and changes on same-id replacement",
             "100 synchronous buffered-output and exit subscriptions leave zero daemon stream routes or host sessions",
-            "failed attach rollback restores only the prior stream-route owner"
+            "failed attach rollback restores only a still-active prior stream-route owner",
+            "two overlapping failed attaches retain zero routes while an older failure cannot dislodge a newer successful route"
           ]
         },
         {
@@ -4218,6 +4221,15 @@
           "result": "passed",
           "durationSeconds": 9.98,
           "summary": "1451 tests passed: 100 synchronous buffered-output/exit subscriptions retained zero daemon routes or sessions, replacement exits before create reply finalized after admission, and older alive readbacks preserved newer deferred exits."
+        },
+        {
+          "date": "2026-07-12",
+          "runner": "local",
+          "platform": "macos",
+          "command": "pnpm exec vitest run --config config/vitest.config.ts src/main/providers/local-pty-provider.test.ts src/main/daemon/daemon-pty-adapter.test.ts src/main/daemon/daemon-pty-router.test.ts src/main/daemon/degraded-daemon-pty-provider.test.ts src/main/daemon/session.test.ts src/main/daemon/pty-subprocess.test.ts src/main/daemon/terminal-host.test.ts src/main/daemon/terminal-host-session-reaping-leak.test.ts src/main/daemon/daemon-server.test.ts src/main/daemon/daemon-session-exit-fence.test.ts src/main/ipc/pty.test.ts src/main/ipc/runtime-terminal-close-retry-owner.test.ts src/main/runtime/orca-runtime.test.ts",
+          "result": "passed",
+          "durationSeconds": 13.21,
+          "summary": "1455 tests passed: synchronous pre-reply exit rejected the dead spawn result, 100 ownerless unknown exits released every fence map, overlapping failed routes retained zero owners, and an older failure preserved the newer successful route."
         }
       ],
       "runtimeBudget": {
@@ -4230,7 +4242,7 @@
       },
       "redGreenEvidence": {
         "status": "partial",
-        "evidence": "The built relay artifact harness records the vanilla npm dependency at close=0, native-kill=0, deferred=1 and the shipped patched artifact at close=1, native-kill=1, deferred=0. Accepted local, daemon, and relay kills now remain provider-visible until onExit or conservative OS liveness proves physical exit; Windows retries stay signal-free and only native throws reissue the one-shot close. Same-id exits that race daemon or fallback replacement spawn admission are deferred, then suppressed only when the exact child provider proves the replacement live; overlapping same-id spawn is rejected before provider work can overwrite that proof. Injected daemon native failures propagate without reaping the live session, while ESRCH after accepted or throwing native close reaps the exact local/relay owner even when node-pty omits onExit. Whole-process daemon and relay drains retain listeners and retry ownership until exit proof or the bounded process-exit deadline, and an older 5-second graceful timer is replaced by the shutdown cadence. RPC drain rejection is contained before explicit detached-process exit. Stale relay spawns retain one timer beyond the eighth failure, graceful fallback throws stay below relay-global uncaughtException, and a standalone cold 51-request relay admission deterministically creates 50 live PTYs plus one cap rejection through one shared addon load. Protocol-v23 generations plus epoch-bound admission publication reject old exits, stale absence, and post-clear completion; authoritative absence releases every map. Stream routes are published before subscription, deleted only by their exact callback owner, and restored on failed attach only while that route remains current; 100 synchronous output/exit cycles retain zero routes or sessions. Replacement-generation exits arriving before their create reply stay pending through admission, and an older alive readback cannot erase that newer exit. The former 65-id renderer oracle proved the oldest still-live owner was dropped; the exact 1,024-id tombstone oracle evicts only the oldest id, recovers its successor, and probes none of 100 unrelated later registrations. A disconnected SSH provider retains its lease without a synthetic exit; 50 concurrent accepted SSH owners share one provider inventory, bulk teardown preserves relay generation and pane identity in the durable owner, and target removal preserves metadata unless every PTY is exit-proved before the grace-zero relay is force-stopped. A real worktree-removal preflight deterministically rejects a late matching-host admission while allowing an unrelated host removal; fallback cleanup no longer erases state after unproved shutdown."
+        "evidence": "The built relay artifact harness records the vanilla npm dependency at close=0, native-kill=0, deferred=1 and the shipped patched artifact at close=1, native-kill=1, deferred=0. Accepted local, daemon, and relay kills now remain provider-visible until onExit or conservative OS liveness proves physical exit; Windows retries stay signal-free and only native throws reissue the one-shot close. Same-id exits that race daemon or fallback replacement spawn admission are deferred, then suppressed only when the exact child provider proves the replacement live; overlapping same-id spawn is rejected before provider work can overwrite that proof. Injected daemon native failures propagate without reaping the live session, while ESRCH after accepted or throwing native close reaps the exact local/relay owner even when node-pty omits onExit. Whole-process daemon and relay drains retain listeners and retry ownership until exit proof or the bounded process-exit deadline, and an older 5-second graceful timer is replaced by the shutdown cadence. RPC drain rejection is contained before explicit detached-process exit. Stale relay spawns retain one timer beyond the eighth failure, graceful fallback throws stay below relay-global uncaughtException, and a standalone cold 51-request relay admission deterministically creates 50 live PTYs plus one cap rejection through one shared addon load. Protocol-v23 generations plus epoch-bound admission publication reject old exits, stale absence, and post-clear completion; authoritative absence releases every map. Stream routes are published before subscription, invalidated by their own exit/failure even when not current, and restored on failed attach only while the predecessor remains active; 100 synchronous output/exit cycles and two overlapping failures retain zero routes or sessions, while an older failure cannot dislodge a newer successful route. Replacement-generation exits are queued before cross-socket readback while admission is active, older alive readbacks cannot erase them, and authoritative reconciliation rejects a dead pre-reply spawn result before caller ownership can be republished. One hundred failed admissions with unknown readback and no published owner release every fence map. The former 65-id renderer oracle proved the oldest still-live owner was dropped; the exact 1,024-id tombstone oracle evicts only the oldest id, recovers its successor, and probes none of 100 unrelated later registrations. A disconnected SSH provider retains its lease without a synthetic exit; 50 concurrent accepted SSH owners share one provider inventory, bulk teardown preserves relay generation and pane identity in the durable owner, and target removal preserves metadata unless every PTY is exit-proved before the grace-zero relay is force-stopped. A real worktree-removal preflight deterministically rejects a late matching-host admission while allowing an unrelated host removal; fallback cleanup no longer erases state after unproved shutdown."
       },
       "performanceBudget": {
         "required": true,

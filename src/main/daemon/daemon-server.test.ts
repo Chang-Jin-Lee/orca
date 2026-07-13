@@ -51,7 +51,7 @@ function createMockSubprocess(): SubprocessHandle & {
 type DaemonServerPrivate = {
   server: Server | null
   host: TerminalHost
-  streamRouteBySessionId: Map<string, { clientId: string }>
+  streamRouteBySessionId: Map<string, { clientId: string; active: boolean }>
   clients: Map<
     string,
     {
@@ -217,7 +217,7 @@ describe('DaemonServer', () => {
         }
       })
       const daemon = server as unknown as DaemonServerPrivate
-      const previousRoute = { clientId: 'previous-client' }
+      const previousRoute = { clientId: 'previous-client', active: true }
       daemon.streamRouteBySessionId.set('failed-attach', previousRoute)
 
       await expect(
@@ -229,6 +229,93 @@ describe('DaemonServer', () => {
       ).rejects.toThrow('spawn failed')
 
       expect(daemon.streamRouteBySessionId.get('failed-attach')).toBe(previousRoute)
+    })
+
+    it('does not resurrect an older failed route when overlapping attaches both fail', async () => {
+      server = new DaemonServer({
+        socketPath,
+        tokenPath,
+        spawnSubprocess: () => createMockSubprocess()
+      })
+      const daemon = server as unknown as DaemonServerPrivate
+      let rejectOlder!: (reason: unknown) => void
+      let rejectNewer!: (reason: unknown) => void
+      const olderResult = new Promise<never>((_resolve, reject) => {
+        rejectOlder = reject
+      })
+      const newerResult = new Promise<never>((_resolve, reject) => {
+        rejectNewer = reject
+      })
+      vi.spyOn(daemon.host, 'createOrAttach')
+        .mockReturnValueOnce(olderResult)
+        .mockReturnValueOnce(newerResult)
+
+      const olderRequest = daemon.routeRequest('older-client', {
+        id: 'older-request',
+        type: 'createOrAttach',
+        payload: { sessionId: 'overlapping-failure', cols: 80, rows: 24 }
+      })
+      const newerRequest = daemon.routeRequest('newer-client', {
+        id: 'newer-request',
+        type: 'createOrAttach',
+        payload: { sessionId: 'overlapping-failure', cols: 80, rows: 24 }
+      })
+
+      rejectOlder(new Error('older failed'))
+      await expect(olderRequest).rejects.toThrow('older failed')
+      expect(daemon.streamRouteBySessionId.get('overlapping-failure')).toMatchObject({
+        clientId: 'newer-client',
+        active: true
+      })
+
+      rejectNewer(new Error('newer failed'))
+      await expect(newerRequest).rejects.toThrow('newer failed')
+      expect(daemon.streamRouteBySessionId.has('overlapping-failure')).toBe(false)
+      expect(daemon.host.listSessions()).toHaveLength(0)
+    })
+
+    it('keeps a newer successful route when an overlapping older attach fails', async () => {
+      server = new DaemonServer({
+        socketPath,
+        tokenPath,
+        spawnSubprocess: () => createMockSubprocess()
+      })
+      const daemon = server as unknown as DaemonServerPrivate
+      let rejectOlder!: (reason: unknown) => void
+      const olderResult = new Promise<never>((_resolve, reject) => {
+        rejectOlder = reject
+      })
+      vi.spyOn(daemon.host, 'createOrAttach')
+        .mockReturnValueOnce(olderResult)
+        .mockResolvedValueOnce({
+          isNew: true,
+          snapshot: null,
+          pid: 55555,
+          shellState: 'ready',
+          sessionGeneration: 'newer-generation',
+          attachToken: Symbol('newer-attach')
+        })
+
+      const olderRequest = daemon.routeRequest('older-client', {
+        id: 'older-request',
+        type: 'createOrAttach',
+        payload: { sessionId: 'overlapping-success', cols: 80, rows: 24 }
+      })
+      const newerRequest = daemon.routeRequest('newer-client', {
+        id: 'newer-request',
+        type: 'createOrAttach',
+        payload: { sessionId: 'overlapping-success', cols: 80, rows: 24 }
+      })
+
+      rejectOlder(new Error('older failed'))
+      await expect(olderRequest).rejects.toThrow('older failed')
+      await expect(newerRequest).resolves.toMatchObject({
+        sessionGeneration: 'newer-generation'
+      })
+      expect(daemon.streamRouteBySessionId.get('overlapping-success')).toMatchObject({
+        clientId: 'newer-client',
+        active: true
+      })
     })
 
     it('carries one immutable session generation through create, list, size, and exit', async () => {
