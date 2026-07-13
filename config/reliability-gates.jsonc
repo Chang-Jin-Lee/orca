@@ -3869,7 +3869,7 @@
           "command": "pnpm exec vitest run --config config/vitest.config.ts config/scripts/build-relay-windows-node-pty-patch.test.mjs src/main/ssh/ssh-relay-native-deps-install.test.ts src/relay/node-pty-windows-pre-ready-shutdown.test.ts src/relay/pty-handler.test.ts src/renderer/src/components/terminal-pane/pty-transport.test.ts src/renderer/src/store/slices/repos-remove-project-purge-leak.test.ts src/renderer/src/store/slices/repos.test.ts src/renderer/src/store/slices/repos-runtime-vm-removal.test.ts src/renderer/src/lib/ephemeral-vm-runtime-cleanup.test.ts",
           "result": "passed",
           "durationSeconds": 2,
-          "summary": "202 tests passed, including built Windows relay red/green and ConPTY fallback parity, repeated stale-spawn throw containment, renderer retained retry identity, local/remote project removal fail-closed ownership, and VM cleanup propagation."
+          "summary": "203 tests passed, including built Windows relay red/green and ConPTY fallback parity, repeated stale-spawn throw containment, renderer retained retry identity, local/remote project removal fail-closed ownership, and VM cleanup propagation."
         },
         {
           "date": "2026-07-12",
@@ -3887,7 +3887,7 @@
           "command": "pnpm exec vitest run --config config/vitest.config.ts src/shared/ssh-pty-id.test.ts src/shared/ssh-types.test.ts src/main/providers/local-pty-provider.test.ts src/main/providers/ssh-pty-provider.test.ts src/main/persistence.test.ts src/main/ssh/ssh-relay-session.test.ts src/main/ssh/ssh-relay-generation-reattach.test.ts src/main/ssh/ssh-target-id-migration.test.ts src/relay/pty-handler.test.ts src/relay/subprocess.test.ts src/renderer/src/components/terminal-pane/pty-transport.test.ts src/renderer/src/components/terminal-pane/pty-pre-handler-buffer.test.ts src/renderer/src/lib/pty-kill-retry-ownership.test.ts src/renderer/src/lib/ephemeral-vm-runtime-cleanup.test.ts src/renderer/src/store/slices/repos.test.ts src/main/runtime/orca-runtime.test.ts src/main/ipc/pty.test.ts",
           "result": "passed",
           "durationSeconds": 12,
-          "summary": "1680 tests passed with durable relay-generation persistence and mismatch rejection, local native-throw retry ownership, all 65 renderer shutdown owners retained and drained, stale-spawn retained ownership, worktree/terminal admission ordering, VM cleanup success ordering, and targeted liveness probes."
+          "summary": "1681 tests passed with durable relay-generation persistence and mismatch rejection, local native-throw retry ownership, all 65 renderer shutdown owners retained and drained, stale-spawn retained ownership, worktree/terminal admission ordering, VM cleanup success ordering, and targeted liveness probes."
         },
         {
           "date": "2026-07-12",
