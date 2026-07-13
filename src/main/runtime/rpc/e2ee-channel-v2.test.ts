@@ -196,6 +196,36 @@ describe('E2EEChannel v2', () => {
     expect(second.onReady).not.toHaveBeenCalled()
   })
 
+  it('rejects a captured authenticated mutating trace on a fresh socket', () => {
+    const first = setup()
+    const firstHandshake = startV2(first)
+    const transcriptHashB64 = Buffer.from(firstHandshake.schedule.transcriptHash).toString('base64')
+    const capturedAuth = clientText(
+      JSON.stringify({ type: 'e2ee_auth', v: 2, transcriptHashB64, deviceToken: 'valid-token' }),
+      firstHandshake.schedule,
+      0n
+    )
+    const capturedMutation = clientText(
+      JSON.stringify({ method: 'device.remove', params: { deviceId: 'device-1' } }),
+      firstHandshake.schedule,
+      1n
+    )
+    const firstMutation = vi.fn()
+    first.channel.onMessage(firstMutation)
+    first.channel.handleRawMessage(capturedAuth)
+    first.channel.handleRawMessage(capturedMutation)
+    expect(firstMutation).toHaveBeenCalledOnce()
+
+    const second = setup()
+    startV2(second)
+    const replayedMutation = vi.fn()
+    second.channel.onMessage(replayedMutation)
+    second.channel.handleRawMessage(capturedAuth)
+    second.channel.handleRawMessage(capturedMutation)
+    expect(second.validateToken).not.toHaveBeenCalled()
+    expect(replayedMutation).not.toHaveBeenCalled()
+  })
+
   it('preserves one queued counter order across text and binary replies', () => {
     const ctx = setup()
     const { schedule } = startV2(ctx)
