@@ -3965,6 +3965,7 @@
             "persisted local shutdown waits for daemon startup instead of accepting unknown-id success from the fallback provider",
             "an in-flight replaced local provider cannot complete or delete the newer shutdown owner",
             "local and SSH stale-provider not-found rejections preserve replacement ownership and coalesced callers fail closed",
+            "direct local and SSH kill requests share the retained owner and re-drive after in-flight provider replacement",
             "host-scoped liveness lists only the selected provider instead of fanning out to unrelated SSH hosts",
             "relay generation reuse removes stale retry ownership without touching the new PTY"
           ]

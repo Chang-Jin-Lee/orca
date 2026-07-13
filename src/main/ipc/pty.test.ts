@@ -3447,6 +3447,92 @@ describe('registerPtyHandlers', () => {
     vi.useRealTimers()
   })
 
+  it('re-drives a direct local kill when its provider is replaced in flight', async () => {
+    vi.useFakeTimers()
+    const oldShutdown = makeDeferred()
+    const makeProvider = (shutdown: (id: string) => Promise<void>) =>
+      ({
+        shutdown,
+        onData: vi.fn(() => () => {}),
+        onReplay: vi.fn(() => () => {}),
+        onExit: vi.fn(() => () => {})
+      }) as never
+    const oldProviderShutdown = vi.fn(() => oldShutdown.promise)
+    const newShutdown = vi.fn().mockResolvedValue(undefined)
+    const removePendingLocalPtyShutdown = vi.fn()
+    setLocalPtyProvider(makeProvider(oldProviderShutdown))
+    handlers.clear()
+    registerPtyHandlers(mainWindow as never, undefined, undefined, undefined, undefined, {
+      getPendingLocalPtyShutdowns: () => [],
+      upsertPendingLocalPtyShutdown: vi.fn(),
+      removePendingLocalPtyShutdown
+    } as never)
+
+    const kill = handlers.get('pty:kill')!(null, { id: 'daemon-pty' }) as Promise<void>
+    expect(oldProviderShutdown).toHaveBeenCalledOnce()
+    setLocalPtyProvider(makeProvider(newShutdown))
+    oldShutdown.resolve()
+
+    await expect(kill).rejects.toThrow('PTY shutdown still pending')
+    await vi.advanceTimersByTimeAsync(0)
+    expect(newShutdown).toHaveBeenCalledOnce()
+    expect(removePendingLocalPtyShutdown).toHaveBeenCalledWith('daemon-pty')
+    await vi.advanceTimersByTimeAsync(30_000)
+    expect(vi.getTimerCount()).toBe(0)
+    vi.useRealTimers()
+  })
+
+  it('re-drives a direct SSH kill when its provider is replaced in flight', async () => {
+    vi.useFakeTimers()
+    const oldShutdown = makeDeferred()
+    const newShutdown = vi.fn().mockResolvedValue(undefined)
+    const lease: Record<string, unknown> = {
+      targetId: 'ssh-1',
+      ptyId: 'relay-pty',
+      relayInstanceId: 'boot-1',
+      state: 'detached',
+      createdAt: 1,
+      updatedAt: 1
+    }
+    const store = {
+      getSshRemotePtyLeases: vi.fn(() => [lease]),
+      markSshRemotePtyShutdownRequested: vi.fn(() => {
+        lease.shutdownRequestedAt = 2
+      }),
+      markSshRemotePtyLease: vi.fn()
+    }
+    registerSshPtyProvider('ssh-1', {
+      shutdown: vi.fn(() => oldShutdown.promise),
+      onExit: vi.fn(() => () => {})
+    } as never)
+    handlers.clear()
+    registerPtyHandlers(
+      mainWindow as never,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      store as never
+    )
+    const id = 'ssh:ssh-1@@boot-1@@relay-pty'
+
+    const kill = handlers.get('pty:kill')!(null, { id }) as Promise<void>
+    registerSshPtyProvider('ssh-1', {
+      shutdown: newShutdown,
+      onExit: vi.fn(() => () => {})
+    } as never)
+    oldShutdown.resolve()
+
+    await expect(kill).rejects.toThrow('PTY shutdown still pending')
+    await vi.advanceTimersByTimeAsync(0)
+    expect(newShutdown).toHaveBeenCalledOnce()
+    expect(store.markSshRemotePtyLease).toHaveBeenCalledWith('ssh-1', id, 'terminated')
+    unregisterSshPtyProvider('ssh-1')
+    await vi.advanceTimersByTimeAsync(30_000)
+    expect(vi.getTimerCount()).toBe(0)
+    vi.useRealTimers()
+  })
+
   it('rebinds a persisted local shutdown after async daemon startup replaces the provider', async () => {
     vi.useFakeTimers()
     const startup = makeDeferred()
