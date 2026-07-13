@@ -952,6 +952,15 @@ export type PluginHostListEntry = {
   commands: { id: string; title: string }[]
   hasWorker: boolean
   hasSkills?: boolean
+  vmRecipes?: {
+    id: string
+    name: string
+    description?: string
+    commands: {
+      phase: 'create' | 'suspend' | 'resume' | 'destroy'
+      command: string
+    }[]
+  }[]
   restarts: number
   source?: {
     kind: 'local-path' | 'git'

@@ -63,6 +63,46 @@ describe('fingerprintPluginConsent', () => {
 
     expect(fingerprintPluginConsent({ main: undefined, capabilities })).toBe(legacy)
   })
+
+  it('requires re-consent when instructional content bytes change', () => {
+    const subject = {
+      main: undefined,
+      capabilities: [],
+      contributes: {
+        skills: [],
+        keybindings: [],
+        vmRecipes: [{ path: 'recipes/cloud.json' }],
+        agents: []
+      }
+    }
+    const first = fingerprintPluginConsent(subject, 'a'.repeat(64))
+    const second = fingerprintPluginConsent(subject, 'b'.repeat(64))
+
+    expect(second).not.toBe(first)
+    expect(
+      getPluginActivationState('orca-samples.recipes', second, {
+        pluginConsents: { 'orca-samples.recipes': first },
+        disabledPlugins: []
+      })
+    ).toBe('pending')
+  })
+
+  it('does not invalidate inert content consent when only its content hash changes', () => {
+    const subject = {
+      main: undefined,
+      capabilities: [],
+      contributes: {
+        skills: [],
+        keybindings: [],
+        vmRecipes: [],
+        agents: []
+      }
+    }
+
+    expect(fingerprintPluginConsent(subject, 'a'.repeat(64))).toBe(
+      fingerprintPluginConsent(subject, 'b'.repeat(64))
+    )
+  })
 })
 
 describe('plugin install lockfile consent fingerprints', () => {

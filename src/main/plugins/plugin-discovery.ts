@@ -9,10 +9,14 @@ import {
   satisfiesOrcaEngineRange,
   type PluginManifest
 } from '../../shared/plugins/plugin-manifest'
-import { fingerprintPluginConsent } from '../../shared/plugins/plugin-consent-fingerprint'
+import {
+  fingerprintPluginConsent,
+  hasInstructionalPluginContributions
+} from '../../shared/plugins/plugin-consent-fingerprint'
 import { validateDeclaredPluginArtifacts } from './plugin-artifact-validation'
 import { readPluginManifestText } from './plugin-manifest-file'
 import { readPluginCurrentPointer } from './plugin-current-pointer'
+import { hashPluginTree } from './plugin-content-hash'
 
 export { PLUGIN_CURRENT_POINTER_FILENAME } from './plugin-current-pointer'
 
@@ -37,6 +41,8 @@ export type ValidDiscoveredPlugin = {
   manifest: PluginManifest
   /** Fingerprint of the capabilities and trusted-worker execution tier. */
   consentFingerprint: string
+  /** Immutable tree identity included in consent for instructional packs. */
+  consentContentHash?: string | null
   /** Content hash the install dir is named by; null for dev plugins. */
   contentHash: string | null
   isDev: boolean
@@ -68,7 +74,8 @@ export function getPluginsDataDir(userDataPath: string): string {
 async function readManifestDir(
   rootDir: string,
   hostVersion: string,
-  isDev: boolean
+  isDev: boolean,
+  installedContentHash?: string
 ): Promise<DiscoveredPlugin> {
   let rawText: string
   try {
@@ -116,11 +123,23 @@ async function readManifestDir(
       isDev
     }
   }
+  let consentContentIdentity: string | undefined
+  if (installedContentHash && hasInstructionalPluginContributions(manifest)) {
+    consentContentIdentity = installedContentHash
+  }
+  if (isDev && hasInstructionalPluginContributions(manifest)) {
+    const treeHash = await hashPluginTree(rootDir)
+    if (!treeHash.ok) {
+      return { pluginKey, rootDir, error: treeHash.error, isDev }
+    }
+    consentContentIdentity = treeHash.hash
+  }
   return {
     pluginKey,
     rootDir,
     manifest,
-    consentFingerprint: fingerprintPluginConsent(manifest),
+    consentFingerprint: fingerprintPluginConsent(manifest, consentContentIdentity),
+    consentContentHash: consentContentIdentity ?? null,
     contentHash: null,
     isDev
   }
@@ -153,7 +172,7 @@ async function readInstalledPlugin(
     }
   }
   const versionDir = join(pluginDir, contentHash)
-  const discovered = await readManifestDir(versionDir, hostVersion, false)
+  const discovered = await readManifestDir(versionDir, hostVersion, false, contentHash)
   if (isInvalidDiscoveredPlugin(discovered)) {
     return { ...discovered, pluginKey: dirName }
   }

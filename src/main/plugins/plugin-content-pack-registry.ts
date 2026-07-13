@@ -9,6 +9,8 @@ import { PluginIconThemeRegistry } from './plugin-icon-theme-registry'
 import { PluginSkillRegistry } from './plugin-skill-registry'
 import { PluginThemeRegistry } from './plugin-theme-registry'
 import { PluginTerminalThemeRegistry } from './plugin-terminal-theme-registry'
+import { PluginVmRecipeRegistry } from './plugin-vm-recipe-registry'
+import { verifyInstructionalPluginContent } from './plugin-instructional-content-integrity'
 
 export class PluginContentPackRegistry {
   readonly themes: PluginThemeRegistry
@@ -16,6 +18,7 @@ export class PluginContentPackRegistry {
   readonly iconThemes: PluginIconThemeRegistry
   readonly terminalThemes: PluginTerminalThemeRegistry
   readonly skills: PluginSkillRegistry
+  readonly vmRecipes: PluginVmRecipeRegistry
   private readonly activationErrors = new Map<string, string>()
 
   constructor(
@@ -31,6 +34,7 @@ export class PluginContentPackRegistry {
       options.pluginsDataDir,
       options.homeDirectory
     )
+    this.vmRecipes = new PluginVmRecipeRegistry()
   }
 
   async reconcile(
@@ -46,6 +50,27 @@ export class PluginContentPackRegistry {
     const excluded = new Set<string>()
     this.activationErrors.clear()
 
+    await Promise.all(
+      discovered.map(async (plugin) => {
+        if (
+          isInvalidDiscoveredPlugin(plugin) ||
+          !approvedKeys.has(plugin.pluginKey) ||
+          plugin.manifest.contributes.vmRecipes.length > 0
+        ) {
+          return
+        }
+        try {
+          await verifyInstructionalPluginContent(plugin)
+        } catch (error) {
+          excluded.add(plugin.pluginKey)
+          this.activationErrors.set(
+            plugin.pluginKey,
+            error instanceof Error ? error.message : String(error)
+          )
+        }
+      })
+    )
+
     while (true) {
       const approveAtomically = (plugin: ValidDiscoveredPlugin): boolean =>
         approvedKeys.has(plugin.pluginKey) && !excluded.has(plugin.pluginKey)
@@ -54,7 +79,8 @@ export class PluginContentPackRegistry {
         this.languagePacks.reconcile(discovered, approveAtomically),
         this.iconThemes.reconcile(discovered, approveAtomically),
         this.terminalThemes.reconcile(discovered, approveAtomically),
-        this.skills.reconcile(discovered, approveAtomically)
+        this.skills.reconcile(discovered, approveAtomically),
+        this.vmRecipes.reconcile(discovered, approveAtomically)
       ])
 
       let foundNewError = false
@@ -82,7 +108,8 @@ export class PluginContentPackRegistry {
       this.languagePacks.error(pluginKey) ??
       this.iconThemes.error(pluginKey) ??
       this.terminalThemes.error(pluginKey) ??
-      this.skills.error(pluginKey)
+      this.skills.error(pluginKey) ??
+      this.vmRecipes.error(pluginKey)
     )
   }
 }

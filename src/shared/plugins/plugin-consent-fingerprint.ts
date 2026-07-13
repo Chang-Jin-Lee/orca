@@ -2,22 +2,47 @@ import { createHash } from 'node:crypto'
 import { canonicalizeCapabilitySet } from './plugin-capabilities'
 import type { PluginManifest } from './plugin-manifest'
 
+type PluginConsentSubject = Pick<PluginManifest, 'capabilities' | 'main'> & {
+  contributes?: Partial<
+    Pick<PluginManifest['contributes'], 'skills' | 'keybindings' | 'vmRecipes' | 'agents'>
+  >
+}
+
+export function hasInstructionalPluginContributions(manifest: PluginConsentSubject): boolean {
+  const contributions = manifest.contributes
+  return Boolean(
+    contributions &&
+    ((contributions.skills?.length ?? 0) > 0 ||
+      (contributions.keybindings?.length ?? 0) > 0 ||
+      (contributions.vmRecipes?.length ?? 0) > 0 ||
+      (contributions.agents?.length ?? 0) > 0)
+  )
+}
+
 /**
  * Consent covers both the declared host capabilities and whether the plugin
  * executes trusted Node code. A panel-only update that adds `main` crosses a
  * trust boundary even when its capability list is unchanged.
  */
 export function canonicalizePluginConsent(
-  manifest: Pick<PluginManifest, 'capabilities' | 'main'>
+  manifest: PluginConsentSubject,
+  contentIdentity?: string
 ): string {
   const capabilities = canonicalizeCapabilitySet(manifest.capabilities)
-  // Preserve the original capability-only digest for panel/content plugins,
-  // while making the trusted Node tier a domain-separated fingerprint.
-  return manifest.main === undefined ? capabilities : `${capabilities}\0trusted-node-worker`
+  const workerIdentity = manifest.main === undefined ? '' : '\0trusted-node-worker'
+  // Instructional bytes execute later under user or agent authority, so
+  // approval is bound to their immutable install/dev-tree identity.
+  const instructionalIdentity = hasInstructionalPluginContributions(manifest)
+    ? `\0instructional-content:${contentIdentity ?? 'unresolved'}`
+    : ''
+  return `${capabilities}${workerIdentity}${instructionalIdentity}`
 }
 
 export function fingerprintPluginConsent(
-  manifest: Pick<PluginManifest, 'capabilities' | 'main'>
+  manifest: PluginConsentSubject,
+  contentIdentity?: string
 ): string {
-  return `sha256-${createHash('sha256').update(canonicalizePluginConsent(manifest)).digest('base64')}`
+  return `sha256-${createHash('sha256')
+    .update(canonicalizePluginConsent(manifest, contentIdentity))
+    .digest('base64')}`
 }

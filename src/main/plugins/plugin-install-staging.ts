@@ -41,6 +41,32 @@ async function validatePluginInstallTree(
   return declared.ok ? validatePluginInstallContent(rootDir, manifest) : declared
 }
 
+async function readInstallManifest(
+  rootDir: string,
+  hostVersion: string
+): Promise<{ ok: true; manifest: PluginManifest } | { ok: false; error: string }> {
+  let raw: unknown
+  try {
+    raw = JSON.parse(await readPluginManifestText(rootDir))
+  } catch (error) {
+    return {
+      ok: false,
+      error: `unreadable ${PLUGIN_MANIFEST_FILENAME}: ${error instanceof Error ? error.message : String(error)}`
+    }
+  }
+  const parsed = parsePluginManifest(raw)
+  if (!parsed.ok) {
+    return { ok: false, error: `invalid manifest: ${parsed.error}` }
+  }
+  if (!satisfiesOrcaEngineRange(hostVersion, parsed.manifest.engines.orca)) {
+    return {
+      ok: false,
+      error: `plugin requires Orca ${parsed.manifest.engines.orca} (this is ${hostVersion})`
+    }
+  }
+  return { ok: true, manifest: parsed.manifest }
+}
+
 /** Installs a validated staging tree into the hash-addressed layout. */
 export async function installStagedPluginTree(input: {
   pluginsDir: string
@@ -49,26 +75,11 @@ export async function installStagedPluginTree(input: {
   source: PluginInstallSource
   resolvedCommit: string | null
 }): Promise<PluginInstallResult> {
-  let manifestRaw: unknown
-  try {
-    manifestRaw = JSON.parse(await readPluginManifestText(input.stagingDir))
-  } catch (error) {
-    return {
-      ok: false,
-      error: `unreadable ${PLUGIN_MANIFEST_FILENAME}: ${error instanceof Error ? error.message : String(error)}`
-    }
+  const sourceManifest = await readInstallManifest(input.stagingDir, input.hostVersion)
+  if (!sourceManifest.ok) {
+    return sourceManifest
   }
-  const parsed = parsePluginManifest(manifestRaw)
-  if (!parsed.ok) {
-    return { ok: false, error: `invalid manifest: ${parsed.error}` }
-  }
-  const manifest = parsed.manifest
-  if (!satisfiesOrcaEngineRange(input.hostVersion, manifest.engines.orca)) {
-    return {
-      ok: false,
-      error: `plugin requires Orca ${manifest.engines.orca} (this is ${input.hostVersion})`
-    }
-  }
+  let manifest = sourceManifest.manifest
   const declaredArtifacts = await validatePluginInstallTree(input.stagingDir, manifest)
   if (!declaredArtifacts.ok) {
     return { ok: false, error: `invalid declared artifact: ${declaredArtifacts.error}` }
@@ -108,6 +119,14 @@ export async function installStagedPluginTree(input: {
             : copiedHash.error
         }
       }
+      const copiedManifest = await readInstallManifest(stagedVersionDir, input.hostVersion)
+      if (!copiedManifest.ok) {
+        return { ok: false, error: `copied ${copiedManifest.error}` }
+      }
+      if (qualifiedPluginKey(copiedManifest.manifest) !== pluginKey) {
+        return { ok: false, error: 'plugin manifest identity changed while it was being staged' }
+      }
+      manifest = copiedManifest.manifest
       const copiedArtifacts = await validatePluginInstallTree(stagedVersionDir, manifest)
       if (!copiedArtifacts.ok) {
         return { ok: false, error: `copied artifact validation failed: ${copiedArtifacts.error}` }
@@ -130,6 +149,14 @@ export async function installStagedPluginTree(input: {
           : existingHash.error
       }
     }
+    const existingManifest = await readInstallManifest(versionDir, input.hostVersion)
+    if (!existingManifest.ok) {
+      return { ok: false, error: `installed ${existingManifest.error}` }
+    }
+    if (qualifiedPluginKey(existingManifest.manifest) !== pluginKey) {
+      return { ok: false, error: 'installed plugin manifest identity does not match its directory' }
+    }
+    manifest = existingManifest.manifest
     const existingArtifacts = await validatePluginInstallTree(versionDir, manifest)
     if (!existingArtifacts.ok) {
       return {
@@ -138,7 +165,7 @@ export async function installStagedPluginTree(input: {
       }
     }
   }
-  const consentFingerprint = fingerprintPluginConsent(manifest)
+  const consentFingerprint = fingerprintPluginConsent(manifest, treeHash.hash)
   const entry: PluginLockEntry = {
     pluginKey,
     version: manifest.version,

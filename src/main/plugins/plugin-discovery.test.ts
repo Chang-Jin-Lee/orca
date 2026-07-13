@@ -73,3 +73,57 @@ describe('installed plugin discovery identity', () => {
     expect(plugin?.pluginKey).toBe(installedKey)
   })
 })
+
+describe('instructional plugin discovery identity', () => {
+  it('changes dev consent when a VM recipe command changes', async () => {
+    const pluginsDir = await tempPluginsDir()
+    const devRoot = await tempPluginsDir()
+    await mkdir(join(devRoot, 'recipes'))
+    await writeFile(
+      join(devRoot, 'orca-plugin.json'),
+      JSON.stringify({
+        manifestVersion: 1,
+        id: 'recipes',
+        publisher: 'orca-samples',
+        name: 'Recipes',
+        version: '1.0.0',
+        engines: { orca: '>=1.0.0' },
+        pluginApi: 1,
+        contributes: { vmRecipes: [{ path: 'recipes/cloud.json' }] },
+        capabilities: []
+      })
+    )
+    const recipePath = join(devRoot, 'recipes', 'cloud.json')
+    await writeFile(
+      recipePath,
+      JSON.stringify({ schemaVersion: 1, id: 'cloud', name: 'Cloud', create: 'create-v1' })
+    )
+    const [first] = await discoverPlugins({
+      pluginsDir,
+      devPluginPaths: [devRoot],
+      hostVersion: '1.4.0'
+    })
+    await writeFile(
+      recipePath,
+      JSON.stringify({ schemaVersion: 1, id: 'cloud', name: 'Cloud', create: 'create-v2' })
+    )
+    const [second] = await discoverPlugins({
+      pluginsDir,
+      devPluginPaths: [devRoot],
+      hostVersion: '1.4.0'
+    })
+
+    expect(first && !isInvalidDiscoveredPlugin(first)).toBe(true)
+    expect(second && !isInvalidDiscoveredPlugin(second)).toBe(true)
+    if (
+      !first ||
+      !second ||
+      isInvalidDiscoveredPlugin(first) ||
+      isInvalidDiscoveredPlugin(second)
+    ) {
+      return
+    }
+    expect(second.consentContentHash).not.toBe(first.consentContentHash)
+    expect(second.consentFingerprint).not.toBe(first.consentFingerprint)
+  })
+})

@@ -7,6 +7,7 @@ import { pluginPanelTabKey } from '../../shared/plugins/plugin-manifest'
 import type { PluginLockfile } from '../../shared/plugins/plugin-install-lockfile'
 import { isInvalidDiscoveredPlugin } from './plugin-discovery'
 import type { PluginService } from './plugin-service'
+import { listPluginVmRecipeCommands } from '../../shared/plugins/plugin-vm-recipe-artifact'
 
 /**
  * Wire projection of installed plugins for the renderer and serve RPC.
@@ -48,6 +49,12 @@ export type PluginListEntry = {
   commands: { id: string; title: string }[]
   hasWorker: boolean
   hasSkills: boolean
+  vmRecipes: {
+    id: string
+    name: string
+    description?: string
+    commands: { phase: 'create' | 'suspend' | 'resume' | 'destroy'; command: string }[]
+  }[]
   restarts: number
   source?: {
     kind: 'local-path' | 'git'
@@ -82,6 +89,7 @@ export function buildPluginList(service: PluginService, lock: PluginLockfile): P
         commands: [],
         hasWorker: false,
         hasSkills: false,
+        vmRecipes: [],
         restarts: 0
       }
     }
@@ -140,6 +148,12 @@ export function buildPluginList(service: PluginService, lock: PluginLockfile): P
       })),
       hasWorker: Boolean(plugin.manifest.main),
       hasSkills: plugin.manifest.contributes.skills.length > 0,
+      vmRecipes: service.contentPacks.vmRecipes.preview(plugin.pluginKey).map(({ recipe }) => ({
+        id: recipe.id,
+        name: recipe.name,
+        ...(recipe.description ? { description: recipe.description } : {}),
+        commands: listPluginVmRecipeCommands(recipe)
+      })),
       restarts: worker.restarts,
       ...(lockEntry
         ? {

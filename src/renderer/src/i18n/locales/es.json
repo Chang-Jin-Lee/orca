@@ -8973,7 +8973,7 @@
           "copy": "Copiar",
           "copied": "Copiado",
           "recipes": "Recetas",
-          "recipesHelp": "Las recetas que tu agente agrega a orca.yaml aparecen aquí, listas para iniciar un espacio de trabajo.",
+          "recipesHelp": "Las recetas de orca.yaml y de los plugins activados aparecen aquí, listas para iniciar un espacio de trabajo.",
           "refresh": "Actualizar recetas de VMs efímeras",
           "checking": "Comprobando recetas…",
           "none": "Aún no se han encontrado recetas."
@@ -9039,11 +9039,13 @@
         },
         "PluginConsentDialog": {
           "workerTrust": "Proceso en segundo plano — se ejecuta en su propio proceso",
-          "panelTrust": "Solo panel — sin proceso en segundo plano",
+          "panelTrust": "Panel o contenido inerte — sin proceso en segundo plano",
           "decisionFailed": "No se pudo guardar la decisión sobre los permisos. Inténtalo de nuevo.",
           "title": "Revisar permisos",
+          "mixedTitle": "Revisar acceso y contenido",
+          "instructionalTitle": "Revisar el contenido del plugin",
           "subtitle": "{{value0}} v{{value1}} · {{value2}}",
-          "reconsent": "Los permisos o el nivel de confianza del proceso cambiaron desde la última revisión de este plugin. Revísalos de nuevo antes de ejecutarlo.",
+          "reconsent": "Los permisos, el nivel de confianza del proceso o el contenido instructivo cambiaron desde la última revisión de este plugin. Revísalo de nuevo antes de ejecutarlo.",
           "source": "Origen",
           "unknownSource": "No disponible",
           "commit": "Commit",
@@ -9054,6 +9056,7 @@
           "enable": "Activar plugin",
           "keepDisabled": "Mantener desactivado",
           "panelWarning": "Estos permisos limitan cómo usa el plugin la API de Orca. Este plugin no tiene ningún proceso en segundo plano.",
+          "instructionalWarning": "Este plugin no tiene ningún proceso en segundo plano. Aun así, su contenido instructivo puede provocar acciones cuando tú o un agente lo usen. Revisa las instrucciones y los comandos siguientes antes de habilitarlo.",
           "capability": {
             "workspaceRead": "Leer el nombre, la rama y la lista de terminales del worktree seleccionado",
             "terminalSend": "Escribir texto en una terminal visible (siempre en una terminal específica)",
@@ -9063,7 +9066,8 @@
             "eventsSubscribe": "Recibir avisos cuando se creen o eliminen worktrees y cuando cambie el estado de un agente",
             "settingsOwn": "Leer y cambiar la configuración propia del plugin"
           },
-          "skillWarning": "Este plugin instala habilidades con instrucciones. Los agentes leen esas instrucciones y pueden actuar con toda la autoridad que les concedas."
+          "skillWarning": "Este plugin instala habilidades con instrucciones. Los agentes leen esas instrucciones y pueden actuar con toda la autoridad que les concedas.",
+          "instructionalTrust": "Contenido instructivo — se ejecuta más tarde con la autoridad del usuario o del agente"
         },
         "PluginDevelopmentSection": {
           "pathRequired": "Introduce la ruta de una carpeta de plugin.",
@@ -9191,6 +9195,15 @@
           "disabled": "No instalar",
           "cancel": "Cancelar",
           "save": "Guardar"
+        },
+        "PluginVmRecipeConsentPreview": {
+          "create": "Crear",
+          "suspend": "Suspender",
+          "resume": "Reanudar",
+          "destroy": "Destruir",
+          "warning": "Este plugin instala recetas de VM. Orca ejecuta los comandos siguientes en el equipo local cuando usas la acción de ciclo de vida correspondiente.",
+          "commandLabel": "{{value0}} · comando de {{value1}}",
+          "heading": "Comandos de recetas de VM"
         }
       },
       "right": {

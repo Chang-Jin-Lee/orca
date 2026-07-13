@@ -8973,7 +8973,7 @@
           "copy": "Copy",
           "copied": "Copied",
           "recipes": "Recipes",
-          "recipesHelp": "Recipes your agent adds to orca.yaml show up here, ready to launch a workspace on.",
+          "recipesHelp": "Recipes from orca.yaml and enabled plugins show up here, ready to launch a workspace on.",
           "refresh": "Refresh ephemeral VM recipes",
           "checking": "Checking recipes...",
           "none": "No recipes found yet."
@@ -9039,11 +9039,13 @@
         },
         "PluginConsentDialog": {
           "workerTrust": "Background worker — runs its own process",
-          "panelTrust": "Panel only — no worker process",
+          "panelTrust": "Panel or inert content — no worker process",
           "decisionFailed": "Could not save the permission decision. Try again.",
           "title": "Review permissions",
+          "mixedTitle": "Review access and content",
+          "instructionalTitle": "Review plugin content",
           "subtitle": "{{value0}} v{{value1}} · {{value2}}",
-          "reconsent": "Permissions or the worker trust tier changed since you last reviewed this plugin. Review them again before it can run.",
+          "reconsent": "Permissions, the worker trust tier, or instructional content changed since you last reviewed this plugin. Review it again before it can run.",
           "source": "Source",
           "unknownSource": "Not available",
           "commit": "Commit",
@@ -9054,6 +9056,7 @@
           "enable": "Enable plugin",
           "keepDisabled": "Keep Disabled",
           "panelWarning": "These permissions limit how the plugin uses Orca's API. This plugin has no worker process.",
+          "instructionalWarning": "This plugin has no worker process. Its instructional content can still cause actions when you or an agent use it. Review the instructions and commands below before enabling it.",
           "capability": {
             "workspaceRead": "Read the name, branch, and terminal list of your focused worktree",
             "terminalSend": "Type text into a terminal you can see (always a specific terminal)",
@@ -9063,7 +9066,8 @@
             "eventsSubscribe": "Get notified when worktrees are created or removed and when agent status changes",
             "settingsOwn": "Read and change the plugin's own settings"
           },
-          "skillWarning": "This plugin installs instructional skills. Agents read those instructions and may act on them with the full authority you give the agent."
+          "skillWarning": "This plugin installs instructional skills. Agents read those instructions and may act on them with the full authority you give the agent.",
+          "instructionalTrust": "Instructional content — runs later under user or agent authority"
         },
         "PluginDevelopmentSection": {
           "pathRequired": "Enter a plugin folder path.",
@@ -9191,6 +9195,15 @@
           "disabled": "Do not install",
           "cancel": "Cancel",
           "save": "Save"
+        },
+        "PluginVmRecipeConsentPreview": {
+          "create": "Create",
+          "suspend": "Suspend",
+          "resume": "Resume",
+          "destroy": "Destroy",
+          "warning": "This plugin installs VM recipes. Orca runs the commands below on your local desktop host when you use the matching lifecycle action.",
+          "commandLabel": "{{value0}} · {{value1}} command",
+          "heading": "VM recipe commands"
         }
       },
       "right": {

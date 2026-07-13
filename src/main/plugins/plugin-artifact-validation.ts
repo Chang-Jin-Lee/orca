@@ -6,6 +6,7 @@ import {
   parsePluginIconThemeArtifact,
   sanitizePluginIconSvg
 } from '../../shared/plugins/plugin-icon-theme-artifact'
+import { parsePluginVmRecipeArtifact } from '../../shared/plugins/plugin-vm-recipe-artifact'
 
 export type PluginArtifactValidationResult = { ok: true } | { ok: false; error: string }
 
@@ -18,7 +19,7 @@ export const PLUGIN_ICON_SVG_MAX_BYTES = 64 * 1024
 export const PLUGIN_ICON_TOTAL_MAX_BYTES = 8 * 1024 * 1024
 export const PLUGIN_TERMINAL_THEME_MAX_BYTES = 256 * 1024
 export const PLUGIN_LANGUAGE_PACK_MAX_BYTES = 5 * 1024 * 1024
-const PLUGIN_RECIPE_MAX_BYTES = 1024 * 1024
+export const PLUGIN_VM_RECIPE_MAX_BYTES = 256 * 1024
 const PLUGIN_AGENT_PROFILE_MAX_BYTES = 1024 * 1024
 
 type DeclaredArtifact =
@@ -86,7 +87,7 @@ function declaredArtifactPaths(manifest: PluginManifest): DeclaredArtifact[] {
       label: 'VM recipe',
       path: recipe.path,
       kind: 'file' as const,
-      maxBytes: PLUGIN_RECIPE_MAX_BYTES
+      maxBytes: PLUGIN_VM_RECIPE_MAX_BYTES
     })),
     ...manifest.contributes.agents.map((agent) => ({
       label: 'agent profile',
@@ -234,6 +235,27 @@ export async function validatePluginInstallContent(
       return {
         ok: false,
         error: `icon theme "${contribution.id}": ${error instanceof Error ? error.message : String(error)}`
+      }
+    }
+  }
+  const vmRecipeIds = new Set<string>()
+  for (const contribution of manifest.contributes.vmRecipes) {
+    try {
+      const recipe = parsePluginVmRecipeArtifact(
+        await readContainedPluginArtifactText(
+          rootDir,
+          contribution.path,
+          PLUGIN_VM_RECIPE_MAX_BYTES
+        )
+      )
+      if (vmRecipeIds.has(recipe.id)) {
+        throw new Error(`duplicate VM recipe id "${recipe.id}"`)
+      }
+      vmRecipeIds.add(recipe.id)
+    } catch (error) {
+      return {
+        ok: false,
+        error: `VM recipe ${contribution.path}: ${error instanceof Error ? error.message : String(error)}`
       }
     }
   }

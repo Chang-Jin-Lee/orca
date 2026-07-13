@@ -127,6 +127,46 @@ describe('PluginConsentDialog', () => {
     )
   })
 
+  it('shows every VM recipe lifecycle command verbatim', async () => {
+    await renderConsent(
+      {
+        ...plugin,
+        hasWorker: false,
+        capabilities: [],
+        vmRecipes: [
+          {
+            id: 'cloud',
+            name: 'Cloud Sandbox',
+            description: 'Creates a disposable VM.',
+            commands: [
+              { phase: 'create', command: './scripts/create.sh --exact "$VALUE"' },
+              { phase: 'suspend', command: './scripts/suspend.sh' },
+              { phase: 'resume', command: './scripts/resume.sh' },
+              { phase: 'destroy', command: 'none' }
+            ]
+          }
+        ]
+      },
+      vi.fn().mockResolvedValue(undefined)
+    )
+
+    expect(document.body.textContent).toContain(
+      'Instructional content — runs later under user or agent authority'
+    )
+    expect(document.body.textContent).toContain('Review plugin content')
+    expect(document.body.textContent).toContain(
+      'Its instructional content can still cause actions when you or an agent use it.'
+    )
+    expect(document.body.textContent).toContain('./scripts/create.sh --exact "$VALUE"')
+    expect(document.body.textContent).toContain('./scripts/suspend.sh')
+    expect(document.body.textContent).toContain('./scripts/resume.sh')
+    expect(document.body.textContent).toContain('Destroynone')
+    const commands = Array.from(document.querySelectorAll('pre'))
+    expect(commands).toHaveLength(4)
+    expect(commands[0]?.tabIndex).toBe(0)
+    expect(commands[0]?.getAttribute('aria-label')).toBe('Cloud Sandbox · Create command')
+  })
+
   it('records Keep Disabled when Escape dismisses the dialog', async () => {
     const onDecision = vi.fn().mockResolvedValue(undefined)
     await renderConsent(plugin, onDecision)
@@ -145,7 +185,9 @@ describe('PluginConsentDialog', () => {
   it('labels re-consent generically and enables only after an explicit action', async () => {
     const onDecision = vi.fn().mockResolvedValue(undefined)
     await renderConsent({ ...plugin, needsReconsent: true }, onDecision)
-    expect(document.body.textContent).toContain('Permissions or the worker trust tier changed')
+    expect(document.body.textContent).toContain(
+      'Permissions, the worker trust tier, or instructional content changed'
+    )
     const enable = Array.from(document.querySelectorAll('button')).find(
       (button) => button.textContent?.trim() === 'Enable plugin'
     )

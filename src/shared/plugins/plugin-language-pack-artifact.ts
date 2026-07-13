@@ -7,6 +7,7 @@ const PROTECTED_TRANSLATION_PREFIXES = [
   'auto.components.settings.PluginInstallDialog',
   'auto.components.settings.PluginRemoveDialog',
   'auto.components.settings.PluginSettingsRow',
+  'auto.components.settings.PluginVmRecipeConsentPreview',
   'auto.components.settings.PluginsSettingsSection'
 ]
 

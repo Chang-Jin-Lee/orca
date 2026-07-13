@@ -191,6 +191,57 @@ describe('declared plugin artifacts', () => {
       error: expect.stringContaining('active or external content')
     })
   })
+
+  it('parses VM recipes at the immutable install boundary', async () => {
+    const root = await tempRoot()
+    await mkdir(join(root, 'recipes'))
+    await writeFile(
+      join(root, 'recipes', 'invalid.json'),
+      JSON.stringify({
+        schemaVersion: 1,
+        id: 'cloud',
+        name: 'Cloud',
+        create: 'create',
+        suspend: 'suspend'
+      })
+    )
+    const pluginManifest = manifest({
+      contributes: { vmRecipes: [{ path: 'recipes/invalid.json' }] }
+    })
+
+    await expect(validateDeclaredPluginArtifacts(root, pluginManifest)).resolves.toEqual({
+      ok: true
+    })
+    await expect(validatePluginInstallContent(root, pluginManifest)).resolves.toMatchObject({
+      ok: false,
+      error: expect.stringContaining('suspend and resume')
+    })
+  })
+
+  it('rejects duplicate VM recipe ids at the immutable install boundary', async () => {
+    const root = await tempRoot()
+    await mkdir(join(root, 'recipes'))
+    const recipe = JSON.stringify({
+      schemaVersion: 1,
+      id: 'cloud',
+      name: 'Cloud',
+      create: 'create'
+    })
+    await Promise.all([
+      writeFile(join(root, 'recipes', 'one.json'), recipe),
+      writeFile(join(root, 'recipes', 'two.json'), recipe)
+    ])
+    const pluginManifest = manifest({
+      contributes: {
+        vmRecipes: [{ path: 'recipes/one.json' }, { path: 'recipes/two.json' }]
+      }
+    })
+
+    await expect(validatePluginInstallContent(root, pluginManifest)).resolves.toMatchObject({
+      ok: false,
+      error: expect.stringContaining('duplicate VM recipe id "cloud"')
+    })
+  })
 })
 
 describe('hash-addressed plugin content', () => {

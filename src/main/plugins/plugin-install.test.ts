@@ -13,7 +13,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { promisify } from 'node:util'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   installPluginFromLocalPath,
   installPluginFromGit,
@@ -24,6 +24,8 @@ import {
 import { PLUGIN_MANIFEST_MAX_BYTES } from './plugin-manifest-file'
 import { readPluginCurrentPointer } from './plugin-current-pointer'
 import { writePluginLockfile } from './plugin-install-lockfile-store'
+import { installStagedPluginTree } from './plugin-install-staging'
+import * as manifestFile from './plugin-manifest-file'
 
 const roots: string[] = []
 const execFileAsync = promisify(execFile)
@@ -63,6 +65,7 @@ async function writePluginSource(
 }
 
 afterEach(async () => {
+  vi.restoreAllMocks()
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })))
 })
 
@@ -101,6 +104,37 @@ describe('installPluginFromLocalPath', () => {
       capabilityHash: result.consentFingerprint
     })
     expect(lock.plugins[result.pluginKey]).not.toHaveProperty('consentFingerprint')
+  })
+
+  it('publishes metadata from the copied immutable manifest', async () => {
+    const sourcePath = await tempRoot('orca-plugin-source-')
+    const pluginsDir = await tempRoot('orca-plugin-installs-')
+    await writePluginSource(sourcePath)
+    const firstManifest = await readFile(join(sourcePath, 'orca-plugin.json'), 'utf8')
+    const changedManifest = {
+      ...(JSON.parse(firstManifest) as Record<string, unknown>),
+      name: 'Changed During Staging',
+      version: '2.0.0'
+    }
+    await writeFile(join(sourcePath, 'orca-plugin.json'), JSON.stringify(changedManifest))
+    const manifestRead = vi
+      .spyOn(manifestFile, 'readPluginManifestText')
+      .mockResolvedValueOnce(firstManifest)
+
+    const result = await installStagedPluginTree({
+      pluginsDir,
+      stagingDir: sourcePath,
+      hostVersion: '1.4.0',
+      source: { kind: 'local-path', path: sourcePath },
+      resolvedCommit: null
+    })
+
+    expect(manifestRead).toHaveBeenCalledTimes(2)
+    expect(result).toMatchObject({ ok: true, version: '2.0.0' })
+    if (result.ok) {
+      const lock = await readPluginLockfile(pluginsDir)
+      expect(lock.plugins[result.pluginKey]?.version).toBe('2.0.0')
+    }
   })
 
   it('skips root Git metadata before copying while still enforcing plugin limits', async () => {
