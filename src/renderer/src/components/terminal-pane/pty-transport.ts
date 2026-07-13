@@ -23,6 +23,7 @@ import {
   getEagerPtyBufferHandle
 } from './pty-dispatcher'
 import {
+  clearPreHandlerPtyState,
   drainPreHandlerPtyData,
   drainPreHandlerPtyExit,
   reconcilePreHandlerPtyExitAfterOverflow
@@ -43,6 +44,7 @@ import { extractIpcErrorMessage } from '@/lib/ipc-error'
 import { isTuiAgent } from '../../../../shared/tui-agent-config'
 import { killPtyRetainingRetryOwnership } from '@/lib/pty-kill-retry-ownership'
 import { makePaneKey } from '../../../../shared/stable-pane-id'
+import { DAEMON_PTY_EXITED_DURING_ADMISSION } from '../../../../shared/constants'
 
 // Re-export public API so existing consumers keep working.
 export {
@@ -806,6 +808,11 @@ export function createIpcPtyTransport(opts: IpcPtyTransportOptions = {}): PtyTra
         return spawnResult.id
       } catch (err) {
         const msg = extractIpcErrorMessage(err, err instanceof Error ? err.message : String(err))
+        if (options.sessionId && msg.includes(DAEMON_PTY_EXITED_DURING_ADMISSION)) {
+          // Why: this exit belongs to the rejected generation; retaining its
+          // bytes or exit would tear down a later successful same-id spawn.
+          clearPreHandlerPtyState(options.sessionId)
+        }
         if (
           connectionId &&
           options.sessionId &&

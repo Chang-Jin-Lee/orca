@@ -10,6 +10,7 @@ import { HeadlessEmulator } from './headless-emulator'
 import { getHistorySessionDirName } from './history-paths'
 import type { HistoryReader } from './history-reader'
 import type { SubprocessHandle } from './session'
+import type { TerminalHost } from './terminal-host'
 import type * as DaemonHealthModule from './daemon-health'
 import { getDaemonSocketPath } from './daemon-spawner'
 
@@ -103,10 +104,12 @@ describe('DaemonPtyAdapter (IPtyProvider)', () => {
   } | null
   let subprocessDataOnSubscribe: string | undefined
   let subprocessExitOnSubscribe: number | undefined
+  let subprocessSpawnError: Error | undefined
 
   beforeEach(async () => {
     subprocessDataOnSubscribe = undefined
     subprocessExitOnSubscribe = undefined
+    subprocessSpawnError = undefined
     dir = createTestDir()
     socketPath = getDaemonSocketPath(dir)
     tokenPath = join(dir, 'test.token')
@@ -115,6 +118,9 @@ describe('DaemonPtyAdapter (IPtyProvider)', () => {
       socketPath,
       tokenPath,
       spawnSubprocess: (opts) => {
+        if (subprocessSpawnError) {
+          throw subprocessSpawnError
+        }
         lastSpawnOpts = opts
         lastSubprocess = createMockSubprocess(subprocessDataOnSubscribe, subprocessExitOnSubscribe)
         return lastSubprocess
@@ -161,6 +167,90 @@ describe('DaemonPtyAdapter (IPtyProvider)', () => {
       expect(adapter.hasPty('synchronous-admission-exit')).toBe(false)
       expect(daemon.host.listSessions()).toHaveLength(0)
       expect(daemon.streamRouteBySessionId.size).toBe(0)
+      expect(internals.exitFence.revisions.size).toBe(0)
+      expect(internals.exitFence.admissions.size).toBe(0)
+      expect(internals.exitFence.sessionGenerations.size).toBe(0)
+      expect(internals.exitFence.pendingExits.size).toBe(0)
+    })
+
+    it('serializes same-id admissions before a later failure can overlap ownership', async () => {
+      const daemon = server as unknown as { host: TerminalHost }
+      const originalCreateOrAttach = daemon.host.createOrAttach.bind(daemon.host)
+      let releaseFirst!: () => void
+      const firstGate = new Promise<void>((resolve) => {
+        releaseFirst = resolve
+      })
+      const createOrAttach = vi
+        .spyOn(daemon.host, 'createOrAttach')
+        .mockImplementationOnce(async (options) => {
+          await firstGate
+          return originalCreateOrAttach(options)
+        })
+        .mockRejectedValueOnce(new Error('later admission failed'))
+
+      const first = adapter.spawn({ sessionId: 'serialized-admission', cols: 80, rows: 24 })
+      await waitFor(() => createOrAttach.mock.calls.length === 1)
+      const second = adapter.spawn({ sessionId: 'serialized-admission', cols: 80, rows: 24 })
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      expect(createOrAttach).toHaveBeenCalledTimes(1)
+
+      releaseFirst()
+      await expect(first).resolves.toMatchObject({ id: 'serialized-admission' })
+      await expect(second).rejects.toThrow('later admission failed')
+
+      const internals = adapter as unknown as {
+        sessionAdmissionTails: Map<string, Promise<void>>
+      }
+      expect(createOrAttach).toHaveBeenCalledTimes(2)
+      expect(internals.sessionAdmissionTails.size).toBe(0)
+      expect(adapter.hasPty('serialized-admission')).toBe(true)
+    })
+
+    it('keeps different session admissions concurrent', async () => {
+      const daemon = server as unknown as { host: TerminalHost }
+      const originalCreateOrAttach = daemon.host.createOrAttach.bind(daemon.host)
+      let releaseBoth!: () => void
+      const gate = new Promise<void>((resolve) => {
+        releaseBoth = resolve
+      })
+      const createOrAttach = vi
+        .spyOn(daemon.host, 'createOrAttach')
+        .mockImplementation(async (options) => {
+          await gate
+          return originalCreateOrAttach(options)
+        })
+
+      const first = adapter.spawn({ sessionId: 'parallel-a', cols: 80, rows: 24 })
+      const second = adapter.spawn({ sessionId: 'parallel-b', cols: 80, rows: 24 })
+      await waitFor(() => createOrAttach.mock.calls.length === 2)
+
+      releaseBoth()
+      await expect(Promise.all([first, second])).resolves.toHaveLength(2)
+      const internals = adapter as unknown as {
+        sessionAdmissionTails: Map<string, Promise<void>>
+      }
+      expect(internals.sessionAdmissionTails.size).toBe(0)
+    })
+
+    it('releases fence and queue state after 100 ownerless spawn failures', async () => {
+      subprocessSpawnError = new Error('native spawn failed')
+
+      for (let index = 0; index < 100; index++) {
+        await expect(
+          adapter.spawn({ sessionId: `ownerless-failure-${index}`, cols: 80, rows: 24 })
+        ).rejects.toThrow('native spawn failed')
+      }
+
+      const internals = adapter as unknown as {
+        activeSessionIds: Set<string>
+        sessionAdmissionTails: Map<string, Promise<void>>
+        exitFence: Record<
+          'revisions' | 'admissions' | 'sessionGenerations' | 'pendingExits',
+          Map<string, unknown>
+        >
+      }
+      expect(internals.activeSessionIds.size).toBe(0)
+      expect(internals.sessionAdmissionTails.size).toBe(0)
       expect(internals.exitFence.revisions.size).toBe(0)
       expect(internals.exitFence.admissions.size).toBe(0)
       expect(internals.exitFence.sessionGenerations.size).toBe(0)

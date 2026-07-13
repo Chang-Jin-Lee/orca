@@ -70,6 +70,10 @@ export const ORCA_BROWSER_BLANK_URL = 'data:text/html,'
 // custom Error fields. Keep this stable token shared across main/renderer.
 export const SSH_TERMINATE_RECONNECT_REQUIRED = 'SSH_TERMINATE_RECONNECT_REQUIRED'
 
+// Why: Electron invoke errors preserve message text, not custom Error fields;
+// renderer reconnect must discard the exited admission's same-id byte cache.
+export const DAEMON_PTY_EXITED_DURING_ADMISSION = 'Daemon PTY exited during admission'
+
 export const BROWSER_FAMILY_LABELS: Record<string, string> = {
   chrome: 'Google Chrome',
   chromium: 'Chromium',

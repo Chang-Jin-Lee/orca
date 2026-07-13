@@ -36,6 +36,7 @@ import type {
 import { isShellProcess } from '../../shared/agent-detection'
 import { recognizeAgentProcessFromCommandLine } from '../../shared/agent-process-recognition'
 import { shouldUseShellReadyStartupDelivery } from '../../shared/codex-startup-delivery'
+import { DAEMON_PTY_EXITED_DURING_ADMISSION } from '../../shared/constants'
 import type { TerminalOscLinkRange } from '../../shared/terminal-osc-link-ranges'
 import {
   assertPtyPaneIdentity,
@@ -149,6 +150,7 @@ export class DaemonPtyAdapter implements IPtyProvider {
   // connect; the daemon's 5s failsafe covers the window in between.
   private producerResumesOwedOnReconnect = new Set<string>()
   private exitFence = new DaemonSessionExitFence()
+  private sessionAdmissionTails = new Map<string, Promise<void>>()
   private static CHECKPOINT_INTERVAL_MS = 5_000
   // Why: a streaming session (build logs, `yes`) re-triggers a full multi-MB
   // snapshot checkpoint on every 5s tick via pending-buffer overflow or the
@@ -198,6 +200,15 @@ export class DaemonPtyAdapter implements IPtyProvider {
 
   async spawn(opts: PtySpawnOptions): Promise<PtySpawnResult> {
     const sessionId = opts.sessionId ?? mintPtySessionId(opts.worktreeId)
+    return this.withSerializedSessionAdmission(sessionId, () =>
+      this.spawnAfterAdmissionQueue(opts, sessionId)
+    )
+  }
+
+  private async spawnAfterAdmissionQueue(
+    opts: PtySpawnOptions,
+    sessionId: string
+  ): Promise<PtySpawnResult> {
     this.assertSpawnAllowed(sessionId, opts)
     if (opts.isNewSession) {
       await this.replaceUnhealthyMacResolverDaemonBeforeNewPty()
@@ -497,6 +508,10 @@ export class DaemonPtyAdapter implements IPtyProvider {
   }
 
   async attach(id: string): Promise<void> {
+    return this.withSerializedSessionAdmission(id, () => this.attachAfterAdmissionQueue(id))
+  }
+
+  private async attachAfterAdmissionQueue(id: string): Promise<void> {
     const admission = this.exitFence.beginAdmission(id)
     try {
       await this.ensureConnected()
@@ -1579,7 +1594,31 @@ export class DaemonPtyAdapter implements IPtyProvider {
     admission.complete()
     const exited = await this.reconcilePendingExitAfterAdmission(sessionId)
     if (rejectIfExited && exited) {
-      throw new Error(`Daemon PTY exited during admission for "${sessionId}"`)
+      throw new Error(`${DAEMON_PTY_EXITED_DURING_ADMISSION} for "${sessionId}"`)
+    }
+    if (!rejectIfExited && !this.activeSessionIds.has(sessionId)) {
+      this.exitFence.forget(sessionId)
+    }
+  }
+
+  private async withSerializedSessionAdmission<T>(
+    sessionId: string,
+    action: () => Promise<T>
+  ): Promise<T> {
+    const previous = this.sessionAdmissionTails.get(sessionId) ?? Promise.resolve()
+    let release!: () => void
+    const current = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    this.sessionAdmissionTails.set(sessionId, current)
+    await previous
+    try {
+      return await action()
+    } finally {
+      release()
+      if (this.sessionAdmissionTails.get(sessionId) === current) {
+        this.sessionAdmissionTails.delete(sessionId)
+      }
     }
   }
 }

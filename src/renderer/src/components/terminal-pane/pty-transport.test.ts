@@ -114,6 +114,39 @@ describe('createIpcPtyTransport', () => {
     expect(write).not.toHaveBeenCalled()
   })
 
+  it('does not drain a rejected admission exit into a later same-id spawn', async () => {
+    const { createIpcPtyTransport } = await import('./pty-transport')
+    const spawn = window.api.pty.spawn as unknown as ReturnType<typeof vi.fn>
+    spawn
+      .mockImplementationOnce(async () => {
+        onData?.({ id: 'same-id', data: 'dead generation output' })
+        onExit?.({ id: 'same-id', code: 17 })
+        throw new Error('Daemon PTY exited during admission for "same-id"')
+      })
+      .mockResolvedValueOnce({ id: 'same-id' })
+    const onExitCallback = vi.fn()
+    const onDataCallback = vi.fn()
+    const transport = createIpcPtyTransport({})
+
+    await transport.connect({
+      url: '',
+      sessionId: 'same-id',
+      callbacks: { onExit: onExitCallback, onData: onDataCallback }
+    })
+    expect(transport.isConnected()).toBe(false)
+
+    await transport.connect({
+      url: '',
+      sessionId: 'same-id',
+      callbacks: { onExit: onExitCallback, onData: onDataCallback }
+    })
+
+    expect(transport.isConnected()).toBe(true)
+    expect(transport.getPtyId()).toBe('same-id')
+    expect(onExitCallback).not.toHaveBeenCalled()
+    expect(onDataCallback).not.toHaveBeenCalledWith('dead generation output')
+  })
+
   it('ignores a stale exit for a previous PTY after reconnecting the same transport', async () => {
     const { createIpcPtyTransport } = await import('./pty-transport')
     const spawn = window.api.pty.spawn as unknown as ReturnType<typeof vi.fn>

@@ -57,6 +57,7 @@ type ConnectedClient = {
 type SessionStreamRoute = {
   clientId: string
   active: boolean
+  previous?: SessionStreamRoute
 }
 
 export class DaemonServer {
@@ -351,8 +352,12 @@ export class DaemonServer {
     switch (request.type) {
       case 'createOrAttach': {
         const p = request.payload
-        const streamRoute: SessionStreamRoute = { clientId, active: true }
         const previousStreamRoute = this.streamRouteBySessionId.get(p.sessionId)
+        const streamRoute: SessionStreamRoute = {
+          clientId,
+          active: true,
+          ...(previousStreamRoute ? { previous: previousStreamRoute } : {})
+        }
         // Why before host subscription: node-pty may flush data and exit
         // synchronously, so routing ownership must exist before callbacks run.
         this.streamRouteBySessionId.set(p.sessionId, streamRoute)
@@ -422,14 +427,16 @@ export class DaemonServer {
           // Why identity-fenced rollback: a failed older attach must not
           // erase a newer concurrent route for the reused session id.
           if (this.streamRouteBySessionId.get(p.sessionId) === streamRoute) {
-            if (previousStreamRoute?.active) {
-              this.streamRouteBySessionId.set(p.sessionId, previousStreamRoute)
+            const activePredecessor = this.findActiveStreamRoute(streamRoute.previous)
+            if (activePredecessor) {
+              this.streamRouteBySessionId.set(p.sessionId, activePredecessor)
             } else {
               this.streamRouteBySessionId.delete(p.sessionId)
             }
           }
           throw error
         })
+        this.retireStreamRoutePredecessors(streamRoute)
         // Why an attach-time marker: the adapter resyncs the background set on
         // a fresh connection, which can precede this attach — main's scan
         // suppression must still start at the head of the new stream.
@@ -646,6 +653,27 @@ export class DaemonServer {
       // Why: a failed native kill keeps PTY handles alive; explicit process
       // exit prevents an untracked old daemon from surviving after socket removal.
       this.requestProcessExit?.(exitCode)
+    }
+  }
+
+  private findActiveStreamRoute(
+    route: SessionStreamRoute | undefined
+  ): SessionStreamRoute | undefined {
+    let candidate = route
+    while (candidate && !candidate.active) {
+      candidate = candidate.previous
+    }
+    return candidate
+  }
+
+  private retireStreamRoutePredecessors(route: SessionStreamRoute): void {
+    let predecessor = route.previous
+    route.previous = undefined
+    while (predecessor) {
+      predecessor.active = false
+      const next = predecessor.previous
+      predecessor.previous = undefined
+      predecessor = next
     }
   }
 

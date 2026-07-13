@@ -238,6 +238,12 @@ describe('DaemonServer', () => {
         spawnSubprocess: () => createMockSubprocess()
       })
       const daemon = server as unknown as DaemonServerPrivate
+      await daemon.routeRequest('previous-client', {
+        id: 'previous-request',
+        type: 'createOrAttach',
+        payload: { sessionId: 'overlapping-failure', cols: 80, rows: 24 }
+      })
+      expect(daemon.host.listSessions()).toHaveLength(1)
       let rejectOlder!: (reason: unknown) => void
       let rejectNewer!: (reason: unknown) => void
       const olderResult = new Promise<never>((_resolve, reject) => {
@@ -270,8 +276,11 @@ describe('DaemonServer', () => {
 
       rejectNewer(new Error('newer failed'))
       await expect(newerRequest).rejects.toThrow('newer failed')
-      expect(daemon.streamRouteBySessionId.has('overlapping-failure')).toBe(false)
-      expect(daemon.host.listSessions()).toHaveLength(0)
+      expect(daemon.streamRouteBySessionId.get('overlapping-failure')).toMatchObject({
+        clientId: 'previous-client',
+        active: true
+      })
+      expect(daemon.host.listSessions()).toHaveLength(1)
     })
 
     it('keeps a newer successful route when an overlapping older attach fails', async () => {
