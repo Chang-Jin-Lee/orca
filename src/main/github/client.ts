@@ -79,6 +79,7 @@ import {
   rememberGhCwdResolutionFailure
 } from './gh-cwd-repo-negative-cache'
 import type { GitHubRepoContext } from './github-repository-identity'
+import { getEnterpriseGitHubRepoSlug } from './github-enterprise-repository'
 export { _resetOwnerRepoCache } from './gh-utils'
 export {
   getIssue,
@@ -1844,11 +1845,11 @@ export async function createGitHubPullRequest(
     }
   }
 
-  const ownerRepo = await getOwnerRepo(
-    repoPath,
-    connectionId,
-    ...hostedReviewLocalGitOptionArgs(options)
-  )
+  // Why: github.com-only slug parsing returns null for GHES, so fall back to the
+  // enterprise resolver (gh-authenticated custom host) before giving up (#8312).
+  const ownerRepo =
+    (await getOwnerRepo(repoPath, connectionId, ...hostedReviewLocalGitOptionArgs(options))) ??
+    (await getEnterpriseGitHubRepoSlug(repoPath, connectionId, options))
   if (!ownerRepo) {
     return {
       ok: false,

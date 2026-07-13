@@ -18,6 +18,7 @@ import {
 } from '../../shared/hosted-review-creation-providers'
 import { isAzureDevOpsReviewCreationAuthenticated } from '../azure-devops/pull-request-creation'
 import { isGiteaReviewCreationAuthenticated } from '../gitea/pull-request-creation'
+import { getEnterpriseGitHubRepoSlug } from '../github/github-enterprise-repository'
 import { acquire, ghExecFileAsync, gitExecFileAsync, release } from '../github/gh-utils'
 import { isNoUpstreamError, normalizeGitErrorMessage } from '../../shared/git-remote-error'
 import type { GitUpstreamStatus } from '../../shared/types'
@@ -59,10 +60,15 @@ async function isGitHubAuthenticated(
   connectionId?: string | null,
   options: HostedReviewExecutionOptions = {}
 ): Promise<boolean> {
+  // Why: a GHES repo authenticates against its own custom host, so a hardcoded
+  // github.com probe reports "not authenticated" for Enterprise users (#8312).
+  // Resolve the repo's actual GitHub host, defaulting to github.com.
+  const enterprise = await getEnterpriseGitHubRepoSlug(repoPath, connectionId, options)
+  const hostname = enterprise?.host ?? 'github.com'
   await acquire()
   try {
     await ghExecFileAsync(
-      ['auth', 'status', '--hostname', 'github.com'],
+      ['auth', 'status', '--hostname', hostname],
       connectionId ? {} : { cwd: repoPath, ...getHostedReviewLocalGitOptions(options) }
     )
     return true
