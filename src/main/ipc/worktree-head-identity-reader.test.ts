@@ -113,6 +113,32 @@ describe('readGitCommonHeadIdentities', () => {
     ])
   })
 
+  it('rejects traversal-shaped symrefs instead of reading outside the common dir', async () => {
+    const commonDir = await makeCommonDir()
+    // A crafted repo can put arbitrary content in HEAD; backslash segments
+    // would traverse on Windows where join treats them as separators too.
+    await writeFile(join(dirname(commonDir), '..', 'outside.txt'), 'secret\n')
+    for (const ref of [
+      'refs/heads/../../../outside.txt',
+      'refs\\..\\..\\..\\outside.txt',
+      'refs/heads/evil:name',
+      'refs//heads'
+    ]) {
+      await writeFile(join(commonDir, 'HEAD'), `ref: ${ref}\n`)
+      expect(await readGitCommonHeadIdentities(commonDir)).toEqual([])
+    }
+  })
+
+  it('never emits resolved content that is not a hex object id', async () => {
+    const commonDir = await makeCommonDir()
+    await writeFile(join(commonDir, 'HEAD'), 'ref: refs/heads/main\n')
+    await writeLooseRef(commonDir, 'refs/heads/main', 'not-an-object-id')
+    expect(await readGitCommonHeadIdentities(commonDir)).toEqual([])
+
+    await writeFile(join(commonDir, 'HEAD'), 'this is not a detached oid\n')
+    expect(await readGitCommonHeadIdentities(commonDir)).toEqual([])
+  })
+
   it('omits the primary row for non-standard common dir layouts', async () => {
     const root = await mkdtemp(join(tmpdir(), 'orca-head-reader-'))
     roots.push(root)

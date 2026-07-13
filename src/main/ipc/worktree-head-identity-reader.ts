@@ -36,8 +36,22 @@ async function readPackedRefs(commonDirPath: string): Promise<Map<string, string
   return refs
 }
 
+// Why: ref content comes from repo files an attacker can craft. Git forbids
+// `\` and `:` in ref names, and on Windows `join` also treats `\` as a
+// separator — both must be rejected before splicing the ref into a file path.
 function isSafeRefName(ref: string): boolean {
-  return ref.length > 0 && !ref.split('/').some((part) => part === '..' || part === '')
+  if (ref.length === 0 || ref.includes('\\') || ref.includes(':')) {
+    return false
+  }
+  return !ref.split('/').some((part) => part === '..' || part === '')
+}
+
+// SHA-1 (40) or SHA-256 (64) object id. Anything else read from disk is not a
+// head and must never be emitted — this also caps what any path escape could leak.
+const OBJECT_ID_PATTERN = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/
+
+function asObjectId(value: string | null | undefined): string | null {
+  return value != null && OBJECT_ID_PATTERN.test(value) ? value : null
 }
 
 async function resolveRefToOid(
@@ -53,13 +67,13 @@ async function resolveRefToOid(
     // Branch refs are shared repo state, so loose files live in the common dir.
     const loose = await readTrimmedFile(join(commonDirPath, ...current.split('/')))
     if (loose === null) {
-      return (await packedRefs()).get(current) ?? null
+      return asObjectId((await packedRefs()).get(current))
     }
     if (loose.startsWith('ref: ')) {
       current = loose.slice('ref: '.length).trim()
       continue
     }
-    return loose || null
+    return asObjectId(loose)
   }
   return null
 }
@@ -83,7 +97,8 @@ async function readHeadIdentity(
     }
     return { worktreePath, head: oid, branch: ref }
   }
-  return { worktreePath, head, branch: null }
+  const detachedOid = asObjectId(head)
+  return detachedOid ? { worktreePath, head: detachedOid, branch: null } : null
 }
 
 /** Reads head/branch for the primary checkout and every linked worktree of a

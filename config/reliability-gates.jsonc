@@ -103,7 +103,8 @@
         {
           "file": "src/main/ipc/worktree-head-identity-reader.test.ts",
           "assertions": [
-            "loose-ref, packed-refs, detached, unborn, and relative-gitdir layouts resolve or skip without spawning Git"
+            "loose-ref, packed-refs, detached, unborn, and relative-gitdir layouts resolve or skip without spawning Git",
+            "traversal-shaped or backslash/colon symrefs are rejected before any path join and only hex object ids are ever emitted"
           ]
         },
         {
@@ -126,8 +127,8 @@
           "platform": "macos",
           "command": "pnpm exec vitest run --config config/vitest.config.ts src/main/ipc/worktree-base-directory-event-filter.test.ts src/main/ipc/worktree-base-directory-watcher.test.ts src/main/ipc/worktree-base-directory-poller.test.ts src/main/ipc/worktree-head-identity-reader.test.ts src/renderer/src/hooks/worktree-head-identity-apply.test.ts src/renderer/src/components/right-sidebar/git-status-push-signal-refresh.test.ts src/renderer/src/hooks/useIpcEvents.test.ts",
           "result": "passed",
-          "durationSeconds": 2.21,
-          "summary": "7 files and 128 tests passed locally, adding head-identity emit-on-change without structural fanout, reflog status triggers, config.worktree structural classification, the in-place index backstop, and the spawn-free head reader."
+          "durationSeconds": 3.12,
+          "summary": "7 files and 130 tests passed locally, adding head-identity emit-on-change without structural fanout, reflog status triggers, config.worktree structural classification, the in-place index backstop, and the spawn-free head reader with symref traversal rejection and hex-object-id output validation."
         }
       ],
       "runtimeBudget": {
