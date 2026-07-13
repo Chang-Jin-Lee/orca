@@ -72,6 +72,29 @@ describe('TerminalHost', () => {
   })
 
   describe('createOrAttach', () => {
+    it('rejects attaching a replacement pane to a reused live session id', async () => {
+      await host.createOrAttach({
+        sessionId: 'session-1',
+        paneKey: 'tab-a:leaf-a',
+        tabId: 'tab-a',
+        cols: 80,
+        rows: 24,
+        streamClient: { onData: vi.fn(), onExit: vi.fn() }
+      })
+
+      await expect(
+        host.createOrAttach({
+          sessionId: 'session-1',
+          paneKey: 'tab-b:leaf-b',
+          tabId: 'tab-b',
+          cols: 80,
+          rows: 24,
+          streamClient: { onData: vi.fn(), onExit: vi.fn() }
+        })
+      ).rejects.toThrow('PTY identity mismatch')
+      expect(spawnFn).toHaveBeenCalledOnce()
+    })
+
     it('creates a new session when none exists', async () => {
       const result = await host.createOrAttach({
         sessionId: 'session-1',
@@ -361,6 +384,27 @@ describe('TerminalHost', () => {
   })
 
   describe('kill', () => {
+    it('rejects a stale pane kill before force-killing the current session', async () => {
+      await host.createOrAttach({
+        sessionId: 'session-1',
+        paneKey: 'tab-b:leaf-b',
+        tabId: 'tab-b',
+        cols: 80,
+        rows: 24,
+        streamClient: { onData: vi.fn(), onExit: vi.fn() }
+      })
+
+      expect(() =>
+        host.kill('session-1', {
+          immediate: true,
+          expectedPaneKey: 'tab-a:leaf-a',
+          expectedTabId: 'tab-a'
+        })
+      ).toThrow('PTY identity mismatch')
+      expect(lastSubprocess.forceKill).not.toHaveBeenCalled()
+      expect(host.listSessions()).toHaveLength(1)
+    })
+
     it('kills the session and tombstones it', async () => {
       await host.createOrAttach({
         sessionId: 'session-1',

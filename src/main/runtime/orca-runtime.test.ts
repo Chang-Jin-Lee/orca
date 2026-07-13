@@ -22624,6 +22624,51 @@ describe('OrcaRuntimeService', () => {
     expect(spawn).not.toHaveBeenCalled()
   })
 
+  it('allows workspace resolution on an unrelated host during host-scoped removal', async () => {
+    const runtime = new OrcaRuntimeService(store)
+    const runtimeWithResolver = runtime as unknown as {
+      resolveTerminalWorkspaceLaunchScope: () => Promise<{
+        id: string
+        path: string
+        hostId: 'ssh:target-1'
+        connectionId: 'target-1'
+        repo: ReturnType<typeof store.getRepo>
+        folderWorkspace: null
+      }>
+    }
+    vi.spyOn(runtimeWithResolver, 'resolveTerminalWorkspaceLaunchScope').mockResolvedValue({
+      id: TEST_WORKTREE_ID,
+      path: '/home/dev/orca',
+      hostId: 'ssh:target-1',
+      connectionId: 'target-1',
+      repo: store.getRepo(TEST_REPO_ID),
+      folderWorkspace: null
+    })
+    const spawn = vi.fn().mockResolvedValue({ id: 'ssh-pty' })
+    runtime.setPtyController({
+      spawn,
+      write: () => true,
+      kill: () => false,
+      getForegroundProcess: async () => null,
+      listProcesses: async () => []
+    })
+    const holdRemoval = deferred<void>()
+    const removal = runtime.runWithWorktreeRemovalAdmission(
+      TEST_WORKTREE_ID,
+      () => holdRemoval.promise,
+      'local'
+    )
+    await Promise.resolve()
+
+    await expect(runtime.createTerminal(`id:${TEST_WORKTREE_ID}`)).resolves.toMatchObject({
+      ptyId: 'ssh-pty'
+    })
+    expect(spawn).toHaveBeenCalledWith(expect.objectContaining({ connectionId: 'target-1' }))
+
+    holdRemoval.resolve()
+    await removal
+  })
+
   it('drains a create-first managed worktree before project removal snapshots ownership', async () => {
     const removeProject = vi.fn()
     const runtime = new OrcaRuntimeService({ ...store, removeProject } as never)

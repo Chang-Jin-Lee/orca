@@ -180,6 +180,7 @@ type RetainedPtyShutdown = {
   options: PtyShutdownOptions
   provider: IPtyProvider | null
   store: Store | null
+  durable: boolean
   attempts: number
   nextRetryAt: number
   inFlight: Promise<void> | null
@@ -759,6 +760,7 @@ function retainLocalPtyShutdown(
       options,
       provider: null,
       store: activePtyStore,
+      durable: true,
       attempts,
       nextRetryAt: deferUntilProviderReady
         ? Number.POSITIVE_INFINITY
@@ -804,6 +806,7 @@ function retainSshPtyShutdown(
       options,
       provider,
       store: activePtyStore,
+      durable: persisted,
       attempts: 0,
       nextRetryAt: provider ? 0 : Number.POSITIVE_INFINITY,
       inFlight: null,
@@ -811,6 +814,7 @@ function retainSshPtyShutdown(
     }
     pendingSshShutdownRetries.set(id, retained)
   } else {
+    retained.durable ||= persisted
     retained.options = mergePtyShutdownOptions(retained.options, options)
     if (retained.provider !== provider) {
       retained.provider = provider
@@ -1341,15 +1345,31 @@ function routesFreshSpawnsToLocalProvider(
 /** Register an SSH PTY provider for a connection. */
 export function registerSshPtyProvider(connectionId: string, provider: IPtyProvider): void {
   sshProviders.set(connectionId, provider)
+  // Durable leases reconcile generation first; a stale boot-qualified owner
+  // must be dropped before any replacement provider can observe it.
   retryPersistedSshShutdowns(connectionId, provider)
+  for (const retained of pendingSshShutdownRetries.values()) {
+    if (retained.connectionId !== connectionId || retained.durable) {
+      continue
+    }
+    retained.provider = provider
+    retained.nextRetryAt = 0
+    if (!retained.inFlight) {
+      void attemptRetainedPtyShutdown(retained)
+    }
+  }
+  scheduleRetainedShutdownRetries()
 }
 
 /** Remove an SSH PTY provider when a connection is closed. */
 export function unregisterSshPtyProvider(connectionId: string): void {
   sshProviders.delete(connectionId)
-  for (const [id, retained] of pendingSshShutdownRetries) {
+  for (const retained of pendingSshShutdownRetries.values()) {
     if (retained.connectionId === connectionId) {
-      pendingSshShutdownRetries.delete(id)
+      // Why: provider teardown is often a reconnect, not proof the remote PTY
+      // exited. Keep even lease-less accepted kills for the replacement owner.
+      retained.provider = null
+      retained.nextRetryAt = Number.POSITIVE_INFINITY
     }
   }
   scheduleRetainedShutdownRetries()
@@ -1386,7 +1406,7 @@ function retryPersistedSshShutdowns(connectionId: string, provider: IPtyProvider
     retainedLeases.map((lease) => toAppSshPtyId(connectionId, lease.ptyId, lease.relayInstanceId))
   )
   for (const [id, retained] of pendingSshShutdownRetries) {
-    if (retained.connectionId === connectionId && !retainedIds.has(id)) {
+    if (retained.connectionId === connectionId && retained.durable && !retainedIds.has(id)) {
       pendingSshShutdownRetries.delete(id)
     }
   }
@@ -1406,6 +1426,7 @@ function retryPersistedSshShutdowns(connectionId: string, provider: IPtyProvider
         connectionId,
         provider,
         store,
+        durable: true,
         attempts: 0,
         nextRetryAt: 0,
         inFlight: null,
@@ -1414,6 +1435,7 @@ function retryPersistedSshShutdowns(connectionId: string, provider: IPtyProvider
       }
       pendingSshShutdownRetries.set(id, retained)
     } else {
+      retained.durable = true
       retained.options = mergePtyShutdownOptions(retained.options, options)
       if (retained.provider !== provider) {
         // Why: reconnect replaces the transport owner for the same generation-qualified id.

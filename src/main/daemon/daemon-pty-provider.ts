@@ -1,5 +1,7 @@
 import { DaemonClient } from './client'
 import type { DaemonEvent, CreateOrAttachResult } from './types'
+import type { PtyShutdownOptions } from '../providers/types'
+import { getPtyPaneIdentityFromEnv } from '../pty/pty-shutdown-identity'
 
 export type DaemonPtyProviderOptions = {
   socketPath: string
@@ -38,6 +40,7 @@ export class DaemonPtyProvider {
   async spawn(opts: DaemonSpawnOptions): Promise<DaemonSpawnResult> {
     await this.client.ensureConnected()
     this.setupEventRouting()
+    const identity = getPtyPaneIdentityFromEnv(opts.env)
 
     const result = await this.client.request<CreateOrAttachResult>('createOrAttach', {
       sessionId: opts.sessionId,
@@ -46,7 +49,9 @@ export class DaemonPtyProvider {
       cwd: opts.cwd,
       env: opts.env,
       envToDelete: opts.envToDelete,
-      command: opts.command
+      command: opts.command,
+      ...(identity.paneKey ? { paneKey: identity.paneKey } : {}),
+      ...(identity.tabId ? { tabId: identity.tabId } : {})
     })
 
     return {
@@ -64,8 +69,13 @@ export class DaemonPtyProvider {
     this.client.notify('resize', { sessionId: id, cols, rows })
   }
 
-  async shutdown(id: string, opts: { immediate?: boolean; keepHistory?: boolean }): Promise<void> {
-    await this.client.request('kill', { sessionId: id, immediate: opts.immediate ?? false })
+  async shutdown(id: string, opts: PtyShutdownOptions): Promise<void> {
+    await this.client.request('kill', {
+      sessionId: id,
+      immediate: opts.immediate ?? false,
+      expectedPaneKey: opts.expectedPaneKey,
+      expectedTabId: opts.expectedTabId
+    })
   }
 
   onData(callback: (payload: { id: string; data: string }) => void): () => void {

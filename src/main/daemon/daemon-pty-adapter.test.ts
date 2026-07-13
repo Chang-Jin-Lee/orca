@@ -377,6 +377,30 @@ describe('DaemonPtyAdapter (IPtyProvider)', () => {
   })
 
   describe('shutdown', () => {
+    it('carries pane identity through the daemon and rejects a stale kill', async () => {
+      const { id } = await adapter.spawn({
+        cols: 80,
+        rows: 24,
+        env: { ORCA_PANE_KEY: 'tab-b:leaf-b', ORCA_TAB_ID: 'tab-b' }
+      })
+
+      await expect(
+        adapter.shutdown(id, {
+          immediate: true,
+          expectedPaneKey: 'tab-a:leaf-a',
+          expectedTabId: 'tab-a'
+        })
+      ).rejects.toThrow('PTY identity mismatch')
+      expect(lastSubprocess.forceKill).not.toHaveBeenCalled()
+      expect(await adapter.listProcesses()).toHaveLength(1)
+
+      await adapter.shutdown(id, {
+        immediate: true,
+        expectedPaneKey: 'tab-b:leaf-b',
+        expectedTabId: 'tab-b'
+      })
+    })
+
     it('kills the session', async () => {
       const { id } = await adapter.spawn({ cols: 80, rows: 24 })
       await adapter.shutdown(id, { immediate: false })

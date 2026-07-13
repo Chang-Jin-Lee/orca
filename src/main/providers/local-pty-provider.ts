@@ -64,6 +64,11 @@ import { readWindowsConptyProcessIds } from './windows-conpty-process-membership
 import { shouldUseShellReadyStartupDelivery } from '../../shared/codex-startup-delivery'
 import { assertSafeAgentStartupCwd, resolveSafePtyDefaultCwd } from './pty-default-cwd'
 import { ORCA_HERMES_STARTUP_QUERY_ENV } from '../../shared/hermes-startup-query'
+import {
+  assertPtyPaneIdentity,
+  getPtyPaneIdentityFromEnv,
+  type PtyPaneIdentity
+} from '../pty/pty-shutdown-identity'
 
 const PANE_IDENTITY_ENV_KEYS = [
   'ORCA_PANE_KEY',
@@ -77,6 +82,7 @@ const ptyProcesses = new Map<string, pty.IPty>()
 const ptyShellName = new Map<string, string>()
 const ptyAgentForegroundContextPaths = new Map<string, string[]>()
 const ptyTerminalHandle = new Map<string, string>()
+const ptyPaneIdentity = new Map<string, PtyPaneIdentity>()
 // Why: node-pty's onData/onExit register native NAPI ThreadSafeFunction
 // callbacks. If the PTY is killed without disposing these listeners, the
 // stale callbacks survive into node::FreeEnvironment() where NAPI attempts
@@ -188,6 +194,7 @@ function clearPtyState(id: string): void {
   ptyShellName.delete(id)
   ptyAgentForegroundContextPaths.delete(id)
   ptyTerminalHandle.delete(id)
+  ptyPaneIdentity.delete(id)
   ptyLoadGeneration.delete(id)
   ptyShutdownInProgress.delete(id)
   ptyExitDuringShutdown.delete(id)
@@ -696,6 +703,7 @@ export class LocalPtyProvider implements IPtyProvider {
 
     const proc = spawnResult.process
     ptyProcesses.set(id, proc)
+    ptyPaneIdentity.set(id, getPtyPaneIdentityFromEnv(finalEnv))
     ptyShellName.set(id, getSpawnedShellName(shellPath))
     if (finalEnv.ORCA_TERMINAL_HANDLE) {
       ptyTerminalHandle.set(id, finalEnv.ORCA_TERMINAL_HANDLE)
@@ -897,11 +905,12 @@ export class LocalPtyProvider implements IPtyProvider {
     return { cols: proc.cols, rows: proc.rows }
   }
 
-  async shutdown(id: string, _opts: PtyShutdownOptions): Promise<void> {
+  async shutdown(id: string, opts: PtyShutdownOptions): Promise<void> {
     const proc = ptyProcesses.get(id)
     if (!proc) {
       return
     }
+    assertPtyPaneIdentity(id, ptyPaneIdentity.get(id) ?? { paneKey: null, tabId: null }, opts)
     // Why: keep listeners live until native shutdown is accepted so a thrown
     // kill retains retry ownership. The in-progress marker makes a synchronous
     // onExit an independent death proof without racing duplicate cleanup.

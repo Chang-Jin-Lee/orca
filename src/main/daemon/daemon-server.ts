@@ -345,6 +345,8 @@ export class DaemonServer {
           // Why: daemon RPC payloads are untrusted JSON. Persist only the
           // allowlisted enum used for byte routing, never arbitrary identity.
           ...(isTuiAgent(p.launchAgent) ? { launchAgent: p.launchAgent } : {}),
+          ...(typeof p.paneKey === 'string' ? { paneKey: p.paneKey } : {}),
+          ...(typeof p.tabId === 'string' ? { tabId: p.tabId } : {}),
           shellOverride: p.shellOverride,
           terminalWindowsWslDistro: p.terminalWindowsWslDistro,
           terminalWindowsPowerShellImplementation: p.terminalWindowsPowerShellImplementation,
@@ -498,7 +500,11 @@ export class DaemonServer {
           sessionId: request.payload.sessionId,
           immediate: request.payload.immediate === true
         })
-        this.host.kill(request.payload.sessionId, { immediate: request.payload.immediate })
+        this.host.kill(request.payload.sessionId, {
+          immediate: request.payload.immediate,
+          expectedPaneKey: request.payload.expectedPaneKey,
+          expectedTabId: request.payload.expectedTabId
+        })
         return {}
 
       case 'signal':

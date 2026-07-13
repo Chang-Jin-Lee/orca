@@ -76,6 +76,8 @@ export type SubprocessHandle = {
 
 export type SessionOptions = {
   sessionId: string
+  paneKey?: string
+  tabId?: string
   cols: number
   rows: number
   terminalHandle?: string
@@ -101,6 +103,8 @@ type AttachedClient = {
 
 export class Session {
   readonly sessionId: string
+  readonly paneKey: string | null
+  readonly tabId: string | null
   readonly terminalHandle: string | null
   readonly launchAgent: TuiAgent | null
   private _state: SessionState = 'running'
@@ -128,6 +132,8 @@ export class Session {
 
   constructor(opts: SessionOptions) {
     this.sessionId = opts.sessionId
+    this.paneKey = opts.paneKey ?? null
+    this.tabId = opts.tabId ?? null
     this.terminalHandle = opts.terminalHandle ?? null
     this.launchAgent = opts.launchAgent ?? null
     this.subprocess = opts.subprocess

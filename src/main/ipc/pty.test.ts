@@ -202,6 +202,7 @@ import {
   setLocalPtyProvider,
   rebindLocalProviderListeners,
   unregisterSshPtyProvider,
+  releasePendingSshShutdownsForTarget,
   getLocalPtyProvider
 } from './pty'
 import {
@@ -438,6 +439,7 @@ describe('registerPtyHandlers', () => {
       'ssh-runtime-env'
     ]) {
       unregisterSshPtyProvider(leakedConnectionId)
+      releasePendingSshShutdownsForTarget(leakedConnectionId)
     }
     setLocalPtyProvider(new LocalPtyProvider())
     if (savedProcessPlatform) {
@@ -3644,6 +3646,53 @@ describe('registerPtyHandlers', () => {
 
     await expect(kill).resolves.toBeUndefined()
     expect(newShutdown).toHaveBeenCalledOnce()
+    expect(store.markSshRemotePtyLease).toHaveBeenCalledWith('ssh-1', id, 'terminated')
+    unregisterSshPtyProvider('ssh-1')
+    await vi.advanceTimersByTimeAsync(30_000)
+    expect(vi.getTimerCount()).toBe(0)
+    vi.useRealTimers()
+  })
+
+  it('re-drives a lease-less SSH kill after provider unregister and replacement', async () => {
+    vi.useFakeTimers()
+    const oldShutdown = makeDeferred()
+    const oldProviderShutdown = vi.fn(() => oldShutdown.promise)
+    const newProviderShutdown = vi.fn().mockResolvedValue(undefined)
+    const store = {
+      getSshRemotePtyLeases: vi.fn(() => []),
+      markSshRemotePtyShutdownRequested: vi.fn(() => false),
+      markSshRemotePtyLease: vi.fn()
+    }
+    handlers.clear()
+    registerPtyHandlers(
+      mainWindow as never,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      store as never
+    )
+    registerSshPtyProvider('ssh-1', {
+      shutdown: oldProviderShutdown,
+      onExit: vi.fn(() => () => {})
+    } as never)
+    const id = 'ssh:ssh-1@@boot-1@@lease-less-pty'
+
+    const kill = handlers.get('pty:kill')!(null, {
+      id,
+      expectedPaneKey: 'tab-a:leaf-a',
+      expectedTabId: 'tab-a'
+    }) as Promise<void>
+    expect(oldProviderShutdown).toHaveBeenCalledOnce()
+    unregisterSshPtyProvider('ssh-1')
+    registerSshPtyProvider('ssh-1', {
+      shutdown: newProviderShutdown,
+      onExit: vi.fn(() => () => {})
+    } as never)
+    oldShutdown.resolve()
+
+    await expect(kill).resolves.toBeUndefined()
+    expect(newProviderShutdown).toHaveBeenCalledOnce()
     expect(store.markSshRemotePtyLease).toHaveBeenCalledWith('ssh-1', id, 'terminated')
     unregisterSshPtyProvider('ssh-1')
     await vi.advanceTimersByTimeAsync(30_000)

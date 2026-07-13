@@ -12351,14 +12351,35 @@ export class OrcaRuntimeService {
   ): Promise<{ workspace: TerminalWorkspaceLaunchScope; release: () => void }> {
     // Why: workspace resolution can await SSH/runtime discovery. Keep removal
     // aware of the unresolved create, then transfer ownership without a gap.
-    const releaseResolutionAdmission = this.beginTerminalAdmission(GLOBAL_TERMINAL_ADMISSION_KEY)
+    let releaseResolutionAdmission: (() => void) | null = null
+    let removalsActiveAtResolutionStart: ReadonlySet<string> | null = null
+    try {
+      releaseResolutionAdmission = this.beginTerminalAdmission(GLOBAL_TERMINAL_ADMISSION_KEY)
+    } catch (error) {
+      if (
+        !(error instanceof Error) ||
+        error.message !== 'terminal_admission_blocked_for_project_removal'
+      ) {
+        throw error
+      }
+      // Why: an unresolved selector might belong to another execution host.
+      // Resolve it, but remember the active removals so a fast completion
+      // cannot reopen the exact stale scope before the atomic transfer.
+      removalsActiveAtResolutionStart = new Set(this.terminalAdmissionBlockedWorktreeIds)
+    }
     try {
       const workspace = await this.resolveTerminalWorkspaceLaunchScope(selector, hostId)
+      if (
+        removalsActiveAtResolutionStart &&
+        this.isAdmissionBlocked(removalsActiveAtResolutionStart, workspace.id, workspace.hostId)
+      ) {
+        throw new Error('terminal_admission_blocked_for_project_removal')
+      }
       const releaseWorkspaceAdmission = this.beginTerminalAdmission(workspace.id, workspace.hostId)
-      releaseResolutionAdmission()
+      releaseResolutionAdmission?.()
       return { workspace, release: releaseWorkspaceAdmission }
     } catch (error) {
-      releaseResolutionAdmission()
+      releaseResolutionAdmission?.()
       throw error
     }
   }

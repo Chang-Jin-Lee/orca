@@ -24,6 +24,7 @@ import type {
   PtyBackgroundStreamEvent,
   PtyProviderBufferSnapshot,
   PtyProcessInfo,
+  PtyShutdownOptions,
   PtySpawnOptions,
   PtySpawnResult
 } from '../providers/types'
@@ -31,6 +32,11 @@ import { isShellProcess } from '../../shared/agent-detection'
 import { recognizeAgentProcessFromCommandLine } from '../../shared/agent-process-recognition'
 import { shouldUseShellReadyStartupDelivery } from '../../shared/codex-startup-delivery'
 import type { TerminalOscLinkRange } from '../../shared/terminal-osc-link-ranges'
+import {
+  assertPtyPaneIdentity,
+  getPtyPaneIdentityFromEnv,
+  type PtyPaneIdentity
+} from '../pty/pty-shutdown-identity'
 
 type ColdRestorePayload = {
   scrollback: string
@@ -102,6 +108,7 @@ export class DaemonPtyAdapter implements IPtyProvider {
   private coldRestoreCache = new Map<string, ColdRestorePayload>()
   private sleepRestoreSessionIds = new Set<string>()
   private activeSessionIds = new Set<string>()
+  private paneIdentityBySessionId = new Map<string, PtyPaneIdentity>()
   private dirtySessionVersions = new Map<string, number>()
   // Why: a cold-restored session is a fresh shell whose on-disk checkpoint and
   // log belong to the pre-crash session. Incremental appends would land on
@@ -168,15 +175,34 @@ export class DaemonPtyAdapter implements IPtyProvider {
     return this.historyManager
   }
 
+  private rememberSessionIdentity(session: SessionInfo): void {
+    if (session.paneKey || session.tabId) {
+      this.paneIdentityBySessionId.set(session.sessionId, {
+        paneKey: session.paneKey ?? null,
+        tabId: session.tabId ?? null
+      })
+    }
+  }
+
   async spawn(opts: PtySpawnOptions): Promise<PtySpawnResult> {
     return this.withDaemonRetry(() => this.doSpawn(opts))
   }
 
   private async doSpawn(opts: PtySpawnOptions): Promise<PtySpawnResult> {
     const sessionId = opts.sessionId ?? mintPtySessionId(opts.worktreeId)
+    const requestedIdentity = getPtyPaneIdentityFromEnv(opts.env)
 
     if (this.killedSessionTombstones.has(sessionId)) {
       throw new TerminalKilledError(sessionId)
+    }
+    if (this.protocolVersion < 22 && this.activeSessionIds.has(sessionId)) {
+      const knownIdentity = this.paneIdentityBySessionId.get(sessionId)
+      if (knownIdentity) {
+        assertPtyPaneIdentity(sessionId, knownIdentity, {
+          expectedPaneKey: requestedIdentity.paneKey ?? undefined,
+          expectedTabId: requestedIdentity.tabId ?? undefined
+        })
+      }
     }
 
     if (opts.isNewSession) {
@@ -238,6 +264,8 @@ export class DaemonPtyAdapter implements IPtyProvider {
         command: opts.command,
         startupCommandDelivery: opts.startupCommandDelivery,
         launchAgent: opts.launchAgent,
+        ...(requestedIdentity.paneKey ? { paneKey: requestedIdentity.paneKey } : {}),
+        ...(requestedIdentity.tabId ? { tabId: requestedIdentity.tabId } : {}),
         // Why: without this, the daemon always spawns cmd.exe (COMSPEC) or
         // PowerShell as a fallback — regardless of which shell the renderer
         // asked for in the "+" menu or persisted as the default. Forwarding
@@ -253,6 +281,7 @@ export class DaemonPtyAdapter implements IPtyProvider {
 
     let scrollback = restoreInfo ? getRecoveredHistorySeed(restoreInfo) : null
     let result = await createOrAttach(scrollback)
+    this.paneIdentityBySessionId.set(sessionId, requestedIdentity)
     const launchIdentity = (): { launchAgent?: NonNullable<typeof result.launchAgent> } =>
       result.launchAgent ? { launchAgent: result.launchAgent } : {}
 
@@ -485,7 +514,19 @@ export class DaemonPtyAdapter implements IPtyProvider {
     this.client.notify('setSessionBackground', { sessionId: id, background: safeBackground })
   }
 
-  async shutdown(id: string, opts: { immediate?: boolean; keepHistory?: boolean }): Promise<void> {
+  async shutdown(id: string, opts: PtyShutdownOptions): Promise<void> {
+    if (
+      this.protocolVersion < 22 &&
+      (opts.expectedPaneKey !== undefined || opts.expectedTabId !== undefined)
+    ) {
+      // Why: preserved pre-v22 daemons ignore kill identity fields. Fail
+      // closed unless this main process observed the exact attached pane.
+      assertPtyPaneIdentity(
+        id,
+        this.paneIdentityBySessionId.get(id) ?? { paneKey: null, tabId: null },
+        opts
+      )
+    }
     // Why: sleep/exact-stop kills the live PTY before the periodic checkpoint may run.
     // Force a final snapshot so wake can restore the pane users left.
     if (opts.keepHistory) {
@@ -500,12 +541,18 @@ export class DaemonPtyAdapter implements IPtyProvider {
         this.sleepRestoreSessionIds.add(id)
       }
     }
-    await this.client.request('kill', { sessionId: id, immediate: opts.immediate ?? false })
+    await this.client.request('kill', {
+      sessionId: id,
+      immediate: opts.immediate ?? false,
+      expectedPaneKey: opts.expectedPaneKey,
+      expectedTabId: opts.expectedTabId
+    })
     this.activeSessionIds.delete(id)
     this.dirtySessionVersions.delete(id)
     if (!opts.keepHistory) {
       this.coldRestoreCache.delete(id)
       this.sleepRestoreSessionIds.delete(id)
+      this.paneIdentityBySessionId.delete(id)
     }
     // Why: the !keepHistory close path doesn't take a final checkpoint, so a
     // session stranded in sessionsNeedingFullCheckpoint would never be cleared.
@@ -714,6 +761,7 @@ export class DaemonPtyAdapter implements IPtyProvider {
     const killed: string[] = []
 
     for (const session of result.sessions) {
+      this.rememberSessionIdentity(session)
       if (!session.isAlive) {
         continue
       }
@@ -746,6 +794,9 @@ export class DaemonPtyAdapter implements IPtyProvider {
   async listProcesses(): Promise<PtyProcessInfo[]> {
     await this.ensureConnected()
     const result = await this.client.request<ListSessionsResult>('listSessions', undefined)
+    for (const session of result.sessions) {
+      this.rememberSessionIdentity(session)
+    }
     return result.sessions
       .filter((s) => s.isAlive)
       .map((s) => ({
@@ -763,6 +814,9 @@ export class DaemonPtyAdapter implements IPtyProvider {
   async listSessions(): Promise<SessionInfo[]> {
     await this.ensureConnected()
     const result = await this.client.request<ListSessionsResult>('listSessions', undefined)
+    for (const session of result.sessions) {
+      this.rememberSessionIdentity(session)
+    }
     return result.sessions.filter((s) => s.isAlive)
   }
 
@@ -1326,6 +1380,7 @@ export class DaemonPtyAdapter implements IPtyProvider {
         this.backgroundedSessionIds.delete(event.sessionId)
         if (!this.sleepRestoreSessionIds.has(event.sessionId)) {
           this.coldRestoreCache.delete(event.sessionId)
+          this.paneIdentityBySessionId.delete(event.sessionId)
         }
         // Why: an exited session can never be checkpointed again, so its pending
         // full-checkpoint flag is dead state. Without this, a cold-restored

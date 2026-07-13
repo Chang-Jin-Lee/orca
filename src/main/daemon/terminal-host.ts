@@ -7,6 +7,7 @@ import { buildStartupCommandSubmission } from '../../shared/startup-command-subm
 import type { SessionInfo, TakePendingOutputResult, TerminalSnapshot } from './types'
 import { SessionNotFoundError } from './types'
 import type { CreateOrAttachOptions, CreateOrAttachResult } from './terminal-host-create-contract'
+import { assertPtyPaneIdentity } from '../pty/pty-shutdown-identity'
 
 export type { CreateOrAttachOptions, CreateOrAttachResult } from './terminal-host-create-contract'
 
@@ -67,6 +68,11 @@ export class TerminalHost {
     // subsequent operation (write/kill/resize) would fail once the subprocess
     // finally exits. Treat terminating sessions the same as fully-exited ones.
     if (existing && existing.isAlive && !existing.isTerminating) {
+      assertPtyPaneIdentity(
+        opts.sessionId,
+        { paneKey: existing.paneKey, tabId: existing.tabId },
+        { expectedPaneKey: opts.paneKey, expectedTabId: opts.tabId }
+      )
       const snapshot = existing.getSnapshot()
       existing.detachAllClients()
       const token = existing.attachClient(opts.streamClient)
@@ -117,6 +123,8 @@ export class TerminalHost {
 
     const session = new Session({
       sessionId: opts.sessionId,
+      paneKey: opts.paneKey,
+      tabId: opts.tabId,
       cols: size.cols,
       rows: size.rows,
       terminalHandle: opts.env?.ORCA_TERMINAL_HANDLE,
@@ -193,8 +201,12 @@ export class TerminalHost {
     this.sessions.get(sessionId)?.resumeProducer()
   }
 
-  kill(sessionId: string, opts: { immediate?: boolean } = {}): void {
+  kill(
+    sessionId: string,
+    opts: { immediate?: boolean; expectedPaneKey?: string; expectedTabId?: string } = {}
+  ): void {
     const session = this.getAliveSession(sessionId)
+    assertPtyPaneIdentity(sessionId, { paneKey: session.paneKey, tabId: session.tabId }, opts)
     this.recordTombstone(sessionId)
     if (opts.immediate) {
       session.forceKillAndDisposeSubprocess()
@@ -326,6 +338,8 @@ export class TerminalHost {
       const size = session.getAppliedSize()
       result.push({
         sessionId: session.sessionId,
+        ...(session.paneKey ? { paneKey: session.paneKey } : {}),
+        ...(session.tabId ? { tabId: session.tabId } : {}),
         state: session.state,
         shellState: session.shellState,
         isAlive: true,

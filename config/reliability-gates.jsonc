@@ -3474,12 +3474,12 @@
       "providers": ["local", "daemon", "ssh", "remote-runtime"],
       "coveredPlatforms": ["macos"],
       "coveredProviders": ["local", "ssh"],
-      "coverageNotes": "A macOS unit harness loads the installed patched node-pty WindowsTerminal prototype without constructing native state, proving pre-ready kill/destroy dispatch immediately. A relay artifact harness reproduces vanilla npm node-pty retaining one deferred kill with zero native close calls, then proves both Windows relay artifacts hash, ship, apply, include the local ConPTY console-list fallback, and idempotently verify the fix. Relay tests simulate win32 shutdown, repeated stale-spawn native failure, one-shot ownership, and retry after native failure without deleting the only handle before close is proven. Relay boot UUIDs scope recycled pty-N counters through initial spawn, durable-lease persistence, reattach, and SSH target-id migration; mismatched generations expire before raw attach and release their exact in-memory retry owner, while pane identity protects legacy leases. Main-process retry owners persist local daemon and remote-runtime teardown intent across renderer and app restarts, coalesce by exact provider identity, use one shared one-shot timer per owner, and fence SSH relay plus remote-runtime generation reuse before close. Local Windows shutdown retains provider records and listeners after native throw unless onExit independently proves death. A disconnected SSH provider rejects shutdown without tombstoning its attachable lease. Paired/mobile headless close refuses to depersist a terminal until the controller accepts durable retry ownership. Project removal keeps local or remote ownership until provider-verified shutdown and successful VM cleanup; runtime repo removal drains pre-spawn trust/team/command preparation plus create-first worktree creation, headless, renderer-backed mobile, renderer split, and selector-less renderer terminal admissions before fresh ownership/liveness snapshots, stop, and metadata mutation. Desktop and duplicate-host repo removal route through the same transaction; legacy worktree creation, renderer PTY spawn, and every local/SSH/folder worktree removal outcome—including Windows stale registration and orphan-compatible fallback—are fenced and verified before destructive mutation or metadata purge. Hidden local/SSH and remote-runtime background-launch cleanup retain exact PTY/handle retry ownership with bounded one-shot scheduling. Crash-durable teardown intent uses an O(1) revisioned append journal with exact SSH set/remove records, compacted to one checkpoint after a successful full-state save, instead of synchronously serializing every retained owner for each mutation. Targeted terminal.stop probes skip unrelated sessions. The same relay contract serves paired web/mobile clients; no live Windows ConPTY or Windows-over-SSH run is recorded yet.",
+      "coverageNotes": "A macOS unit harness loads the installed patched node-pty WindowsTerminal prototype without constructing native state, proving pre-ready kill/destroy dispatch immediately. A relay artifact harness reproduces vanilla npm node-pty retaining one deferred kill with zero native close calls, then proves both Windows relay artifacts hash, ship, apply, include the local ConPTY console-list fallback, and idempotently verify the fix. Relay tests simulate win32 shutdown, repeated stale-spawn native failure, one-shot ownership, and retry after native failure without deleting the only handle before close is proven. Relay boot UUIDs scope recycled pty-N counters through initial spawn, durable-lease persistence, reattach, and SSH target-id migration; mismatched generations expire before raw attach and release their exact in-memory retry owner, while pane identity protects legacy leases. Main-process retry owners persist local daemon and remote-runtime teardown intent across renderer and app restarts, coalesce by exact provider identity, use one shared one-shot timer per owner, and fence SSH relay plus remote-runtime generation reuse before close. Local and daemon providers retain pane/tab identity and reject stale teardown before native or daemon kill; daemon protocol v22 carries the identity across process boundaries, while legacy adapters fail closed unless main observed the exact pane. Lease-less SSH retry owners survive transport replacement and re-drive the replacement provider. Local Windows shutdown retains provider records and listeners after native throw unless onExit independently proves death. A disconnected SSH provider rejects shutdown without tombstoning its attachable lease. Paired/mobile headless close refuses to depersist a terminal until the controller accepts durable retry ownership. Project removal keeps local or remote ownership until provider-verified shutdown and successful VM cleanup; runtime repo removal drains pre-spawn trust/team/command preparation plus create-first worktree creation, headless, renderer-backed mobile, renderer split, and selector-less renderer terminal admissions before fresh ownership/liveness snapshots, stop, and metadata mutation. Desktop and duplicate-host repo removal route through the same transaction; unresolved terminal creation may continue for an unrelated host while the removed host remains fenced. Legacy worktree creation, renderer PTY spawn, and every local/SSH/folder worktree removal outcome—including Windows stale registration and orphan-compatible fallback—are fenced and verified before destructive mutation or metadata purge. Hidden local/SSH and remote-runtime background-launch cleanup retain exact PTY/handle retry ownership with bounded one-shot scheduling. Crash-durable teardown intent uses an O(1) revisioned append journal with exact SSH set/remove records, compacted to one checkpoint after a successful full-state save, instead of synchronously serializing every retained owner for each mutation. Targeted terminal.stop probes skip unrelated sessions. The same relay contract serves paired web/mobile clients; no live Windows ConPTY or Windows-over-SSH run is recorded yet.",
       "motivatingLinks": [
         "https://github.com/stablyai/orca/issues/8260",
         "https://github.com/stablyai/orca/pull/8279"
       ],
-      "invariant": "A Windows PTY closed before its first output executes exactly one no-argument node-pty shutdown immediately; Orca never deletes ownership without accepted native shutdown or an observed exit, and a later retry can target only the same relay generation and pane while project removal fences both worktree and terminal creation.",
+      "invariant": "A Windows PTY closed before its first output executes exactly one no-argument node-pty shutdown immediately; Orca never deletes ownership without accepted native shutdown or an observed exit, and a later retry can target only the same provider generation and pane while project removal fences the removed host without blocking unrelated hosts.",
       "oracle": "Load the installed patched WindowsTerminal prototype in a pre-ready state and assert kill and destroy each close the terminal and native agent once with zero deferred work, while signal arguments still throw. Build both Windows SSH relay artifacts, reproduce vanilla npm node-pty with close=0/native-kill=0/deferred=1, apply the shipped patch, and assert close=1/native-kill=1/deferred=0, AttachConsole failure falls back to the shell pid, and the artifact version derives from all patch bytes. Assert remote npm install executes patch enforcement before its runtime probe and never finalizes a failed patch. In local and relay providers, assert native throws retain exact ownership/listeners and retry succeeds, while a synchronous onExit is accepted as independent death proof; provider absence must retain the SSH lease and reject shutdown. Persist relay generation with every durable lease, expire mismatches before attach while releasing their exact retry owner, and preserve generation through target migration. Reject local daemon and remote-runtime teardown, reload the durable store, wait for the startup provider before replay, replace an in-flight provider, and prove the same caller re-drives the replacement before settling, stronger coalesced shutdown options persist, and capped retries drain exact identities with zero final retry timers; persisted close intent for an already-removed runtime must drain without an unhandled rejection or retry wake loop. A generationless SSH id must not mutate or tombstone a generation-qualified replacement lease. Paired/mobile headless close must preserve persisted UI state when controller ownership is rejected. Create and clear 65 local plus 65 remote-runtime owners, reload immediately at both boundaries, and assert 260 O(1) journal records stay below 100 KiB with a 1 KiB per-record cap; repeat the same byte and record bounds for 50 generation-qualified SSH owners. Synchronous full-store flush count must remain zero, both a partial JSON tail and a complete record missing its newline must preserve all complete records, the next mutation must first rewrite an atomic recovered checkpoint, and the next full-state save must compact the journal to one revision-fenced checkpoint; an older valid sidecar must lose to a newer full-store fallback revision. Replace SSH relay and remote-runtime generations while a retry is retained and prove the new owner is never closed. Start pre-spawn trust/team preparation plus worktree and terminal creation surfaces before whole-project and host-scoped project removal and assert removal performs no ownership/liveness snapshot until they publish; host-scoped liveness must query only its selected provider so an unrelated SSH outage cannot veto removal. Removal-first and failed/concurrent admissions must reject or release without deadlock. Start a real worktree removal, pause its preflight, and assert a late renderer terminal admission is rejected; assert every successful registered, orphaned, leftover, already-missing, and stale-registration removal path verifies shutdown before mutation or metadata purge; assert desktop repo removal, worktree create/remove, and PTY spawn handlers all enter their runtime-owned transactions before mutation or provider work.",
       "commands": [
         "pnpm exec vitest run --config config/vitest.config.ts config/scripts/build-relay-windows-node-pty-patch.test.mjs src/main/ssh/ssh-relay-native-deps-install.test.ts src/relay/node-pty-windows-pre-ready-shutdown.test.ts src/relay/pty-handler.test.ts src/renderer/src/components/terminal-pane/pty-transport.test.ts src/renderer/src/store/slices/repos-remove-project-purge-leak.test.ts src/renderer/src/store/slices/repos.test.ts src/renderer/src/store/slices/repos-runtime-vm-removal.test.ts src/renderer/src/lib/ephemeral-vm-runtime-cleanup.test.ts",
@@ -3490,7 +3490,8 @@
         "pnpm exec vitest run --config config/vitest.config.ts src/main/ipc/repos-create.test.ts src/main/window/attach-main-window-services.test.ts src/main/ipc/worktrees.test.ts src/main/ipc/worktrees-windows.test.ts src/main/ipc/pty.test.ts src/main/runtime/orca-runtime.test.ts src/renderer/src/lib/launch-agent-background-session.test.ts src/renderer/src/store/slices/repos-host-identity-routing.test.ts",
         "pnpm exec vitest run --config config/vitest.config.ts src/shared/ssh-pty-id.test.ts src/shared/ssh-types.test.ts src/main/providers/local-pty-provider.test.ts src/main/providers/ssh-pty-provider.test.ts src/main/persistence.test.ts src/main/ssh/ssh-relay-session.test.ts src/main/ssh/ssh-relay-generation-reattach.test.ts src/main/ssh/ssh-target-id-migration.test.ts src/relay/pty-handler.test.ts src/relay/subprocess.test.ts src/renderer/src/components/terminal-pane/pty-transport.test.ts src/renderer/src/components/terminal-pane/pty-pre-handler-buffer.test.ts src/renderer/src/lib/pty-kill-retry-ownership.test.ts src/renderer/src/lib/runtime-terminal-close-retry-ownership.test.ts src/renderer/src/lib/ephemeral-vm-runtime-cleanup.test.ts src/renderer/src/lib/launch-agent-background-session.test.ts src/renderer/src/store/slices/repos.test.ts src/renderer/src/store/slices/repos-host-identity-routing.test.ts src/main/runtime/orca-runtime.test.ts src/main/ipc/pty.test.ts",
         "pnpm exec vitest run --config config/vitest.config.ts src/main/ipc/repos-create.test.ts src/main/window/attach-main-window-services.test.ts src/main/ipc/worktrees.test.ts src/main/ipc/worktrees-windows.test.ts src/main/ipc/pty.test.ts src/main/runtime/orca-runtime.test.ts src/renderer/src/lib/launch-agent-background-session.test.ts src/renderer/src/lib/runtime-terminal-close-retry-ownership.test.ts src/renderer/src/store/slices/repos-host-identity-routing.test.ts",
-        "pnpm exec vitest run --config config/vitest.config.ts src/main/runtime/orca-runtime.test.ts src/main/ipc/worktrees.test.ts src/main/ipc/pty.test.ts src/main/ipc/runtime-environments.test.ts src/main/runtime/rpc/terminal-close-generation.test.ts src/main/persistence.test.ts src/main/ssh/ssh-relay-session.test.ts src/main/ipc/ssh.test.ts src/renderer/src/store/slices/worktrees.test.ts"
+        "pnpm exec vitest run --config config/vitest.config.ts src/main/runtime/orca-runtime.test.ts src/main/ipc/worktrees.test.ts src/main/ipc/pty.test.ts src/main/ipc/runtime-environments.test.ts src/main/runtime/rpc/terminal-close-generation.test.ts src/main/persistence.test.ts src/main/ssh/ssh-relay-session.test.ts src/main/ipc/ssh.test.ts src/renderer/src/store/slices/worktrees.test.ts",
+        "pnpm exec vitest run --config config/vitest.config.ts src/main/providers/local-pty-provider.test.ts src/main/daemon/daemon-pty-adapter.test.ts src/main/daemon/terminal-host.test.ts src/main/ipc/pty.test.ts src/main/ipc/runtime-terminal-close-retry-owner.test.ts src/main/runtime/orca-runtime.test.ts"
       ],
       "testFiles": [
         "config/scripts/build-relay-windows-node-pty-patch.test.mjs",
@@ -3506,6 +3507,8 @@
         "src/shared/ssh-pty-id.test.ts",
         "src/shared/ssh-types.test.ts",
         "src/main/providers/local-pty-provider.test.ts",
+        "src/main/daemon/daemon-pty-adapter.test.ts",
+        "src/main/daemon/terminal-host.test.ts",
         "src/main/providers/ssh-pty-provider.test.ts",
         "src/main/persistence.test.ts",
         "src/main/ssh/ssh-relay-session.test.ts",
@@ -3515,6 +3518,7 @@
         "src/renderer/src/components/terminal-pane/pty-pre-handler-buffer.test.ts",
         "src/renderer/src/lib/pty-kill-retry-ownership.test.ts",
         "src/main/ipc/pty.test.ts",
+        "src/main/ipc/runtime-terminal-close-retry-owner.test.ts",
         "src/main/ipc/repos-create.test.ts",
         "src/main/ipc/worktrees.test.ts",
         "src/main/ipc/worktrees-windows.test.ts",
@@ -3600,6 +3604,7 @@
             "host-scoped project removal drains create-first work and rejects removal-first creation before mutating one duplicate-host row",
             "duplicate repo and worktree ids isolate admissions and PTY liveness by execution host while whole-project removal still drains every host scope",
             "host-scoped terminal stop succeeds when an unrelated provider is unavailable without disconnecting that host's cached PTYs",
+            "workspace resolution on an unrelated host proceeds while the removed host remains admission-fenced",
             "worktree removal rejects a late renderer terminal admission while destructive preflight is still pending",
             "already-missing exceptional removal verifies terminal stop before metadata purge",
             "failed and concurrent admissions release without deadlocking project removal",
@@ -3622,7 +3627,20 @@
         {
           "file": "src/main/providers/local-pty-provider.test.ts",
           "assertions": [
-            "a synchronous Windows native kill throw retains PTY ownership and listeners so retry can succeed"
+            "a synchronous Windows native kill throw retains PTY ownership and listeners so retry can succeed",
+            "a stale pane identity is rejected before the local PTY can be killed"
+          ]
+        },
+        {
+          "file": "src/main/daemon/daemon-pty-adapter.test.ts",
+          "assertions": [
+            "daemon shutdown carries pane identity across RPC and rejects a stale kill"
+          ]
+        },
+        {
+          "file": "src/main/daemon/terminal-host.test.ts",
+          "assertions": [
+            "a reused live daemon session rejects attach and kill from a replacement pane identity"
           ]
         },
         {
@@ -3679,7 +3697,14 @@
             "generationless identity-mismatch failure cannot tombstone a replacement relay-generation lease",
             "paired/mobile controller kill fails closed when offline SSH intent cannot be made durable",
             "host-scoped liveness lists only the selected provider instead of fanning out to unrelated SSH hosts",
-            "relay generation reuse removes stale retry ownership without touching the new PTY"
+            "relay generation reuse removes stale retry ownership without touching the new PTY",
+            "lease-less SSH shutdown survives provider unregister and re-drives the replacement transport"
+          ]
+        },
+        {
+          "file": "src/main/ipc/runtime-terminal-close-retry-owner.test.ts",
+          "assertions": [
+            "a late runtime close completion cannot delete a replacement-generation retry owner"
           ]
         },
         {

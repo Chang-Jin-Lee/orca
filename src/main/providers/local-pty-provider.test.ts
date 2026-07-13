@@ -942,6 +942,31 @@ describe('LocalPtyProvider', () => {
   })
 
   describe('shutdown', () => {
+    it('rejects a stale pane identity before killing the local PTY', async () => {
+      const killSpy = mockProc.kill
+      const { id } = await provider.spawn({
+        cols: 80,
+        rows: 24,
+        env: { ORCA_PANE_KEY: 'tab-b:leaf-b', ORCA_TAB_ID: 'tab-b' }
+      })
+
+      await expect(
+        provider.shutdown(id, {
+          immediate: true,
+          expectedPaneKey: 'tab-a:leaf-a',
+          expectedTabId: 'tab-a'
+        })
+      ).rejects.toThrow('PTY identity mismatch')
+      expect(killSpy).not.toHaveBeenCalled()
+      expect(provider.hasPty(id)).toBe(true)
+
+      await provider.shutdown(id, {
+        immediate: true,
+        expectedPaneKey: 'tab-b:leaf-b',
+        expectedTabId: 'tab-b'
+      })
+    })
+
     it('kills the PTY process', async () => {
       // Why: capture the spy reference before shutdown triggers onExit →
       // POSIX kill neutralization. After neutralization, mockProc.kill is

@@ -12,13 +12,12 @@ export type {
 // ─── Protocol Version ────────────────────────────────────────────────
 import type { StartupCommandDelivery } from '../../shared/codex-startup-delivery'
 import type { TuiAgent } from '../../shared/types'
-// Why: daemons can survive app updates. Bump for IPC wire-shape changes, or
-// when daemon-baked behavior cannot be delivered by on-disk wrapper refresh.
-// Why: bump when adding daemon wire behavior so same-version old daemons do
-// not silently accept the handshake and then reject new RPCs.
-export const PROTOCOL_VERSION = 21
+import type * as PtyIdentity from '../pty/pty-shutdown-identity'
+// Why: daemons survive app updates; bump for wire changes so old daemons do
+// not accept handshakes for unsupported RPC behavior.
+export const PROTOCOL_VERSION = 22
 export const PREVIOUS_DAEMON_PROTOCOL_VERSIONS = [
-  1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20
+  1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21
 ] as const
 
 // ─── Session State Machine ──────────────────────────────────────────
@@ -98,7 +97,7 @@ export type HelloResponse = {
 export type CreateOrAttachRequest = {
   id: string
   type: 'createOrAttach'
-  payload: {
+  payload: PtyIdentity.PtyPaneIdentityFields & {
     sessionId: string
     cols: number
     rows: number
@@ -190,7 +189,7 @@ export type SetSessionBackgroundRequest = {
 export type KillRequest = {
   id: string
   type: 'kill'
-  payload: {
+  payload: PtyIdentity.PtyExpectedPaneIdentityFields & {
     sessionId: string
     immediate?: boolean
   }
@@ -380,7 +379,7 @@ export type SystemResolverHealthResult = {
   health: SystemResolverHealth
 }
 
-export type SessionInfo = {
+export type SessionInfo = PtyIdentity.PtyPaneIdentityFields & {
   sessionId: string
   state: SessionState
   shellState: ShellReadyState
