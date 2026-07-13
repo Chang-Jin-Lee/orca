@@ -2976,12 +2976,19 @@ export const createWorktreeSlice: StateCreator<AppState, [], [], WorktreeSlice> 
           // deliberately at the top instead of relying on sortOrder fallback.
           const manualOrder = get().sortBy === 'manual' ? Date.now() : undefined
           const activeScope = parseWorkspaceKey(get().activeWorkspaceKey ?? '')
+          const activeHostId =
+            activeScope?.type === 'worktree' &&
+            getRepoIdFromWorktreeId(activeScope.worktreeId) === repoId
+              ? getWorktreeHostId(get(), activeScope.worktreeId)
+              : null
+          const ownerHostId = repoHostId(get(), repoId, options?.hostId ?? activeHostId)
           const parentWorkspace =
             activeScope?.type === 'folder'
               ? folderWorkspaceKey(activeScope.folderWorkspaceId)
               : undefined
           const createArgs = {
             repoId,
+            hostId: ownerHostId,
             name: candidateName,
             baseBranch,
             ...(compareBaseRef ? { compareBaseRef } : {}),
@@ -3016,7 +3023,7 @@ export const createWorktreeSlice: StateCreator<AppState, [], [], WorktreeSlice> 
             ...(creationId ? { creationId } : {}),
             ...(automationProvenanceRequest ? { automationProvenanceRequest } : {})
           }
-          const target = getActiveRuntimeTarget(settingsForRepoOwner(get(), repoId))
+          const target = getActiveRuntimeTarget(settingsForRepoOwner(get(), repoId, ownerHostId))
           const result =
             target.kind === 'local'
               ? await window.api.worktrees.create(createArgs)

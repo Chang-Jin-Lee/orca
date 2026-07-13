@@ -526,6 +526,42 @@ describe('registerWorktreeHandlers', () => {
     expect(handlers['worktrees:getBranchRenameFailureOutput']).toBeDefined()
   })
 
+  it('qualifies duplicate repo create admission with the requested owner host', async () => {
+    const admissionError = new Error('project removal in progress')
+    store.getRepos.mockReturnValue([
+      {
+        id: 'repo-1',
+        path: '/workspace/repo',
+        displayName: 'local',
+        badgeColor: '#000',
+        addedAt: 0
+      },
+      {
+        id: 'repo-1',
+        path: '/remote/repo',
+        displayName: 'remote',
+        badgeColor: '#000',
+        addedAt: 1,
+        connectionId: 'target-1'
+      }
+    ])
+    runtimeStub.runWithWorktreeCreateAdmission.mockRejectedValueOnce(admissionError)
+
+    await expect(
+      handlers['worktrees:create'](null, {
+        repoId: 'repo-1',
+        hostId: 'ssh:target-1',
+        name: 'feature'
+      })
+    ).rejects.toBe(admissionError)
+
+    expect(runtimeStub.runWithWorktreeCreateAdmission).toHaveBeenCalledWith(
+      'repo-1',
+      expect.any(Function),
+      'ssh:target-1'
+    )
+  })
+
   it('prefetches the local default create base through the runtime refresh cache', async () => {
     const repo = {
       id: 'repo-1',
@@ -633,7 +669,8 @@ describe('registerWorktreeHandlers', () => {
     expect(runtimeStub.fetchRemoteWithCache).not.toHaveBeenCalled()
     expect(runtimeStub.runWithWorktreeCreateAdmission).toHaveBeenCalledWith(
       'repo-1',
-      expect.any(Function)
+      expect.any(Function),
+      'local'
     )
     expect(addWorktreeMock).toHaveBeenCalledWith(
       '/workspace/repo',
@@ -6521,10 +6558,12 @@ describe('registerWorktreeHandlers', () => {
     })
     expect(runtimeStub.runWithWorktreeRemovalAdmission).toHaveBeenCalledWith(
       'repo-1::/workspace/feature-wt',
-      expect.any(Function)
+      expect.any(Function),
+      'local'
     )
     expect(runtimeStub.verifyTerminalsStoppedForRemoval).toHaveBeenCalledWith(
-      'repo-1::/workspace/feature-wt'
+      'repo-1::/workspace/feature-wt',
+      'local'
     )
   })
 
@@ -6672,7 +6711,7 @@ describe('registerWorktreeHandlers', () => {
     })
     expect(runHookMock).not.toHaveBeenCalled()
     expect(killAllProcessesForWorktreeMock).not.toHaveBeenCalled()
-    expect(runtimeStub.verifyTerminalsStoppedForRemoval).toHaveBeenCalledWith(worktreeId)
+    expect(runtimeStub.verifyTerminalsStoppedForRemoval).toHaveBeenCalledWith(worktreeId, 'local')
     expect(removeWorktreeMock).not.toHaveBeenCalled()
     expect(gitExecFileAsyncMock).toHaveBeenCalledWith(['worktree', 'prune'], {
       cwd: '/workspace/repo'
@@ -7682,7 +7721,8 @@ describe('registerWorktreeHandlers', () => {
     expect(runHookMock).not.toHaveBeenCalled()
     expect(removeWorktreeMock).not.toHaveBeenCalled()
     expect(runtimeStub.verifyTerminalsStoppedForRemoval).toHaveBeenCalledWith(
-      'repo-1::/workspace/already-deleted-wt'
+      'repo-1::/workspace/already-deleted-wt',
+      'local'
     )
     expect(runtimeStub.clearOptimisticReconcileToken).toHaveBeenCalledWith(
       'repo-1::/workspace/already-deleted-wt'

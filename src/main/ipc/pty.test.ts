@@ -528,7 +528,33 @@ describe('registerPtyHandlers', () => {
 
     expect(runtime.runWithTerminalCreateAdmission).toHaveBeenCalledWith(
       'repo-1::/workspace/feature',
-      expect.any(Function)
+      expect.any(Function),
+      'local'
+    )
+    expect(spawnMock).not.toHaveBeenCalled()
+  })
+
+  it('qualifies renderer terminal admission with the SSH owner', async () => {
+    const admissionError = new Error('terminal admission blocked')
+    const runtime = {
+      setPtyController: vi.fn(),
+      runWithTerminalCreateAdmission: vi.fn().mockRejectedValue(admissionError)
+    }
+    registerPtyHandlers(mainWindow as never, runtime as never)
+
+    await expect(
+      handlers.get('pty:spawn')!(null, {
+        cols: 80,
+        rows: 24,
+        worktreeId: 'repo-1::/workspace/feature',
+        connectionId: 'target-1'
+      })
+    ).rejects.toBe(admissionError)
+
+    expect(runtime.runWithTerminalCreateAdmission).toHaveBeenCalledWith(
+      'repo-1::/workspace/feature',
+      expect.any(Function),
+      'ssh:target-1'
     )
     expect(spawnMock).not.toHaveBeenCalled()
   })

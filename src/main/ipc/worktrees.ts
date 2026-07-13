@@ -125,7 +125,10 @@ function getRepoForWorktreeRemoval(
   // Why: deletion must never guess between host owners. Legacy unscoped calls
   // remain compatible only while the repo id still has one unique owner.
   if (matches.length === 1) {
-    return matches[0]
+    const legacyMatch = store.getRepo(repoId)
+    return legacyMatch && (!hostId || getRepoExecutionHostId(legacyMatch) === hostId)
+      ? legacyMatch
+      : matches[0]
   }
   if (matches.length > 1) {
     return undefined
@@ -971,17 +974,25 @@ export function registerWorktreeHandlers(
   store: Store,
   runtime: OrcaRuntimeService
 ): void {
-  const withCreateAdmission = <T>(repoId: string, action: () => Promise<T>): Promise<T> =>
+  const withCreateAdmission = <T>(
+    repoId: string,
+    action: () => Promise<T>,
+    hostId?: ExecutionHostId
+  ): Promise<T> =>
     typeof runtime.runWithWorktreeCreateAdmission === 'function'
-      ? runtime.runWithWorktreeCreateAdmission(repoId, action)
+      ? runtime.runWithWorktreeCreateAdmission(repoId, action, hostId)
       : action()
-  const withRemovalAdmission = <T>(worktreeId: string, action: () => Promise<T>): Promise<T> =>
+  const withRemovalAdmission = <T>(
+    worktreeId: string,
+    action: () => Promise<T>,
+    hostId?: ExecutionHostId
+  ): Promise<T> =>
     typeof runtime.runWithWorktreeRemovalAdmission === 'function'
-      ? runtime.runWithWorktreeRemovalAdmission(worktreeId, action)
+      ? runtime.runWithWorktreeRemovalAdmission(worktreeId, action, hostId)
       : action()
-  const verifyTerminalsStopped = (worktreeId: string): Promise<void> =>
+  const verifyTerminalsStopped = (worktreeId: string, hostId?: ExecutionHostId): Promise<void> =>
     typeof runtime.verifyTerminalsStoppedForRemoval === 'function'
-      ? runtime.verifyTerminalsStoppedForRemoval(worktreeId)
+      ? runtime.verifyTerminalsStoppedForRemoval(worktreeId, hostId)
       : Promise.resolve()
   // Remove any previously registered handlers so we can re-register them
   // (e.g. when macOS re-activates the app and creates a new window).
@@ -1232,6 +1243,11 @@ export function registerWorktreeHandlers(
   ipcMain.handle(
     'worktrees:create',
     async (_event, args: CreateWorktreeArgs): Promise<CreateWorktreeResult> => {
+      const repo = getRepoForWorktreeRemoval(store, args.repoId, args.hostId)
+      if (!repo) {
+        throw new Error(`Repo not found: ${args.repoId}`)
+      }
+      const hostId = getRepoExecutionHostId(repo)
       // Why span here: worktree creation chains a clone-or-checkout, an
       // install hook, and several git invocations. Wrapping the IPC entry
       // gives every child git span a parent to attach to, so a failure in
@@ -1242,11 +1258,6 @@ export function registerWorktreeHandlers(
       // the repo ID is the safer correlator for the bundle.
       return withCreateAdmission(args.repoId, () =>
         withWorktreeSpan({ stage: 'create' }, async () => {
-          const repo = store.getRepo(args.repoId)
-          if (!repo) {
-            throw new Error(`Repo not found: ${args.repoId}`)
-          }
-
           const sourceParse = workspaceSourceSchema.safeParse(args.telemetrySource)
           const source: WorkspaceSource = sourceParse.success ? sourceParse.data : 'unknown'
 
@@ -1306,8 +1317,7 @@ export function registerWorktreeHandlers(
           }
 
           return result
-        })
-      )
+        }), hostId)
     }
   )
 
@@ -1416,9 +1426,10 @@ export function registerWorktreeHandlers(
       if (!repo) {
         throw new Error(`Repo not found: ${repoId}`)
       }
+      const hostId = getRepoExecutionHostId(repo)
       const inFlightKey = getWorktreeRemovalInFlightKey(
         args.worktreeId,
-        getRepoExecutionHostId(repo)
+        hostId
       )
       const optionsKey = getWorktreeRemovalOptionsKey(args)
       const inFlightRemoval = worktreeRemovalsInFlight.get(inFlightKey)
@@ -1439,7 +1450,7 @@ export function registerWorktreeHandlers(
               'Cannot delete the project root workspace. Remove the folder project instead.'
             )
           }
-          await verifyTerminalsStopped(args.worktreeId)
+          await verifyTerminalsStopped(args.worktreeId, hostId)
           // Why: folder workspaces share one filesystem root, so there is no Git
           // remove step to close shells; sweep PTYs before dropping metadata.
           await killAllProcessesForWorktree(args.worktreeId, {
@@ -1512,7 +1523,7 @@ export function registerWorktreeHandlers(
             if (!args.force) {
               throw new Error(ORPHANED_WORKTREE_DIRECTORY_MESSAGE)
             }
-            await verifyTerminalsStopped(args.worktreeId)
+            await verifyTerminalsStopped(args.worktreeId, hostId)
             if (repo.connectionId) {
               await fsProvider!.deletePath(worktreePath, true)
               await cleanupUnusedWorktreePushTargetRemoteSsh(
@@ -1561,7 +1572,7 @@ export function registerWorktreeHandlers(
               if (!args.force) {
                 throw new Error(ORPHANED_WORKTREE_DIRECTORY_MESSAGE)
               }
-              await verifyTerminalsStopped(args.worktreeId)
+              await verifyTerminalsStopped(args.worktreeId, hostId)
               await closeLocalWatcherForRemoval(worktreePath)
               await removeLocalWorktreePath(worktreePath, localWorktreeGitOptions)
               await cleanupUnusedWorktreePushTargetRemote(
@@ -1588,7 +1599,7 @@ export function registerWorktreeHandlers(
             // Why: a manually deleted worktree is already gone from Git and disk.
             // The sidebar delete action has persisted metadata proving this was
             // an Orca-known row, so no force confirmation is needed.
-            await verifyTerminalsStopped(args.worktreeId)
+            await verifyTerminalsStopped(args.worktreeId, hostId)
             if (repo.connectionId) {
               await cleanupUnusedWorktreePushTargetRemoteSsh(
                 provider!,
@@ -1639,7 +1650,7 @@ export function registerWorktreeHandlers(
           removedMeta &&
           (await isAlreadyRemovedWorktreePath(repo, canonicalWorktreePath, localWorktreeGitOptions))
         ) {
-          await verifyTerminalsStopped(args.worktreeId)
+          await verifyTerminalsStopped(args.worktreeId, hostId)
           const removalResult = await removeStaleLocalWorktreeRegistrationAfterFilesystemRemoval({
             canonicalWorktreePath,
             repoPath: repo.path,
@@ -1701,7 +1712,7 @@ export function registerWorktreeHandlers(
             }
           }
 
-          await verifyTerminalsStopped(args.worktreeId)
+          await verifyTerminalsStopped(args.worktreeId, hostId)
           const remoteRemoveOptions = !deleteBranch ? { deleteBranch } : {}
           const rawRemovalResult = await (Object.keys(remoteRemoveOptions).length > 0
             ? provider!.removeWorktree(canonicalWorktreePath, args.force, remoteRemoveOptions)
@@ -1781,7 +1792,7 @@ export function registerWorktreeHandlers(
 
         await closeLocalWatcherForRemoval(canonicalWorktreePath)
 
-        await verifyTerminalsStopped(args.worktreeId)
+        await verifyTerminalsStopped(args.worktreeId, hostId)
         if (shouldTearDownPtys) {
           // Why: once preflight proves normal deletion is clean, kill PTYs before
           // git-level removal so Windows handles cannot keep the directory busy.
@@ -1906,7 +1917,7 @@ export function registerWorktreeHandlers(
 
         notifyWorktreesChanged(mainWindow, repoId)
         return removalResult ?? {}
-      })
+      }, hostId)
       worktreeRemovalsInFlight.set(inFlightKey, { optionsKey, promise: removal })
       try {
         return await removal
@@ -1976,7 +1987,8 @@ export function registerWorktreeHandlers(
           preservedBranchCleanupByWorktreeId.delete(args.worktreeId)
           notifyWorktreesChanged(mainWindow, repoId)
           return {}
-        }
+        },
+        getRepoExecutionHostId(repo)
       )
       worktreeRemovalsInFlight.set(inFlightKey, { optionsKey, promise: forget })
       try {

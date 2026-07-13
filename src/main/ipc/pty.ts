@@ -19,6 +19,7 @@ export { getBashShellReadyRcfileContent } from '../providers/local-pty-shell-rea
 import type { OrcaRuntimeService } from '../runtime/orca-runtime'
 import type { Store } from '../persistence'
 import type { GlobalSettings, TuiAgent } from '../../shared/types'
+import { LOCAL_EXECUTION_HOST_ID, toSshExecutionHostId } from '../../shared/execution-host'
 import { terminalOutputBacklogCapChars } from '../../shared/terminal-scrollback-policy'
 import type {
   PtyDeliveryWriteOff,
@@ -3568,10 +3569,15 @@ export function registerPtyHandlers(
 
   const withTerminalCreateAdmission = <T>(
     worktreeId: string | undefined,
-    action: () => Promise<T>
+    action: () => Promise<T>,
+    connectionId?: string | null
   ): Promise<T> =>
     typeof runtime?.runWithTerminalCreateAdmission === 'function'
-      ? runtime.runWithTerminalCreateAdmission(worktreeId, action)
+      ? runtime.runWithTerminalCreateAdmission(
+          worktreeId,
+          action,
+          connectionId ? toSshExecutionHostId(connectionId) : LOCAL_EXECUTION_HOST_ID
+        )
       : action()
 
   ipcMain.handle(
@@ -4404,7 +4410,7 @@ export function registerPtyHandlers(
         rejectPaneSpawnReservation(reservationPaneKey, paneSpawnReservation, err)
         throw err
       }
-      })
+      }, args.connectionId)
   )
 
   const writePtyProviderInputWithinLimit = (

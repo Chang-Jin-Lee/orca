@@ -22319,6 +22319,90 @@ describe('OrcaRuntimeService', () => {
     expect(removeProjectForHost).toHaveBeenCalledWith(TEST_REPO_ID, 'local')
   })
 
+  it('does not drain or block a duplicate repo admission owned by another host', async () => {
+    const removeProjectForHost = vi.fn()
+    const runtime = new OrcaRuntimeService({ ...store, removeProjectForHost } as never)
+    const sshCreate = deferred<void>()
+    vi.mocked(listWorktrees).mockResolvedValue([])
+
+    const admittedSshCreate = runtime.runWithWorktreeCreateAdmission(
+      TEST_REPO_ID,
+      () => sshCreate.promise,
+      'ssh:target-1'
+    )
+    await expect(runtime.removeProjectForHost(TEST_REPO_ID, 'local')).resolves.toEqual({
+      removed: true
+    })
+    expect(removeProjectForHost).toHaveBeenCalledWith(TEST_REPO_ID, 'local')
+
+    sshCreate.resolve()
+    await admittedSshCreate
+  })
+
+  it('keeps whole-project removal conservative across every host scope', async () => {
+    const removeProject = vi.fn()
+    const runtime = new OrcaRuntimeService({ ...store, removeProject } as never)
+    const sshCreate = deferred<void>()
+    vi.mocked(listWorktrees).mockResolvedValue([])
+
+    const admittedSshCreate = runtime.runWithWorktreeCreateAdmission(
+      TEST_REPO_ID,
+      () => sshCreate.promise,
+      'ssh:target-1'
+    )
+    const removal = runtime.removeProject(`id:${TEST_REPO_ID}`)
+    await Promise.resolve()
+    expect(removeProject).not.toHaveBeenCalled()
+
+    sshCreate.resolve()
+    await admittedSshCreate
+    await expect(removal).resolves.toEqual({ removed: true })
+    expect(removeProject).toHaveBeenCalledWith(TEST_REPO_ID)
+  })
+
+  it('blocks removal-first creates only on the owning execution host', async () => {
+    const localRemoval = deferred<void>()
+    const runtime = new OrcaRuntimeService(store)
+    const removal = runtime.runWithWorktreeRemovalAdmission(
+      TEST_WORKTREE_ID,
+      () => localRemoval.promise,
+      'local'
+    )
+    await Promise.resolve()
+
+    await expect(
+      runtime.runWithTerminalCreateAdmission(
+        TEST_WORKTREE_ID,
+        async () => undefined,
+        'local'
+      )
+    ).rejects.toThrow('terminal_admission_blocked_for_project_removal')
+    await expect(
+      runtime.runWithTerminalCreateAdmission(
+        TEST_WORKTREE_ID,
+        async () => 'ssh-created',
+        'ssh:target-1'
+      )
+    ).resolves.toBe('ssh-created')
+
+    localRemoval.resolve()
+    await removal
+  })
+
+  it('filters duplicate worktree PTY ownership by execution host', () => {
+    const runtime = new OrcaRuntimeService(store)
+    runtime.registerPty('pty-local', TEST_WORKTREE_ID, null)
+    runtime.registerPty('pty-ssh', TEST_WORKTREE_ID, 'target-1')
+    const fresh = new Set(['pty-local', 'pty-ssh'])
+
+    expect(runtime['getLivePtyIdsForWorktree'](TEST_WORKTREE_ID, fresh, null)).toEqual(
+      new Set(['pty-local'])
+    )
+    expect(runtime['getLivePtyIdsForWorktree'](TEST_WORKTREE_ID, fresh, 'target-1')).toEqual(
+      new Set(['pty-ssh'])
+    )
+  })
+
   it('drains a create-first spawn before project removal snapshots liveness', async () => {
     const removeProject = vi.fn()
     const runtime = new OrcaRuntimeService({ ...store, removeProject } as never)
@@ -28118,7 +28202,7 @@ describe('OrcaRuntimeService', () => {
       })
       expect(runHook).not.toHaveBeenCalled()
       expect(removeWorktree).not.toHaveBeenCalled()
-      expect(verifyStopped).toHaveBeenCalledWith(worktreeId)
+      expect(verifyStopped).toHaveBeenCalledWith(worktreeId, 'local')
       expect(gitSpy).toHaveBeenCalledWith(['worktree', 'prune'], {
         cwd: TEST_REPO_PATH
       })
@@ -28510,7 +28594,7 @@ describe('OrcaRuntimeService', () => {
       await expect(runtime.removeManagedWorktree(worktreeId, true)).resolves.toEqual({})
 
       expect(removeWorktree).not.toHaveBeenCalled()
-      expect(verifyStopped).toHaveBeenCalledWith(worktreeId)
+      expect(verifyStopped).toHaveBeenCalledWith(worktreeId, undefined)
       expect(removeWorktreeMeta).toHaveBeenCalledWith(worktreeId)
       expect(deleteWorktreeHistoryDirMock).toHaveBeenCalledWith(worktreeId)
       expect(invalidateAuthorizedRootsCacheMock).toHaveBeenCalled()

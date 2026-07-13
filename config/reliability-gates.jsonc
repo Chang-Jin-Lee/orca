@@ -3780,7 +3780,8 @@
         "pnpm exec vitest run --config config/vitest.config.ts src/shared/ssh-pty-id.test.ts src/shared/ssh-types.test.ts src/main/providers/local-pty-provider.test.ts src/main/providers/ssh-pty-provider.test.ts src/main/persistence.test.ts src/main/ssh/ssh-relay-session.test.ts src/main/ssh/ssh-relay-generation-reattach.test.ts src/main/ssh/ssh-target-id-migration.test.ts src/relay/pty-handler.test.ts src/relay/subprocess.test.ts src/renderer/src/components/terminal-pane/pty-transport.test.ts src/renderer/src/components/terminal-pane/pty-pre-handler-buffer.test.ts src/renderer/src/lib/pty-kill-retry-ownership.test.ts src/renderer/src/lib/ephemeral-vm-runtime-cleanup.test.ts src/renderer/src/lib/launch-agent-background-session.test.ts src/renderer/src/store/slices/repos.test.ts src/renderer/src/store/slices/repos-host-identity-routing.test.ts src/main/runtime/orca-runtime.test.ts src/main/ipc/pty.test.ts",
         "pnpm exec vitest run --config config/vitest.config.ts src/main/ipc/repos-create.test.ts src/main/window/attach-main-window-services.test.ts src/main/ipc/worktrees.test.ts src/main/ipc/worktrees-windows.test.ts src/main/ipc/pty.test.ts src/main/runtime/orca-runtime.test.ts src/renderer/src/lib/launch-agent-background-session.test.ts src/renderer/src/store/slices/repos-host-identity-routing.test.ts",
         "pnpm exec vitest run --config config/vitest.config.ts src/shared/ssh-pty-id.test.ts src/shared/ssh-types.test.ts src/main/providers/local-pty-provider.test.ts src/main/providers/ssh-pty-provider.test.ts src/main/persistence.test.ts src/main/ssh/ssh-relay-session.test.ts src/main/ssh/ssh-relay-generation-reattach.test.ts src/main/ssh/ssh-target-id-migration.test.ts src/relay/pty-handler.test.ts src/relay/subprocess.test.ts src/renderer/src/components/terminal-pane/pty-transport.test.ts src/renderer/src/components/terminal-pane/pty-pre-handler-buffer.test.ts src/renderer/src/lib/pty-kill-retry-ownership.test.ts src/renderer/src/lib/runtime-terminal-close-retry-ownership.test.ts src/renderer/src/lib/ephemeral-vm-runtime-cleanup.test.ts src/renderer/src/lib/launch-agent-background-session.test.ts src/renderer/src/store/slices/repos.test.ts src/renderer/src/store/slices/repos-host-identity-routing.test.ts src/main/runtime/orca-runtime.test.ts src/main/ipc/pty.test.ts",
-        "pnpm exec vitest run --config config/vitest.config.ts src/main/ipc/repos-create.test.ts src/main/window/attach-main-window-services.test.ts src/main/ipc/worktrees.test.ts src/main/ipc/worktrees-windows.test.ts src/main/ipc/pty.test.ts src/main/runtime/orca-runtime.test.ts src/renderer/src/lib/launch-agent-background-session.test.ts src/renderer/src/lib/runtime-terminal-close-retry-ownership.test.ts src/renderer/src/store/slices/repos-host-identity-routing.test.ts"
+        "pnpm exec vitest run --config config/vitest.config.ts src/main/ipc/repos-create.test.ts src/main/window/attach-main-window-services.test.ts src/main/ipc/worktrees.test.ts src/main/ipc/worktrees-windows.test.ts src/main/ipc/pty.test.ts src/main/runtime/orca-runtime.test.ts src/renderer/src/lib/launch-agent-background-session.test.ts src/renderer/src/lib/runtime-terminal-close-retry-ownership.test.ts src/renderer/src/store/slices/repos-host-identity-routing.test.ts",
+        "pnpm exec vitest run --config config/vitest.config.ts src/main/runtime/orca-runtime.test.ts src/main/ipc/worktrees.test.ts src/main/ipc/pty.test.ts src/renderer/src/store/slices/worktrees.test.ts"
       ],
       "testFiles": [
         "config/scripts/build-relay-windows-node-pty-patch.test.mjs",
@@ -3811,7 +3812,8 @@
         "src/main/window/attach-main-window-services.test.ts",
         "src/renderer/src/lib/launch-agent-background-session.test.ts",
         "src/renderer/src/lib/runtime-terminal-close-retry-ownership.test.ts",
-        "src/renderer/src/store/slices/repos-host-identity-routing.test.ts"
+        "src/renderer/src/store/slices/repos-host-identity-routing.test.ts",
+        "src/renderer/src/store/slices/worktrees.test.ts"
       ],
       "assertionRefs": [
         {
@@ -3883,6 +3885,7 @@
             "project removal drains create-first headless, renderer-backed mobile, renderer split, and selector-less renderer admissions before its liveness snapshot",
             "project removal drains create-first worktree creation before its ownership snapshot and rejects removal-first worktree creation",
             "host-scoped project removal drains create-first work and rejects removal-first creation before mutating one duplicate-host row",
+            "duplicate repo and worktree ids isolate admissions and PTY liveness by execution host while whole-project removal still drains every host scope",
             "worktree removal rejects a late renderer terminal admission while destructive preflight is still pending",
             "already-missing exceptional removal verifies terminal stop before metadata purge",
             "failed and concurrent admissions release without deadlocking project removal",
@@ -3950,6 +3953,7 @@
           "assertions": [
             "renderer pane identity reaches SSH provider shutdown",
             "renderer PTY spawn enters runtime terminal admission before provider work",
+            "renderer PTY spawn qualifies local and SSH admissions with the owning execution host",
             "disconnected SSH kill and stop retain the lease and reject without a synthetic exit"
           ]
         },
@@ -3964,6 +3968,7 @@
           "file": "src/main/ipc/worktrees.test.ts",
           "assertions": [
             "legacy desktop worktree create and remove enter runtime admission before filesystem or Git mutation",
+            "duplicate repo creation qualifies admission with the explicitly selected execution host",
             "local worktree removal verifies terminal stop before destructive removal",
             "already-missing desktop removal verifies terminal stop before metadata purge"
           ]
@@ -3984,6 +3989,12 @@
           "file": "src/renderer/src/lib/runtime-terminal-close-retry-ownership.test.ts",
           "assertions": [
             "a rejected remote-runtime terminal close retains environment and handle identity through repeated automatic backoff retry"
+          ]
+        },
+        {
+          "file": "src/renderer/src/store/slices/worktrees.test.ts",
+          "assertions": [
+            "renderer worktree creation sends the active duplicate repo owner host through desktop IPC"
           ]
         },
         {

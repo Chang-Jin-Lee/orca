@@ -2858,6 +2858,7 @@ describe('createWorktree base status merge', () => {
     expect(mockApi.worktrees.create).toHaveBeenCalledWith(
       expect.objectContaining({
         repoId: 'repo1',
+        hostId: 'local',
         name: 'feature',
         linkedIssue: 123,
         linkedPR: 456,
@@ -2875,6 +2876,50 @@ describe('createWorktree base status merge', () => {
       workspaceStatus: 'in-review',
       pendingFirstAgentMessageRename: true
     })
+  })
+
+  it('passes the active duplicate repo owner host through create IPC', async () => {
+    const store = createTestStore()
+    const active = makeWorktree({
+      id: 'repo1::/remote/active',
+      repoId: 'repo1',
+      path: '/remote/active',
+      hostId: 'ssh:target-1'
+    })
+    const created = makeWorktree({
+      id: 'repo1::/remote/feature',
+      repoId: 'repo1',
+      path: '/remote/feature',
+      hostId: 'ssh:target-1'
+    })
+    store.setState({
+      repos: [
+        {
+          id: 'repo1',
+          path: '/local/repo',
+          displayName: 'local',
+          badgeColor: '#000',
+          addedAt: 0
+        },
+        {
+          id: 'repo1',
+          path: '/remote/repo',
+          displayName: 'remote',
+          badgeColor: '#000',
+          addedAt: 1,
+          connectionId: 'target-1'
+        }
+      ],
+      worktreesByRepo: { repo1: [active] },
+      activeWorkspaceKey: worktreeWorkspaceKey(active.id)
+    } as Partial<AppState>)
+    mockApi.worktrees.create.mockResolvedValue({ worktree: created })
+
+    await store.getState().createWorktree('repo1', 'feature', 'origin/main')
+
+    expect(mockApi.worktrees.create).toHaveBeenCalledWith(
+      expect.objectContaining({ repoId: 'repo1', hostId: 'ssh:target-1' })
+    )
   })
 
   it('stamps the owning runtime host onto worktrees created on a remote runtime', async () => {
