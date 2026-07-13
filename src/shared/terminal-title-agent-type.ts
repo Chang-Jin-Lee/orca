@@ -4,6 +4,7 @@ import {
   HERMES_AGENT_NAME_RE,
   titleHasAgentName
 } from './agent-name-token-match'
+import { isCursorAgentTitle } from './agent-title-core'
 import {
   getPiCompatibleSyntheticAgentLabel,
   isLegacyPiCompatibleTitle
@@ -98,8 +99,10 @@ export function isClaudeAgent(title: string): boolean {
   }
   if (containsBrailleSpinner(title)) {
     // Why: named non-Claude agents can carry braille spinners too; Claude-only
-    // prompt-cache paths must not fire for those explicit agent titles.
-    return !lower.includes('cursor') && !lower.includes('openclaude')
+    // prompt-cache paths must not fire for those explicit agent titles. Gate Cursor
+    // by its identity titles (not the token) so a Claude title merely mentioning a
+    // text cursor still resolves as Claude; openclaude stays a token guard.
+    return !isCursorAgentTitle(title) && !lower.includes('openclaude')
   }
   // Why: permission/action-required Claude titles can omit the usual prefixes.
   // Token-match so cwd/worktree titles like "claude-scratch" do not become
@@ -179,14 +182,12 @@ export function getAgentLabel(title: string): string | null {
   if (titleHasAgentName(title, 'aider')) {
     return 'Aider'
   }
-  // Why: the cursor-agent native title is the literal string "Cursor Agent"
-  // (verified against the 2026.04.17 release) — Orca synthesizes the same
-  // label from hook events so the braille-spinner + agent-name path lights
-  // up working/permission/idle transitions in the renderer. Match before
-  // `isClaudeAgent` because Claude's generic braille heuristic would
-  // otherwise claim every "⠋ Cursor Agent" frame as Claude. Token-match so a
-  // cwd like "~/cursor-rules" can't masquerade as a Cursor agent.
-  if (titleHasAgentName(title, 'cursor')) {
+  // Why: `cursor` is ordinary editor vocabulary in another agent's task title, so a
+  // name token is not identity — token-matching it labels a Claude/Codex tab working
+  // on cursor code as Cursor. Match Cursor's closed native/synthesized title set
+  // instead (mirrors @cursor orchestration routing), before `isClaudeAgent` so a real
+  // "⠋ Cursor Agent" frame isn't claimed by Claude's generic braille heuristic.
+  if (isCursorAgentTitle(title)) {
     return 'Cursor'
   }
   // Why: synthesized "⠋ Droid" working title needs to be matched before Claude's braille heuristic.
