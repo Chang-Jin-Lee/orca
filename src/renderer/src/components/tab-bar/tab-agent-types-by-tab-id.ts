@@ -64,8 +64,10 @@ export function selectTabAgentTypesByTabId(
 }
 
 export function selectNativeChatTabWideFallbackUnsafeTabsById(
-  terminalLayoutsByTabId: Record<string, TerminalLayoutSnapshot>
+  terminalLayoutsByTabId: Record<string, TerminalLayoutSnapshot> = {}
 ): Record<string, true> {
+  // Why: legacy and hydrating store shapes may not expose layout state yet;
+  // absence carries no unsafe split evidence and must not crash tab rendering.
   const unsafeTabs: Record<string, true> = {}
   for (const [tabId, layout] of Object.entries(terminalLayoutsByTabId)) {
     if (!isNativeChatTabWideFallbackSafe(layout)) {

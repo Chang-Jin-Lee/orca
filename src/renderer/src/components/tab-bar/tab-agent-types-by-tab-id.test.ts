@@ -146,6 +146,10 @@ describe('selectTabAgentTypesByTabId', () => {
     ).toEqual({ 'tab-1': 'claude' })
   })
 
+  it('treats a missing layout map as no unsafe split evidence during hydration', () => {
+    expect(selectNativeChatTabWideFallbackUnsafeTabsById()).toEqual({})
+  })
+
   it('resolves the active leaf through nested splits and ignores expanded siblings', () => {
     const layout: TerminalLayoutSnapshot = {
       root: {
