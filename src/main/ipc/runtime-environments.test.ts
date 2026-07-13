@@ -605,6 +605,39 @@ describe('registerRuntimeEnvironmentHandlers', () => {
     vi.useRealTimers()
   })
 
+  it('drops persisted close intent for a removed environment without an unhandled rejection', async () => {
+    vi.useFakeTimers()
+    const removePendingRuntimeTerminalClose = vi.fn()
+    const unhandledRejection = vi.fn()
+    Object.assign(store, {
+      getPendingRuntimeTerminalCloses: () => [
+        {
+          environmentId: 'removed-environment',
+          handle: 't1',
+          runtimeId: 'runtime-old',
+          requestedAt: 1
+        }
+      ],
+      upsertPendingRuntimeTerminalClose: vi.fn(),
+      removePendingRuntimeTerminalClose
+    })
+    process.on('unhandledRejection', unhandledRejection)
+
+    try {
+      registerRuntimeEnvironmentHandlers(store as never)
+      await vi.advanceTimersByTimeAsync(0)
+      await Promise.resolve()
+
+      expect(sendRemoteRuntimeRequestMock).not.toHaveBeenCalled()
+      expect(removePendingRuntimeTerminalClose).toHaveBeenCalledWith('removed-environment', 't1')
+      expect(unhandledRejection).not.toHaveBeenCalled()
+      expect(vi.getTimerCount()).toBe(0)
+    } finally {
+      process.off('unhandledRejection', unhandledRejection)
+      vi.useRealTimers()
+    }
+  })
+
   it('does not apply persisted close intent to a replacement runtime generation', async () => {
     vi.useFakeTimers()
     const environment = environmentStore.addEnvironmentFromPairingCode(userDataPath, {

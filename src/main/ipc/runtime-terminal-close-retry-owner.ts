@@ -1,4 +1,5 @@
 import type { RuntimeRpcResponse } from '../../shared/runtime-rpc-envelope'
+import { RuntimeEnvironmentStoreError } from '../../shared/runtime-environment-store'
 import type { Store } from '../persistence'
 import {
   callRuntimeEnvironment,
@@ -46,7 +47,8 @@ function schedule(): void {
       const now = Date.now()
       for (const close of retainedCloses.values()) {
         if (!close.inFlight && close.nextRetryAt <= now) {
-          void attempt(close)
+          // Why: timer-owned retries have no caller to observe transport rejection.
+          void attempt(close).catch(() => {})
         }
       }
     },
@@ -59,10 +61,13 @@ function attempt(close: RetainedTerminalClose): Promise<RuntimeRpcResponse<unkno
     return close.inFlight
   }
   const closeKey = key(close.environmentId, close.handle)
-  const noOpResponse = (runtimeId?: string | null) => ({
+  const noOpResponse = (
+    runtimeId?: string | null,
+    reason: 'retry_owner_replaced' | 'environment_removed' = 'retry_owner_replaced'
+  ) => ({
     id: 'terminal.close',
     ok: true as const,
-    result: { close: false, reason: 'retry_owner_replaced' },
+    result: { close: false, reason },
     _meta: { runtimeId: runtimeId ?? close.runtimeId ?? 'unknown-runtime' }
   })
   const request = getRuntimeEnvironmentStatus(userDataPath, close.environmentId)
@@ -125,6 +130,12 @@ function attempt(close: RetainedTerminalClose): Promise<RuntimeRpcResponse<unkno
     .catch((error: unknown) => {
       if (close.generation !== ownerGeneration) {
         return noOpResponse()
+      }
+      if (error instanceof RuntimeEnvironmentStoreError && error.code === 'invalid_argument') {
+        // Why: persisted ownership for a removed environment can never become reachable again.
+        retainedCloses.delete(closeKey)
+        store?.removePendingRuntimeTerminalClose?.(close.environmentId, close.handle)
+        return noOpResponse(undefined, 'environment_removed')
       }
       close.attempts += 1
       close.nextRetryAt =
