@@ -91,6 +91,7 @@ describe('runRemoteOrcaCli', () => {
         liveLeafCount: 1
       }),
       getOrchestrationDb: () => db,
+      getTerminalPaneKey: () => null,
       deliverPendingMessagesForHandle: vi.fn(),
       notifyMessageArrived: vi.fn(),
       linearIssueContext: vi.fn(async (request: unknown) => ({
@@ -145,6 +146,28 @@ describe('runRemoteOrcaCli', () => {
     const payload = JSON.parse(result.stdout) as { ok: boolean }
     expect(payload.ok).toBe(true)
     expect(db.getUnreadMessages('term_windows')[0]?.from_handle).toBe('term_ssh')
+  })
+
+  it('forwards remote pane identity through the legacy orchestration fallback', async () => {
+    const { runtime, db } = createRuntime()
+
+    const result = await runRemoteOrcaCli(
+      runtime,
+      {
+        argv: ['orchestration', 'send', '--to', 'term_windows', '--subject', 'ping', '--json'],
+        cwd: '/home/alice/repo',
+        env: {
+          ORCA_TERMINAL_HANDLE: 'term_ssh',
+          ORCA_PANE_KEY: 'tab_ssh:leaf_ssh'
+        }
+      },
+      LEGACY_FALLBACK_OPTIONS
+    )
+
+    expect(result.exitCode).toBe(0)
+    expect(db.insertMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ senderPaneKey: 'tab_ssh:leaf_ssh' })
+    )
   })
 
   it('accepts equals-style orchestration flags in the remote shim', async () => {

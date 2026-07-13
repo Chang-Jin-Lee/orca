@@ -183,7 +183,10 @@ async function dispatchRemoteCli(
         type: optionalString(parsed.flags, 'type'),
         priority: optionalString(parsed.flags, 'priority'),
         threadId: optionalString(parsed.flags, 'thread-id'),
-        payload: optionalString(parsed.flags, 'payload')
+        payload: optionalString(parsed.flags, 'payload'),
+        // Why: the legacy in-process bridge must preserve the same pane
+        // authority as the full host CLI passthrough.
+        senderPaneKey: env.ORCA_PANE_KEY || undefined
       })
     case 'orchestration check':
       return await call(dispatcher, 'orchestration.check', {

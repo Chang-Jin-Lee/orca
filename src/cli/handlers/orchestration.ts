@@ -347,6 +347,16 @@ export const ORCHESTRATION_HANDLERS: Record<string, CommandHandler> = {
     const type = getOptionalStringFlag(flags, 'type')
     rejectLifecycleGroupRecipient(type, to)
 
+    if (
+      (type === 'worker_done' || type === 'heartbeat') &&
+      !getOptionalStringFlag(flags, 'from') &&
+      !process.env.ORCA_TERMINAL_HANDLE
+    ) {
+      // Why: focus is not lifecycle authority; injected dispatches carry an
+      // explicit worker handle so an identity-less subprocess must fail closed.
+      throwNoActiveSenderTerminal()
+    }
+
     // Why: lifecycle senders keep ORCA_TERMINAL_HANDLE verbatim — no liveness
     // probe (terminal.show throws runtime_unavailable in the exact mid-restart
     // window worker_done must survive) and no pane remint (pre-payload-

@@ -105,6 +105,83 @@ describe('orchestration RPC methods', () => {
       expect(db.getMessageById(result.message.id)?.sender_pane_key).toBe('tab_a:leaf_a')
     })
 
+    it('recovers missing sender pane identity from the resolved handle', async () => {
+      setup()
+      vi.spyOn(runtime, 'getTerminalPaneKey').mockReturnValue('tab_worker:leaf_worker')
+      vi.spyOn(runtime, 'deliverPendingMessagesForHandle').mockImplementation(() => {})
+
+      const result = (await call('orchestration.send', {
+        from: 'term_worker',
+        to: 'term_coord',
+        subject: 'hello'
+      })) as { message: { id: string } }
+
+      expect(runtime.getTerminalPaneKey).toHaveBeenCalledWith('term_worker')
+      expect(db.getMessageById(result.message.id)?.sender_pane_key).toBe('tab_worker:leaf_worker')
+    })
+
+    it('completes an identity-less injected send through its explicit worker handle', async () => {
+      setup()
+      const task = db.createTask({ spec: 'work' })
+      const dispatch = db.createDispatchContext(task.id, 'term_worker', 'tab_worker:leaf_worker')
+      vi.spyOn(runtime, 'getTerminalPaneKey').mockImplementation((handle) =>
+        handle === 'term_worker' ? 'tab_worker:leaf_worker' : null
+      )
+      vi.spyOn(runtime, 'deliverPendingMessagesForHandle').mockImplementation(() => {})
+
+      await call('orchestration.send', {
+        from: 'term_worker',
+        to: 'term_coord',
+        subject: 'Done',
+        type: 'worker_done',
+        payload: JSON.stringify({ taskId: task.id, dispatchId: dispatch.id })
+      })
+
+      expect(db.getTask(task.id)?.status).toBe('completed')
+      expect(db.getDispatchContextById(dispatch.id)?.status).toBe('completed')
+    })
+
+    it('rejects an identity-less lifecycle send resolved through the coordinator handle', async () => {
+      setup()
+      const task = db.createTask({ spec: 'work' })
+      const dependent = db.createTask({ spec: 'dependent', deps: [task.id] })
+      const dispatch = db.createDispatchContext(task.id, 'term_worker', 'tab_worker:leaf_worker')
+      vi.spyOn(runtime, 'getTerminalPaneKey').mockImplementation((handle) =>
+        handle === 'term_coord' ? 'tab_coord:leaf_coord' : null
+      )
+      vi.spyOn(runtime, 'deliverPendingMessagesForHandle').mockImplementation(() => {})
+
+      await call('orchestration.send', {
+        from: 'term_coord',
+        to: 'term_coord',
+        subject: 'Done',
+        type: 'worker_done',
+        payload: JSON.stringify({ taskId: task.id, dispatchId: dispatch.id })
+      })
+
+      expect(db.getTask(task.id)?.status).toBe('dispatched')
+      expect(db.getTask(dependent.id)?.status).toBe('pending')
+    })
+
+    it('does not replace a foreign sender pane with its claimed assignee handle pane', async () => {
+      setup()
+      const task = db.createTask({ spec: 'work' })
+      const dispatch = db.createDispatchContext(task.id, 'term_worker', 'tab_worker:leaf_worker')
+      vi.spyOn(runtime, 'getTerminalPaneKey').mockReturnValue('tab_worker:leaf_worker')
+      vi.spyOn(runtime, 'deliverPendingMessagesForHandle').mockImplementation(() => {})
+
+      await call('orchestration.send', {
+        from: 'term_worker',
+        to: 'term_coord',
+        subject: 'Done',
+        type: 'worker_done',
+        senderPaneKey: 'tab_foreign:leaf_foreign',
+        payload: JSON.stringify({ taskId: task.id, dispatchId: dispatch.id })
+      })
+
+      expect(db.getTask(task.id)?.status).toBe('dispatched')
+    })
+
     it('does not wake waiters for a heartbeat suppressed at send time', async () => {
       setup()
       const task = db.createTask({ spec: 'work' })
@@ -512,9 +589,9 @@ describe('orchestration RPC methods', () => {
   })
 
   describe('orchestration.check', () => {
-    function createDispatchedTask(assigneeHandle = 'term_worker') {
+    function createDispatchedTask(assigneeHandle = 'term_worker', assigneePaneKey?: string) {
       const task = db.createTask({ spec: 'manual check work' })
-      const dispatch = db.createDispatchContext(task.id, assigneeHandle)
+      const dispatch = db.createDispatchContext(task.id, assigneeHandle, assigneePaneKey)
       return { task, dispatch }
     }
 
@@ -524,6 +601,7 @@ describe('orchestration RPC methods', () => {
       taskId?: string
       dispatchId?: string
       filesModified?: string[]
+      senderPaneKey?: string
     }): void {
       const payload: Record<string, unknown> = {}
       if (params.taskId !== undefined) {
@@ -541,7 +619,8 @@ describe('orchestration RPC methods', () => {
         to: params.to ?? 'term_coord',
         subject: 'Done',
         type: 'worker_done',
-        payload: JSON.stringify(payload)
+        payload: JSON.stringify(payload),
+        senderPaneKey: params.senderPaneKey
       })
     }
 
@@ -670,11 +749,13 @@ describe('orchestration RPC methods', () => {
 
     it('completes worker_done by payload IDs when the sender handle changed', async () => {
       setup()
-      const { task, dispatch } = createDispatchedTask('term_owner')
+      const leafId = '11111111-1111-4111-8111-111111111111'
+      const { task, dispatch } = createDispatchedTask('term_owner', `tab_before:${leafId}`)
       insertWorkerDone({
         from: 'term_reminted',
         taskId: task.id,
-        dispatchId: dispatch.id
+        dispatchId: dispatch.id,
+        senderPaneKey: `tab_after:${leafId}`
       })
 
       const result = (await call('orchestration.check', {

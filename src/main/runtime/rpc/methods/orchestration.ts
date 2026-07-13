@@ -209,6 +209,9 @@ export const ORCHESTRATION_METHODS: RpcMethod[] = [
     handler: async (params, { runtime }) => {
       const db = runtime.getOrchestrationDb()
       const from = params.from ?? 'unknown'
+      // Why: older live shells may lack ORCA_PANE_KEY, but the runtime still
+      // knows the pane behind their resolved handle; persist that authority.
+      const senderPaneKey = params.senderPaneKey ?? runtime.getTerminalPaneKey(from) ?? undefined
 
       if (!isGroupAddress(params.to)) {
         // Point-to-point — existing single-recipient behavior
@@ -221,7 +224,7 @@ export const ORCHESTRATION_METHODS: RpcMethod[] = [
           priority: params.priority as MessagePriority,
           threadId: params.threadId,
           payload: params.payload,
-          senderPaneKey: params.senderPaneKey
+          senderPaneKey
         })
         // Why: worker_done/heartbeat sent via `send` must release the dispatch
         // lock before waking recipients — a coordinator woken by delivery may
@@ -263,7 +266,7 @@ export const ORCHESTRATION_METHODS: RpcMethod[] = [
           priority: params.priority as MessagePriority,
           threadId,
           payload: params.payload,
-          senderPaneKey: params.senderPaneKey
+          senderPaneKey
         })
       )
       for (const message of messages) {
@@ -481,6 +484,7 @@ export const ORCHESTRATION_METHODS: RpcMethod[] = [
           dispatchId: 'ctx_dryrun',
           taskSpec: task.spec,
           coordinatorHandle: params.from ?? 'coordinator',
+          workerHandle: params.to ?? 'worker',
           devMode: params.devMode
         })
         return { dispatch: null, injected: false, dryRun: true, preamble }
@@ -525,6 +529,7 @@ export const ORCHESTRATION_METHODS: RpcMethod[] = [
         dispatchId: ctx.id,
         taskSpec: task.spec,
         coordinatorHandle: params.from ?? 'coordinator',
+        workerHandle: to,
         devMode: params.devMode
       })
 
@@ -576,6 +581,7 @@ export const ORCHESTRATION_METHODS: RpcMethod[] = [
           dispatchId: ctx?.id ?? 'ctx_preview',
           taskSpec: task.spec,
           coordinatorHandle: params.from ?? 'coordinator',
+          workerHandle: ctx?.assignee_handle ?? 'worker',
           devMode: params.devMode
         })
         return { dispatch: ctx ?? null, preamble }
