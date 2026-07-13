@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import type { PluginLockfile } from '../../shared/plugins/plugin-install-lockfile'
 import type { PluginService } from '../plugins/plugin-service'
 import type { Store } from '../persistence'
 
@@ -103,6 +104,28 @@ describe('plugin removal authority', () => {
     expect(canRemoveInstalledPlugin(service, 'orca-samples.installed')).toBe(true)
     expect(canRemoveInstalledPlugin(service, 'orca-samples.dev')).toBe(false)
     expect(canRemoveInstalledPlugin(service, 'orca-samples.unknown')).toBe(false)
+  })
+
+  it('refuses bundled installs because startup would restore them', () => {
+    const service = {
+      getDiscovered: () => [{ pluginKey: 'stablyai.orca-theme', isDev: false }]
+    } as unknown as PluginService
+    const lock = {
+      version: 1,
+      plugins: {
+        'stablyai.orca-theme': {
+          pluginKey: 'stablyai.orca-theme',
+          version: '1.0.0',
+          source: { kind: 'bundled', bundleId: 'stablyai.orca-theme' },
+          resolvedCommit: null,
+          contentHash: 'a'.repeat(64),
+          consentFingerprint: 'reviewed',
+          installedAt: 1
+        }
+      }
+    } satisfies PluginLockfile
+
+    expect(canRemoveInstalledPlugin(service, 'stablyai.orca-theme', lock)).toBe(false)
   })
 })
 

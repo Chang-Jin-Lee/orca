@@ -31,12 +31,26 @@ describe('electron-builder config', () => {
         '!tests{,/**/*}',
         '!Casks{,/**/*}',
         '!{AGENTS.md,CLAUDE.md,DEVELOPING.md,bundle-size-progress.md}',
-        '!out/**/*.test.js'
+        '!out/**/*.test.js',
+        '!resources/plugins/launch/**'
       ])
     )
   })
 
   it('keeps runtime resources available through extraResources', () => {
+    const bundledPluginResources = expect.objectContaining({
+      from: 'resources/plugins/launch',
+      to: 'plugins/launch'
+    })
+    expect(electronBuilderConfig.mac.extraResources).toEqual(
+      expect.arrayContaining([bundledPluginResources])
+    )
+    expect(electronBuilderConfig.linux.extraResources).toEqual(
+      expect.arrayContaining([bundledPluginResources])
+    )
+    expect(electronBuilderConfig.win.extraResources).toEqual(
+      expect.arrayContaining([bundledPluginResources])
+    )
     expect(electronBuilderConfig.mac.extraResources).toEqual(
       expect.arrayContaining([
         expect.objectContaining({

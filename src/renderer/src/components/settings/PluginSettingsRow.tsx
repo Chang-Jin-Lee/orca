@@ -311,7 +311,7 @@ export function PluginSettingsRow({
                   {translate('auto.components.settings.PluginSettingsRow.rollback', 'Roll back')}
                 </DropdownMenuItem>
               ) : null}
-              {!plugin.isDev ? (
+              {!plugin.isDev && !plugin.bundled ? (
                 <DropdownMenuItem
                   variant="destructive"
                   onSelect={() => onRemoveRequest(plugin.pluginKey)}

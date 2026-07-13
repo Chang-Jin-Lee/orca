@@ -1,0 +1,86 @@
+{
+  "name": "Orca Official Plugins",
+  "owner": "stablyai",
+  "plugins": [
+    {
+      "id": "stablyai.orca-midnight-theme",
+      "source": {
+        "kind": "git",
+        "url": "https://github.com/stablyai/orca-midnight-theme.git",
+        "ref": "v1.0.0"
+      },
+      "description": "A quiet dark theme tuned for long coding sessions.",
+      "categories": ["themes", "official"]
+    },
+    {
+      "id": "stablyai.orca-workflow-skills",
+      "source": {
+        "kind": "git",
+        "url": "https://github.com/stablyai/orca-workflow-skills.git",
+        "ref": "v1.0.0"
+      },
+      "description": "Practical skills for planning, reviewing, and handing off repository work.",
+      "categories": ["skills", "official"]
+    },
+    {
+      "id": "stablyai.orca-nord-theme",
+      "source": {
+        "kind": "git",
+        "url": "https://github.com/stablyai/orca-nord-theme.git",
+        "ref": "v1.0.0"
+      },
+      "description": "A cool, low-contrast application theme inspired by arctic colors.",
+      "categories": ["themes", "official"]
+    },
+    {
+      "id": "stablyai.orca-portuguese",
+      "source": {
+        "kind": "git",
+        "url": "https://github.com/stablyai/orca-portuguese.git",
+        "ref": "v1.0.0"
+      },
+      "description": "Brazilian Portuguese translations for common Orca navigation.",
+      "categories": ["languages", "official"]
+    },
+    {
+      "id": "stablyai.orca-minimal-icons",
+      "source": {
+        "kind": "git",
+        "url": "https://github.com/stablyai/orca-minimal-icons.git",
+        "ref": "v1.0.0"
+      },
+      "description": "A compact monochrome icon theme for common source files.",
+      "categories": ["icons", "official"]
+    },
+    {
+      "id": "stablyai.orca-solarized-terminal",
+      "source": {
+        "kind": "git",
+        "url": "https://github.com/stablyai/orca-solarized-terminal.git",
+        "ref": "v1.0.0"
+      },
+      "description": "Solarized Dark terminal colors packaged for Orca.",
+      "categories": ["terminal-themes", "official"]
+    },
+    {
+      "id": "stablyai.orca-multipass-recipes",
+      "source": {
+        "kind": "git",
+        "url": "https://github.com/stablyai/orca-multipass-recipes.git",
+        "ref": "v1.0.0"
+      },
+      "description": "A reviewed starter lifecycle for disposable Multipass workspaces.",
+      "categories": ["vm-recipes", "official"]
+    },
+    {
+      "id": "stablyai.orca-navigation-shortcuts",
+      "source": {
+        "kind": "git",
+        "url": "https://github.com/stablyai/orca-navigation-shortcuts.git",
+        "ref": "v1.0.0"
+      },
+      "description": "Command aliases and optional shortcuts for frequent Orca views.",
+      "categories": ["keybindings", "official"]
+    }
+  ]
+}

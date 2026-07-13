@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "plugins": [
+    {
+      "pluginKey": "stablyai.orca-midnight-theme",
+      "path": "stablyai.orca-midnight-theme",
+      "contentHash": "9a2c495cc0cf132941e43386988175ebd36b59cb04a87472c57a2a9cdcdb7027"
+    },
+    {
+      "pluginKey": "stablyai.orca-workflow-skills",
+      "path": "stablyai.orca-workflow-skills",
+      "contentHash": "85cf67eb0b5d5828b7b60022e5551d24d0b7d88156ce03cfe55e6a6390600091"
+    }
+  ]
+}

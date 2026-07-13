@@ -164,6 +164,8 @@ import { PluginKillListService } from './plugins/plugin-kill-list-service'
 import { getPluginsDataDir } from './plugins/plugin-discovery'
 import { PluginMarketplaceService } from './plugins/plugin-marketplace-service'
 import { PluginMarketplaceInstaller } from './plugins/plugin-marketplace-installer'
+import { PluginBundledBootstrapCoordinator } from './plugins/plugin-bundled-bootstrap-coordinator'
+import { resolveBundledPluginRoot } from './plugins/plugin-bundled-bootstrap'
 import { resolvePluginHostEntryPath } from './plugins/plugin-host-process'
 import { applyPluginConsent, applyPluginEnablement } from './plugins/plugin-enablement'
 import { setPluginServiceForRpc } from './runtime/rpc/methods/plugins'
@@ -1967,12 +1969,39 @@ app.whenReady().then(async () => {
     getPluginKillListEntry: (pluginKey) => pluginKillListService?.find(pluginKey) ?? null,
     hostEntryPath: resolvePluginHostEntryPath(app.getAppPath(), app.isPackaged)
   })
+  const bundledPluginBootstrap = new PluginBundledBootstrapCoordinator({
+    root: resolveBundledPluginRoot({
+      isPackaged: app.isPackaged,
+      resourcesPath: process.resourcesPath,
+      appPath: app.getAppPath()
+    }),
+    userDataPath: app.getPath('userData'),
+    hostVersion: app.getVersion(),
+    isEnabled: () => store?.getSettings().pluginSystemEnabled === true,
+    blockedPluginReason: (pluginKey) => pluginKillListService?.reason(pluginKey) ?? null,
+    refreshPlugins: () => pluginService?.refresh() ?? Promise.resolve()
+  })
+  const requestBundledPluginBootstrap = (): void => {
+    void bundledPluginBootstrap
+      .request()
+      .then((result) => {
+        for (const failure of result?.errors ?? []) {
+          console.warn(`[plugins] failed to publish bundled ${failure.pluginKey}:`, failure.error)
+        }
+      })
+      .catch((error) => {
+        console.warn('[plugins] failed to bootstrap bundled plugins:', error)
+      })
+  }
   pluginKillListService.onChanged(() => {
     void pluginService?.reconcileActivationState().catch((error) => {
       console.warn('[plugins] failed to apply plugin safety-list refresh:', error)
     })
   })
   store.onSettingsChanged((updates) => {
+    if (updates.pluginSystemEnabled === true) {
+      requestBundledPluginBootstrap()
+    }
     if (app.isPackaged && updates.pluginSystemEnabled === true) {
       void pluginKillListService?.refresh().catch((error) => {
         console.warn('[plugins] failed to refresh plugin safety list; using cached state:', error)
@@ -2019,6 +2048,7 @@ app.whenReady().then(async () => {
       }
     }
   })
+  requestBundledPluginBootstrap()
   // v0 plugin event seams: agent status (hook pipeline tap) + worktree
   // lifecycle (runtime tap). Server-side filtered per plugin subscription.
   agentHookServer.subscribeEnrichedStatus((enriched) => {

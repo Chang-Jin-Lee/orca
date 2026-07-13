@@ -25,13 +25,23 @@ const relayExtraResource = {
   from: 'out/relay',
   to: 'relay'
 }
+// Why: bundled plugins are immutable install inputs and must remain ordinary
+// directories so the startup bootstrap can verify and publish exact bytes.
+const bundledPluginResources = {
+  from: 'resources/plugins/launch',
+  to: 'plugins/launch'
+}
 // Why: the main bundle, packaged CLI, SSH paths, and speech worker all execute
 // from package directories where pnpm's symlink farm is absent. Copy the exact
 // runtime dependency closure to Resources/node_modules so bare require() calls
 // do not fall through to a developer checkout's node_modules.
 const packagedRuntimeNodeModuleResources = createPackagedRuntimeNodeModuleResources()
 
-const commonExtraResources = [relayExtraResource, ...packagedRuntimeNodeModuleResources]
+const commonExtraResources = [
+  relayExtraResource,
+  bundledPluginResources,
+  ...packagedRuntimeNodeModuleResources
+]
 const macSpeechNativeResource = {
   from: 'node_modules/sherpa-onnx-darwin-${arch}',
   to: 'node_modules/sherpa-onnx-darwin-${arch}'
@@ -72,7 +82,8 @@ module.exports = {
     '!tsconfig.json',
     // Why: feature-wall media is copied via extraResources so runtime can read
     // it from process.resourcesPath; exclude the source copy from app.asar.
-    '!resources/onboarding/feature-wall/**'
+    '!resources/onboarding/feature-wall/**',
+    '!resources/plugins/launch/**'
   ],
   // Why: the CLI entry-point lives in out/cli/ but imports shared modules
   // from out/shared/ and local hook mutators from out/main/. These paths must be

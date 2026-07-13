@@ -6,6 +6,19 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { PluginHostListEntry } from '../../../../preload/api-types'
 import { PluginSettingsRow } from './PluginSettingsRow'
 
+vi.mock('../ui/dropdown-menu', () => ({
+  DropdownMenu: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  DropdownMenuContent: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  DropdownMenuItem: ({
+    children,
+    onSelect
+  }: {
+    children: React.ReactNode
+    onSelect?: () => void
+  }) => <button onClick={onSelect}>{children}</button>,
+  DropdownMenuTrigger: ({ children }: { children: React.ReactNode }) => <>{children}</>
+}))
+
 const plugin: PluginHostListEntry = {
   pluginKey: 'stablyai.orca-skills',
   consentFingerprint: 'sha256-consent',
@@ -64,6 +77,7 @@ describe('PluginSettingsRow', () => {
     expect(container.textContent).toContain('Bundled')
     expect(container.textContent).toContain('A vulnerable release was revoked')
     expect(container.textContent).toContain('View advisory')
+    expect(container.textContent).not.toContain('Remove')
     expect(
       container.querySelector<HTMLButtonElement>('[aria-label="Enable Orca Skills"]')?.disabled
     ).toBe(true)

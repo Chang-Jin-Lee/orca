@@ -20,7 +20,10 @@ import { bindPluginPanelOwnerLifecycle } from '../plugins/plugin-panel-owner-lif
 import { isQualifiedPluginKey } from '../../shared/plugins/plugin-manifest'
 import { pluginConsentRequestSchema } from '../../shared/plugins/plugin-consent-request'
 import { normalizePluginIdList } from '../../shared/plugins/plugin-consent-state'
-import { isAllowedPluginGitUrl } from '../../shared/plugins/plugin-install-lockfile'
+import {
+  isAllowedPluginGitUrl,
+  type PluginLockfile
+} from '../../shared/plugins/plugin-install-lockfile'
 import type { PluginSkillStoreSnapshot } from '../../shared/plugins/plugin-skill-store'
 import { authorizePluginSkillMapping } from '../plugins/plugin-skill-mapping-authority'
 import {
@@ -84,10 +87,15 @@ async function pluginSkillStoreSnapshot(
   }
 }
 
-export function canRemoveInstalledPlugin(pluginService: PluginService, pluginKey: string): boolean {
-  return pluginService
-    .getDiscovered()
-    .some((plugin) => plugin.pluginKey === pluginKey && !plugin.isDev)
+export function canRemoveInstalledPlugin(
+  pluginService: PluginService,
+  pluginKey: string,
+  lock?: PluginLockfile
+): boolean {
+  return (
+    lock?.plugins[pluginKey]?.source.kind !== 'bundled' &&
+    pluginService.getDiscovered().some((plugin) => plugin.pluginKey === pluginKey && !plugin.isDev)
+  )
 }
 
 function rendererPanelOwner(webContentsId: number): string {
@@ -251,12 +259,14 @@ export function registerPluginHandlers(
   ipcMain.handle('plugins:remove', async (event, args: unknown) => {
     await pluginService.whenReady()
     const parsed = removeArgsSchema.parse(args)
-    if (!canRemoveInstalledPlugin(pluginService, parsed.pluginKey)) {
-      throw new Error(`cannot remove non-installed plugin ${parsed.pluginKey}`)
+    const pluginsDir = getUserPluginsDir(pluginService.options.userDataPath)
+    const lock = await readPluginLockfile(pluginsDir)
+    if (!canRemoveInstalledPlugin(pluginService, parsed.pluginKey, lock)) {
+      throw new Error(`cannot remove protected or non-installed plugin ${parsed.pluginKey}`)
     }
     await pluginService.deactivatePlugin(parsed.pluginKey)
     await removeInstalledPlugin({
-      pluginsDir: getUserPluginsDir(pluginService.options.userDataPath),
+      pluginsDir,
       pluginsDataDir: getPluginsDataDir(pluginService.options.userDataPath),
       pluginKey: parsed.pluginKey
     })

@@ -1,0 +1,15 @@
+{
+  "manifestVersion": 1,
+  "id": "orca-workflow-skills",
+  "publisher": "stablyai",
+  "name": "Orca Workflow Skills",
+  "version": "1.0.0",
+  "description": "Practical skills for planning, reviewing, and handing off repository work.",
+  "repository": "https://github.com/stablyai/orca-workflow-skills",
+  "engines": { "orca": ">=1.4.0" },
+  "pluginApi": 1,
+  "contributes": {
+    "skills": [{ "path": "skills", "providers": ["codex", "claude", "agent-skills"] }]
+  },
+  "capabilities": []
+}
