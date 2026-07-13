@@ -26,6 +26,7 @@ import {
   type MobileSocketTransportMetadata
 } from './rpc/mobile-socket-wiring'
 import type { PairingRelay } from '../../shared/mobile-relay-pairing-offer'
+import type { MobilePairingConnectionMode } from '../../shared/mobile-pairing-connection-mode'
 import {
   RelayRevokeOutbox,
   type RelayDeviceBinding,
@@ -515,7 +516,10 @@ export class OrcaRuntimeRpcServer {
 
   setMobileRelayBinding(deviceId: string, binding: RelayDeviceBinding): boolean {
     const current = this.deviceRegistry?.getDevice(deviceId)
-    if (current?.scope !== 'mobile') {
+    if (
+      current?.scope !== 'mobile' ||
+      this.deviceRegistry?.getMobilePairingConnectionMode(deviceId) === 'local-only'
+    ) {
       return false
     }
     if (
@@ -613,19 +617,33 @@ export class OrcaRuntimeRpcServer {
 
   async createMobilePairingOffer(args: {
     address?: string | null
+    connectionMode?: MobilePairingConnectionMode
     name?: string
     rotate?: boolean
   }): Promise<ReturnType<OrcaRuntimeRpcServer['createPairingOffer']>> {
-    if (args.rotate) {
-      const pending = this.deviceRegistry?.getPendingDevice('mobile')
+    // Why: the renderer is outside the trust boundary; only the explicit
+    // local-only value may suppress Relay provisioning.
+    const connectionMode = args.connectionMode === 'local-only' ? 'local-only' : 'automatic'
+    const pending = this.deviceRegistry?.getPendingDevice('mobile')
+    const switchingPendingToLocal =
+      connectionMode === 'local-only' && pending?.relayBinding !== undefined
+    if (args.rotate || switchingPendingToLocal) {
       if (pending?.relayBinding) {
         // Why: the durable cloud revoke is recorded before rotating the local
         // token, so a previously displayed relay invite cannot outlive the QR.
         this.queueRelayDeviceRevoke(pending.relayBinding)
       }
     }
-    const direct = this.createPairingOffer({ ...args, scope: 'mobile' })
-    if (!direct.available || !this.mobileRelayPairingProvider) {
+    const direct = this.createPairingOffer({
+      ...args,
+      rotate: args.rotate || switchingPendingToLocal,
+      scope: 'mobile'
+    })
+    if (!direct.available) {
+      return direct
+    }
+    this.deviceRegistry?.setMobilePairingConnectionMode(direct.deviceId, connectionMode)
+    if (connectionMode === 'local-only' || !this.mobileRelayPairingProvider) {
       return direct
     }
     const device = this.deviceRegistry?.getDevice(direct.deviceId)

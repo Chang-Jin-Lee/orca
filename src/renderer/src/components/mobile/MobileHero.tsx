@@ -3,8 +3,10 @@ import { cn } from '../../lib/utils'
 import type { MobileNetworkInterface } from '../settings/mobile-network-interface-selection'
 import { AndroidLogo, IosBrandIcon } from './MobileBrandIcons'
 import { NetworkInterfacePicker } from './NetworkInterfacePicker'
+import { MobilePairingConnectionOptions } from '../settings/MobilePairingConnectionOptions'
 import { getChannelTagline, type InstallCopy, type IosChannel } from './mobile-platform-copy'
 import { WindowsFirewallNotice } from './WindowsFirewallNotice'
+import type { MobilePairingConnectionMode } from '../../../../shared/mobile-pairing-connection-mode'
 export { HeroIntro } from './MobileHeroIntro'
 export { HeroPaired, type PairedDevice } from './MobileHeroPairedDevices'
 import { translate } from '@/i18n/i18n'
@@ -37,6 +39,8 @@ type HeroFlowProps = {
   pairQrDataUrl: string | null
   pairingUrl: string | null
   pairLoading: boolean
+  connectionMode: MobilePairingConnectionMode
+  onConnectionModeChange: (mode: MobilePairingConnectionMode) => void
   onRegeneratePairing: () => void
   onCopyPairingCode: () => void
   networkInterfaces: readonly MobileNetworkInterface[]
@@ -62,6 +66,8 @@ export function HeroFlow({
   pairQrDataUrl,
   pairingUrl,
   pairLoading,
+  connectionMode,
+  onConnectionModeChange,
   onRegeneratePairing,
   onCopyPairingCode,
   networkInterfaces,
@@ -194,37 +200,47 @@ export function HeroFlow({
                 {translate('auto.components.mobile.MobileHero.2f077ef4eb', ', and scan the code.')}
               </p>
 
-              <div className="mp-network-row">
-                <span className="mp-network-label">
-                  {translate('auto.components.mobile.MobileHero.dfd2aa9d5d', 'Network')}
-                </span>
-                <NetworkInterfacePicker
-                  networkInterfaces={networkInterfaces}
-                  selectedAddress={selectedAddress}
-                  onSelectedAddressChange={onSelectedAddressChange}
-                  // Why: keep the picker reachable when interface discovery is
-                  // empty — "Add custom address…" is the only path to enter a
-                  // manual Tailscale hostname / static IP.
-                  disabled={false}
-                  className="mp-network-select"
-                />
-                <button
-                  type="button"
-                  className={cn('mp-network-refresh', refreshingNetworkInterfaces && 'is-spinning')}
-                  onClick={onRefreshNetworkInterfaces}
-                  disabled={refreshingNetworkInterfaces}
-                  aria-label={translate(
-                    'auto.components.mobile.MobileHero.85067b9e06',
-                    'Refresh network interfaces'
-                  )}
-                  title={translate(
-                    'auto.components.mobile.MobileHero.85067b9e06',
-                    'Refresh network interfaces'
-                  )}
-                >
-                  <RefreshCw className="size-3.5" />
-                </button>
-              </div>
+              <MobilePairingConnectionOptions
+                value={connectionMode}
+                onChange={onConnectionModeChange}
+                compact
+              />
+
+              {connectionMode === 'local-only' ? (
+                <div className="mp-network-row">
+                  <span className="mp-network-label">
+                    {translate('auto.components.mobile.MobileHero.dfd2aa9d5d', 'Network')}
+                  </span>
+                  <NetworkInterfacePicker
+                    networkInterfaces={networkInterfaces}
+                    selectedAddress={selectedAddress}
+                    onSelectedAddressChange={onSelectedAddressChange}
+                    // Why: when discovery is empty, a custom address is the
+                    // only route to a Tailscale hostname or static IP.
+                    disabled={false}
+                    className="mp-network-select"
+                  />
+                  <button
+                    type="button"
+                    className={cn(
+                      'mp-network-refresh',
+                      refreshingNetworkInterfaces && 'is-spinning'
+                    )}
+                    onClick={onRefreshNetworkInterfaces}
+                    disabled={refreshingNetworkInterfaces}
+                    aria-label={translate(
+                      'auto.components.mobile.MobileHero.85067b9e06',
+                      'Refresh network interfaces'
+                    )}
+                    title={translate(
+                      'auto.components.mobile.MobileHero.85067b9e06',
+                      'Refresh network interfaces'
+                    )}
+                  >
+                    <RefreshCw className="size-3.5" />
+                  </button>
+                </div>
+              ) : null}
 
               <div className="mp-inline-actions">
                 <span className="mp-action-divider">

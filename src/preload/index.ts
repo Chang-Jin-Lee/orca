@@ -13,6 +13,7 @@ import type { ProjectExecutionRuntimeResolution } from '../shared/project-execut
 import type { StartupCommandDelivery } from '../shared/codex-startup-delivery'
 import type { SleepingAgentLaunchConfig } from '../shared/agent-session-resume'
 import type { MobileRelayStatus } from '../shared/mobile-relay-status'
+import type { MobilePairingConnectionMode } from '../shared/mobile-pairing-connection-mode'
 import type {
   BaseRefSearchResult,
   BaseRefDefaultResult,
@@ -4250,6 +4251,7 @@ const api = {
 
     getPairingQR: (args?: {
       address?: string
+      connectionMode?: MobilePairingConnectionMode
       rotate?: boolean
     }): Promise<
       | { available: false }

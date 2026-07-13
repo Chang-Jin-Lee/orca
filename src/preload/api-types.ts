@@ -18,6 +18,7 @@ import type {
 import type { ReadClipboardTextOptions } from '../shared/clipboard-text'
 import type { AppIdentity } from '../shared/app-identity'
 import type { MobileRelayStatus } from '../shared/mobile-relay-status'
+import type { MobilePairingConnectionMode } from '../shared/mobile-pairing-connection-mode'
 import type {
   CreateLocalOrcaProfileArgs,
   CreateLocalOrcaProfileResult,
@@ -3126,7 +3127,11 @@ export type PreloadApi = {
     listNetworkInterfaces: () => Promise<{
       interfaces: { name: string; address: string }[]
     }>
-    getPairingQR: (args?: { address?: string; rotate?: boolean }) => Promise<
+    getPairingQR: (args?: {
+      address?: string
+      connectionMode?: MobilePairingConnectionMode
+      rotate?: boolean
+    }) => Promise<
       | { available: false }
       | {
           available: true

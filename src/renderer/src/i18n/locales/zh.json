@@ -9046,6 +9046,34 @@
           "signIn": "Sign in",
           "unavailable": "Unavailable",
           "standby": "Standby — no relay devices"
+        },
+        "MobilePairingConnectionOptions": {
+          "ready": "已就绪",
+          "connecting": "正在连接",
+          "available": "可用",
+          "reconnecting": "正在重新连接",
+          "unavailable": "不可用",
+          "title": "新手机应如何连接？",
+          "anywhere": "随时随地连接",
+          "recommended": "推荐",
+          "automaticDescription": "Orca 会优先使用直接连接，否则使用 Orca Relay。",
+          "signInDescription": "请在此桌面端登录以使用 Orca Relay。",
+          "signIn": "登录",
+          "localOnly": "仅限本地网络",
+          "localDescription": "使用局域网或 Tailscale，不通过 Orca Relay 连接这部手机。"
+        },
+        "MobilePairingSetupSection": {
+          "title": "配对手机",
+          "automaticDescription": "配对码包含直接访问方式和加密的 Orca Relay 备用连接。",
+          "localDescription": "配对码仅通过下方的本地网络地址连接。",
+          "regenerate": "重新生成",
+          "generate": "生成二维码",
+          "localSettings": "本地连接设置",
+          "localAddressDescription": "选择 Orca Mobile 可用于直接访问此电脑的局域网或专用网络地址。",
+          "refresh": "刷新网络接口",
+          "tailnet": "使用自己的 tailnet 连接",
+          "tailnetDescription": "在此电脑和手机上安装 Tailscale，登录同一个 tailnet，然后在上方选择其 100.x.y.z 地址。",
+          "getTailscale": "获取 Tailscale"
         }
       },
       "right": {

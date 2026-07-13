@@ -9,6 +9,7 @@ import { hardenExistingSecureFile, writeSecureJsonFile } from '../../shared/secu
 import type { DeviceScope } from '../../shared/runtime-types'
 import { DEVICE_REGISTRY_FILENAME } from './mobile-pairing-files'
 import type { RelayDeviceBinding } from './relay/relay-revoke-outbox'
+import type { MobilePairingConnectionMode } from '../../shared/mobile-pairing-connection-mode'
 
 export type { DeviceScope }
 
@@ -20,6 +21,7 @@ export type DeviceEntry = {
   pairedAt: number
   lastSeenAt: number
   relayBinding?: RelayDeviceBinding
+  mobilePairingConnectionMode?: MobilePairingConnectionMode
 }
 
 function validRelayBinding(value: unknown, deviceId: string): RelayDeviceBinding | undefined {
@@ -117,6 +119,26 @@ export class DeviceRegistry {
     return true
   }
 
+  setMobilePairingConnectionMode(deviceId: string, mode: MobilePairingConnectionMode): boolean {
+    const device = this.devices.find((candidate) => candidate.deviceId === deviceId)
+    if (!device || device.scope !== 'mobile') {
+      return false
+    }
+    device.mobilePairingConnectionMode = mode
+    this.save()
+    return true
+  }
+
+  getMobilePairingConnectionMode(deviceId: string): MobilePairingConnectionMode | null {
+    const device = this.devices.find((candidate) => candidate.deviceId === deviceId)
+    if (!device || device.scope !== 'mobile') {
+      return null
+    }
+    // Why: pairings created before this preference existed used automatic
+    // direct-first Relay fallback, so missing state must preserve that behavior.
+    return device.mobilePairingConnectionMode === 'local-only' ? 'local-only' : 'automatic'
+  }
+
   listDevices(): readonly DeviceEntry[] {
     return this.devices
   }
@@ -146,7 +168,9 @@ export class DeviceRegistry {
         // Why: older registries only existed for phone pairing. Treat missing
         // scope as mobile so legacy device tokens do not gain new CLI powers.
         scope: device.scope === 'runtime' ? 'runtime' : 'mobile',
-        relayBinding: validRelayBinding(device.relayBinding, device.deviceId)
+        relayBinding: validRelayBinding(device.relayBinding, device.deviceId),
+        mobilePairingConnectionMode:
+          device.mobilePairingConnectionMode === 'local-only' ? 'local-only' : 'automatic'
       }))
     } catch {
       this.devices = []

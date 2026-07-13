@@ -2,6 +2,7 @@ import { app, ipcMain, shell, type IpcMainInvokeEvent } from 'electron'
 import { networkInterfaces } from 'node:os'
 import QRCode from 'qrcode'
 import type { RuntimeAccessGrant } from '../../shared/runtime-access-grants'
+import type { MobilePairingConnectionMode } from '../../shared/mobile-pairing-connection-mode'
 import { isTailnetIPv4Address } from '../../shared/tailnet-address'
 import type { DeviceEntry } from '../runtime/device-registry'
 import type { OrcaRuntimeRpcServer } from '../runtime/runtime-rpc'
@@ -80,7 +81,14 @@ export function registerMobileHandlers(
 
   ipcMain.handle(
     'mobile:getPairingQR',
-    async (_event, args?: { address?: string; rotate?: boolean }) => {
+    async (
+      _event,
+      args?: {
+        address?: string
+        connectionMode?: MobilePairingConnectionMode
+        rotate?: boolean
+      }
+    ) => {
       // Why: allow the caller to specify which network interface address to
       // embed in the QR code. This supports overlay networks (Tailscale,
       // ZeroTier) where the default LAN IP isn't reachable from the phone.
@@ -98,6 +106,7 @@ export function registerMobileHandlers(
       // one so the new QR carries a different credential.
       const offer = await rpcServer.createMobilePairingOffer({
         address: ip,
+        connectionMode: args?.connectionMode,
         rotate: args?.rotate,
         name: `Mobile ${new Date().toLocaleDateString()}`
       })

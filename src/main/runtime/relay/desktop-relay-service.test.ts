@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { MobilePairingConnectionContext } from '../runtime-rpc'
-import { pairingAuthorizationForContext } from './desktop-relay-service'
+import { DesktopRelayService, pairingAuthorizationForContext } from './desktop-relay-service'
 
 const relayHostId = 'AbCdEf0123_-xyZ9'
 
@@ -58,5 +58,29 @@ describe('pairingAuthorizationForContext', () => {
         relayHostId
       )
     ).toThrow('stale_relay_connection')
+  })
+})
+
+describe('local-only mobile pairing', () => {
+  it('refuses endpoint discovery and provisioning without opening Relay demand', async () => {
+    const registry = {
+      getDevice: () => ({ deviceId: 'device-1', scope: 'mobile' }),
+      getMobilePairingConnectionMode: () => 'local-only'
+    }
+    const service = Object.create(DesktopRelayService.prototype) as DesktopRelayService
+    Object.defineProperty(service, 'runtimeRpc', {
+      value: { getDeviceRegistry: () => registry }
+    })
+
+    await expect(service.getEndpoints(context({ transport: 'direct' }), {})).resolves.toEqual({
+      v: 1,
+      relay: null
+    })
+    await expect(
+      service.provisionRelay(context({ transport: 'direct' }), {
+        reqId: 'install-1',
+        newResumeTokenHash: 'A'.repeat(43)
+      })
+    ).rejects.toThrow('relay_disabled_for_device')
   })
 })

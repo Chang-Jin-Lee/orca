@@ -9046,6 +9046,34 @@
           "signIn": "Sign in",
           "unavailable": "Unavailable",
           "standby": "Standby — no relay devices"
+        },
+        "MobilePairingConnectionOptions": {
+          "ready": "Listo",
+          "connecting": "Conectando",
+          "available": "Disponible",
+          "reconnecting": "Reconectando",
+          "unavailable": "No disponible",
+          "title": "¿Cómo debe conectarse el teléfono nuevo?",
+          "anywhere": "Conectarse desde cualquier lugar",
+          "recommended": "Recomendado",
+          "automaticDescription": "Orca usa una conexión directa cuando está disponible y Relay en caso contrario.",
+          "signInDescription": "Inicia sesión en este ordenador para usar Orca Relay.",
+          "signIn": "Iniciar sesión",
+          "localOnly": "Solo red local",
+          "localDescription": "Usa LAN o Tailscale sin conectar este teléfono mediante Orca Relay."
+        },
+        "MobilePairingSetupSection": {
+          "title": "Vincular un teléfono",
+          "automaticDescription": "El código de vinculación incluye acceso directo y Orca Relay cifrado como respaldo.",
+          "localDescription": "El código de vinculación solo se conecta mediante la dirección de red local indicada abajo.",
+          "regenerate": "Regenerar",
+          "generate": "Generar código QR",
+          "localSettings": "Configuración de conexión local",
+          "localAddressDescription": "Elige la dirección LAN o de red privada que Orca Mobile puede usar para acceder directamente a este ordenador.",
+          "refresh": "Actualizar interfaces de red",
+          "tailnet": "Conectarse con tu propia tailnet",
+          "tailnetDescription": "Instala Tailscale en este ordenador y en tu teléfono, inicia sesión en la misma tailnet y selecciona arriba su dirección 100.x.y.z.",
+          "getTailscale": "Obtener Tailscale"
         }
       },
       "right": {

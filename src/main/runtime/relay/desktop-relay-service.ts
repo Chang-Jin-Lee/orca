@@ -135,6 +135,12 @@ export class DesktopRelayService {
     params: PairingGetEndpointsParams
   ): Promise<PairingGetEndpointsResult> {
     this.requireMobileDevice(context.deviceId)
+    if (
+      this.runtimeRpc.getDeviceRegistry()?.getMobilePairingConnectionMode(context.deviceId) ===
+      'local-only'
+    ) {
+      return { v: 1, relay: null }
+    }
     return await this.withTransientDemand(`endpoints:${context.deviceId}`, async () => {
       const broker = await this.activeBrokerForDemand()
       if (!broker?.endpoint) {
@@ -169,6 +175,12 @@ export class DesktopRelayService {
     params: PairingProvisionRelayParams
   ): Promise<DeviceCredentialInstalled> {
     this.requireMobileDevice(context.deviceId)
+    if (
+      this.runtimeRpc.getDeviceRegistry()?.getMobilePairingConnectionMode(context.deviceId) ===
+      'local-only'
+    ) {
+      throw new Error('relay_disabled_for_device')
+    }
     return await this.withTransientDemand(`provision:${context.deviceId}`, async () => {
       const broker = await this.requireActiveBroker()
       if (!broker.endpoint) {

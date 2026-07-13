@@ -7,7 +7,7 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { MobileRelayStatus } from '../../../../shared/mobile-relay-status'
 import type { OrcaProfileAuthStatus } from '../../../../shared/orca-profiles'
-import { MobileRelayStatusSection } from './MobileRelayStatusSection'
+import { MobilePairingConnectionOptions } from './MobilePairingConnectionOptions'
 
 type MobileRelayStoreState = {
   orcaProfileAuthStatus: OrcaProfileAuthStatus | null
@@ -27,7 +27,7 @@ vi.mock('../../i18n/i18n', () => ({
   translate: (_key: string, fallback: string) => fallback
 }))
 
-describe('MobileRelayStatusSection', () => {
+describe('MobilePairingConnectionOptions', () => {
   let statusListener: ((status: MobileRelayStatus) => void) | null
   const connect = vi.fn().mockResolvedValue(null)
 
@@ -60,18 +60,17 @@ describe('MobileRelayStatusSection', () => {
 
   afterEach(() => cleanup())
 
-  it('keeps direct pairing available while offering desktop sign-in', async () => {
+  it('offers local-only pairing while Relay requires sign-in', async () => {
     const user = userEvent.setup()
-    render(<MobileRelayStatusSection />)
+    render(<MobilePairingConnectionOptions value="local-only" onChange={vi.fn()} />)
 
-    expect(
-      screen.getByText('LAN and Tailscale pairing still work without an account.')
-    ).toBeVisible()
+    expect(screen.getByRole('radio', { name: /connect from anywhere/i })).toBeDisabled()
+    expect(screen.getByRole('radio', { name: /local network only/i })).toBeChecked()
     await user.click(screen.getByRole('button', { name: 'Sign in' }))
     expect(connect).toHaveBeenCalledOnce()
   })
 
-  it('shows live automatic relay status for a signed-in desktop', async () => {
+  it('selects either automatic fallback or local-only pairing when signed in', async () => {
     mocks.state = {
       orcaProfileAuthStatus: {
         activeProfileId: 'profile-1',
@@ -82,13 +81,14 @@ describe('MobileRelayStatusSection', () => {
       orcaProfileConnecting: false,
       connectCurrentOrcaProfile: connect
     }
-    render(<MobileRelayStatusSection />)
+    const onChange = vi.fn()
+    const user = userEvent.setup()
+    render(<MobilePairingConnectionOptions value="automatic" onChange={onChange} />)
 
-    await waitFor(() => expect(screen.getByText('Registered')).toBeVisible())
-    statusListener?.('offline')
-    await waitFor(() => expect(screen.getByText('Offline')).toBeVisible())
+    await waitFor(() => expect(screen.getByText('Ready')).toBeVisible())
+    await user.click(screen.getByRole('radio', { name: /local network only/i }))
+    expect(onChange).toHaveBeenCalledWith('local-only')
     statusListener?.('standby')
-    await waitFor(() => expect(screen.getByText('Standby — no relay devices')).toBeVisible())
-    expect(screen.queryByRole('button', { name: 'Sign in' })).not.toBeInTheDocument()
+    await waitFor(() => expect(screen.getByText('Available')).toBeVisible())
   })
 })

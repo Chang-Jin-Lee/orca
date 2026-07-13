@@ -9046,6 +9046,34 @@
           "signIn": "Sign in",
           "unavailable": "Unavailable",
           "standby": "Standby — no relay devices"
+        },
+        "MobilePairingConnectionOptions": {
+          "ready": "準備完了",
+          "connecting": "接続中",
+          "available": "利用可能",
+          "reconnecting": "再接続中",
+          "unavailable": "利用不可",
+          "title": "新しいスマートフォンをどのように接続しますか？",
+          "anywhere": "どこからでも接続",
+          "recommended": "推奨",
+          "automaticDescription": "利用可能な場合は直接接続し、それ以外ではOrca Relayを使用します。",
+          "signInDescription": "Orca Relayを使用するには、このデスクトップでサインインしてください。",
+          "signIn": "サインイン",
+          "localOnly": "ローカルネットワークのみ",
+          "localDescription": "このスマートフォンをOrca Relayに接続せず、LANまたはTailscaleを使用します。"
+        },
+        "MobilePairingSetupSection": {
+          "title": "スマートフォンをペアリング",
+          "automaticDescription": "ペアリングコードには、直接接続と暗号化されたOrca Relayのフォールバックが含まれます。",
+          "localDescription": "ペアリングコードは、下のローカルネットワークアドレスだけを使用します。",
+          "regenerate": "再生成",
+          "generate": "QRコードを生成",
+          "localSettings": "ローカル接続設定",
+          "localAddressDescription": "Orca Mobileからこのコンピューターへ直接接続できるLANまたはプライベートネットワークのアドレスを選択します。",
+          "refresh": "ネットワークインターフェースを更新",
+          "tailnet": "自分のtailnetで接続",
+          "tailnetDescription": "このコンピューターとスマートフォンにTailscaleをインストールし、同じtailnetにサインインして、上で100.x.y.zアドレスを選択します。",
+          "getTailscale": "Tailscaleを入手"
         }
       },
       "right": {

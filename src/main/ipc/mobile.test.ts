@@ -83,9 +83,29 @@ describe('registerMobileHandlers', () => {
 
     expect(createMobilePairingOffer).toHaveBeenCalledWith({
       address: '100.102.47.57',
+      connectionMode: undefined,
       rotate: undefined,
       name: expect.stringMatching(/^Mobile /)
     })
+  })
+
+  it('forwards an explicit local-only pairing choice', async () => {
+    networkInterfacesMock.mockReturnValue({
+      en0: [{ family: 'IPv4', internal: false, address: '192.168.1.24' }]
+    })
+    const createMobilePairingOffer = vi.fn().mockResolvedValue({
+      available: true,
+      pairingUrl: 'orca://pair#local',
+      endpoint: 'ws://192.168.1.24:6768',
+      deviceId: 'mobile-local'
+    })
+
+    registerMobileHandlers({ createMobilePairingOffer } as never)
+    await handlers.get('mobile:getPairingQR')?.(null, { connectionMode: 'local-only' })
+
+    expect(createMobilePairingOffer).toHaveBeenCalledWith(
+      expect.objectContaining({ connectionMode: 'local-only' })
+    )
   })
 
   it('lists only paired mobile-scoped devices', () => {
