@@ -39,8 +39,7 @@ import { createSshBackgroundStartupDelivery } from '@/lib/ssh-background-startup
 import { shouldUseShellReadyStartupDelivery } from '../../../shared/codex-startup-delivery'
 import { isMainTerminalSideEffectAuthorityForPty } from '@/components/terminal-pane/terminal-side-effect-facts-handler'
 import { resolveLocalWindowsAgentStartupShell } from '../../../shared/windows-terminal-shell'
-import { runBestEffortAgentBackgroundCleanups } from '@/lib/agent-background-session-cleanup'
-import { killPtyRetainingRetryOwnership } from '@/lib/pty-kill-retry-ownership'
+import * as backgroundCleanup from '@/lib/agent-background-session-cleanup'
 
 export async function launchAgentBackgroundSession(
   args: LaunchAgentBackgroundSessionArgs
@@ -312,11 +311,11 @@ export async function launchAgentBackgroundSession(
     // Why: terminal creation and stream subscription are separate remote calls.
     // A failure between them must not strand an invisible runtime terminal.
     exitHandled = true
-    runBestEffortAgentBackgroundCleanups(unsubscribeExit, unsubscribeData)
-    runBestEffortAgentBackgroundCleanups(() => eagerPtyBuffer?.dispose())
-    runBestEffortAgentBackgroundCleanups(() => sshStartupDelivery.clear())
-    runBestEffortAgentBackgroundCleanups(() => store.clearTabPtyId(tab.id, ptyId))
-    runBestEffortAgentBackgroundCleanups(() => store.clearAgentLaunchConfig(paneKey))
+    backgroundCleanup.runBestEffortAgentBackgroundCleanups(unsubscribeExit, unsubscribeData)
+    backgroundCleanup.runBestEffortAgentBackgroundCleanups(() => eagerPtyBuffer?.dispose())
+    backgroundCleanup.runBestEffortAgentBackgroundCleanups(() => sshStartupDelivery.clear())
+    backgroundCleanup.runBestEffortAgentBackgroundCleanups(() => store.clearTabPtyId(tab.id, ptyId))
+    backgroundCleanup.runBestEffortAgentBackgroundCleanups(() => store.clearAgentLaunchConfig(paneKey))
     if (ptyId) {
       try {
         if (runtimeTarget.kind === 'environment' && runtimeTerminalHandle) {
@@ -324,17 +323,13 @@ export async function launchAgentBackgroundSession(
             terminal: runtimeTerminalHandle
           })
         } else if (runtimeTarget.kind === 'local') {
-          await killPtyRetainingRetryOwnership(
-            ptyId,
-            '[pty] Failed to stop PTY after background launch failure',
-            { expectedTabId: tab.id }
-          )
+          await backgroundCleanup.killFailedAgentBackgroundPty(ptyId, tab.id)
         }
       } catch {
         // Best-effort close; retiring the invalid hidden tab must still proceed.
       }
     }
-    runBestEffortAgentBackgroundCleanups(() => store.closeTab(tab.id, { recordInteraction: false }))
+    backgroundCleanup.runBestEffortAgentBackgroundCleanups(() => store.closeTab(tab.id, { recordInteraction: false }))
     throw error
   }
 }
