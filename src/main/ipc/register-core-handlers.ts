@@ -78,6 +78,7 @@ import {
   scanRuntimeAiVaultSessions
 } from '../ai-vault/runtime-session-scanner'
 import type { PluginService } from '../plugins/plugin-service'
+import type { PluginMarketplaceHandlerServices } from './plugin-marketplaces'
 
 let registered = false
 
@@ -103,7 +104,8 @@ export function registerCoreHandlers(
   crashReports?: CrashReportStore,
   keybindings?: KeybindingService,
   lifecycleOptions: CoreHandlerLifecycleOptions = {},
-  pluginService?: PluginService
+  pluginService?: PluginService,
+  marketplaceServices?: PluginMarketplaceHandlerServices
 ): void {
   // Why: on macOS the app can stay alive after all windows close, then
   // openMainWindow() is called again on 'activate'. ipcMain.handle() throws
@@ -164,7 +166,7 @@ export function registerCoreHandlers(
     })
   }
   if (pluginService) {
-    registerPluginHandlers(store, pluginService, runtime)
+    registerPluginHandlers(store, pluginService, runtime, marketplaceServices)
   }
   registerTelemetryHandlers(store)
   registerOrcaProfileHandlers(store, {

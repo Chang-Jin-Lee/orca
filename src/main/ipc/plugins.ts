@@ -23,6 +23,10 @@ import { normalizePluginIdList } from '../../shared/plugins/plugin-consent-state
 import { isAllowedPluginGitUrl } from '../../shared/plugins/plugin-install-lockfile'
 import type { PluginSkillStoreSnapshot } from '../../shared/plugins/plugin-skill-store'
 import { authorizePluginSkillMapping } from '../plugins/plugin-skill-mapping-authority'
+import {
+  registerPluginMarketplaceHandlers,
+  type PluginMarketplaceHandlerServices
+} from './plugin-marketplaces'
 
 export function parsePluginConsentArgs(args: unknown): z.infer<typeof pluginConsentRequestSchema> {
   return pluginConsentRequestSchema.parse(args)
@@ -93,7 +97,8 @@ function rendererPanelOwner(webContentsId: number): string {
 export function registerPluginHandlers(
   store: Store,
   pluginService: PluginService,
-  runtime: OrcaRuntimeService | null
+  runtime: OrcaRuntimeService | null,
+  marketplaceServices?: PluginMarketplaceHandlerServices
 ): void {
   // The runtime IS the delegate: the structural PluginRuntimeDelegate type
   // keeps the facade electron-free while main binds the real service.
@@ -281,4 +286,7 @@ export function registerPluginHandlers(
     await pluginService.refresh()
     return listPluginsForClients(pluginService)
   })
+  if (marketplaceServices) {
+    registerPluginMarketplaceHandlers(pluginService, marketplaceServices)
+  }
 }

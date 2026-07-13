@@ -162,6 +162,8 @@ import { registerSystemResumeBroadcast } from './system-resume-broadcast'
 import { PluginService } from './plugins/plugin-service'
 import { PluginKillListService } from './plugins/plugin-kill-list-service'
 import { getPluginsDataDir } from './plugins/plugin-discovery'
+import { PluginMarketplaceService } from './plugins/plugin-marketplace-service'
+import { PluginMarketplaceInstaller } from './plugins/plugin-marketplace-installer'
 import { resolvePluginHostEntryPath } from './plugins/plugin-host-process'
 import { applyPluginConsent, applyPluginEnablement } from './plugins/plugin-enablement'
 import { setPluginServiceForRpc } from './runtime/rpc/methods/plugins'
@@ -232,6 +234,8 @@ let watcherShutdownDone = false
 let automations: AutomationService | null = null
 let pluginService: PluginService | null = null
 let pluginKillListService: PluginKillListService | null = null
+let pluginMarketplaceService: PluginMarketplaceService | null = null
+let pluginMarketplaceInstaller: PluginMarketplaceInstaller | null = null
 let keybindings: KeybindingService | null = null
 
 function emitPluginWorktreeLifecycle(event: RuntimeWorktreeLifecycleEvent): void {
@@ -975,7 +979,10 @@ function openMainWindow(): BrowserWindow {
         await preserveAgentAuthBeforeRestart({ codexRuntimeHome, claudeRuntimeAuth, store })
       }
     },
-    pluginService ?? undefined
+    pluginService ?? undefined,
+    pluginMarketplaceService && pluginMarketplaceInstaller
+      ? { marketplace: pluginMarketplaceService, installer: pluginMarketplaceInstaller }
+      : undefined
   )
   automations.setWebContents(window.webContents)
   automations.start()
@@ -1937,6 +1944,16 @@ app.whenReady().then(async () => {
     pluginsDataDir: getPluginsDataDir(app.getPath('userData'))
   })
   await pluginKillListService.initialize()
+  pluginMarketplaceService = new PluginMarketplaceService({
+    pluginsDataDir: getPluginsDataDir(app.getPath('userData')),
+    getKillListEntry: (pluginKey) => pluginKillListService?.find(pluginKey) ?? null
+  })
+  pluginMarketplaceInstaller = new PluginMarketplaceInstaller({
+    marketplace: pluginMarketplaceService,
+    userDataPath: app.getPath('userData'),
+    hostVersion: app.getVersion(),
+    blockedPluginReason: (pluginKey) => pluginKillListService?.reason(pluginKey) ?? null
+  })
   pluginService = new PluginService({
     userDataPath: app.getPath('userData'),
     hostVersion: app.getVersion(),
@@ -2366,6 +2383,8 @@ app.on('will-quit', (e) => {
   // Electron exit first and orphan the hosts.
   setPluginServiceForRpc(null)
   pluginKillListService = null
+  pluginMarketplaceService = null
+  pluginMarketplaceInstaller = null
   const pluginHostShutdown = pluginService?.dispose() ?? Promise.resolve()
   pluginService = null
   setUnreadDockBadgeCount(0)

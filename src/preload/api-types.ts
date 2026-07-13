@@ -66,6 +66,8 @@ import type {
 } from '../shared/plugins/plugin-icon-theme-artifact'
 import type { PluginTerminalThemeRegistration } from '../shared/plugins/plugin-terminal-theme-artifact'
 import type { PluginChangeEvent } from '../shared/plugins/plugin-change-event'
+import type { PluginManifest } from '../shared/plugins/plugin-manifest'
+import type { PluginMarketplaceGitSource } from '../shared/plugins/plugin-marketplace'
 import type {
   LocalhostWorktreeLabelResult,
   LocalhostWorktreeLabelRoute
@@ -996,6 +998,50 @@ export type PluginHostInstallResult =
       resolvedCommit: string | null
     }
   | { ok: false; error: string }
+
+export type PluginMarketplaceHostSourceState = {
+  id: string
+  source: PluginMarketplaceGitSource
+  addedAt: number
+  marketplace: {
+    name: string
+    owner: string
+    resolvedCommit: string
+    fetchedAt: number
+  } | null
+  stale: boolean
+  error?: string
+}
+
+export type PluginMarketplaceHostListing = {
+  marketplaceSourceId: string
+  marketplaceName: string
+  marketplaceOwner: string
+  marketplaceCommit: string
+  pluginKey: string
+  source: PluginMarketplaceGitSource
+  description?: string
+  categories: string[]
+  official: boolean
+  bundled: boolean
+  blockedByKillList?: { reason: string; advisoryUrl?: string }
+}
+
+export type PluginMarketplaceHostInstallPreview = {
+  marketplaceSourceId: string
+  marketplaceName: string
+  marketplaceOwner: string
+  marketplaceCommit: string
+  pluginKey: string
+  source: PluginMarketplaceGitSource
+  resolvedCommit: string
+  contentHash: string
+  consentFingerprint: string
+  manifest: PluginManifest
+  official: boolean
+  bundled: boolean
+  blockedByKillList?: { reason: string; advisoryUrl?: string }
+}
 
 export type PreloadApi = {
   app: AppApi
@@ -3234,6 +3280,29 @@ export type PreloadApi = {
       params?: unknown
     }) => Promise<PluginPanelActionOutcome>
     install: (source: PluginHostInstallSource) => Promise<PluginHostInstallResult>
+    listMarketplaces: () => Promise<PluginMarketplaceHostSourceState[]>
+    addMarketplace: (
+      source: PluginMarketplaceGitSource
+    ) => Promise<PluginMarketplaceHostSourceState>
+    removeMarketplace: (args: { sourceId: string }) => Promise<PluginMarketplaceHostSourceState[]>
+    refreshMarketplaces: (args?: {
+      sourceId?: string
+    }) => Promise<PluginMarketplaceHostSourceState[]>
+    listMarketplacePlugins: () => Promise<PluginMarketplaceHostListing[]>
+    previewMarketplacePlugin: (args: {
+      marketplaceSourceId: string
+      pluginKey: string
+    }) => Promise<PluginMarketplaceHostInstallPreview>
+    installMarketplacePlugin: (
+      preview: Pick<
+        PluginMarketplaceHostInstallPreview,
+        'marketplaceSourceId' | 'marketplaceCommit' | 'pluginKey' | 'resolvedCommit'
+      >
+    ) => Promise<PluginHostInstallResult>
+    previewMarketplaceUpdate: (args: {
+      pluginKey: string
+    }) => Promise<PluginMarketplaceHostInstallPreview>
+    rollbackMarketplacePlugin: (args: { pluginKey: string }) => Promise<PluginHostInstallResult>
     remove: (args: { pluginKey: string }) => Promise<PluginHostListEntry[]>
     getLogs: (args: { pluginKey: string }) => Promise<PluginHostLogLine[]>
     /** Re-discovers after settings edits (feature flag, dev paths). */
