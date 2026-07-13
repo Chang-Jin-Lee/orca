@@ -89,6 +89,7 @@ import {
   shouldDeferParkedPtyExitTabClose,
   syncParkedTerminalTabWatchers
 } from './terminal-pane/terminal-parked-tab-watchers'
+import { isMainTerminalSideEffectAuthorityForPty } from './terminal-pane/terminal-side-effect-facts-handler'
 import { appendUniqueOpenFileIds } from './terminal/unsaved-close-queue'
 import { setWindowCloseRequestHandler } from './window-close-request-coordinator'
 import CodexRestartChip from './CodexRestartChip'
@@ -262,6 +263,12 @@ function Terminal(): React.JSX.Element | null {
   const tabsByWorktree = useAppStore((s) => s.tabsByWorktree)
   const pendingStartupByTabId = useAppStore((s) => s.pendingStartupByTabId)
   const terminalParkingEnabled = useAppStore((s) => s.settings?.terminalHiddenViewParking !== false)
+  const terminalTitleSnapshotAuthorityEnabled = useAppStore((s) =>
+    isMainTerminalSideEffectAuthorityForPty({
+      settings: s.settings,
+      runtimeEnvironmentId: null
+    })
+  )
   const activeTabId = useAppStore((s) => s.activeTabId)
   const activeTabIdByWorktree = useAppStore((s) => s.activeTabIdByWorktree)
   const createTab = useAppStore((s) => s.createTab)
@@ -966,6 +973,8 @@ function Terminal(): React.JSX.Element | null {
     // the renderer for the entire activation. Hidden tabs defer like
     // cold-parked tabs from birth and mount on first reveal.
     const worktreeTabs = tabsByWorktree[renderedActiveWorktreeId] ?? []
+    const coldActivationDeferralEnabled =
+      terminalParkingEnabled && terminalTitleSnapshotAuthorityEnabled
     const immediateTabIds = new Set<string>()
     if (activeTabId) {
       immediateTabIds.add(activeTabId)
@@ -1001,9 +1010,12 @@ function Terminal(): React.JSX.Element | null {
         immediateTabIds.add(portal.tabId)
       }
     }
-    // Why: a queued spawn needs a mounted pane to start its PTY.
+    // Why: a queued startup needs a mounted pane to run its command.
+    // pendingActivationSpawn is deliberately NOT immediate: session hydration
+    // blanket-marks every persisted tab with it, and a deferred tab's reveal
+    // consumes it exactly like an activation mount would — just later.
     for (const tab of worktreeTabs) {
-      if (tab.pendingActivationSpawn || pendingStartupByTabId[tab.id] !== undefined) {
+      if (pendingStartupByTabId[tab.id] !== undefined) {
         immediateTabIds.add(tab.id)
       }
     }
@@ -1021,13 +1033,19 @@ function Terminal(): React.JSX.Element | null {
         isTabDeferrable: (tabId) => {
           const tab = tabById.get(tabId)
           return (
-            terminalParkingEnabled &&
+            // Why: byte-mode watchers cannot reconstruct output emitted before
+            // registration; eager mount is the safe authority-kill-switch fallback.
+            coldActivationDeferralEnabled &&
             tab !== undefined &&
             canWatcherCoverParkedTerminalTab(renderedActiveWorktreeId, tab)
           )
         },
         immediateTabIds
       })
+    } else if (!coldActivationDeferralEnabled) {
+      // Why: flipping either kill switch while active must restore the eager
+      // mount behavior immediately, not strand an old activation restriction.
+      backgroundMountTabIdsByWorktreeRef.current.delete(renderedActiveWorktreeId)
     } else {
       revealActivationDeferredTabs({
         restrictions: backgroundMountTabIdsByWorktreeRef.current,
@@ -1079,6 +1097,7 @@ function Terminal(): React.JSX.Element | null {
       }
       const tabs = tabsByWorktree[workspace.id] ?? []
       const parkedTabIds = new Set<string>()
+      let deferredTabIds: ReadonlySet<string> | null = null
       if (!anyMountedWorktreeHasLayout && mountedWorktreeIdsRef.current.has(workspace.id)) {
         const isVisible = activeView === 'terminal' && workspace.id === renderedActiveWorktreeId
         const shouldMeasureHiddenWorktree =
@@ -1099,7 +1118,7 @@ function Terminal(): React.JSX.Element | null {
         // Why: mount-restricted (activation-deferred / targeted-background)
         // tabs are unmounted like parked ones; the same byte watchers own
         // their side effects until first reveal.
-        const deferredTabIds = collectDeferredMountTabIds(
+        deferredTabIds = collectDeferredMountTabIds(
           backgroundMountTabIdsByWorktreeRef.current.get(workspace.id) ?? null,
           tabs.map((tab) => tab.id)
         )
@@ -1117,7 +1136,14 @@ function Terminal(): React.JSX.Element | null {
           }
         }
       }
-      syncParkedTerminalTabWatchers({ worktreeId: workspace.id, tabs, parkedTabIds })
+      syncParkedTerminalTabWatchers({
+        worktreeId: workspace.id,
+        tabs,
+        parkedTabIds,
+        // Why: activation-deferred tabs never mounted a pane to restore their
+        // title, unlike ordinary parked tabs whose live pane populated it.
+        ...(deferredTabIds ? { restoreTitleOnStartTabIds: deferredTabIds } : {})
+      })
     }
   }, [
     // Why activeTabId: revealing a deferred tab mutates the mount restriction

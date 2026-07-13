@@ -249,9 +249,12 @@ export function useTerminalTabColdParking(args: {
     syncParkedTerminalTabWatchers({
       worktreeId,
       tabs: terminalTabs,
-      parkedTabIds: parkedTerminalTabIds
+      parkedTabIds: parkedTerminalTabIds,
+      // Why: mount-restricted tabs have no prior pane-owned title slot; pull
+      // main's title-only snapshot when their watcher starts.
+      restoreTitleOnStartTabIds: deferredMountTabIds
     })
-  }, [parkedTerminalTabIds, terminalTabs, worktreeId])
+  }, [deferredMountTabIds, parkedTerminalTabIds, terminalTabs, worktreeId])
 
   useEffect(() => () => disposeParkedTerminalWatchersForWorktree(worktreeId), [worktreeId])
 

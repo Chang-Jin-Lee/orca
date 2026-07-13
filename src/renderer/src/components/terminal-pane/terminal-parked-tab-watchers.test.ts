@@ -91,11 +91,15 @@ function syncParked(args?: {
   worktreeId?: string
   tabs?: { id: string; ptyId: string | null }[]
   parkedTabIds?: Iterable<string>
+  restoreTitleOnStartTabIds?: Iterable<string>
 }): void {
   syncParkedTerminalTabWatchers({
     worktreeId: args?.worktreeId ?? WORKTREE_ID,
     tabs: args?.tabs ?? [{ id: TAB_ID, ptyId: PTY_ID }],
-    parkedTabIds: new Set(args?.parkedTabIds ?? [TAB_ID])
+    parkedTabIds: new Set(args?.parkedTabIds ?? [TAB_ID]),
+    ...(args?.restoreTitleOnStartTabIds
+      ? { restoreTitleOnStartTabIds: new Set(args.restoreTitleOnStartTabIds) }
+      : {})
   })
 }
 
@@ -141,7 +145,15 @@ describe('terminal-parked-tab-watchers', () => {
       paneId: 2,
       drivesTabTitle: false
     })
+    expect(startedWatchers[0].options.restoreTitleOnRegister).toBeUndefined()
     expect(getParkedTerminalWatcherTabIds()).toEqual([TAB_ID])
+  })
+
+  it('requests a title snapshot when a mount-restricted tab starts its watcher', () => {
+    capturePanes([{ ptyId: PTY_ID, paneId: 1, leafId: LEAF_ID, drivesTabTitle: true }])
+    syncParked({ restoreTitleOnStartTabIds: [TAB_ID] })
+
+    expect(startedWatchers[0].options.restoreTitleOnRegister).toBe(true)
   })
 
   it('routes watcher sendInput to window.api.pty.write for the watched PTY', () => {

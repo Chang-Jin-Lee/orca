@@ -109,7 +109,11 @@ export function canWatcherCoverParkedTerminalTab(
   )
 }
 
-function startParkedTabWatchers(worktreeId: string, tab: ParkableTerminalTabModel): void {
+function startParkedTabWatchers(
+  worktreeId: string,
+  tab: ParkableTerminalTabModel,
+  restoreTitleOnRegister: boolean
+): void {
   const state = useAppStore.getState()
   const panes = resolveParkedTerminalPaneCandidates(tab, state)
   const disposersByPtyId = new Map<string, () => void>()
@@ -140,6 +144,7 @@ function startParkedTabWatchers(worktreeId: string, tab: ParkableTerminalTabMode
       // title so an agent already working at park time still notifies when
       // it finishes while parked.
       ...(initialTitle !== undefined ? { initialTitle } : {}),
+      ...(restoreTitleOnRegister ? { restoreTitleOnRegister: true } : {}),
       // Why: no pane transport exists while parked; write straight to the
       // PTY, the same channel background agent launches use.
       sendInput: (data) => window.api.pty.write(ptyId, data)
@@ -246,6 +251,8 @@ export function syncParkedTerminalTabWatchers(args: {
   worktreeId: string
   tabs: readonly ParkableTerminalTabModel[]
   parkedTabIds: ReadonlySet<string>
+  /** Parked-equivalent tabs whose pane has not restored the current title. */
+  restoreTitleOnStartTabIds?: ReadonlySet<string>
 }): void {
   const liveTabIds = new Set(args.tabs.map((tab) => tab.id))
   for (const [tabId, entry] of parkedWatchersByTabId) {
@@ -272,7 +279,11 @@ export function syncParkedTerminalTabWatchers(args: {
       disposeParkedTabWatchers(tab.id)
     }
     if (!parkedWatchersByTabId.has(tab.id)) {
-      startParkedTabWatchers(args.worktreeId, tab)
+      startParkedTabWatchers(
+        args.worktreeId,
+        tab,
+        args.restoreTitleOnStartTabIds?.has(tab.id) === true
+      )
     }
   }
 }
