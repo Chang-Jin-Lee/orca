@@ -33,9 +33,17 @@ export class PluginKillListService {
   }
 
   async initialize(): Promise<void> {
-    this.loadPromise ??= this.store.read().then((killList) => {
-      this.currentList = killList
-    })
+    this.loadPromise ??= this.store
+      .read()
+      .then((killList) => {
+        this.currentList = killList
+      })
+      .catch((error) => {
+        // Why: an unusable cache must not prevent Orca from starting; a valid
+        // network refresh can still restore runtime revocations this session.
+        console.warn('[plugins] ignoring invalid cached plugin safety list:', error)
+        this.currentList = null
+      })
     await this.loadPromise
   }
 

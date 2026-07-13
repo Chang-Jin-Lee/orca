@@ -1950,6 +1950,14 @@ app.whenReady().then(async () => {
     pluginsDataDir: getPluginsDataDir(app.getPath('userData')),
     getKillListEntry: (pluginKey) => pluginKillListService?.find(pluginKey) ?? null
   })
+  const requestOfficialMarketplaceSeed = (): void => {
+    if (store?.getSettings().pluginSystemEnabled !== true) {
+      return
+    }
+    void pluginMarketplaceService?.seedOfficialSource().catch((error) => {
+      console.warn('[plugins] failed to configure the official marketplace:', error)
+    })
+  }
   pluginMarketplaceInstaller = new PluginMarketplaceInstaller({
     marketplace: pluginMarketplaceService,
     userDataPath: app.getPath('userData'),
@@ -2001,6 +2009,7 @@ app.whenReady().then(async () => {
   store.onSettingsChanged((updates) => {
     if (updates.pluginSystemEnabled === true) {
       requestBundledPluginBootstrap()
+      requestOfficialMarketplaceSeed()
     }
     if (app.isPackaged && updates.pluginSystemEnabled === true) {
       void pluginKillListService?.refresh().catch((error) => {
@@ -2049,6 +2058,7 @@ app.whenReady().then(async () => {
     }
   })
   requestBundledPluginBootstrap()
+  requestOfficialMarketplaceSeed()
   // v0 plugin event seams: agent status (hook pipeline tap) + worktree
   // lifecycle (runtime tap). Server-side filtered per plugin subscription.
   agentHookServer.subscribeEnrichedStatus((enriched) => {

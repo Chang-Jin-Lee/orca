@@ -83,6 +83,25 @@ describe('bundled plugin bootstrap', () => {
     expect(lock.plugins['stablyai.orca-skills']?.contentHash).toBe(second.hash)
   })
 
+  it('repairs a missing or modified bundled current version', async () => {
+    const root = await tempRoot('orca-bundled-resources-')
+    const userDataPath = await tempRoot('orca-bundled-user-data-')
+    const bundle = await writeBundle(root)
+    await writeIndex(root, bundle.path, bundle.hash)
+    await bootstrapBundledPlugins({ root, userDataPath, hostVersion: '1.4.0' })
+    const versionDir = join(userDataPath, 'plugins', 'stablyai.orca-skills', bundle.hash)
+    await writeFile(join(versionDir, 'orca-plugin.json'), '{}')
+
+    await expect(
+      bootstrapBundledPlugins({ root, userDataPath, hostVersion: '1.4.0' })
+    ).resolves.toEqual({ installed: ['stablyai.orca-skills'], unchanged: [], errors: [] })
+
+    await rm(versionDir, { recursive: true, force: true })
+    await expect(
+      bootstrapBundledPlugins({ root, userDataPath, hostVersion: '1.4.0' })
+    ).resolves.toEqual({ installed: ['stablyai.orca-skills'], unchanged: [], errors: [] })
+  })
+
   it('refuses mismatched release hashes before publication', async () => {
     const root = await tempRoot('orca-bundled-resources-')
     const userDataPath = await tempRoot('orca-bundled-user-data-')

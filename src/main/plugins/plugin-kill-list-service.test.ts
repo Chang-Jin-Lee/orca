@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { PluginKillList } from '../../shared/plugins/plugin-kill-list'
 import { fetchPluginKillList, PluginKillListService } from './plugin-kill-list-service'
+import type { PluginKillListStore } from './plugin-kill-list-store'
 
 const roots: string[] = []
 
@@ -54,6 +55,28 @@ describe('PluginKillListService', () => {
 
     expect(service.find('community.unsafe')).toMatchObject({ reason: 'Malware advisory' })
     expect(changed).toHaveBeenCalledTimes(1)
+  })
+
+  it('starts with no revocations after a corrupt cache and accepts a valid refresh', async () => {
+    const store = {
+      read: vi.fn().mockRejectedValue(new Error('invalid JSON')),
+      write: vi.fn().mockResolvedValue(undefined)
+    } as unknown as PluginKillListStore
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    const service = new PluginKillListService({
+      pluginsDataDir: await tempRoot(),
+      store,
+      fetcher: async () => killList()
+    })
+
+    await expect(service.initialize()).resolves.toBeUndefined()
+    expect(service.snapshot()).toBeNull()
+    await expect(service.refresh()).resolves.toEqual(killList())
+    expect(service.reason('community.unsafe')).toBe('Malware advisory')
+    expect(warning).toHaveBeenCalledWith(
+      '[plugins] ignoring invalid cached plugin safety list:',
+      expect.any(Error)
+    )
   })
 
   it('rejects a replayed older snapshot without replacing cached revocations', async () => {

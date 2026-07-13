@@ -99,6 +99,7 @@ export async function installBundledPlugin(input: {
       source: { kind: 'bundled', bundleId: input.expectedPluginKey },
       resolvedCommit: null,
       expectedPluginKey: input.expectedPluginKey,
+      repairCorruptedVersion: true,
       blockedPluginReason: input.blockedPluginReason
     })
   )

@@ -7,6 +7,8 @@ import { isOfficialPluginIdentity } from '../../shared/plugins/plugin-marketplac
 import { getUserPluginsDir } from './plugin-discovery'
 import { installBundledPlugin, readPluginLockfile } from './plugin-install'
 import { inspectPluginInstallTree } from './plugin-install-staging'
+import { readPluginCurrentPointer } from './plugin-current-pointer'
+import { hashPluginTree } from './plugin-content-hash'
 
 export const BUNDLED_PLUGIN_INDEX_FILENAME = 'bundled-plugins.json'
 const BUNDLED_PLUGIN_INDEX_MAX_BYTES = 64 * 1024
@@ -83,6 +85,19 @@ async function resolveBundlePath(root: string, path: string): Promise<string> {
   return resolvedPath
 }
 
+async function bundledInstallIsIntact(
+  pluginsDir: string,
+  pluginKey: string,
+  contentHash: string
+): Promise<boolean> {
+  const pluginDir = join(pluginsDir, pluginKey)
+  if ((await readPluginCurrentPointer(pluginDir).catch(() => null)) !== contentHash) {
+    return false
+  }
+  const hashed = await hashPluginTree(join(pluginDir, contentHash))
+  return hashed.ok && hashed.hash === contentHash
+}
+
 export async function bootstrapBundledPlugins(options: {
   root: string
   userDataPath: string
@@ -98,7 +113,8 @@ export async function bootstrapBundledPlugins(options: {
     if (
       locked?.source.kind === 'bundled' &&
       locked.source.bundleId === entry.pluginKey &&
-      locked.contentHash === entry.contentHash
+      locked.contentHash === entry.contentHash &&
+      (await bundledInstallIsIntact(pluginsDir, entry.pluginKey, entry.contentHash))
     ) {
       result.unchanged.push(entry.pluginKey)
       continue

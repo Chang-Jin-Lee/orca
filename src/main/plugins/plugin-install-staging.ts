@@ -121,6 +121,8 @@ export async function installStagedPluginTree(input: {
   source: PluginInstallSource
   resolvedCommit: string | null
   expectedPluginKey?: string
+  /** Trusted bundled bytes may restore an immutable directory damaged on disk. */
+  repairCorruptedVersion?: boolean
   blockedPluginReason?: (pluginKey: string) => string | null
 }): Promise<PluginInstallResult> {
   const sourceInspection = await inspectPluginInstallTree({
@@ -143,6 +145,14 @@ export async function installStagedPluginTree(input: {
   const pluginKey = sourceInspection.pluginKey
   const pluginDir = join(input.pluginsDir, pluginKey)
   const versionDir = join(pluginDir, sourceInspection.contentHash)
+  if (existsSync(versionDir) && input.repairCorruptedVersion) {
+    const existingHash = await hashPluginTree(versionDir)
+    if (!existingHash.ok || existingHash.hash !== sourceInspection.contentHash) {
+      // Why: bundled resources are release-index verified above, so they can
+      // safely restore a damaged immutable install instead of staying broken.
+      await rm(versionDir, { recursive: true, force: true })
+    }
+  }
   if (!existsSync(versionDir)) {
     const stagedVersionDir = `${versionDir}.staging`
     try {

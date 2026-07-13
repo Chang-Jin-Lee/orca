@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises'
+import { cp, mkdtemp, readFile, readdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -7,7 +7,7 @@ import {
   isOfficialPluginIdentity,
   pluginMarketplaceSchema
 } from '../../shared/plugins/plugin-marketplace'
-import { bootstrapBundledPlugins } from './plugin-bundled-bootstrap'
+import { bootstrapBundledPlugins, resolveBundledPluginRoot } from './plugin-bundled-bootstrap'
 import { inspectPluginInstallTree } from './plugin-install-staging'
 
 const launchRoot = join(process.cwd(), 'resources', 'plugins', 'launch')
@@ -106,5 +106,29 @@ describe('Phase 1 launch plugin content', () => {
     expect(result.errors).toEqual([])
     expect(result.installed.length).toBeGreaterThanOrEqual(2)
     expect(result.installed.every(isOfficialPluginIdentity)).toBe(true)
+  })
+
+  it('boots release-indexed content from the packaged resources layout', async () => {
+    const resourcesPath = await mkdtemp(join(tmpdir(), 'orca-packaged-resources-'))
+    const userDataPath = await mkdtemp(join(tmpdir(), 'orca-packaged-user-data-'))
+    temporaryRoots.push(resourcesPath, userDataPath)
+    const packagedRoot = join(resourcesPath, 'plugins', 'launch')
+    await cp(launchRoot, packagedRoot, { recursive: true })
+
+    const result = await bootstrapBundledPlugins({
+      root: resolveBundledPluginRoot({
+        isPackaged: true,
+        resourcesPath,
+        appPath: join(resourcesPath, 'app.asar')
+      }),
+      userDataPath,
+      hostVersion: '1.4.0'
+    })
+
+    expect(result.errors).toEqual([])
+    expect(result.installed).toEqual([
+      'stablyai.orca-midnight-theme',
+      'stablyai.orca-workflow-skills'
+    ])
   })
 })
