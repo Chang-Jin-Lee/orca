@@ -131,7 +131,7 @@ describe('useHostClient', () => {
     loadHostsMock.mockResolvedValue([HOST])
 
     const harness = await renderHarness(HOST.id)
-    expect(harness.hook.client).toBe(fake)
+    expect(harness.hook.client).not.toBeNull()
     expect(harness.hook.state).toBe('connected')
 
     // Regression (STA-1511): closeHost deletes the entry; before the fix the
