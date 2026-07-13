@@ -1,6 +1,6 @@
 // Why: stdin ownership is a cross-agent process contract; one executable
 // matrix catches an unread early exit without duplicating template assertions.
-import { describe, expect, it, vi } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { spawn } from 'node:child_process'
 import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -45,6 +45,14 @@ import {
   wrapWindowsHookCommand
 } from './installer-utils'
 import { createAgentHookMemorySftp } from './agent-hook-memory-sftp.test-fixture'
+import {
+  assertForwardingRequest,
+  forwardingMetadataEnv,
+  runHookCapturingStdout,
+  startForwardingServer,
+  type ForwardingBodyFormat,
+  type ForwardingServer
+} from './hook-forwarding-loopback.test-fixture'
 
 const REMOTE_HOME = '/home/dev'
 const LARGE_PAYLOAD = Buffer.alloc(1_000_000, 'x')
@@ -112,6 +120,24 @@ const LOCAL_INSTALLERS = [
   { agent: 'gemini', install: () => new GeminiHookService().install() },
   { agent: 'grok', install: () => new GrokHookService().install() },
   { agent: 'kimi', install: () => new KimiHookService().install() }
+] as const
+
+// Why: the generated POSIX script filename can differ from its route (openclaude
+// reuses Claude's template and posts to /hook/claude), so pin the source route
+// and any protocol stdout each agent must still emit on the forwarding path.
+const POSIX_FORWARDING_EXPECTATIONS = [
+  { agent: 'antigravity', route: 'antigravity', protocolStdout: '{}\n' },
+  { agent: 'claude', route: 'claude', protocolStdout: '' },
+  { agent: 'openclaude', route: 'claude', protocolStdout: '' },
+  { agent: 'codex', route: 'codex', protocolStdout: '' },
+  { agent: 'command-code', route: 'command-code', protocolStdout: '' },
+  { agent: 'copilot', route: 'copilot', protocolStdout: '{}\n' },
+  { agent: 'cursor', route: 'cursor', protocolStdout: '' },
+  { agent: 'devin', route: 'devin', protocolStdout: '' },
+  { agent: 'droid', route: 'droid', protocolStdout: '' },
+  { agent: 'gemini', route: 'gemini', protocolStdout: '{}\n' },
+  { agent: 'grok', route: 'grok', protocolStdout: '' },
+  { agent: 'kimi', route: 'kimi', protocolStdout: '' }
 ] as const
 
 type HookRun = {
@@ -187,6 +213,32 @@ function withPlatform<T>(platform: NodeJS.Platform, run: () => T): T {
   }
 }
 
+// Why: cmd/PowerShell/Git-Bash scripts each need their native interpreter; the
+// live matrix drives both the no-op and forwarding paths through the same
+// resolved command so they exercise identical spawn shapes.
+function resolveWindowsHookCommand(
+  fileName: string,
+  scriptPath: string
+): { executable: string; args: string[] } {
+  if (fileName.endsWith('.cmd')) {
+    return { executable: 'cmd.exe', args: ['/d', '/c', scriptPath] }
+  }
+  if (fileName.endsWith('.ps1')) {
+    const powershell = join(
+      process.env.SystemRoot ?? 'C:\\Windows',
+      'System32',
+      'WindowsPowerShell',
+      'v1.0',
+      'powershell.exe'
+    )
+    return {
+      executable: powershell,
+      args: ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', scriptPath]
+    }
+  }
+  return { executable: process.env.KIMI_SHELL_PATH || 'bash.exe', args: [scriptPath] }
+}
+
 describe('Windows managed hook stdin structure', () => {
   it('routes every batch guard to a shared drain epilogue', () => {
     const home = mkdtempSync(join(tmpdir(), 'orca-hook-stdin-windows-'))
@@ -255,6 +307,7 @@ describe('Windows managed hook stdin structure', () => {
     async () => {
       const home = mkdtempSync(join(tmpdir(), 'orca-hook-stdin-windows-live-'))
       homedirMock.mockReturnValue(home)
+      let forwardingServer: ForwardingServer | undefined
       try {
         for (const entry of LOCAL_INSTALLERS) {
           expect(entry.install().state, `${entry.agent} install status`).toBe('installed')
@@ -268,27 +321,40 @@ describe('Windows managed hook stdin structure', () => {
             (name.endsWith('-hook.cmd') && !name.startsWith('antigravity-'))
         )
         expect(mainScripts).toHaveLength(12)
+        forwardingServer = await startForwardingServer()
         for (const fileName of mainScripts) {
           const scriptPath = join(hooksDir, fileName)
-          const executable = fileName.endsWith('.cmd')
-            ? 'cmd.exe'
-            : fileName.endsWith('.ps1')
-              ? join(
-                  process.env.SystemRoot ?? 'C:\\Windows',
-                  'System32',
-                  'WindowsPowerShell',
-                  'v1.0',
-                  'powershell.exe'
-                )
-              : process.env.KIMI_SHELL_PATH || 'bash.exe'
-          const args = fileName.endsWith('.cmd')
-            ? ['/d', '/c', scriptPath]
-            : fileName.endsWith('.ps1')
-              ? ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', scriptPath]
-              : [scriptPath]
-          const result = await runHookProcess(executable, args, hookEnvironment())
-          expect(result.exitCode, `${fileName} exit code`).toBe(0)
-          expect(result.stdinErrors, `${fileName} stdin errors`).toHaveLength(0)
+          const command = resolveWindowsHookCommand(fileName, scriptPath)
+
+          // No-op path: missing Orca env must still drain stdin and exit clean.
+          const noop = await runHookProcess(command.executable, command.args, hookEnvironment())
+          expect(noop.exitCode, `${fileName} no-op exit code`).toBe(0)
+          expect(noop.stdinErrors, `${fileName} no-op stdin errors`).toHaveLength(0)
+
+          // Forwarding path: derive the route/body format the installed script
+          // declares so the assertion follows curl (form) vs PowerShell (JSON)
+          // without hard-coding filename-to-route assumptions.
+          const script = readFileSync(scriptPath, 'utf8')
+          const route = script.match(/\/hook\/([a-z-]+)/)?.[1]
+          expect(route, `${fileName} declared route`).toBeDefined()
+          const bodyFormat: ForwardingBodyFormat = script.includes(
+            'application/x-www-form-urlencoded'
+          )
+            ? 'form'
+            : 'json'
+          forwardingServer.reset()
+          const forwarded = await runHookCapturingStdout(
+            command.executable,
+            command.args,
+            hookEnvironment(forwardingMetadataEnv(forwardingServer.port))
+          )
+          expect(forwarded.exitCode, `${fileName} forwarding exit code`).toBe(0)
+          expect(forwarded.stdinErrors, `${fileName} forwarding stdin errors`).toHaveLength(0)
+          assertForwardingRequest(forwardingServer.requests[0], {
+            route: route!,
+            bodyFormat,
+            label: fileName
+          })
         }
 
         const missingScript = 'C:\\missing\\orca-hook.cmd'
@@ -315,6 +381,7 @@ describe('Windows managed hook stdin structure', () => {
           expect(result.stdinErrors, `${launcher.name} stdin errors`).toHaveLength(0)
         }
       } finally {
+        await forwardingServer?.close()
         homedirMock.mockImplementation(() => process.env.HOME ?? tmpdir())
         rmSync(home, { recursive: true, force: true })
       }
@@ -362,5 +429,39 @@ describe.skipIf(process.platform === 'win32')('managed hook stdin lifecycle', ()
     const result = await runPosixHook(wrapPosixHookCommand('/missing/orca-hook.sh'))
     expect(result.exitCode).toBe(0)
     expect(result.stdinErrors).toHaveLength(0)
+  })
+})
+
+describe.skipIf(process.platform === 'win32')('managed hook forwarding path', () => {
+  let server: ForwardingServer
+
+  beforeAll(async () => {
+    server = await startForwardingServer()
+  })
+
+  afterAll(async () => {
+    await server.close()
+  })
+
+  it('forwards the realistic payload from every POSIX script without changing bytes', async () => {
+    const scripts = await generatePosixScripts()
+    for (const expectation of POSIX_FORWARDING_EXPECTATIONS) {
+      const script = scripts.get(expectation.agent)
+      expect(script, `${expectation.agent} generated script`).toBeDefined()
+      server.reset()
+      const result = await runHookCapturingStdout(
+        '/bin/sh',
+        ['-c', script!],
+        hookEnvironment(forwardingMetadataEnv(server.port))
+      )
+      expect(result.exitCode, `${expectation.agent} exit code`).toBe(0)
+      expect(result.stdinErrors, `${expectation.agent} stdin errors`).toHaveLength(0)
+      expect(result.stdout, `${expectation.agent} protocol stdout`).toBe(expectation.protocolStdout)
+      assertForwardingRequest(server.requests[0], {
+        route: expectation.route,
+        bodyFormat: 'form',
+        label: expectation.agent
+      })
+    }
   })
 })
