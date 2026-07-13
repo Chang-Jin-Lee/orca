@@ -176,8 +176,50 @@ describe('DaemonServer', () => {
 
       expect(result).toMatchObject({
         isNew: true,
-        pid: 55555
+        pid: 55555,
+        sessionGeneration: expect.any(String)
       })
+    })
+
+    it('carries one immutable session generation through create, list, size, and exit', async () => {
+      let subprocess: ReturnType<typeof createMockSubprocess>
+      server = new DaemonServer({
+        socketPath,
+        tokenPath,
+        spawnSubprocess: () => {
+          subprocess = createMockSubprocess()
+          return subprocess
+        }
+      })
+      await server.start()
+      const c = await connectClient()
+      const created = await c.request<{ sessionGeneration: string }>('createOrAttach', {
+        sessionId: 'generation-session',
+        cols: 80,
+        rows: 24
+      })
+      const listed = await c.request<{
+        sessions: { sessionGeneration: string }[]
+      }>('listSessions', undefined)
+      const sized = await c.request<{ sessionGeneration: string }>('getSize', {
+        sessionId: 'generation-session'
+      })
+      const exitEvent = new Promise<unknown>((resolve) => c.onEvent(resolve))
+
+      subprocess!._simulateExit(42)
+
+      expect(listed.sessions[0]?.sessionGeneration).toBe(created.sessionGeneration)
+      expect(sized.sessionGeneration).toBe(created.sessionGeneration)
+      await expect(exitEvent).resolves.toMatchObject({
+        event: 'exit',
+        payload: { code: 42, sessionGeneration: created.sessionGeneration }
+      })
+      const replacement = await c.request<{ sessionGeneration: string }>('createOrAttach', {
+        sessionId: 'generation-session',
+        cols: 80,
+        rows: 24
+      })
+      expect(replacement.sessionGeneration).not.toBe(created.sessionGeneration)
     })
 
     it('persists only an allowlisted launch identity across reattach', async () => {

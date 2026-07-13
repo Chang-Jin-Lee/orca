@@ -12,7 +12,7 @@ export type ExitEvent = {
   type: 'event'
   event: 'exit'
   sessionId: string
-  payload: { code: number }
+  payload: { code: number; sessionGeneration?: string }
 }
 
 export type TerminalErrorEvent = {

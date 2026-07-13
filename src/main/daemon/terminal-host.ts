@@ -84,6 +84,7 @@ export class TerminalHost {
         shellState: existing.shellState,
         ...(existing.launchAgent ? { launchAgent: existing.launchAgent } : {}),
         ...(existing.historySeeded !== undefined ? { historySeeded: existing.historySeeded } : {}),
+        sessionGeneration: existing.generation,
         attachToken: token
       }
     }
@@ -176,6 +177,7 @@ export class TerminalHost {
       shellState: session.shellState,
       ...(session.launchAgent ? { launchAgent: session.launchAgent } : {}),
       ...(session.historySeeded !== undefined ? { historySeeded: session.historySeeded } : {}),
+      sessionGeneration: session.generation,
       attachToken: token
     }
   }
@@ -312,6 +314,14 @@ export class TerminalHost {
     return session.getAppliedSize()
   }
 
+  getAppliedSizeWithGeneration(
+    sessionId: string
+  ): { size: { cols: number; rows: number }; sessionGeneration: string } | null {
+    const session = this.sessions.get(sessionId)
+    const size = session?.isAlive ? session.getAppliedSize() : null
+    return session && size ? { size, sessionGeneration: session.generation } : null
+  }
+
   // Why: same null-not-throw semantics as getSnapshot — incremental
   // checkpoints are best-effort against sessions that may have just exited.
   takePendingOutput(
@@ -339,6 +349,7 @@ export class TerminalHost {
       const size = session.getAppliedSize()
       result.push({
         sessionId: session.sessionId,
+        sessionGeneration: session.generation,
         ...(session.paneKey ? { paneKey: session.paneKey } : {}),
         ...(session.tabId ? { tabId: session.tabId } : {}),
         state: session.state,

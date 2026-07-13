@@ -774,6 +774,32 @@ describe('PtyHandler', () => {
     }
   })
 
+  it('reaps a stale spawn when fallback kill throws after OS exit proof', async () => {
+    const killSpy = vi
+      .fn()
+      .mockImplementationOnce(() => {})
+      .mockImplementationOnce(() => {
+        throw new Error('native handle already closed')
+      })
+    mockPtySpawn.mockReturnValue({
+      ...mockPtyInstance,
+      kill: killSpy,
+      onData: vi.fn(),
+      onExit: vi.fn()
+    })
+    const aliveSpy = vi.spyOn(ptyShellUtils, 'isProcessAlive').mockReturnValue(false)
+    try {
+      await dispatcher.callRequest('pty.spawn', {}, { isStale: () => true })
+      vi.advanceTimersByTime(5000)
+    } finally {
+      aliveSpy.mockRestore()
+    }
+
+    expect(killSpy).toHaveBeenCalledTimes(2)
+    expect(handler.activePtyCount).toBe(0)
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
   it('retains stale-spawn ownership beyond the eighth native failure', async () => {
     let onExitCb: ((event: { exitCode: number }) => void) | null = null
     const killSpy = vi.fn()
@@ -1377,6 +1403,31 @@ describe('PtyHandler', () => {
         Object.defineProperty(process, 'platform', platformDescriptor)
       }
     }
+  })
+
+  it('accepts OS exit proof when immediate native shutdown throws after process death', async () => {
+    const killSpy = vi.fn(() => {
+      throw new Error('native handle already closed')
+    })
+    mockPtySpawn.mockReturnValue({
+      ...mockPtyInstance,
+      kill: killSpy,
+      onData: vi.fn(),
+      onExit: vi.fn()
+    })
+    const aliveSpy = vi.spyOn(ptyShellUtils, 'isProcessAlive').mockReturnValue(false)
+    try {
+      await dispatcher.callRequest('pty.spawn', {})
+      await expect(
+        dispatcher.callRequest('pty.shutdown', { id: 'pty-1', immediate: true })
+      ).resolves.toBeUndefined()
+    } finally {
+      aliveSpy.mockRestore()
+    }
+
+    expect(killSpy).toHaveBeenCalledTimes(1)
+    expect(handler.activePtyCount).toBe(0)
+    expect(vi.getTimerCount()).toBe(0)
   })
 
   it('does not arm Windows graceful fallback until native shutdown succeeds', async () => {

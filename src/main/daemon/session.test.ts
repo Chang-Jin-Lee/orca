@@ -510,7 +510,7 @@ describe('Session', () => {
 
       expect(onData).not.toHaveBeenCalled()
       expect(onExit).toHaveBeenCalledTimes(1)
-      expect(onExit).toHaveBeenCalledWith(-1)
+      expect(onExit).toHaveBeenCalledWith(-1, expect.any(String))
       expect(session.exitCode).toBe(-1)
     })
   })

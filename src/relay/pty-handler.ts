@@ -534,6 +534,11 @@ export class PtyHandler {
           killPtyForShutdown(still, 'SIGKILL')
           state.forceKillAccepted = true
         } catch (error) {
+          // Why: native close can throw after the OS has already reaped the
+          // child. Accept that independent proof before retaining a retry.
+          if (this.reapManagedPtyIfProvablyExited(still)) {
+            return
+          }
           state.failedAttempts += 1
           if (state.failedAttempts <= 2 || state.failedAttempts === RETAINED_KILL_LOG_MILESTONE) {
             process.stderr.write(
@@ -936,13 +941,27 @@ export class PtyHandler {
     if (immediate) {
       this.releaseStartupCommand(managed)
       this.flushPtyOutput(id)
-      killPtyForShutdown(managed, 'SIGKILL')
+      try {
+        killPtyForShutdown(managed, 'SIGKILL')
+      } catch (error) {
+        if (this.reapManagedPtyIfProvablyExited(managed)) {
+          return
+        }
+        throw error
+      }
       // Why: kill returning is only acceptance. Preserve the PTY and listeners
       // unless synchronous onExit or an ESRCH readback proves physical exit.
       this.reapManagedPtyIfProvablyExited(managed)
     } else {
       this.releaseStartupCommand(managed)
-      killPtyForShutdown(managed, 'SIGTERM')
+      try {
+        killPtyForShutdown(managed, 'SIGTERM')
+      } catch (error) {
+        if (this.reapManagedPtyIfProvablyExited(managed)) {
+          return
+        }
+        throw error
+      }
 
       // Why: Some processes ignore SIGTERM (e.g. a hung child, a custom signal
       // handler). Without a SIGKILL fallback the PTY process would leak and the

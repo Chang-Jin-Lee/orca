@@ -580,6 +580,25 @@ describe('DaemonPtyAdapter (IPtyProvider)', () => {
       expect(exits).toEqual([])
     })
 
+    it('rejects an exit from an older daemon session generation without probing', async () => {
+      const exits: { id: string; code: number }[] = []
+      adapter.onExit((payload) => exits.push(payload))
+      const { id } = await adapter.spawn({ sessionId: 'generation-reuse', cols: 80, rows: 24 })
+      const internals = adapter as unknown as {
+        readAppliedSize(sessionId: string): Promise<{ status: 'alive' | 'absent' | 'unknown' }>
+        handleExitEvent(sessionId: string, code: number, sessionGeneration?: string): Promise<void>
+        exitFence: { rememberGeneration(sessionId: string, generation: string): void }
+      }
+      internals.exitFence.rememberGeneration(id, 'replacement-generation')
+      const readback = vi.spyOn(internals, 'readAppliedSize')
+
+      await internals.handleExitEvent(id, 7, 'old-generation')
+
+      expect(readback).not.toHaveBeenCalled()
+      expect(adapter.hasPty(id)).toBe(true)
+      expect(exits).toEqual([])
+    })
+
     it('retains an unknown exit until authoritative listing reconciles it', async () => {
       const exits: { id: string; code: number }[] = []
       adapter.onExit((payload) => exits.push(payload))
@@ -587,7 +606,10 @@ describe('DaemonPtyAdapter (IPtyProvider)', () => {
       const internals = adapter as unknown as {
         readAppliedSize(sessionId: string): Promise<{ status: 'alive' | 'absent' | 'unknown' }>
         handleExitEvent(sessionId: string, code: number): Promise<void>
-        pendingExitProofs: Map<string, number>
+        exitFence: {
+          getPending(sessionId: string): { code: number } | undefined
+          defer(sessionId: string, exit: { code: number }): void
+        }
         activeSessionIds: Set<string>
       }
       vi.spyOn(internals, 'readAppliedSize').mockResolvedValueOnce({ status: 'unknown' })
@@ -595,16 +617,48 @@ describe('DaemonPtyAdapter (IPtyProvider)', () => {
       await internals.handleExitEvent(id, 7)
 
       expect(adapter.hasPty(id)).toBe(true)
-      expect(internals.pendingExitProofs.get(id)).toBe(7)
+      expect(internals.exitFence.getPending(id)?.code).toBe(7)
       expect(exits).toEqual([])
 
       await adapter.listProcesses()
-      expect(internals.pendingExitProofs.has(id)).toBe(false)
+      expect(internals.exitFence.getPending(id)).toBeUndefined()
 
       internals.activeSessionIds.add('confirmed-absent')
-      internals.pendingExitProofs.set('confirmed-absent', 9)
+      internals.exitFence.defer('confirmed-absent', { code: 9 })
       await adapter.listProcesses()
       expect(exits).toContainEqual({ id: 'confirmed-absent', code: 9 })
+    })
+
+    it('retains an old exit when an absent list races a same-id replacement admission', async () => {
+      const exits: { id: string; code: number }[] = []
+      adapter.onExit((payload) => exits.push(payload))
+      const { id } = await adapter.spawn({ sessionId: 'same-id-race', cols: 80, rows: 24 })
+      const internals = adapter as unknown as {
+        client: {
+          request<T>(type: string, payload: unknown): Promise<T>
+        }
+        readAppliedSize(sessionId: string): Promise<{ status: 'alive' | 'absent' | 'unknown' }>
+        handleExitEvent(sessionId: string, code: number): Promise<void>
+        exitFence: {
+          beginAdmission(sessionId: string): () => void
+          rememberGeneration(sessionId: string, generation: string): void
+          getPending(sessionId: string): { code: number } | undefined
+        }
+      }
+      const completeAdmission = internals.exitFence.beginAdmission(id)
+      vi.spyOn(internals, 'readAppliedSize').mockResolvedValueOnce({ status: 'unknown' })
+      await internals.handleExitEvent(id, 7)
+
+      const request = vi.spyOn(internals.client, 'request')
+      request.mockResolvedValueOnce({ sessions: [] })
+      const staleList = adapter.listProcesses()
+      completeAdmission()
+      internals.exitFence.rememberGeneration(id, 'replacement-generation')
+      await staleList
+
+      expect(adapter.hasPty(id)).toBe(true)
+      expect(internals.exitFence.getPending(id)?.code).toBe(7)
+      expect(exits).toEqual([])
     })
   })
 

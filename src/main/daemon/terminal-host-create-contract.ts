@@ -21,7 +21,10 @@ export type CreateOrAttachOptions = {
   shellReadySupported?: boolean
   shellReadyTimeoutMs?: number
   historySeed?: string
-  streamClient: { onData: (data: string) => void; onExit: (code: number) => void }
+  streamClient: {
+    onData: (data: string) => void
+    onExit: (code: number, sessionGeneration: string) => void
+  }
 }
 
 export type CreateOrAttachResult = {
@@ -31,5 +34,6 @@ export type CreateOrAttachResult = {
   shellState: ShellReadyState
   historySeeded?: boolean
   launchAgent?: TuiAgent
+  sessionGeneration: string
   attachToken: symbol
 }

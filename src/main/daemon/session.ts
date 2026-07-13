@@ -1,4 +1,5 @@
 /* oxlint-disable max-lines */
+import { randomUUID } from 'node:crypto'
 import { HeadlessEmulator } from './headless-emulator'
 import { isValidPtySize, normalizePtySize } from './daemon-pty-size'
 import { PostReadyFlushGate } from './post-ready-flush-gate'
@@ -104,11 +105,12 @@ export type SessionOptions = {
 type AttachedClient = {
   token: symbol
   onData: (data: string) => void
-  onExit: (code: number) => void
+  onExit: (code: number, sessionGeneration: string) => void
 }
 
 export class Session {
   readonly sessionId: string
+  readonly generation = randomUUID()
   readonly paneKey: string | null
   readonly tabId: string | null
   readonly terminalHandle: string | null
@@ -338,7 +340,10 @@ export class Session {
     this.subprocess.signal(sig)
   }
 
-  attachClient(client: { onData: (data: string) => void; onExit: (code: number) => void }): symbol {
+  attachClient(client: {
+    onData: (data: string) => void
+    onExit: (code: number, sessionGeneration: string) => void
+  }): symbol {
     const token = Symbol('attach')
     this.attachedClients.push({ token, ...client })
     return token
@@ -503,7 +508,7 @@ export class Session {
     this.emulator.dispose()
 
     for (const client of clientsToNotify) {
-      client.onExit(-1)
+      client.onExit(-1, this.generation)
     }
   }
 
@@ -678,7 +683,7 @@ export class Session {
     }
 
     for (const client of this.attachedClients) {
-      client.onExit(code)
+      client.onExit(code, this.generation)
     }
 
     // Why: hand off to the owner's reaper so the emulator is disposed and the

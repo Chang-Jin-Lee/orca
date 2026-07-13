@@ -383,7 +383,7 @@ export class DaemonServer {
                 flushMaxChars: DaemonServer.INTERACTIVE_OUTPUT_MAX_CHARS
               })
             },
-            onExit: (code) => {
+            onExit: (code, sessionGeneration) => {
               // Why: exit tears down renderer handlers, so it must ride the
               // ordered queue behind final output even when the shallow socket
               // gate holds that output for a later drain pass.
@@ -392,7 +392,7 @@ export class DaemonServer {
                 type: 'event',
                 event: 'exit',
                 sessionId: p.sessionId,
-                payload: { code }
+                payload: { code, sessionGeneration }
               })
               this.streamDataBatcher.flush(clientId)
               recordDaemonStreamBacklogEvent('sessionExit', {
@@ -426,7 +426,8 @@ export class DaemonServer {
           pid: result.pid,
           shellState: result.shellState,
           ...(result.launchAgent ? { launchAgent: result.launchAgent } : {}),
-          ...(result.historySeeded !== undefined ? { historySeeded: result.historySeeded } : {})
+          ...(result.historySeeded !== undefined ? { historySeeded: result.historySeeded } : {}),
+          sessionGeneration: result.sessionGeneration
         }
       }
 
@@ -570,7 +571,7 @@ export class DaemonServer {
       }
 
       case 'getSize':
-        return { size: this.host.getAppliedSize(request.payload.sessionId) }
+        return this.host.getAppliedSizeWithGeneration(request.payload.sessionId) ?? { size: null }
 
       case 'takePendingOutput':
         // Why no await before this call: with includeSnapshot, drain and

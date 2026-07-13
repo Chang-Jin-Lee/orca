@@ -5,6 +5,7 @@ import { basename } from 'node:path'
 import { existsSync } from 'node:fs'
 import { DaemonClient } from './client'
 import { getMacDaemonSystemResolverHealth } from './daemon-health'
+import { DaemonSessionExitFence, type PendingDaemonExit } from './daemon-session-exit-fence'
 import { HistoryManager } from './history-manager'
 import { HistoryReader, type ColdRestoreInfo } from './history-reader'
 import { mintPtySessionId, parsePtySessionId } from './pty-session-id'
@@ -45,7 +46,7 @@ type ColdRestorePayload = {
 }
 
 type AppliedSizeReadback =
-  | { status: 'alive'; size: { cols: number; rows: number } }
+  | { status: 'alive'; size: { cols: number; rows: number }; sessionGeneration?: string }
   | { status: 'absent' }
   | { status: 'unknown' }
 
@@ -143,7 +144,7 @@ export class DaemonPtyAdapter implements IPtyProvider {
   // resume died with the connection. Owe those sessions a resume on the next
   // connect; the daemon's 5s failsafe covers the window in between.
   private producerResumesOwedOnReconnect = new Set<string>()
-  private pendingExitProofs = new Map<string, number>()
+  private exitFence = new DaemonSessionExitFence()
   private static CHECKPOINT_INTERVAL_MS = 5_000
   // Why: a streaming session (build logs, `yes`) re-triggers a full multi-MB
   // snapshot checkpoint on every 5s tick via pending-buffer overflow or the
@@ -192,11 +193,18 @@ export class DaemonPtyAdapter implements IPtyProvider {
   }
 
   async spawn(opts: PtySpawnOptions): Promise<PtySpawnResult> {
-    return this.withDaemonRetry(() => this.doSpawn(opts))
+    const sessionId = opts.sessionId ?? mintPtySessionId(opts.worktreeId)
+    const completeAdmission = this.exitFence.beginAdmission(sessionId)
+    try {
+      return await this.withDaemonRetry(() => this.doSpawn({ ...opts, sessionId }))
+    } finally {
+      completeAdmission()
+      await this.reconcilePendingExitAfterAdmission(sessionId)
+    }
   }
 
   private async doSpawn(opts: PtySpawnOptions): Promise<PtySpawnResult> {
-    const sessionId = opts.sessionId ?? mintPtySessionId(opts.worktreeId)
+    const sessionId = opts.sessionId!
     const requestedIdentity = getPtyPaneIdentityFromEnv(opts.env)
 
     if (this.killedSessionTombstones.has(sessionId)) {
@@ -292,6 +300,7 @@ export class DaemonPtyAdapter implements IPtyProvider {
 
     let scrollback = restoreInfo ? getRecoveredHistorySeed(restoreInfo) : null
     let result = await createOrAttach(scrollback)
+    this.exitFence.rememberGeneration(sessionId, result.sessionGeneration)
     this.paneIdentityBySessionId.set(sessionId, requestedIdentity)
     const launchIdentity = (): { launchAgent?: NonNullable<typeof result.launchAgent> } =>
       result.launchAgent ? { launchAgent: result.launchAgent } : {}
@@ -347,6 +356,7 @@ export class DaemonPtyAdapter implements IPtyProvider {
         effectiveCols = restoreInfo.cols
         effectiveRows = restoreInfo.rows
         result = await createOrAttach(scrollback)
+        this.exitFence.rememberGeneration(sessionId, result.sessionGeneration)
         pid = typeof result.pid === 'number' && result.pid > 0 ? result.pid : null
         this.initialCwds.set(sessionId, effectiveCwd)
       }
@@ -465,16 +475,23 @@ export class DaemonPtyAdapter implements IPtyProvider {
   }
 
   async attach(id: string): Promise<void> {
-    await this.ensureConnected()
-    if (!this.supportsAuthoritativeBufferSnapshots) {
-      this.setPtyBackgrounded(id, false)
-    }
+    const completeAdmission = this.exitFence.beginAdmission(id)
+    try {
+      await this.ensureConnected()
+      if (!this.supportsAuthoritativeBufferSnapshots) {
+        this.setPtyBackgrounded(id, false)
+      }
 
-    await this.client.request<CreateOrAttachResult>('createOrAttach', {
-      sessionId: id,
-      cols: 80,
-      rows: 24
-    })
+      const result = await this.client.request<CreateOrAttachResult>('createOrAttach', {
+        sessionId: id,
+        cols: 80,
+        rows: 24
+      })
+      this.exitFence.rememberGeneration(id, result.sessionGeneration)
+    } finally {
+      completeAdmission()
+      await this.reconcilePendingExitAfterAdmission(id)
+    }
   }
 
   hasPty(id: string): boolean {
@@ -647,11 +664,17 @@ export class DaemonPtyAdapter implements IPtyProvider {
 
   private async readAppliedSize(id: string): Promise<AppliedSizeReadback> {
     try {
-      const result = await this.client.request<{ size: { cols: number; rows: number } | null }>(
-        'getSize',
-        { sessionId: id }
-      )
-      return result.size ? { status: 'alive', size: result.size } : { status: 'absent' }
+      const result = await this.client.request<{
+        size: { cols: number; rows: number } | null
+        sessionGeneration?: string
+      }>('getSize', { sessionId: id })
+      return result.size
+        ? {
+            status: 'alive',
+            size: result.size,
+            ...(result.sessionGeneration ? { sessionGeneration: result.sessionGeneration } : {})
+          }
+        : { status: 'absent' }
     } catch {
       return { status: 'unknown' }
     }
@@ -799,11 +822,15 @@ export class DaemonPtyAdapter implements IPtyProvider {
   }
 
   async listProcesses(): Promise<PtyProcessInfo[]> {
+    const pendingSnapshots = new Map(
+      this.exitFence.pendingEntries().map(([id]) => [id, this.exitFence.snapshot(id)])
+    )
     await this.ensureConnected()
     const result = await this.client.request<ListSessionsResult>('listSessions', undefined)
     for (const session of result.sessions) {
       this.rememberSessionIdentity(session)
       if (session.isAlive) {
+        this.exitFence.rememberGeneration(session.sessionId, session.sessionGeneration)
         // Why: router startup discovers preserved legacy sessions through this
         // method; spawn must know the ID is already live before createOrAttach.
         this.activeSessionIds.add(session.sessionId)
@@ -814,11 +841,14 @@ export class DaemonPtyAdapter implements IPtyProvider {
     const liveIds = new Set(
       result.sessions.filter((session) => session.isAlive).map((session) => session.sessionId)
     )
-    for (const [id, code] of this.pendingExitProofs) {
+    for (const [id, exit] of this.exitFence.pendingEntries()) {
       if (liveIds.has(id)) {
-        this.pendingExitProofs.delete(id)
-      } else {
-        this.finalizeExitEvent(id, code)
+        this.exitFence.clearPending(id)
+      } else if (
+        pendingSnapshots.has(id) &&
+        this.exitFence.isStable(id, pendingSnapshots.get(id))
+      ) {
+        this.finalizeExitEvent(id, exit.code)
       }
     }
     return result.sessions
@@ -863,7 +893,7 @@ export class DaemonPtyAdapter implements IPtyProvider {
     this.sessionsNeedingFullCheckpoint.clear()
     this.pausedProducerSessionIds.clear()
     this.producerResumesOwedOnReconnect.clear()
-    this.pendingExitProofs.clear()
+    this.exitFence.clear()
     this.stopCheckpointTimer()
     for (const id of ids) {
       this.coldRestoreCache.delete(id)
@@ -939,7 +969,7 @@ export class DaemonPtyAdapter implements IPtyProvider {
     this.coldRestoreCache.clear()
     this.pausedProducerSessionIds.clear()
     this.producerResumesOwedOnReconnect.clear()
-    this.pendingExitProofs.clear()
+    this.exitFence.clear()
     this.removeEventListener?.()
     this.removeEventListener = null
     // Why: final checkpoints are written daemon-side in TerminalHost.dispose()
@@ -983,7 +1013,7 @@ export class DaemonPtyAdapter implements IPtyProvider {
     }
     this.pausedProducerSessionIds.clear()
     this.producerResumesOwedOnReconnect.clear()
-    this.pendingExitProofs.clear()
+    this.exitFence.clear()
     this.removeEventListener?.()
     this.removeEventListener = null
     this.client.disconnect()
@@ -1397,17 +1427,41 @@ export class DaemonPtyAdapter implements IPtyProvider {
           fact: event.payload
         })
       } else if (event.event === 'exit') {
-        void this.handleExitEvent(event.sessionId, event.payload.code)
+        void this.handleExitEvent(
+          event.sessionId,
+          event.payload.code,
+          event.payload.sessionGeneration
+        )
       }
     })
   }
 
-  private async handleExitEvent(sessionId: string, code: number): Promise<void> {
+  private async handleExitEvent(
+    sessionId: string,
+    code: number,
+    sessionGeneration?: string
+  ): Promise<void> {
+    if (this.exitFence.isStaleGeneration(sessionId, sessionGeneration)) {
+      return
+    }
+    const fenceSnapshot = this.exitFence.snapshot(sessionId)
     // Why: control and stream sockets can reorder a replacement create reply
     // ahead of the old process's queued exit. Targeted liveness proof prevents
     // that stale exit from deleting the replacement's same-id ownership.
     const readback = await this.readAppliedSize(sessionId)
     if (readback.status === 'alive') {
+      if (this.exitFence.isStable(sessionId, fenceSnapshot)) {
+        this.exitFence.rememberGeneration(sessionId, readback.sessionGeneration)
+      }
+      this.exitFence.clearPending(sessionId)
+      return
+    }
+    const exit: PendingDaemonExit = { code, ...(sessionGeneration ? { sessionGeneration } : {}) }
+    if (!this.exitFence.isStable(sessionId, fenceSnapshot)) {
+      this.exitFence.defer(sessionId, exit)
+      // Why: admission may have completed while the old readback was in
+      // flight, before spawn's finally block could observe this deferred exit.
+      await this.reconcilePendingExitAfterAdmission(sessionId)
       return
     }
     if (readback.status === 'unknown') {
@@ -1418,14 +1472,14 @@ export class DaemonPtyAdapter implements IPtyProvider {
       // Why: a failed control-socket probe is not absence proof. Retain the
       // active id until authoritative listing; this also bounds retention to
       // the adapter's already-owned sessions instead of arbitrary exit ids.
-      this.pendingExitProofs.set(sessionId, code)
+      this.exitFence.defer(sessionId, exit)
       return
     }
     this.finalizeExitEvent(sessionId, code)
   }
 
   private finalizeExitEvent(sessionId: string, code: number): void {
-    this.pendingExitProofs.delete(sessionId)
+    this.exitFence.forget(sessionId)
     this.activeSessionIds.delete(sessionId)
     this.dirtySessionVersions.delete(sessionId)
     this.pausedProducerSessionIds.delete(sessionId)
@@ -1447,6 +1501,25 @@ export class DaemonPtyAdapter implements IPtyProvider {
     // oxlint-disable-next-line unicorn/no-useless-spread -- copy-safe: listeners may unsubscribe during iteration
     for (const listener of [...this.exitListeners]) {
       listener({ id: sessionId, code })
+    }
+  }
+
+  private async reconcilePendingExitAfterAdmission(sessionId: string): Promise<void> {
+    const pending = this.exitFence.getPending(sessionId)
+    if (!pending || this.exitFence.isStaleGeneration(sessionId, pending.sessionGeneration)) {
+      this.exitFence.clearPending(sessionId)
+      return
+    }
+    const fenceSnapshot = this.exitFence.snapshot(sessionId)
+    const readback = await this.readAppliedSize(sessionId)
+    if (!this.exitFence.isStable(sessionId, fenceSnapshot)) {
+      return
+    }
+    if (readback.status === 'alive') {
+      this.exitFence.rememberGeneration(sessionId, readback.sessionGeneration)
+      this.exitFence.clearPending(sessionId)
+    } else if (readback.status === 'absent') {
+      this.finalizeExitEvent(sessionId, pending.code)
     }
   }
 }

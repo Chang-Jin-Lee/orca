@@ -15,9 +15,9 @@ import type { TuiAgent } from '../../shared/types'
 import type * as PtyIdentity from '../pty/pty-shutdown-identity'
 // Why: daemons survive app updates; bump for wire changes so old daemons do
 // not accept handshakes for unsupported RPC behavior.
-export const PROTOCOL_VERSION = 22
+export const PROTOCOL_VERSION = 23
 export const PREVIOUS_DAEMON_PROTOCOL_VERSIONS = [
-  1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21
+  1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22
 ] as const
 
 // ─── Session State Machine ──────────────────────────────────────────
@@ -364,7 +364,7 @@ export type CreateOrAttachResult = {
   shellState: ShellReadyState
   historySeeded?: boolean
   launchAgent?: TuiAgent
-}
+} & { sessionGeneration?: string }
 export type GetSnapshotResult = {
   snapshot: TerminalSnapshot | null
 }
@@ -379,7 +379,7 @@ export type SystemResolverHealthResult = {
   health: SystemResolverHealth
 }
 
-export type SessionInfo = PtyIdentity.PtyPaneIdentityFields & {
+export type SessionInfo = PtyIdentity.PtyPaneIdentityFields & { sessionGeneration?: string } & {
   sessionId: string
   state: SessionState
   shellState: ShellReadyState
