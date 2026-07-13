@@ -353,6 +353,9 @@ export class DaemonServer {
           // Why: daemon RPC payloads are untrusted JSON. Persist only the
           // allowlisted enum used for byte routing, never arbitrary identity.
           ...(isTuiAgent(p.launchAgent) ? { launchAgent: p.launchAgent } : {}),
+          ...(typeof p.launchToken === 'string' && p.launchToken.length > 0
+            ? { launchToken: p.launchToken }
+            : {}),
           shellOverride: p.shellOverride,
           terminalWindowsWslDistro: p.terminalWindowsWslDistro,
           terminalWindowsPowerShellImplementation: p.terminalWindowsPowerShellImplementation,

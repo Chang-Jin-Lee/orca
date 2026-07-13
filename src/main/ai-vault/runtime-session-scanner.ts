@@ -9,6 +9,10 @@ import {
 import { normalizeExecutionHostId, toRuntimeExecutionHostId } from '../../shared/execution-host'
 import { listEnvironments } from '../../shared/runtime-environment-store'
 import { callRuntimeEnvironment } from '../ipc/runtime-environment-transport-routing'
+import type {
+  AgentLaunchVaultResumeDetailsResult,
+  AgentLaunchVaultResumeEntry
+} from '../../shared/agent-launch-spawn-request'
 
 export type RuntimeAiVaultHostInfo = {
   environmentId: string
@@ -57,6 +61,10 @@ const aiVaultListResultSchema = z.object({
       id: z.string(),
       executionHostId: executionHostIdSchema,
       executionHostPlatform: nodePlatformSchema.nullable().optional(),
+      resumeLocator: z
+        .string()
+        .regex(/^[a-f0-9]{64}$/)
+        .optional(),
       agent: z.enum(AI_VAULT_AGENTS),
       sessionId: z.string(),
       title: z.string(),
@@ -98,6 +106,11 @@ const aiVaultListResultSchema = z.object({
   ),
   scannedAt: z.string()
 })
+
+const aiVaultResumeDetailsResultSchema = z.union([
+  z.object({ status: z.literal('ok'), args: z.array(z.string()) }),
+  z.object({ status: z.literal('unavailable') })
+])
 
 export function getSavedRuntimeAiVaultHostInfos(
   userDataPath: string
@@ -149,6 +162,33 @@ export async function scanRuntimeAiVaultSessions(
     environmentId,
     message: response.error.message
   })
+}
+
+export async function resolveRuntimeAiVaultResumeDetails(
+  userDataPath: string,
+  environmentId: string,
+  entry: AgentLaunchVaultResumeEntry
+): Promise<AgentLaunchVaultResumeDetailsResult> {
+  const response = await callRuntimeEnvironment(
+    userDataPath,
+    environmentId,
+    'aiVault.resumeDetails',
+    {
+      // Why: the runtime must re-derive its transcript path during the fresh
+      // scan; the desktop-only compatibility field is not remote authority.
+      entry: {
+        executionHostId: entry.executionHostId,
+        agent: entry.agent,
+        sessionId: entry.sessionId,
+        ...(entry.resumeLocator ? { resumeLocator: entry.resumeLocator } : {})
+      }
+    }
+  )
+  if (response.ok !== true) {
+    return { status: 'unavailable' }
+  }
+  const parsed = aiVaultResumeDetailsResultSchema.safeParse(response.result)
+  return parsed.success ? parsed.data : { status: 'unavailable' }
 }
 
 function withRuntimeExecutionHost(

@@ -12,9 +12,9 @@ import {
   getPowerShellOsc133Bootstrap
 } from '../powershell-osc133-bootstrap'
 
-const CMD_EXE_COMMAND_LINE_MAX_CHARS = 8191
-const STARTUP_COMMAND_TEXT_MAX_CHARS = 6000
-const POWERSHELL_ENCODED_COMMAND_ARG_MAX_CHARS = 28_000
+export const CMD_EXE_COMMAND_LINE_MAX_CHARS = 8191
+export const STARTUP_COMMAND_TEXT_MAX_CHARS = 6000
+export const POWERSHELL_ENCODED_COMMAND_ARG_MAX_CHARS = 28_000
 const CMD_UTF8_SETUP_COMMAND = 'chcp 65001 > nul'
 
 /** Result of resolving a Windows shell to its launch args + effective cwd.

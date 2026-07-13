@@ -142,6 +142,9 @@ export class TerminalHost {
       rows: size.rows,
       terminalHandle: opts.env?.ORCA_TERMINAL_HANDLE,
       launchAgent: opts.launchAgent,
+      // Why: token association is a precondition of the spawn, persisted on the
+      // record at creation so a surviving session self-identifies after a crash.
+      ...(opts.launchToken ? { launchToken: opts.launchToken } : {}),
       subprocess,
       shellReadySupported,
       historySeed: opts.historySeed,

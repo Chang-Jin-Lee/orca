@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { normalizeAgentProviderSession, RESUMABLE_TUI_AGENTS } from './agent-session-resume'
 import { isValidTerminalTabId } from './terminal-tab-id'
+import type { TuiAgent } from './types'
 
 const terminalTabIdSchema = z
   .string()
@@ -65,23 +66,51 @@ export const sleepingAgentLaunchConfigSchema = z.preprocess((raw) => {
   return parsed.success ? parsed.data : undefined
 }, sleepingAgentLaunchConfigBaseSchema.optional())
 
-const sleepingAgentSessionRecordSchema = z.object({
-  paneKey: z.string().refine((value) => value.length > 0),
-  tabId: terminalTabIdSchema.optional(),
-  worktreeId: z.string().min(1),
-  agent: z.enum(RESUMABLE_TUI_AGENTS),
-  providerSession: agentProviderSessionSchema,
-  prompt: z.string(),
-  state: z.enum(['working', 'blocked', 'waiting', 'done']),
-  capturedAt: z.number().finite().positive(),
-  updatedAt: z.number().finite().positive(),
-  terminalTitle: z.string().optional(),
-  lastAssistantMessage: z.string().optional(),
-  interrupted: z.boolean().optional(),
-  connectionId: z.string().nullable().optional(),
-  launchConfig: sleepingAgentLaunchConfigSchema.optional(),
-  origin: z.enum(['worktree-sleep', 'quit', 'live']).optional()
-})
+// The originally requested identity: a built-in base or a custom id
+// ('custom-agent:<base>:<uuid>'). Kept lenient — an unparseable value drops
+// only the field (the read-side falls back to `agent`), never the whole record.
+const requestedAgentSchema = z.preprocess(
+  (raw) =>
+    typeof raw === 'string' && raw.length > 0 && raw.length <= 256 && !hasUnsafeLaunchEnvChars(raw)
+      ? raw
+      : undefined,
+  z.string().optional()
+)
+
+const sleepingAgentSessionRecordSchema = z
+  .object({
+    paneKey: z.string().refine((value) => value.length > 0),
+    tabId: terminalTabIdSchema.optional(),
+    worktreeId: z.string().min(1),
+    agent: z.enum(RESUMABLE_TUI_AGENTS),
+    // The requested identity resolved to its resumable base; the ownership key and
+    // provider resume argv key on this, never on `requestedAgent`. Optional during
+    // the additive migration window — the transform below back-fills legacy records.
+    requestedAgent: requestedAgentSchema,
+    baseAgent: z.enum(RESUMABLE_TUI_AGENTS).optional(),
+    providerSession: agentProviderSessionSchema,
+    prompt: z.string(),
+    state: z.enum(['working', 'blocked', 'waiting', 'done']),
+    capturedAt: z.number().finite().positive(),
+    updatedAt: z.number().finite().positive(),
+    terminalTitle: z.string().optional(),
+    lastAssistantMessage: z.string().optional(),
+    interrupted: z.boolean().optional(),
+    connectionId: z.string().nullable().optional(),
+    launchConfig: sleepingAgentLaunchConfigSchema.optional(),
+    origin: z.enum(['worktree-sleep', 'quit', 'live']).optional()
+  })
+  // Deterministic on-read migration: a legacy record carries only `agent`, which
+  // is already its resumable base, so back-fill both identity fields from it. New
+  // records persist their own receipt-derived requestedAgent/baseAgent.
+  .transform((record) => ({
+    ...record,
+    baseAgent: record.baseAgent ?? record.agent,
+    // Cast: the persisted string is validated leniently above and re-validated at
+    // read time (resolveTuiAgentBaseAgent returns null for anything unresolvable),
+    // so a non-conforming id degrades to the base rather than failing the parse.
+    requestedAgent: (record.requestedAgent ?? record.agent) as TuiAgent
+  }))
 
 export const sleepingAgentSessionsByPaneKeySchema = z.preprocess((raw) => {
   if (raw == null || typeof raw !== 'object' || Array.isArray(raw)) {

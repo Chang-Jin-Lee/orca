@@ -14,8 +14,11 @@ vi.mock('../ipc/runtime-environment-transport-routing', () => ({
   callRuntimeEnvironment: mocks.callRuntimeEnvironment
 }))
 
-const { getSavedRuntimeAiVaultHostInfos, scanRuntimeAiVaultSessions } =
-  await import('./runtime-session-scanner')
+const {
+  getSavedRuntimeAiVaultHostInfos,
+  resolveRuntimeAiVaultResumeDetails,
+  scanRuntimeAiVaultSessions
+} = await import('./runtime-session-scanner')
 
 beforeEach(() => {
   vi.clearAllMocks()
@@ -107,6 +110,34 @@ describe('runtime AI Vault session scanner', () => {
         executionHostId: 'runtime:env-1'
       })
     ])
+  })
+
+  it('forwards the on-demand resume details query and validates its result', async () => {
+    mocks.callRuntimeEnvironment.mockResolvedValueOnce({
+      ok: true,
+      result: {
+        status: 'ok',
+        args: ['--model', 'gpt-5.6-Sol', '-c', 'model_reasoning_effort=medium']
+      }
+    })
+    const entry = {
+      executionHostId: 'runtime:env-1' as const,
+      agent: 'codex' as const,
+      sessionId: 'session-1'
+    }
+
+    await expect(resolveRuntimeAiVaultResumeDetails('/user-data', 'env-1', entry)).resolves.toEqual(
+      {
+        status: 'ok',
+        args: ['--model', 'gpt-5.6-Sol', '-c', 'model_reasoning_effort=medium']
+      }
+    )
+    expect(mocks.callRuntimeEnvironment).toHaveBeenCalledWith(
+      '/user-data',
+      'env-1',
+      'aiVault.resumeDetails',
+      { entry }
+    )
   })
 })
 

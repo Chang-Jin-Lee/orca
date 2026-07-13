@@ -167,7 +167,10 @@ export class SshPtyProvider implements IPtyProvider {
       // remote hooks are disabled, but the relay still needs attach identity
       // metadata to reject cross-generation PTY id collisions.
       ...(opts.paneKey ? { paneKey: opts.paneKey } : {}),
-      ...(opts.tabId ? { tabId: opts.tabId } : {})
+      ...(opts.tabId ? { tabId: opts.tabId } : {}),
+      // Why: the token travels inside the spawn request so the relay persists it
+      // on the ManagedPty record at creation for crash reconciliation.
+      ...(opts.launchToken ? { launchToken: opts.launchToken } : {})
     })
     return {
       ...(result as PtySpawnResult),
