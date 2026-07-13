@@ -9,6 +9,7 @@
     "ios": "expo run:ios",
     "postinstall": "node scripts/build-terminal-webview-engine.mjs",
     "test": "vitest run",
+    "typecheck": "tsc --noEmit",
     "lint": "oxlint",
     "format": "oxfmt --write .",
     "format:check": "oxfmt --check .",

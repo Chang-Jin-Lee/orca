@@ -1,7 +1,8 @@
 import * as ExpoCrypto from 'expo-crypto'
 import { sha256 } from '@noble/hashes/sha256'
 import { z } from 'zod'
-import type { PairingOffer, PairingRelay } from './types'
+import type { PairingRelay } from '../../../src/shared/mobile-relay-pairing-offer'
+import type { PairingOffer } from './types'
 
 const Base64Url32ByteSchema = z.string().regex(/^[A-Za-z0-9_-]{43}$/)
 
