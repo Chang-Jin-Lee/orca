@@ -1584,7 +1584,10 @@ function normalizeSshRemotePtyLease(value: unknown): SshRemotePtyLease | null {
     createdAt: typeof raw.createdAt === 'number' ? raw.createdAt : now,
     updatedAt: typeof raw.updatedAt === 'number' ? raw.updatedAt : now,
     ...(typeof raw.lastAttachedAt === 'number' ? { lastAttachedAt: raw.lastAttachedAt } : {}),
-    ...(typeof raw.lastDetachedAt === 'number' ? { lastDetachedAt: raw.lastDetachedAt } : {})
+    ...(typeof raw.lastDetachedAt === 'number' ? { lastDetachedAt: raw.lastDetachedAt } : {}),
+    ...(typeof raw.shutdownRequestedAt === 'number'
+      ? { shutdownRequestedAt: raw.shutdownRequestedAt }
+      : {})
   }
 }
 
@@ -6406,6 +6409,19 @@ export class Store {
     if (shouldClearBindings) {
       this.clearSshRemotePtyBindingsForLeases(targetId, [lease])
     }
+    this.flush()
+  }
+
+  markSshRemotePtyShutdownRequested(targetId: string, ptyId: string): void {
+    const relayPtyId = this.getRelayPtyIdForSshLeaseStorage(targetId, ptyId)
+    const lease = this.state.sshRemotePtyLeases?.find(
+      (entry) => entry.targetId === targetId && entry.ptyId === relayPtyId
+    )
+    if (!lease) {
+      return
+    }
+    lease.shutdownRequestedAt = Date.now()
+    lease.updatedAt = lease.shutdownRequestedAt
     this.flush()
   }
 

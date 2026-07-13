@@ -3913,7 +3913,8 @@
         {
           "file": "src/main/persistence.test.ts",
           "assertions": [
-            "durable SSH leases store raw relay ids together with their relay generation"
+            "durable SSH leases store raw relay ids together with their relay generation",
+            "offline SSH shutdown intent persists on the exact durable lease"
           ]
         },
         {
@@ -3945,7 +3946,8 @@
           "file": "src/renderer/src/lib/pty-kill-retry-ownership.test.ts",
           "assertions": [
             "all 65 unconfirmed live shutdown ids retain exact ownership and one deadline retries every due owner",
-            "a second failure retries after capped backoff without another lifecycle event"
+            "a second failure retries after capped backoff without another lifecycle event",
+            "successful SSH target removal releases only that target and cancels the final retry timer"
           ]
         },
         {
@@ -3954,7 +3956,8 @@
             "renderer pane identity reaches SSH provider shutdown",
             "renderer PTY spawn enters runtime terminal admission before provider work",
             "renderer PTY spawn qualifies local and SSH admissions with the owning execution host",
-            "disconnected SSH kill and stop retain the lease and reject without a synthetic exit"
+            "disconnected SSH kill and stop retain the lease and reject without a synthetic exit",
+            "provider reconnect retries durable shutdown intent once with its generation and pane identity"
           ]
         },
         {
@@ -3988,13 +3991,15 @@
         {
           "file": "src/renderer/src/lib/runtime-terminal-close-retry-ownership.test.ts",
           "assertions": [
-            "a rejected remote-runtime terminal close retains environment and handle identity through repeated automatic backoff retry"
+            "a rejected remote-runtime terminal close retains environment and handle identity through repeated automatic backoff retry",
+            "successful runtime removal releases every environment handle and cancels its retry timer"
           ]
         },
         {
           "file": "src/renderer/src/store/slices/worktrees.test.ts",
           "assertions": [
-            "renderer worktree creation sends the active duplicate repo owner host through desktop IPC"
+            "renderer worktree creation sends the active duplicate repo owner host through desktop IPC",
+            "a focus switch during create cannot restamp the result onto another duplicate host"
           ]
         },
         {
@@ -4137,7 +4142,7 @@
       },
       "performanceBudget": {
         "required": true,
-        "evidence": "Shutdown removes indefinite deferred retention and preserves at most one in-flight native kill plus one existing graceful timer per PTY request. Failed renderer kills coalesce by exact live PTY id, and failed remote-runtime closes coalesce by environment plus handle: distinct records correspond one-for-one with still-unconfirmed provider resources and are never discarded before accepted shutdown. Each retry map owns one shared one-shot timer for its earliest deadline, retries all due owners, caps backoff at 30 seconds, and logs only attempts 1, 2, and 8 to prevent outage backpressure; no fixed polling is added. Offline SSH rejection retains the one existing durable lease. Pre-handler exits remain capped at 64. Worktree-create, worktree-removal, whole-project, and host-scoped admissions retain one promise only per active operation; removal drains only the target worktree's current admissions. Targeted runtime stop still performs one provider verification per target PTY plus two liveness snapshots, while foreground probes are limited to the target worktree."
+        "evidence": "Shutdown removes indefinite deferred retention and preserves at most one in-flight native kill plus one existing graceful timer per PTY request. Failed renderer kills coalesce by exact live PTY id, and failed remote-runtime closes coalesce by environment plus handle: distinct records correspond one-for-one with still-unconfirmed provider resources and are never discarded before accepted shutdown. Each retry map owns one shared one-shot timer for its earliest deadline, retries all due owners, caps backoff at 30 seconds, and logs only attempts 1, 2, and 8 to prevent outage backpressure. Successful SSH-target and runtime-environment removal release the unreachable target's records and cancel the last timer; offline SSH shutdown intent also moves onto the durable lease so renderer reload cannot lose it, and provider reconnect performs one identity-qualified retry. Pre-handler exits remain capped at 64. Worktree-create, worktree-removal, whole-project, and host-scoped admissions retain one promise only per active operation; removal drains only the target worktree's current admissions. Targeted runtime stop still performs one provider verification per target PTY plus two liveness snapshots, while foreground probes are limited to the target worktree."
       },
       "promotionCriteria": [
         "Run the deterministic command across the required CI platforms without flakes.",

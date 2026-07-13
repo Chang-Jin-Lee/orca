@@ -35,7 +35,8 @@ import {
   clearProviderPtyState,
   deletePtyOwnership,
   getPtyIdsForConnection,
-  getSshPtyProvider
+  getSshPtyProvider,
+  releasePendingSshShutdownsForTarget
 } from './pty'
 import type { OrcaRuntimeService } from '../runtime/orca-runtime'
 
@@ -127,6 +128,7 @@ export async function removeRegisteredSshTarget(targetId: string): Promise<void>
     )
   }
   persistedStore?.removeSshRemotePtyLeases(targetId)
+  releasePendingSshShutdownsForTarget(targetId)
   sshStore.removeTarget(targetId)
 }
 

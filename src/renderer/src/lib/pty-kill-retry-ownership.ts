@@ -94,7 +94,7 @@ export function killPtyRetainingRetryOwnership(
   return attempt
 }
 
-/** Retry on the next PTY lifecycle event; no polling or permanent timer is added. */
+/** Retry immediately on the next PTY lifecycle event in addition to bounded backoff. */
 export function retryRetainedPtyKills(): void {
   for (const [id, retained] of retainedPtyKills) {
     if (!retained.inFlight) {
@@ -108,3 +108,15 @@ export function releaseRetainedPtyKillOwnership(id: string): void {
   retainedPtyKills.delete(id)
   scheduleRetainedPtyKillRetries()
 }
+
+export function releaseRetainedPtyKillsForSshTarget(targetId: string): void {
+  for (const id of retainedPtyKills.keys()) {
+    if (parseAppSshPtyId(id)?.connectionId === targetId) {
+      retainedPtyKills.delete(id)
+    }
+  }
+  // Why: successful target removal is authoritative proof that reconnect can
+  // no longer reach these PTYs, so retry ownership must not outlive the host.
+  scheduleRetainedPtyKillRetries()
+}
+import { parseAppSshPtyId } from '../../../shared/ssh-pty-id'

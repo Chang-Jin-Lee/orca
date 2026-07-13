@@ -4001,7 +4001,10 @@ describe('registerPtyHandlers', () => {
       getProfiles: vi.fn()
     } as never)
     const sshShutdown = vi.fn(async () => undefined)
-    const store = { markSshRemotePtyLease: vi.fn() }
+    const store = {
+      markSshRemotePtyLease: vi.fn(),
+      markSshRemotePtyShutdownRequested: vi.fn()
+    }
     registerSshPtyProvider('ssh-1', {
       spawn: vi.fn(),
       write: vi.fn(),
@@ -4073,7 +4076,10 @@ describe('registerPtyHandlers', () => {
       getDefaultShell: vi.fn(),
       getProfiles: vi.fn()
     } as never)
-    const store = { markSshRemotePtyLease: vi.fn() }
+    const store = {
+      markSshRemotePtyLease: vi.fn(),
+      markSshRemotePtyShutdownRequested: vi.fn()
+    }
     registerPtyHandlers(
       mainWindow as never,
       undefined,
@@ -4089,6 +4095,61 @@ describe('registerPtyHandlers', () => {
 
     expect(localShutdown).not.toHaveBeenCalled()
     expect(store.markSshRemotePtyLease).not.toHaveBeenCalled()
+    expect(store.markSshRemotePtyShutdownRequested).toHaveBeenCalledWith(
+      'ssh-1',
+      'ssh:ssh-1@@relay-pty'
+    )
+  })
+
+  it('retries durable SSH shutdown intent when the provider reconnects', async () => {
+    const lease = {
+      targetId: 'ssh-1',
+      ptyId: 'relay-pty',
+      relayInstanceId: 'boot-1',
+      tabId: 'tab-a',
+      leafId: '11111111-1111-4111-8111-111111111111',
+      state: 'detached' as const,
+      createdAt: 1,
+      updatedAt: 1
+    }
+    const store = {
+      getSshRemotePtyLeases: vi.fn(() => [lease]),
+      markSshRemotePtyShutdownRequested: vi.fn(() => {
+        Object.assign(lease, { shutdownRequestedAt: 2 })
+      }),
+      markSshRemotePtyLease: vi.fn()
+    }
+    registerPtyHandlers(
+      mainWindow as never,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      store as never
+    )
+    const id = 'ssh:ssh-1@@boot-1@@relay-pty'
+    await expect(handlers.get('pty:kill')!(null, { id })).rejects.toThrow(
+      'SSH PTY provider unavailable'
+    )
+
+    const shutdown = vi.fn().mockResolvedValue(undefined)
+    registerSshPtyProvider('ssh-1', {
+      shutdown,
+      onExit: vi.fn(() => () => {})
+    } as never)
+    await vi.waitFor(() => expect(store.markSshRemotePtyLease).toHaveBeenCalledOnce())
+
+    expect(shutdown).toHaveBeenCalledWith(id, {
+      immediate: true,
+      expectedPaneKey: 'tab-a:11111111-1111-4111-8111-111111111111',
+      expectedTabId: 'tab-a'
+    })
+    expect(store.markSshRemotePtyLease).toHaveBeenCalledWith(
+      'ssh-1',
+      'relay-pty',
+      'terminated'
+    )
+    unregisterSshPtyProvider('ssh-1')
   })
 
   it('ignores fire-and-forget IPC for detached SSH PTYs without a provider', async () => {

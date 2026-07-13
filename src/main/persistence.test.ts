@@ -8832,6 +8832,24 @@ describe('Store', () => {
     ])
   })
 
+  it('persists durable SSH shutdown intent while the provider is offline', async () => {
+    const store = await createStore()
+    store.upsertSshRemotePtyLease({
+      targetId: 'ssh-1',
+      ptyId: 'remote-pty',
+      state: 'detached'
+    })
+
+    store.markSshRemotePtyShutdownRequested('ssh-1', 'ssh:ssh-1@@remote-pty')
+
+    expect(store.getSshRemotePtyLeases('ssh-1')[0]).toEqual(
+      expect.objectContaining({
+        ptyId: 'remote-pty',
+        shutdownRequestedAt: expect.any(Number)
+      })
+    )
+  })
+
   it('clears workspace bindings when marking an SSH remote PTY lease expired', async () => {
     const store = await createStore()
     store.upsertSshRemotePtyLease({

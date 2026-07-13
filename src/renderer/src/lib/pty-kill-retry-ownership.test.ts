@@ -1,8 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   killPtyRetainingRetryOwnership,
-  releaseRetainedPtyKillOwnership
+  releaseRetainedPtyKillOwnership,
+  releaseRetainedPtyKillsForSshTarget
 } from './pty-kill-retry-ownership'
+import { toAppSshPtyId } from '../../../shared/ssh-pty-id'
 
 const IDS = Array.from({ length: 65 }, (_, index) => `pty-retained-${index}`)
 
@@ -50,5 +52,24 @@ describe('PTY kill retry ownership', () => {
     expect(kill).toHaveBeenCalledTimes(2)
     await vi.advanceTimersByTimeAsync(500)
     expect(kill).toHaveBeenCalledTimes(3)
+  })
+
+  it('releases only a removed SSH target and cancels the final retry timer', async () => {
+    vi.useFakeTimers()
+    const kill = vi.fn().mockRejectedValue(new Error('provider disconnected'))
+    vi.stubGlobal('window', { api: { pty: { kill } } })
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const removedId = toAppSshPtyId('removed-target', 'pty-1')
+    const retainedId = toAppSshPtyId('retained-target', 'pty-2')
+
+    await killPtyRetainingRetryOwnership(removedId, '[pty] failed').catch(() => {})
+    await killPtyRetainingRetryOwnership(retainedId, '[pty] failed').catch(() => {})
+    releaseRetainedPtyKillsForSshTarget('removed-target')
+    await vi.advanceTimersByTimeAsync(250)
+
+    expect(kill.mock.calls.filter(([id]) => id === removedId)).toHaveLength(1)
+    expect(kill.mock.calls.filter(([id]) => id === retainedId)).toHaveLength(2)
+    releaseRetainedPtyKillsForSshTarget('retained-target')
+    expect(vi.getTimerCount()).toBe(0)
   })
 })

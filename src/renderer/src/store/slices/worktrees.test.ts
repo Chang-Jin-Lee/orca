@@ -2913,13 +2913,37 @@ describe('createWorktree base status merge', () => {
       worktreesByRepo: { repo1: [active] },
       activeWorkspaceKey: worktreeWorkspaceKey(active.id)
     } as Partial<AppState>)
-    mockApi.worktrees.create.mockResolvedValue({ worktree: created })
+    let resolveCreate!: (result: { worktree: Worktree }) => void
+    mockApi.worktrees.create.mockReturnValue(
+      new Promise((resolve) => {
+        resolveCreate = resolve
+      })
+    )
 
-    await store.getState().createWorktree('repo1', 'feature', 'origin/main')
+    const create = store.getState().createWorktree('repo1', 'feature', 'origin/main')
+    await vi.waitFor(() => expect(mockApi.worktrees.create).toHaveBeenCalled())
+    store.setState({
+      worktreesByRepo: {
+        repo1: [
+          makeWorktree({
+            id: 'repo1::/local/other',
+            repoId: 'repo1',
+            path: '/local/other',
+            hostId: 'local'
+          })
+        ]
+      },
+      activeWorkspaceKey: worktreeWorkspaceKey('repo1::/local/other')
+    } as Partial<AppState>)
+    resolveCreate({ worktree: created })
+    await create
 
     expect(mockApi.worktrees.create).toHaveBeenCalledWith(
       expect.objectContaining({ repoId: 'repo1', hostId: 'ssh:target-1' })
     )
+    expect(
+      store.getState().worktreesByRepo.repo1.find((worktree) => worktree.id === created.id)?.hostId
+    ).toBe('ssh:target-1')
   })
 
   it('stamps the owning runtime host onto worktrees created on a remote runtime', async () => {

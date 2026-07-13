@@ -129,6 +129,8 @@ export type SshRemotePtyLease = {
   updatedAt: number
   lastAttachedAt?: number
   lastDetachedAt?: number
+  /** Durable shutdown intent retained while the owning SSH provider is offline. */
+  shutdownRequestedAt?: number
 }
 
 // ─── Port Forwarding Types ─────────────────────────────────────────

@@ -104,3 +104,14 @@ export function releaseRetainedRuntimeTerminalClose(
   retainedCloses.delete(retainedCloseKey(target, handle))
   scheduleRuntimeTerminalCloseRetries()
 }
+
+export function releaseRetainedRuntimeTerminalClosesForEnvironment(environmentId: string): void {
+  for (const [key, retained] of retainedCloses) {
+    if (retained.target.environmentId === environmentId) {
+      retainedCloses.delete(key)
+    }
+  }
+  // Why: a successfully removed runtime cannot be reconnected, so retained
+  // handles have no reachable provider resource and must release their timer.
+  scheduleRuntimeTerminalCloseRetries()
+}

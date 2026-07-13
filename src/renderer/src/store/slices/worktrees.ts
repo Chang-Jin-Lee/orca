@@ -3087,11 +3087,10 @@ export const createWorktreeSlice: StateCreator<AppState, [], [], WorktreeSlice> 
           // then produces a duplicate entry in worktreesByRepo, which gives
           // React duplicate keys and can corrupt terminal DOM containers.
           set((s) => {
-            const hostId = repoHostId(s, repoId)
             const createdWorktree = withRepoHostOwnership(
               result.worktree,
-              hostId,
-              getProjectHostSetupForRepoHost(s, repoId, hostId)
+              ownerHostId,
+              getProjectHostSetupForRepoHost(s, repoId, ownerHostId)
             )
             const current = s.worktreesByRepo[repoId] ?? []
             const alreadyPresent = current.some((w) => w.id === createdWorktree.id)

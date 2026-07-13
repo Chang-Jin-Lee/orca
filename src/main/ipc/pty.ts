@@ -172,6 +172,8 @@ type FreshLocalFallbackProvider = IPtyProvider & {
   routesFreshSpawnsToLocalProvider?: true
 }
 const sshProviders = new Map<string, IPtyProvider>()
+let activePtyStore: Store | null = null
+const pendingSshShutdownRetries = new Map<string, Promise<void>>()
 const SYNTHETIC_KILL_EXIT_DUPLICATE_WINDOW_MS = 30_000
 // Why: producer flow control changes terminal physics — a flooding shell now
 // blocks on write instead of buffering in main. Kill switch: flip this one
@@ -518,6 +520,25 @@ async function verifyPtyStopped(
     }
   }
   return true
+}
+
+async function shutdownProviderAndDetectExit(
+  provider: IPtyProvider,
+  id: string,
+  opts: PtyShutdownOptions
+): Promise<boolean> {
+  let providerExitObserved = false
+  const unsubscribe = provider.onExit((payload) => {
+    if (payload.id === id) {
+      providerExitObserved = true
+    }
+  })
+  try {
+    await provider.shutdown(id, opts)
+  } finally {
+    unsubscribe()
+  }
+  return providerExitObserved
 }
 
 function finishPtyShutdown(
@@ -1053,11 +1074,53 @@ function routesFreshSpawnsToLocalProvider(
 /** Register an SSH PTY provider for a connection. */
 export function registerSshPtyProvider(connectionId: string, provider: IPtyProvider): void {
   sshProviders.set(connectionId, provider)
+  retryPersistedSshShutdowns(connectionId, provider)
 }
 
 /** Remove an SSH PTY provider when a connection is closed. */
 export function unregisterSshPtyProvider(connectionId: string): void {
   sshProviders.delete(connectionId)
+}
+
+export function releasePendingSshShutdownsForTarget(connectionId: string): void {
+  for (const id of pendingSshShutdownRetries.keys()) {
+    if (parseAppSshPtyId(id)?.connectionId === connectionId) {
+      pendingSshShutdownRetries.delete(id)
+    }
+  }
+}
+
+function retryPersistedSshShutdowns(connectionId: string, provider: IPtyProvider): void {
+  const store = activePtyStore
+  if (!store || typeof store.getSshRemotePtyLeases !== 'function') {
+    return
+  }
+  for (const lease of store.getSshRemotePtyLeases(connectionId)) {
+    if (!lease.shutdownRequestedAt || lease.state === 'terminated' || lease.state === 'expired') {
+      continue
+    }
+    const id = toAppSshPtyId(connectionId, lease.ptyId, lease.relayInstanceId)
+    if (pendingSshShutdownRetries.has(id)) {
+      continue
+    }
+    const attempt = shutdownProviderAndDetectExit(provider, id, {
+      immediate: true,
+      ...(lease.tabId ? { expectedTabId: lease.tabId } : {}),
+      ...(lease.tabId && lease.leafId
+        ? { expectedPaneKey: makePaneKey(lease.tabId, lease.leafId) }
+        : {})
+    })
+      .then(() => finishPtyShutdown(id, connectionId, store))
+      .catch((error: unknown) => {
+        console.warn('[pty] retained SSH shutdown retry failed after reconnect:', error)
+      })
+      .finally(() => {
+        if (pendingSshShutdownRetries.get(id) === attempt) {
+          pendingSshShutdownRetries.delete(id)
+        }
+      })
+    pendingSshShutdownRetries.set(id, attempt)
+  }
 }
 
 /** Get the SSH PTY provider for a connection (for dispose on cleanup). */
@@ -1474,6 +1537,10 @@ export function registerPtyHandlers(
     isRecoveryReloadInFlight?: (webContentsId: number) => boolean
   }
 ): void {
+  activePtyStore = store ?? null
+  for (const [connectionId, provider] of sshProviders) {
+    retryPersistedSshShutdowns(connectionId, provider)
+  }
   // Why: a re-registration means a new window owns delivery. Cancel any watchdog the
   // prior closure armed, and neutralize its bridged reset so the registration-time
   // mark-hidden below can't arm a timer against the now-dead closure — the fresh
@@ -2543,25 +2610,6 @@ export function registerPtyHandlers(
     rendererDeliveryAccountingByPty.delete(payload.id)
     recordPtyRendererDeliveryPressure()
     mainWindow.webContents.send('pty:exit', payload)
-  }
-
-  async function shutdownProviderAndDetectExit(
-    provider: IPtyProvider,
-    id: string,
-    opts: PtyShutdownOptions
-  ): Promise<boolean> {
-    let providerExitObserved = false
-    const unsubscribe = provider.onExit((payload) => {
-      if (payload.id === id) {
-        providerExitObserved = true
-      }
-    })
-    try {
-      await provider.shutdown(id, opts)
-    } finally {
-      unsubscribe()
-    }
-    return providerExitObserved
   }
 
   // Why: extracted so the "Restart daemon" flow can rebind against the fresh
@@ -4964,10 +5012,16 @@ export function registerPtyHandlers(
       const ownedConnectionId = ptyOwnership.get(args.id)
       const parsedSshId = ownedConnectionId === undefined ? parseAppSshPtyId(args.id) : null
       const connectionId = ownedConnectionId ?? parsedSshId?.connectionId
+      const retainedRetry = pendingSshShutdownRetries.get(args.id)
+      if (retainedRetry) {
+        await retainedRetry
+        return
+      }
       const provider = connectionId ? sshProviders.get(connectionId) : tryGetProviderForPty(args.id)
       if (!provider && connectionId) {
         // Why: a disconnected provider is not proof the relay process exited.
         // Reject without tombstoning so reconnect can target the retained lease.
+        store?.markSshRemotePtyShutdownRequested?.(connectionId, args.id)
         throw new Error('SSH PTY provider unavailable')
       }
       const shutdownProvider = provider ?? getProviderForPty(args.id)
@@ -4984,6 +5038,9 @@ export function registerPtyHandlers(
           // Why: a failed SSH shutdown can leave the remote process alive in
           // the relay grace window; daemon failures have the same risk locally.
           // Keep ownership/lease state so the user can retry.
+          if (connectionId) {
+            store?.markSshRemotePtyShutdownRequested?.(connectionId, args.id)
+          }
           throw err
         }
         /* session already dead — cleanup below handles the rest */
