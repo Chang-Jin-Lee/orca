@@ -137,6 +137,52 @@ describe('pre-handler PTY buffer', () => {
     expect(handler).toHaveBeenCalledWith(-1)
   })
 
+  it('keeps a replacement probe owned when an older same-id probe settles', async () => {
+    const target = 'pty-reused-probe-owner'
+    const oldPrefix = 'pty-reused-probe-old-'
+    const newPrefix = 'pty-reused-probe-new-'
+    const resolvers: ((alive: boolean | null) => void)[] = []
+    const hasPty = vi.fn(
+      () =>
+        new Promise<boolean | null>((resolve) => {
+          resolvers.push(resolve)
+        })
+    )
+    const handler = vi.fn()
+    try {
+      bufferPreHandlerPtyExit(target, 1)
+      for (let index = 0; index < 64; index += 1) {
+        bufferPreHandlerPtyExit(`${oldPrefix}${index}`, index)
+      }
+      reconcilePreHandlerPtyExitAfterOverflow(target, hasPty, handler, () => true)
+
+      clearPreHandlerPtyState(target)
+      bufferPreHandlerPtyExit(target, 2)
+      for (let index = 0; index < 64; index += 1) {
+        bufferPreHandlerPtyExit(`${newPrefix}${index}`, index)
+      }
+      reconcilePreHandlerPtyExitAfterOverflow(target, hasPty, handler, () => true)
+      expect(hasPty).toHaveBeenCalledTimes(2)
+
+      resolvers[0]?.(true)
+      await Promise.resolve()
+      await Promise.resolve()
+      await Promise.resolve()
+      reconcilePreHandlerPtyExitAfterOverflow(target, hasPty, handler, () => true)
+
+      expect(hasPty).toHaveBeenCalledTimes(2)
+      expect(handler).not.toHaveBeenCalled()
+      resolvers[1]?.(true)
+      await Promise.resolve()
+    } finally {
+      clearPreHandlerPtyState(target)
+      for (let index = 0; index < 64; index += 1) {
+        clearPreHandlerPtyState(`${oldPrefix}${index}`)
+        clearPreHandlerPtyState(`${newPrefix}${index}`)
+      }
+    }
+  })
+
   it('caps eviction tombstones at exactly 1024 ids without probing unrelated PTYs', async () => {
     const prefix = 'pty-exact-tombstone-cap-'
     const hasPty = vi.fn(async () => false)

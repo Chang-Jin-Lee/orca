@@ -147,6 +147,27 @@ describe('createIpcPtyTransport', () => {
     expect(onDataCallback).not.toHaveBeenCalledWith('dead generation output')
   })
 
+  it('does not drain an exit buffered before a same-id admission starts', async () => {
+    const { createIpcPtyTransport, ensurePtyDispatcher } = await import('./pty-transport')
+    const spawn = window.api.pty.spawn as unknown as ReturnType<typeof vi.fn>
+    spawn.mockResolvedValueOnce({ id: 'same-id' })
+    ensurePtyDispatcher()
+    onExit?.({ id: 'same-id', code: 17 })
+    const observedExit = vi.fn()
+    const transport = createIpcPtyTransport()
+
+    await transport.connect({
+      url: '',
+      sessionId: 'same-id',
+      callbacks: { onExit: observedExit }
+    })
+
+    expect(transport.isConnected()).toBe(true)
+    expect(transport.getPtyId()).toBe('same-id')
+    expect(observedExit).not.toHaveBeenCalled()
+    transport.disconnect()
+  })
+
   it('preserves replacement startup events while an older same-id admission rejects', async () => {
     const { createIpcPtyTransport } = await import('./pty-transport')
     const spawn = window.api.pty.spawn as unknown as ReturnType<typeof vi.fn>

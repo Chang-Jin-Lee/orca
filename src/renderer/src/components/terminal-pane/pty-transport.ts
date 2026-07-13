@@ -708,6 +708,11 @@ export function createIpcPtyTransport(opts: IpcPtyTransportOptions = {}): PtyTra
         ? await acquirePtySessionConnectAdmission(options.sessionId)
         : undefined
       try {
+        if (options.sessionId) {
+          // Why: admission starts a new renderer generation; buffered events
+          // that predate this boundary belong to the previous same-ID owner.
+          clearPreHandlerPtyState(options.sessionId)
+        }
         storedCallbacks = options.callbacks
         if (destroyed) {
           return

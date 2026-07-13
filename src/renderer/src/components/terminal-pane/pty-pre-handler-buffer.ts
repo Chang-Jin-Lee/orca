@@ -26,7 +26,7 @@ const PRE_HANDLER_PTY_EXIT_MAX_PTYS = 64
 // window avoids turning one overflow into liveness IPC for unrelated panes.
 const PRE_HANDLER_PTY_EVICTED_EXIT_MAX_PTYS = 1_024
 const preHandlerPtyEvictedExitIds = new Set<string>()
-const preHandlerPtyEvictedExitProbes = new Set<string>()
+const preHandlerPtyEvictedExitProbes = new Map<string, symbol>()
 // Why: legit pre-attach windows drain within milliseconds and hold little
 // data. Sustained accumulation means a pane lost its data handler (the
 // frozen-pane detach/attach race) — leave a breadcrumb for trace capture.
@@ -137,12 +137,18 @@ export function reconcilePreHandlerPtyExitAfterOverflow(
   ) {
     return
   }
-  preHandlerPtyEvictedExitProbes.add(ptyId)
+  const probeToken = Symbol(ptyId)
+  preHandlerPtyEvictedExitProbes.set(ptyId, probeToken)
   // Why: the bounded exit buffer may evict a legitimate pre-registration exit.
   // Keep its tombstone through unknown liveness so reconnect can retry proof.
   void hasPty(ptyId)
     .then((alive) => {
-      if (!isCurrent() || !preHandlerPtyEvictedExitIds.has(ptyId) || alive === null) {
+      if (
+        preHandlerPtyEvictedExitProbes.get(ptyId) !== probeToken ||
+        !isCurrent() ||
+        !preHandlerPtyEvictedExitIds.has(ptyId) ||
+        alive === null
+      ) {
         return
       }
       preHandlerPtyEvictedExitIds.delete(ptyId)
@@ -152,7 +158,10 @@ export function reconcilePreHandlerPtyExitAfterOverflow(
     })
     .catch(() => {})
     .finally(() => {
-      preHandlerPtyEvictedExitProbes.delete(ptyId)
+      // Why: a stale probe must not clear a newer same-ID generation's owner.
+      if (preHandlerPtyEvictedExitProbes.get(ptyId) === probeToken) {
+        preHandlerPtyEvictedExitProbes.delete(ptyId)
+      }
     })
 }
 
