@@ -18,6 +18,7 @@ import {
   saveMobileRelayHostOverlay
 } from './mobile-relay-host-overlay-store'
 import { deleteMobileRelayCredentialBundle } from './mobile-relay-credential-bundle'
+import { deleteMobileRelayDirectUpgradeJournal } from './mobile-relay-direct-upgrade-journal'
 import { scheduleOrphanedMobileRelayCleanup } from './mobile-relay-orphan-cleanup'
 
 const STORAGE_KEY = 'orca:hosts'
@@ -71,6 +72,7 @@ async function deleteDeviceToken(hostId: string): Promise<void> {
 async function deleteHostCredentials(hostId: string): Promise<void> {
   await deleteDeviceToken(hostId)
   await deleteMobileRelayCredentialBundle(hostId)
+  await deleteMobileRelayDirectUpgradeJournal(hostId)
 }
 
 // Why: SecureStore reads on Android Keystore can take 50-200ms each, and
@@ -227,7 +229,17 @@ function toStored(host: HostProfile): StoredHostProfile {
   }
 }
 
+export class MobileRelayUpgradeHostRemovedError extends Error {}
+
 export async function saveHost(host: HostProfile): Promise<void> {
+  await persistHost(host, false)
+}
+
+export async function saveExistingHostRelayUpgrade(host: HostProfile): Promise<void> {
+  await persistHost(host, true)
+}
+
+async function persistHost(host: HostProfile, requireExisting: boolean): Promise<void> {
   const validated = HostProfileSchema.parse(host)
   const stored = toStored(validated)
   await mutateStoredHosts((hosts) => {
@@ -236,6 +248,10 @@ export async function saveHost(host: HostProfile): Promise<void> {
       const next = hosts.slice()
       next[index] = stored
       return next
+    }
+    if (requireExisting) {
+      // Why: an in-flight relay upgrade must not resurrect a host the user removed.
+      throw new MobileRelayUpgradeHostRemovedError('mobile relay upgrade host was removed')
     }
     return [...hosts, stored]
   })

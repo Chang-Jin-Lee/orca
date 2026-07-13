@@ -35,9 +35,11 @@ vi.mock('./host-credential-cleanup', () => ({
 
 import {
   loadHosts,
+  MobileRelayUpgradeHostRemovedError,
   removeHost,
   renameHost,
   resetHostStoreForTests,
+  saveExistingHostRelayUpgrade,
   updateLastConnected
 } from './host-store'
 import { resetMobileRelayHostOverlayStoreForTests } from './mobile-relay-host-overlay-store'
@@ -131,6 +133,17 @@ describe('host-store list mutations', () => {
       relay: overlay.relay
     })
     expect(hosts.some(({ id }) => id === 'removed-by-old-build')).toBe(false)
+  })
+
+  it('refuses to resurrect a removed host during relay upgrade publication', async () => {
+    storedHostsRaw = JSON.stringify([HOST_TWO])
+
+    await expect(
+      saveExistingHostRelayUpgrade({ ...HOST_ONE, deviceToken: 'token-1' })
+    ).rejects.toBeInstanceOf(MobileRelayUpgradeHostRemovedError)
+
+    expect(JSON.parse(storedHostsRaw)).toEqual([HOST_TWO])
+    expect(secureStoreMock.setItemAsync).not.toHaveBeenCalled()
   })
 
   it('awaits cleanup scheduling after metadata commit', async () => {
