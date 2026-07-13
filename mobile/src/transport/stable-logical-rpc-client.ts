@@ -24,6 +24,7 @@ type PendingRequest = {
 
 export type StableLogicalRpcClient = RpcClient & {
   migrateTo(session: RpcClient, path: MobileConnectionPath, timeoutMs?: number): Promise<void>
+  suspendActiveSession(): void
   getActivePath(): MobileConnectionPath
   getGeneration(): number
 }
@@ -36,6 +37,7 @@ export function createStableLogicalRpcClient(
   let activePath = initialPath
   let generation = 1
   let closed = false
+  let suspended = false
   let nextSubscriptionId = 0
   let activeStateUnsubscribe: (() => void) | null = null
   const subscriptions = new Map<number, SubscriptionRecord>()
@@ -49,6 +51,9 @@ export function createStableLogicalRpcClient(
     sendRequest(method, params, options) {
       if (closed) {
         return Promise.reject(new Error('Client closed'))
+      }
+      if (suspended) {
+        return Promise.reject(new Error('Client suspended'))
       }
       const requestGeneration = generation
       const session = activeSession
@@ -88,7 +93,9 @@ export function createStableLogicalRpcClient(
         cancelled: false
       }
       subscriptions.set(id, record)
-      attachSubscription(record, activeSession, generation)
+      if (!suspended) {
+        attachSubscription(record, activeSession, generation)
+      }
       return () => {
         if (record.cancelled) {
           return
@@ -111,7 +118,9 @@ export function createStableLogicalRpcClient(
           record.params = { ...record.params, viewport }
         }
       }
-      activeSession.updateTerminalSubscriptionViewport(terminal, viewport)
+      if (!suspended) {
+        activeSession.updateTerminalSubscriptionViewport(terminal, viewport)
+      }
     },
 
     getState: () => state,
@@ -121,7 +130,11 @@ export function createStableLogicalRpcClient(
       stateListeners.add(listener)
       return () => stateListeners.delete(listener)
     },
-    notifyForeground: () => activeSession.notifyForeground(),
+    notifyForeground: () => {
+      if (!suspended) {
+        activeSession.notifyForeground()
+      }
+    },
     close() {
       if (closed) {
         return
@@ -137,6 +150,25 @@ export function createStableLogicalRpcClient(
         record.disposePhysical?.()
       }
       subscriptions.clear()
+      activeSession.close()
+      publishState('disconnected')
+    },
+
+    suspendActiveSession() {
+      if (closed || suspended) {
+        return
+      }
+      suspended = true
+      activeStateUnsubscribe?.()
+      activeStateUnsubscribe = null
+      for (const pending of pendingRequests) {
+        pending.reject(new Error('Client suspended'))
+      }
+      pendingRequests.clear()
+      for (const record of subscriptions.values()) {
+        record.disposePhysical?.()
+        record.disposePhysical = null
+      }
       activeSession.close()
       publishState('disconnected')
     },
@@ -170,6 +202,7 @@ export function createStableLogicalRpcClient(
       generation = nextGeneration
       activeSession = nextSession
       activePath = path
+      suspended = false
       previousStateUnsubscribe?.()
       bindActiveState(nextSession, nextGeneration)
       for (const pending of pendingRequests) {

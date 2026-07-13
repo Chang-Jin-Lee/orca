@@ -1,7 +1,7 @@
 import * as SecureStore from 'expo-secure-store'
 import { Platform } from 'react-native'
-import { sha256 } from '@noble/hashes/sha256'
 import { z } from 'zod'
+import { hashMobileRelayCredential } from './mobile-relay-credential-hash'
 
 const Base64Url32ByteSchema = z.string().regex(/^[A-Za-z0-9_-]{43}$/)
 
@@ -35,7 +35,7 @@ export function createMobileRelayDirectUpgradeJournal(
     hostId,
     reqId: `upgrade-${encodeBase64Url(randomBytes(16))}`,
     pendingResumeToken,
-    pendingResumeTokenHash: encodeBase64Url(sha256(decodeBase64Url(pendingResumeToken)))
+    pendingResumeTokenHash: hashMobileRelayCredential(pendingResumeToken)
   })
 }
 
@@ -72,12 +72,6 @@ export async function deleteMobileRelayDirectUpgradeJournal(hostId: string): Pro
     return
   }
   await SecureStore.deleteItemAsync(journalKey(hostId), KEYCHAIN_OPTIONS)
-}
-
-function decodeBase64Url(value: string): Uint8Array {
-  const base64 = value.replace(/-/g, '+').replace(/_/g, '/')
-  const padded = `${base64}${'='.repeat((4 - (base64.length % 4)) % 4)}`
-  return Uint8Array.from(atob(padded), (character) => character.charCodeAt(0))
 }
 
 function encodeBase64Url(value: Uint8Array): string {

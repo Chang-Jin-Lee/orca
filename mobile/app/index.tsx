@@ -1059,16 +1059,16 @@ export default function HomeScreen() {
           items.push({
             label: 'Rename',
             icon: Edit3,
+            closeBeforePress: true,
             onPress: () => {
-              setActionTarget(null)
               setRenameTarget(host)
             }
           })
           items.push({
             label: 'Remove',
             destructive: true,
+            closeBeforePress: true,
             onPress: () => {
-              setActionTarget(null)
               setConfirmRemove(host)
             }
           })

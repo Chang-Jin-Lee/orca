@@ -1,5 +1,4 @@
 import * as ExpoCrypto from 'expo-crypto'
-import { sha256 } from '@noble/hashes/sha256'
 import {
   DeviceCredentialInstalledSchema,
   PairingGetEndpointsResultSchema,
@@ -10,7 +9,10 @@ import {
   MobileRelayCredentialBundleSchema,
   type MobileRelayCredentialBundle
 } from './mobile-relay-credential-bundle'
+import { hashMobileRelayCredential } from './mobile-relay-credential-hash'
 import type { RpcClient } from './rpc-client'
+
+const CREDENTIAL_ROTATION_WINDOW_MS = 7 * 24 * 60 * 60 * 1000
 
 type RotationResult = {
   bundle: MobileRelayCredentialBundle
@@ -31,7 +33,7 @@ export async function rotateMobileRelayCredential(args: {
       ...bundle,
       pending: {
         token,
-        hash: encodeBase64Url(sha256(decodeBase64Url(token))),
+        hash: hashMobileRelayCredential(token),
         reqId: `rotate-${encodeBase64Url(randomBytes(16))}`
       }
     })
@@ -84,6 +86,21 @@ export async function rotateMobileRelayCredential(args: {
   return { bundle: next, relay: endpoints.relay }
 }
 
+export function mobileRelayCredentialNeedsRotation(
+  bundle: MobileRelayCredentialBundle,
+  now: number
+): boolean {
+  // Why: pre-release clients hashed decoded random bytes. Direct connectivity
+  // can safely replace that unusable cloud credential using its stored hash.
+  const malformedCurrentHash =
+    bundle.current.hash !== hashMobileRelayCredential(bundle.current.token)
+  return (
+    Boolean(bundle.pending) ||
+    malformedCurrentHash ||
+    bundle.current.expiresAt - now <= CREDENTIAL_ROTATION_WINDOW_MS
+  )
+}
+
 export function applyResumeConfirmation(
   bundle: MobileRelayCredentialBundle,
   usedCredentialVersion: number,
@@ -127,10 +144,4 @@ function encodeBase64Url(value: Uint8Array): string {
     binary += String.fromCharCode(byte)
   }
   return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
-}
-
-function decodeBase64Url(value: string): Uint8Array {
-  const base64 = value.replace(/-/g, '+').replace(/_/g, '/')
-  const padded = `${base64}${'='.repeat((4 - (base64.length % 4)) % 4)}`
-  return Uint8Array.from(atob(padded), (character) => character.charCodeAt(0))
 }

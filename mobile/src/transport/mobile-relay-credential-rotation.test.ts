@@ -2,9 +2,11 @@ import { describe, expect, it, vi } from 'vitest'
 import type { RpcClient } from './rpc-client'
 import {
   applyResumeConfirmation,
+  mobileRelayCredentialNeedsRotation,
   rotateMobileRelayCredential
 } from './mobile-relay-credential-rotation'
 import type { MobileRelayCredentialBundle } from './mobile-relay-credential-bundle'
+import { hashMobileRelayCredential } from './mobile-relay-credential-hash'
 import type { RpcResponse } from './types'
 
 vi.mock('react-native', () => ({ Platform: { OS: 'ios' } }))
@@ -86,6 +88,7 @@ describe('mobile relay credential rotation', () => {
 
     expect(writes).toHaveLength(2)
     expect(writes[0]!.pending).toMatchObject({ reqId: installed.reqId })
+    expect(writes[0]!.pending!.hash).toBe('3Ev4DHdHPRMPoN6GukAY_pi7IUAF5qWJHRK6kURvnoE')
     expect(client.sendRequest).toHaveBeenNthCalledWith(2, 'pairing.provisionRelay', {
       reqId: installed.reqId,
       newResumeTokenHash: writes[0]!.pending!.hash,
@@ -96,6 +99,27 @@ describe('mobile relay credential rotation', () => {
       grace: { version: 2, expiresAt: 70_000 }
     })
     expect(result.bundle.pending).toBeUndefined()
+  })
+
+  it('repairs legacy decoded-byte hashes before the normal rotation window', () => {
+    const now = 1_000
+    const valid = {
+      ...bundle,
+      current: {
+        ...bundle.current,
+        hash: hashMobileRelayCredential(bundle.current.token),
+        expiresAt: now + 30 * 24 * 60 * 60 * 1000
+      }
+    }
+
+    expect(mobileRelayCredentialNeedsRotation(valid, now)).toBe(false)
+    expect(mobileRelayCredentialNeedsRotation(bundle, now)).toBe(true)
+    expect(
+      mobileRelayCredentialNeedsRotation(
+        { ...valid, pending: { token: 'C'.repeat(43), hash: 'D'.repeat(43), reqId: 'pending' } },
+        now
+      )
+    ).toBe(true)
   })
 
   it('reconciles a committed lost response without issuing a second install', async () => {

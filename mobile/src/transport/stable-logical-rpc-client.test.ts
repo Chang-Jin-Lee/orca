@@ -119,6 +119,30 @@ describe('stable logical RPC client', () => {
     )
   })
 
+  it('suspends one physical session and replays subscriptions on foreground replacement', async () => {
+    const oldSession = new FakeSession('connected')
+    const nextSession = new FakeSession('connected')
+    nextSession.sendRequest.mockResolvedValue(success('next'))
+    const client = createStableLogicalRpcClient(oldSession, 'relay')
+    client.subscribe('session.tabs.subscribe', { worktree: 'id:wt-1' }, vi.fn())
+
+    client.suspendActiveSession()
+
+    expect(oldSession.close).toHaveBeenCalledOnce()
+    expect(client.getState()).toBe('disconnected')
+    await expect(client.sendRequest('status.get')).rejects.toThrow('Client suspended')
+
+    await client.migrateTo(nextSession, 'relay')
+
+    expect(nextSession.subscribe).toHaveBeenCalledWith(
+      'session.tabs.subscribe',
+      { worktree: 'id:wt-1' },
+      expect.any(Function),
+      undefined
+    )
+    await expect(client.sendRequest('status.get')).resolves.toEqual(success('next'))
+  })
+
   it('closes a replacement that fails authentication and preserves the active session', async () => {
     const oldSession = new FakeSession('connected')
     const replacement = new FakeSession('connecting')

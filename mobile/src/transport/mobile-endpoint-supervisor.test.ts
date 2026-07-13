@@ -38,6 +38,13 @@ class FakeSession implements RpcClient {
     this.listeners.add(listener)
     return () => this.listeners.delete(listener)
   }
+
+  publishState(state: ConnectionState): void {
+    this.state = state
+    for (const listener of this.listeners) {
+      listener(state)
+    }
+  }
 }
 
 class FakeRelaySession extends FakeSession implements MobileRelayRpcSession {
@@ -77,6 +84,7 @@ class FakeLogicalClient extends FakeSession implements StableLogicalRpcClient {
     this.path = path
     this.generation += 1
   })
+  suspendActiveSession = vi.fn(() => this.publishState('disconnected'))
   getActivePath = () => this.path
   getGeneration = () => this.generation
 }
@@ -158,6 +166,31 @@ describe('mobile endpoint supervisor', () => {
     supervisor.stop()
   })
 
+  it('fails over when the direct retry loop publishes reconnecting', async () => {
+    const logical = new FakeLogicalClient('connecting', 'lan')
+    const deps = dependencies()
+    const supervisor = new MobileEndpointSupervisor(logical, host, deps)
+    await supervisor.start()
+
+    logical.publishState('reconnecting')
+    await vi.waitFor(() => expect(logical.getActivePath()).toBe('relay'))
+
+    expect(logical.migrateTo).toHaveBeenCalledWith(expect.any(FakeRelaySession), 'relay')
+    supervisor.stop()
+  })
+
+  it('fails over when direct is already reconnecting before startup completes', async () => {
+    const logical = new FakeLogicalClient('reconnecting', 'lan')
+    const deps = dependencies()
+    const supervisor = new MobileEndpointSupervisor(logical, host, deps)
+
+    await supervisor.start()
+
+    expect(logical.migrateTo).toHaveBeenCalledWith(expect.any(FakeRelaySession), 'relay')
+    expect(logical.getActivePath()).toBe('relay')
+    supervisor.stop()
+  })
+
   it('uses POST resolve for wrong-cell recovery and persists the authoritative target', async () => {
     const logical = new FakeLogicalClient('disconnected', 'lan')
     const openRelay = vi
@@ -192,6 +225,22 @@ describe('mobile endpoint supervisor', () => {
     await vi.advanceTimersByTimeAsync(15_000)
     expect(logical.getActivePath()).toBe('lan')
     expect(deps.openDirect).toHaveBeenCalledTimes(4)
+    supervisor.stop()
+  })
+
+  it('releases a background relay session and reconnects it on foreground', async () => {
+    const logical = new FakeLogicalClient('connected', 'relay')
+    const deps = dependencies()
+    const supervisor = new MobileEndpointSupervisor(logical, host, deps)
+    await supervisor.start()
+
+    supervisor.setForeground(false)
+    expect(logical.suspendActiveSession).toHaveBeenCalledOnce()
+    expect(logical.getState()).toBe('disconnected')
+
+    supervisor.setForeground(true)
+    await vi.waitFor(() => expect(logical.migrateTo).toHaveBeenCalled())
+    expect(logical.getActivePath()).toBe('relay')
     supervisor.stop()
   })
 })

@@ -15,6 +15,7 @@ const fakes = vi.hoisted(() => ({
         attachDeadlineMs: number
       }): void
       onDrain(message: { type: 'drain'; graceMs: number; recovery: 'resolve-director' }): void
+      onClose(code: number): void
       previousGeneration?: number
       controlResumeSecret?: string
     }
@@ -246,6 +247,51 @@ describe('RelaySessionBroker lifecycle ownership', () => {
     await vi.waitFor(() => expect(brokerBasisIds(broker)).toEqual(['existing-basis']))
     await broker.confirmResume('existing-basis', 'confirm-1')
     expect(fakes.controls[1]!.confirmResume).toHaveBeenCalledOnce()
+  })
+
+  it('opens a fresh same-cell generation when process-local rebind state is lost', async () => {
+    const ack: RelayHostHelloAckMessage = {
+      type: 'host-hello-ack',
+      v: 1,
+      generation: 7,
+      controlResumeSecret: 'R'.repeat(43),
+      leaseExpiresAt: 1_000_000,
+      activeConnIds: [],
+      pendingConns: []
+    }
+    fakes.controlConnect
+      .mockResolvedValueOnce(ack)
+      .mockRejectedValueOnce(new Error('relay_control_closed_4401'))
+      .mockResolvedValueOnce({
+        ...ack,
+        generation: 1,
+        controlResumeSecret: 'N'.repeat(43),
+        leaseExpiresAt: 2_000_000
+      })
+    fakes.assign
+      .mockResolvedValueOnce({
+        cellUrl: 'https://relay.example.test',
+        assignmentEpoch: 1,
+        leaseExpiresAt: 1_000_000
+      })
+      .mockResolvedValueOnce({
+        cellUrl: 'https://relay.example.test',
+        assignmentEpoch: 1,
+        leaseExpiresAt: 2_000_000
+      })
+    const onStatus = vi.fn()
+    const broker = await RelaySessionBroker.connect(brokerOptions({ onStatus }))
+
+    fakes.controls[0]!.options.onClose(1006)
+    await vi.waitFor(() => expect(fakes.controls).toHaveLength(3))
+
+    expect(fakes.controls[1]!.options.previousGeneration).toBe(7)
+    expect(fakes.controls[1]!.options.controlResumeSecret).toBe('R'.repeat(43))
+    expect(fakes.controls[2]!.options.previousGeneration).toBeUndefined()
+    expect(fakes.controls[2]!.options.controlResumeSecret).toBeUndefined()
+    expect(fakes.transports).toHaveLength(2)
+    await vi.waitFor(() => expect(onStatus).toHaveBeenLastCalledWith('registered'))
+    expect(broker.endpoint?.cellUrl).toBe('https://relay.example.test')
   })
 })
 

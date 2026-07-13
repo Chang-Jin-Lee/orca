@@ -1,16 +1,15 @@
 import type { MobileRelayEndpoint } from '../../../src/shared/mobile-relay-credential-contract'
+import { openAuthenticatedDirectEndpoint } from './mobile-direct-endpoint-probe'
 import { MobileEndpointHysteresis } from './mobile-endpoint-hysteresis'
 import {
-  directEndpointUrls,
-  directPathForEndpoint,
   encodeBase64Url,
   isDirectorResolutionFailure,
   persistRelayHost,
-  toError,
-  waitForAuthenticatedSession
+  toError
 } from './mobile-endpoint-supervisor-support'
 import {
   applyResumeConfirmation,
+  mobileRelayCredentialNeedsRotation,
   rotateMobileRelayCredential
 } from './mobile-relay-credential-rotation'
 import type { MobileRelayCredentialBundle } from './mobile-relay-credential-bundle'
@@ -25,7 +24,6 @@ const DIRECT_OBSERVATION_MS = 30_000
 const MINIMUM_DWELL_MS = 60_000
 const FAILURE_COOLDOWN_MS = 60_000
 const LEASE_ROTATION_MARGIN_MS = 30_000
-const CREDENTIAL_ROTATION_WINDOW_MS = 7 * 24 * 60 * 60 * 1000
 
 export type MobileEndpointSupervisorDependencies = {
   openDirect: (endpoint: string) => RpcClient
@@ -82,11 +80,20 @@ export class MobileEndpointSupervisor {
           void this.rotateCredentialIfNeeded()
         }
         this.scheduleDirectProbe()
-      } else if (state === 'disconnected' || state === 'auth-failed') {
+      } else if (state === 'reconnecting' || state === 'disconnected' || state === 'auth-failed') {
+        // Why: the direct client enters reconnecting after its first failed
+        // dial and may never publish disconnected while its retry loop lives.
         void this.recoverRelay()
       }
     })
-    if (this.logical.getState() === 'disconnected') {
+    const initialState = this.logical.getState()
+    if (
+      initialState === 'reconnecting' ||
+      initialState === 'disconnected' ||
+      initialState === 'auth-failed'
+    ) {
+      // Why: the first direct dial can fail while encrypted relay credentials
+      // are still loading, before the supervisor subscribes to state changes.
       await this.recoverRelay()
     } else {
       this.scheduleDirectProbe()
@@ -98,9 +105,16 @@ export class MobileEndpointSupervisor {
     if (foreground) {
       void this.recoverRelay(this.relayRotationPending)
       this.scheduleDirectProbe(0)
-    } else if (this.probeTimer) {
-      this.dependencies.clearTimer(this.probeTimer)
-      this.probeTimer = null
+    } else {
+      if (this.logical.getActivePath() === 'relay') {
+        // Why: background phones must not hold billed relay data splices; the
+        // stable client keeps subscriptions for authenticated foreground replay.
+        this.logical.suspendActiveSession()
+      }
+      if (this.probeTimer) {
+        this.dependencies.clearTimer(this.probeTimer)
+        this.probeTimer = null
+      }
     }
   }
 
@@ -185,6 +199,9 @@ export class MobileEndpointSupervisor {
     )
     try {
       await this.logical.migrateTo(session, 'relay')
+      if (!this.foreground) {
+        this.logical.suspendActiveSession()
+      }
       this.relayRotationPending = false
       this.hysteresis.recordMigration(this.dependencies.now())
       const confirmation = session.getResumeConfirmation()
@@ -226,36 +243,26 @@ export class MobileEndpointSupervisor {
       return
     }
     this.operationInFlight = true
-    let successful: RpcClient | null = null
-    let successfulPath: 'lan' | 'tailscale' = 'lan'
+    let successful: Awaited<ReturnType<typeof openAuthenticatedDirectEndpoint>> = null
     try {
-      for (const endpoint of directEndpointUrls(this.host)) {
-        const candidate = this.dependencies.openDirect(endpoint)
-        try {
-          await waitForAuthenticatedSession(candidate, 12_000)
-          successful = candidate
-          successfulPath = directPathForEndpoint(this.host, endpoint)
-          break
-        } catch {
-          candidate.close()
-        }
-      }
+      const openDirect = this.dependencies.openDirect
+      successful = await openAuthenticatedDirectEndpoint(this.host, openDirect, 12_000)
       if (!successful) {
         this.hysteresis.recordDirectFailure(this.dependencies.now())
         return
       }
       if (!this.hysteresis.recordDirectSuccess(this.dependencies.now())) {
-        successful.close()
+        successful.client.close()
         return
       }
-      await this.logical.migrateTo(successful, successfulPath)
+      await this.logical.migrateTo(successful.client, successful.path)
       successful = null
       this.hysteresis.recordMigration(this.dependencies.now())
       this.clearLeaseTimer()
       this.relayRotationPending = false
       await this.rotateCredentialIfNeeded()
     } finally {
-      successful?.close()
+      successful?.client.close()
       this.operationInFlight = false
       if (this.relayRotationPending) {
         void this.recoverRelay(true)
@@ -270,8 +277,7 @@ export class MobileEndpointSupervisor {
       this.credentialRotationInFlight ||
       !this.bundle ||
       this.logical.getActivePath() === 'relay' ||
-      (!this.bundle.pending &&
-        this.bundle.current.expiresAt - this.dependencies.now() > CREDENTIAL_ROTATION_WINDOW_MS)
+      !mobileRelayCredentialNeedsRotation(this.bundle, this.dependencies.now())
     ) {
       return
     }

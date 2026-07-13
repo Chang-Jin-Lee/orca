@@ -2,6 +2,7 @@ import * as ExpoCrypto from 'expo-crypto'
 import { sha256 } from '@noble/hashes/sha256'
 import { z } from 'zod'
 import type { PairingRelay } from '../../../src/shared/mobile-relay-pairing-offer'
+import { hashMobileRelayCredential } from './mobile-relay-credential-hash'
 import type { PairingOffer } from './types'
 
 const Base64Url32ByteSchema = z.string().regex(/^[A-Za-z0-9_-]{43}$/)
@@ -88,7 +89,7 @@ export function createMobileRelayPairingJournal(args: {
       relay: relayMetadata,
       installReqId,
       resumeConfirmReqId,
-      pendingResumeTokenHash: encodeBase64Url(sha256(decodeBase64Url(pendingResumeToken)))
+      pendingResumeTokenHash: hashMobileRelayCredential(pendingResumeToken)
     }),
     secrets: {
       v: 1,
@@ -107,10 +108,4 @@ function encodeBase64Url(value: Uint8Array | string): string {
     binary += String.fromCharCode(byte)
   }
   return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
-}
-
-function decodeBase64Url(value: string): Uint8Array {
-  const base64 = value.replace(/-/g, '+').replace(/_/g, '/')
-  const padded = `${base64}${'='.repeat((4 - (base64.length % 4)) % 4)}`
-  return Uint8Array.from(atob(padded), (character) => character.charCodeAt(0))
 }
