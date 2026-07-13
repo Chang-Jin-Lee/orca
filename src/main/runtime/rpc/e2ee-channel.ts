@@ -26,11 +26,17 @@ const MAX_BINARY_BUFFERED_AMOUNT = 8 * 1024 * 1024
 
 export type E2EEChannelOptions = {
   serverSecretKey: Uint8Array
-  validateToken: (token: string) => boolean
-  onReady: (channel: E2EEChannel) => void
+  resolveAuthenticatedDevice: (token: string) => E2EEAuthenticatedDevice | null
+  onReady: (channel: E2EEChannel, device: E2EEAuthenticatedDevice) => void
   onError: (code: number, reason: string) => void
   transportContext?: DesktopMobileE2EEV2Context
   requireV2?: boolean
+}
+
+export type E2EEAuthenticatedDevice = {
+  deviceId: string
+  deviceToken: string
+  scope: 'mobile' | 'runtime'
 }
 
 export class E2EEChannel {
@@ -40,8 +46,8 @@ export class E2EEChannel {
   private handshakeTimer: ReturnType<typeof setTimeout> | null = null
   private readonly ws: WebSocket
   private readonly serverSecretKey: Uint8Array
-  private readonly validateToken: (token: string) => boolean
-  private readonly onReady: (channel: E2EEChannel) => void
+  private readonly resolveAuthenticatedDevice: (token: string) => E2EEAuthenticatedDevice | null
+  private readonly onReady: (channel: E2EEChannel, device: E2EEAuthenticatedDevice) => void
   private readonly onError: (code: number, reason: string) => void
   private readonly transportContext: DesktopMobileE2EEV2Context
   private readonly requireV2: boolean
@@ -65,11 +71,12 @@ export class E2EEChannel {
   private textReplyQueue: WsOutboundBackpressureQueue<string> | null = null
 
   deviceToken: string | null = null
+  authenticatedDevice: E2EEAuthenticatedDevice | null = null
 
   constructor(ws: WebSocket, options: E2EEChannelOptions) {
     this.ws = ws
     this.serverSecretKey = options.serverSecretKey
-    this.validateToken = options.validateToken
+    this.resolveAuthenticatedDevice = options.resolveAuthenticatedDevice
     this.onReady = options.onReady
     this.onError = options.onError
     this.transportContext = options.transportContext ?? { transport: 'direct' }
@@ -245,13 +252,15 @@ export class E2EEChannel {
       this.onError(4001, 'Invalid e2ee_auth')
       return
     }
-    if (!this.validateToken(auth.deviceToken)) {
+    const authenticatedDevice = this.resolveAuthenticatedDevice(auth.deviceToken)
+    if (!authenticatedDevice || authenticatedDevice.deviceToken !== auth.deviceToken) {
       this.sendEncryptedControl({ type: 'e2ee_error', error: { code: 'unauthorized' } })
       this.onError(4001, 'Unauthorized')
       return
     }
 
     this.deviceToken = auth.deviceToken
+    this.authenticatedDevice = authenticatedDevice
     this.state = 'ready'
 
     if (this.handshakeTimer) {
@@ -259,6 +268,10 @@ export class E2EEChannel {
       this.handshakeTimer = null
     }
 
+    // Why: transport-bound identity checks must complete before the peer sees
+    // authentication success; relay sockets additionally bind this context to
+    // their immutable relayDeviceId in the resolver.
+    this.onReady(this, authenticatedDevice)
     this.sendEncryptedControl(
       this.v2Session
         ? {
@@ -268,7 +281,6 @@ export class E2EEChannel {
           }
         : { type: 'e2ee_authenticated' }
     )
-    this.onReady(this)
   }
 
   private handleV2RawMessage(raw: string | Uint8Array<ArrayBufferLike>): void {
@@ -334,6 +346,7 @@ export class E2EEChannel {
       this.handshakeTimer = null
     }
     this.sharedKey = null
+    this.authenticatedDevice = null
     this.v2Session = null
     this.messageHandler = null
     this.binaryMessageHandler = null

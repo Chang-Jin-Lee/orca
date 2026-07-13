@@ -20,7 +20,7 @@ import { readWsFallbackPort, writeWsFallbackPort } from './rpc/ws-fallback-port-
 import type { WebSocket } from 'ws'
 import { DeviceRegistry, type DeviceScope } from './device-registry'
 import { loadOrCreateE2EEKeypair, type E2EEKeypair } from './e2ee-keypair'
-import { E2EEChannel } from './rpc/e2ee-channel'
+import { MobileSocketWiring } from './rpc/mobile-socket-wiring'
 import { encodePairingOffer, PAIRING_OFFER_VERSION } from '../../shared/pairing'
 import {
   decodeTerminalStreamFrame,
@@ -407,16 +407,9 @@ export class OrcaRuntimeRpcServer {
   private deviceRegistry: DeviceRegistry | null = null
   private e2eeKeypair: E2EEKeypair | null = null
   private tlsFingerprint: string | null = null
-  private wsTransport: WebSocketTransport | null = null
   private activeTransports: RpcTransport[] = []
   private transports: RuntimeTransportMetadata[] = []
-  // Why: each WebSocket connection has its own E2EE channel that manages the
-  // handshake and encrypt/decrypt lifecycle. Keyed by WebSocket instance.
-  private e2eeChannels = new Map<WebSocket, E2EEChannel>()
-  // Why: stable per-WebSocket id used as the cleanup key for streaming
-  // subscriptions, so the server can reap a closing socket's subscriptions
-  // without affecting other live sockets that share the same deviceToken.
-  private wsConnectionIds = new Map<WebSocket, string>()
+  private mobileSocketWiring: MobileSocketWiring | null = null
   private readonly binaryStreamHandlers = new Map<
     string,
     Map<number, (frame: TerminalStreamFrame) => void>
@@ -474,7 +467,7 @@ export class OrcaRuntimeRpcServer {
     if (device?.scope !== 'mobile' || !this.deviceRegistry?.removeDevice(deviceId)) {
       return false
     }
-    this.wsTransport?.terminateClientConnections(device.token)
+    this.mobileSocketWiring?.terminateDeviceConnections(device.token)
     return true
   }
 
@@ -483,7 +476,7 @@ export class OrcaRuntimeRpcServer {
     if (device?.scope !== 'runtime' || !this.deviceRegistry?.removeDevice(deviceId)) {
       return false
     }
-    this.wsTransport?.terminateClientConnections(device.token)
+    this.mobileSocketWiring?.terminateDeviceConnections(device.token)
     return true
   }
 
@@ -562,7 +555,7 @@ export class OrcaRuntimeRpcServer {
   }
 
   private handleWebSocketBinaryMessage(bytes: Uint8Array<ArrayBufferLike>, ws: WebSocket): void {
-    const connectionId = this.wsConnectionIds.get(ws)
+    const connectionId = this.mobileSocketWiring?.getConnectionId(ws)
     if (!connectionId) {
       return
     }
@@ -714,85 +707,37 @@ export class OrcaRuntimeRpcServer {
           // pin it.
           ...(this.wsPort !== 0 ? { fallbackPort: readWsFallbackPort(this.userDataPath) } : {})
         })
-        this.wsTransport = wsTransport
-
-        // Why: each WebSocket connection gets an E2EE channel that handles the
-        // handshake before any RPC messages are processed. The channel decrypts
-        // inbound messages and encrypts outbound replies transparently.
-        wsTransport.onMessage((msg, _reply, ws) => {
-          let channel = this.e2eeChannels.get(ws)
-          if (!channel) {
-            // Why: stable per-ws id used as the cleanup-index key for
-            // streaming subscriptions, so the server can reap them exactly
-            // when this socket closes (without affecting other live sockets
-            // that share the same deviceToken).
-            this.wsConnectionIds.set(ws, randomBytes(8).toString('hex'))
-            channel = new E2EEChannel(ws, {
-              serverSecretKey: this.e2eeKeypair!.secretKey,
-              validateToken: (token) => this.deviceRegistry?.validateToken(token) != null,
-              onReady: (ch) => {
-                if (ch.deviceToken) {
-                  wsTransport.setClientId(ws, ch.deviceToken)
-                  // Why: mark the device as actually connected so it appears
-                  // in the "Paired Devices" list. Devices that were only
-                  // generated as QR codes but never scanned stay hidden.
-                  const device = this.deviceRegistry?.validateToken(ch.deviceToken)
-                  if (device) {
-                    this.deviceRegistry?.updateLastSeen(device.deviceId)
-                  }
-                }
-              },
-              onError: (code, reason) => {
-                this.e2eeChannels.get(ws)?.destroy()
-                this.e2eeChannels.delete(ws)
-                ws.close(code, reason)
-              }
-            })
-            channel.onMessage((plaintext, encryptedReply, encryptedBinaryReply) => {
-              const authenticatedDeviceToken = this.e2eeChannels.get(ws)?.deviceToken ?? null
-              void this.handleWebSocketMessage(
-                plaintext,
-                encryptedReply,
-                encryptedBinaryReply,
-                wsTransport,
-                ws,
-                authenticatedDeviceToken
-              )
-            })
-            channel.onBinaryMessage((bytes) => this.handleWebSocketBinaryMessage(bytes, ws))
-            this.e2eeChannels.set(ws, channel)
-          }
-          channel.handleRawMessage(msg)
-        })
-
-        // Why: when a mobile client disconnects, the runtime must clean up
-        // connection-scoped state like mobile-fit overrides and the E2EE
-        // channel to prevent orphaned state. A single paired device can hold
-        // multiple concurrent sockets (host screen + accounts screen, etc.),
-        // so destroy the channel for THIS exact ws and skip the per-client
-        // teardown when other sockets for the same token are still alive.
-        wsTransport.onConnectionClose((clientId, ws, hasOtherConnections) => {
-          this.abortWebSocketDispatches(ws)
-          // Why: sweep streaming subscriptions for THIS ws regardless of
-          // hasOtherConnections, so per-ws listeners (notifications,
-          // accounts, terminal) don't leak across reconnects. This is
-          // independent of the deviceToken-scoped onClientDisconnected.
-          const connectionId = this.wsConnectionIds.get(ws)
-          if (connectionId) {
-            this.runtime.cleanupSubscriptionsForConnection(connectionId)
-            this.runtime.cancelMobileDictationForConnection(connectionId)
-            this.binaryStreamHandlers.delete(connectionId)
-            this.wsConnectionIds.delete(ws)
-          }
-          const channel = this.e2eeChannels.get(ws)
-          if (channel) {
-            channel.destroy()
-            this.e2eeChannels.delete(ws)
-          }
-          if (clientId && !hasOtherConnections) {
-            this.runtime.onClientDisconnected(clientId)
+        const mobileSocketWiring = new MobileSocketWiring({
+          deviceRegistry: this.deviceRegistry,
+          e2eeKeypair: this.e2eeKeypair,
+          onText: (socket, plaintext, reply, sendBinary) => {
+            void this.handleWebSocketMessage(
+              plaintext,
+              reply,
+              sendBinary,
+              undefined,
+              socket.ws,
+              socket.device.deviceToken
+            )
+          },
+          onBinary: (socket, bytes) => this.handleWebSocketBinaryMessage(bytes, socket.ws),
+          onClose: (socket, hasOtherConnections) => {
+            if (!socket) {
+              return
+            }
+            this.abortWebSocketDispatches(socket.ws)
+            // Why: subscriptions and binary streams are socket-scoped, while
+            // client disconnect state is device-scoped across both transports.
+            this.runtime.cleanupSubscriptionsForConnection(socket.connectionId)
+            this.runtime.cancelMobileDictationForConnection(socket.connectionId)
+            this.binaryStreamHandlers.delete(socket.connectionId)
+            if (!hasOtherConnections) {
+              this.runtime.onClientDisconnected(socket.device.deviceToken)
+            }
           }
         })
+        mobileSocketWiring.attachTransport(wsTransport)
+        this.mobileSocketWiring = mobileSocketWiring
 
         await wsTransport.start()
         if (this.wsPort !== 0 && wsTransport.resolvedPort !== this.wsPort) {
@@ -808,7 +753,7 @@ export class OrcaRuntimeRpcServer {
         // function if it fails to start (e.g., port in use). Log and continue
         // with Unix socket only.
         console.error('[runtime] Failed to start WebSocket transport:', error)
-        this.wsTransport = null
+        this.mobileSocketWiring = null
       }
     }
 
@@ -835,7 +780,7 @@ export class OrcaRuntimeRpcServer {
     const transports = this.activeTransports
     this.activeTransports = []
     this.transports = []
-    this.wsTransport = null
+    this.mobileSocketWiring = null
     if (transports.length === 0) {
       return
     }
@@ -1013,7 +958,7 @@ export class OrcaRuntimeRpcServer {
         ? (response: string): void => reply(injectDeviceScope(response, device.scope))
         : reply
 
-    const connectionId = ws ? this.wsConnectionIds.get(ws) : undefined
+    const connectionId = ws ? this.mobileSocketWiring?.getConnectionId(ws) : undefined
     try {
       await this.dispatcher.dispatchStreaming(request, replyForRequest, {
         connectionId,

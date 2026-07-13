@@ -533,12 +533,16 @@ describe('OrcaRuntimeRpcServer', () => {
         })
       )
       expect(JSON.parse(await nextWsMessage(ws))).toEqual({ type: 'e2ee_ready' })
-      expect(server['e2eeChannels'].size).toBe(1)
-      expect(server['wsConnectionIds'].size).toBe(1)
+      expect(server['mobileSocketWiring']?.channelCount).toBe(1)
+      expect(server['mobileSocketWiring']?.connectionCount).toBe(1)
 
       ws.close()
       await waitForWsClose(ws)
-      await waitFor(() => server['e2eeChannels'].size === 0 && server['wsConnectionIds'].size === 0)
+      await waitFor(
+        () =>
+          server['mobileSocketWiring']?.channelCount === 0 &&
+          server['mobileSocketWiring']?.connectionCount === 0
+      )
     } finally {
       await server.stop()
     }
@@ -572,7 +576,11 @@ describe('OrcaRuntimeRpcServer', () => {
 
       expect(server.revokeMobileDevice(offer.deviceId)).toBe(true)
       await Promise.all([waitForWsClose(first), waitForWsClose(second)])
-      await waitFor(() => server['e2eeChannels'].size === 0 && server['wsConnectionIds'].size === 0)
+      await waitFor(
+        () =>
+          server['mobileSocketWiring']?.channelCount === 0 &&
+          server['mobileSocketWiring']?.connectionCount === 0
+      )
 
       expect(disconnectSpy).toHaveBeenCalledTimes(1)
     } finally {
@@ -638,7 +646,11 @@ describe('OrcaRuntimeRpcServer', () => {
 
       expect(server.revokeRuntimeAccess(offer.deviceId)).toBe(true)
       await Promise.all([waitForWsClose(first), waitForWsClose(second)])
-      await waitFor(() => server['e2eeChannels'].size === 0 && server['wsConnectionIds'].size === 0)
+      await waitFor(
+        () =>
+          server['mobileSocketWiring']?.channelCount === 0 &&
+          server['mobileSocketWiring']?.connectionCount === 0
+      )
 
       expect(server.getDeviceRegistry()?.getDevice(offer.deviceId)).toBeNull()
     } finally {
@@ -718,7 +730,9 @@ describe('OrcaRuntimeRpcServer', () => {
     server['deviceRegistry'] = new DeviceRegistry(userDataPath)
     const entry = server['deviceRegistry']!.addDevice('runtime-test', 'runtime')
     const ws = new FakeWebSocket()
-    server['wsConnectionIds'].set(ws as unknown as WebSocket, 'conn-test')
+    server['mobileSocketWiring'] = {
+      getConnectionId: () => 'conn-test'
+    } as unknown as NonNullable<(typeof server)['mobileSocketWiring']>
     const replies: Record<string, unknown>[] = []
 
     try {
@@ -778,7 +792,9 @@ describe('OrcaRuntimeRpcServer', () => {
     server['deviceRegistry'] = new DeviceRegistry(userDataPath)
     const entry = server['deviceRegistry']!.addDevice('runtime-test', 'runtime')
     const ws = new FakeWebSocket()
-    server['wsConnectionIds'].set(ws as unknown as WebSocket, 'conn-test')
+    server['mobileSocketWiring'] = {
+      getConnectionId: () => 'conn-test'
+    } as unknown as NonNullable<(typeof server)['mobileSocketWiring']>
     let activeDispatches = 0
     ;(
       server as unknown as {

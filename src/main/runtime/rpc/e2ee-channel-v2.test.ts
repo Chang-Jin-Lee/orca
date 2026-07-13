@@ -52,16 +52,20 @@ function setup() {
   const ws = createMockWs()
   const onReady = vi.fn()
   const onError = vi.fn()
-  const validateToken = vi.fn((token: string) => token === 'valid-token')
+  const resolveAuthenticatedDevice = vi.fn((token: string) =>
+    token === 'valid-token'
+      ? { deviceId: 'device-1', deviceToken: token, scope: 'mobile' as const }
+      : null
+  )
   const channel = new E2EEChannel(ws as unknown as WebSocket, {
     serverSecretKey: server.secretKey,
-    validateToken,
+    resolveAuthenticatedDevice,
     onReady,
     onError,
     transportContext: { transport: 'relay', relayHostId: 'AbCdEf0123_-xyZ9' },
     requireV2: true
   })
-  return { ws, channel, onReady, onError, validateToken }
+  return { ws, channel, onReady, onError, resolveAuthenticatedDevice }
 }
 
 function startV2(ctx: ReturnType<typeof setup>) {
@@ -138,8 +142,12 @@ describe('E2EEChannel v2', () => {
     const { schedule } = startV2(ctx)
     authenticate(ctx, schedule)
 
-    expect(ctx.validateToken).toHaveBeenCalledOnce()
-    expect(ctx.onReady).toHaveBeenCalledWith(ctx.channel)
+    expect(ctx.resolveAuthenticatedDevice).toHaveBeenCalledOnce()
+    expect(ctx.onReady).toHaveBeenCalledWith(ctx.channel, {
+      deviceId: 'device-1',
+      deviceToken: 'valid-token',
+      scope: 'mobile'
+    })
     const authenticated = openServerFrame(ctx.ws.sent[1]!.data, 'text', schedule, 0n)
     expect(JSON.parse(new TextDecoder().decode(authenticated!))).toEqual({
       type: 'e2ee_authenticated',
@@ -171,7 +179,7 @@ describe('E2EEChannel v2', () => {
         0n
       )
     )
-    expect(ctx.validateToken).not.toHaveBeenCalled()
+    expect(ctx.resolveAuthenticatedDevice).not.toHaveBeenCalled()
   })
 
   it('rejects a captured auth frame replayed onto a fresh desktop nonce', () => {
@@ -192,7 +200,7 @@ describe('E2EEChannel v2', () => {
     const secondHandshake = startV2(second)
     expect(secondHandshake.ready.desktopNonceB64).not.toBe(firstHandshake.ready.desktopNonceB64)
     second.channel.handleRawMessage(capturedAuth)
-    expect(second.validateToken).not.toHaveBeenCalled()
+    expect(second.resolveAuthenticatedDevice).not.toHaveBeenCalled()
     expect(second.onReady).not.toHaveBeenCalled()
   })
 
@@ -222,7 +230,7 @@ describe('E2EEChannel v2', () => {
     second.channel.onMessage(replayedMutation)
     second.channel.handleRawMessage(capturedAuth)
     second.channel.handleRawMessage(capturedMutation)
-    expect(second.validateToken).not.toHaveBeenCalled()
+    expect(second.resolveAuthenticatedDevice).not.toHaveBeenCalled()
     expect(replayedMutation).not.toHaveBeenCalled()
   })
 
