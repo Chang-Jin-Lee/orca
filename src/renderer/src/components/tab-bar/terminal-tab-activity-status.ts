@@ -25,6 +25,7 @@ type TerminalTabActivityFlags = {
 
 type FlagsCache = {
   agentStatusByPaneKey: Record<string, AgentStatusEntry> | undefined
+  agentStatusEpoch: number | undefined
   flagsByTabId: Map<string, TerminalTabActivityFlags>
 }
 
@@ -35,9 +36,19 @@ type FlagsCache = {
 let flagsCache: FlagsCache | null = null
 
 function getTerminalTabActivityFlags(
-  agentStatusByPaneKey: Record<string, AgentStatusEntry> | undefined
+  agentStatusByPaneKey: Record<string, AgentStatusEntry> | undefined,
+  agentStatusEpoch: number | undefined
 ): Map<string, TerminalTabActivityFlags> {
-  if (flagsCache && flagsCache.agentStatusByPaneKey === agentStatusByPaneKey) {
+  // Why: freshness is time-based, so the store bumps agentStatusEpoch without
+  // replacing the map at the 30m stale boundary (createFreshnessScheduler).
+  // Keying on the map reference alone would keep serving flags computed at the
+  // old `now`, spinning an abandoned tab forever while the sidebar — which keys
+  // on agentStatusEpoch — correctly de-spins. Invalidate on either changing.
+  if (
+    flagsCache &&
+    flagsCache.agentStatusByPaneKey === agentStatusByPaneKey &&
+    flagsCache.agentStatusEpoch === agentStatusEpoch
+  ) {
     return flagsCache.flagsByTabId
   }
 
@@ -74,7 +85,7 @@ function getTerminalTabActivityFlags(
     }
   }
 
-  flagsCache = { agentStatusByPaneKey, flagsByTabId }
+  flagsCache = { agentStatusByPaneKey, agentStatusEpoch, flagsByTabId }
   return flagsByTabId
 }
 
@@ -95,6 +106,9 @@ const EMPTY_PANE_IDS: ReadonlySet<string> = new Set()
 type TerminalTabActivityInput = {
   tab: Pick<TerminalTab, 'id' | 'title'>
   agentStatusByPaneKey?: Record<string, AgentStatusEntry>
+  // Why: the store bumps this at the 30m stale boundary without replacing the
+  // pane-status map; it is the flag cache's invalidation key (see above).
+  agentStatusEpoch?: number
   runtimePaneTitlesByTabId?: Record<string, Record<number, string>>
   ptyIdsByTabId?: Record<string, string[]>
   terminalLayout?: TerminalLayoutSnapshot
@@ -109,11 +123,12 @@ type TerminalTabActivityInput = {
 export function resolveTerminalTabActivityStatus({
   tab,
   agentStatusByPaneKey,
+  agentStatusEpoch,
   runtimePaneTitlesByTabId,
   ptyIdsByTabId,
   terminalLayout
 }: TerminalTabActivityInput): TerminalTabActivityStatus {
-  const flags = getTerminalTabActivityFlags(agentStatusByPaneKey).get(tab.id)
+  const flags = getTerminalTabActivityFlags(agentStatusByPaneKey, agentStatusEpoch).get(tab.id)
   return resolveWorktreeStatus({
     tabs: [tab],
     browserTabs: [],

@@ -108,6 +108,33 @@ describe('resolveTerminalTabActivityStatus', () => {
     ).toBe('working')
   })
 
+  it('de-spins a stale working tab on an epoch bump without a new map reference', () => {
+    // Why: the freshness scheduler bumps agentStatusEpoch (not the map ref) at
+    // the 30m stale boundary. The flag cache must invalidate on that bump, or an
+    // abandoned tab keeps spinning while the sidebar (epoch-keyed) de-spins.
+    const working = entry(FIRST_LEAF_ID, 'working')
+    const agentStatusByPaneKey = { [working.paneKey]: working }
+    expect(
+      resolveTerminalTabActivityStatus({
+        tab: TAB,
+        agentStatusByPaneKey,
+        agentStatusEpoch: 0,
+        ptyIdsByTabId: LIVE_PTY
+      })
+    ).toBe('working')
+
+    vi.setSystemTime(31 * 60 * 1000)
+    // Same map reference, bumped epoch — the entry is now stale.
+    expect(
+      resolveTerminalTabActivityStatus({
+        tab: TAB,
+        agentStatusByPaneKey,
+        agentStatusEpoch: 1,
+        ptyIdsByTabId: LIVE_PTY
+      })
+    ).toBe('active')
+  })
+
   it('does not treat a preserved title on a sleeping tab as activity', () => {
     expect(
       resolveTerminalTabActivityStatus({
