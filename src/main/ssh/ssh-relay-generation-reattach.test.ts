@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { SshRelaySession } from './ssh-relay-session'
@@ -152,14 +152,21 @@ describe('SSH relay generation reattach', () => {
   it('migrates a legacy lease only after the current relay proves it can attach', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'orca-legacy-ssh-lease-'))
     const dataFile = join(dir, 'state.json')
-    const store = new Store({ dataFile })
-    const reloadedStores: Store[] = []
+    const stores: Store[] = []
     try {
-      store.upsertSshRemotePtyLease({
+      const seedStore = new Store({ dataFile })
+      stores.push(seedStore)
+      seedStore.upsertSshRemotePtyLease({
         targetId: 'target-1',
         ptyId: 'pty-legacy',
         state: 'detached'
       })
+      seedStore.flush()
+      // Why: an upgraded profile predates the teardown journal entirely. The
+      // first migration must survive before the debounced full save runs.
+      rmSync(join(dir, 'orca-terminal-teardown-intents.json'), { force: true })
+      const store = new Store({ dataFile })
+      stores.push(store)
       const synchronousFlush = vi.spyOn(store, 'flush')
       const { mockConn, mockPortForward, getMainWindow } = createMockDeps()
       const attachForReconnect = vi.fn().mockResolvedValue({})
@@ -184,15 +191,69 @@ describe('SSH relay generation reattach', () => {
       ])
       expect(synchronousFlush).not.toHaveBeenCalled()
       const reloaded = new Store({ dataFile })
-      reloadedStores.push(reloaded)
+      stores.push(reloaded)
       expect(reloaded.getSshRemotePtyLeases('target-1')[0]).toEqual(
         expect.objectContaining({ relayInstanceId: 'relay-current', state: 'attached' })
       )
     } finally {
-      store.flush()
-      for (const reloaded of reloadedStores) {
-        reloaded.flush()
+      for (const store of stores) {
+        store.flush()
       }
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('adopts many legacy leases with one linear index build and bounded records', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'orca-ssh-lease-scale-'))
+    const dataFile = join(dir, 'state.json')
+    const store = new Store({ dataFile })
+    const leaseCount = 50
+    try {
+      for (let index = 0; index < leaseCount; index += 1) {
+        store.upsertSshRemotePtyLease({
+          targetId: 'target-1',
+          ptyId: `pty-${index}`,
+          state: 'detached'
+        })
+      }
+      const internals = store as unknown as {
+        state: { sshRemotePtyLeases: unknown[] }
+      }
+      const leases = internals.state.sshRemotePtyLeases
+      let indexedLeaseReads = 0
+      internals.state.sshRemotePtyLeases = new Proxy(leases, {
+        get(target, property, receiver) {
+          if (typeof property === 'string' && /^\d+$/.test(property)) {
+            indexedLeaseReads += 1
+          }
+          return Reflect.get(target, property, receiver)
+        }
+      })
+      const synchronousFlush = vi.spyOn(store, 'flush')
+
+      for (let index = 0; index < leaseCount; index += 1) {
+        expect(
+          store.migrateLegacySshRemotePtyLeaseGeneration(
+            'target-1',
+            `pty-${index}`,
+            'relay-current'
+          )
+        ).toBe(true)
+      }
+
+      expect(indexedLeaseReads).toBe(leaseCount)
+      expect(synchronousFlush).not.toHaveBeenCalled()
+      const records = readFileSync(join(dir, 'orca-terminal-teardown-intents.json'), 'utf-8')
+        .trim()
+        .split('\n')
+        .map((line) => JSON.parse(line) as { kind: string })
+      const migrations = records.filter((record) => record.kind === 'ssh-migrate-generation')
+      expect(migrations).toHaveLength(leaseCount)
+      expect(Math.max(...migrations.map((record) => JSON.stringify(record).length))).toBeLessThan(
+        1_024
+      )
+    } finally {
+      store.flush()
       rmSync(dir, { recursive: true, force: true })
     }
   })

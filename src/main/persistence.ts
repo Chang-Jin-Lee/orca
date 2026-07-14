@@ -23,6 +23,10 @@ import {
   writeTerminalTeardownIntentSnapshot
 } from './terminal-teardown-intent-snapshot'
 import type { TerminalTeardownIntentMutation } from './terminal-teardown-intent-snapshot'
+import {
+  indexSshRemotePtyLeases,
+  sshRemotePtyLeaseIdentityKey
+} from './ssh/ssh-remote-pty-lease-index'
 import type {
   Automation,
   AutomationCreateInput,
@@ -2668,6 +2672,7 @@ export class Store {
   private firstPendingSaveAt: number | null = null
   private githubCacheDirty = false
   private terminalTeardownIntentJournalReady = false
+  private sshRemotePtyLeasesByIdentity: Map<string, SshRemotePtyLease> | null = null
   private gitUsernameCache = new Map<string, string>()
   private loadNeedsSave = false
   private settingsChangeListeners = new Set<
@@ -5785,6 +5790,7 @@ export class Store {
     )
     if (remappedLeases.changed) {
       this.state.sshRemotePtyLeases = remappedLeases.leases
+      this.sshRemotePtyLeasesByIdentity = null
     }
     if (session && prior) {
       const priorTabs = prior.tabsByWorktree ?? {}
@@ -6388,6 +6394,13 @@ export class Store {
     return leases.filter((lease) => targetId === undefined || lease.targetId === targetId)
   }
 
+  private getSshRemotePtyLeasesByIdentity(): Map<string, SshRemotePtyLease> {
+    this.sshRemotePtyLeasesByIdentity ??= indexSshRemotePtyLeases(
+      this.state.sshRemotePtyLeases ?? []
+    )
+    return this.sshRemotePtyLeasesByIdentity
+  }
+
   getPendingLocalPtyShutdowns(): PersistedLocalPtyShutdown[] {
     return [...(this.state.pendingLocalPtyShutdowns ?? [])]
   }
@@ -6510,6 +6523,7 @@ export class Store {
     } else {
       this.state.sshRemotePtyLeases.push(next)
     }
+    this.sshRemotePtyLeasesByIdentity = null
     this.flush()
     this.persistTerminalTeardownIntents(this.sshTeardownIntentMutationForLease(next))
   }
@@ -6564,11 +6578,8 @@ export class Store {
   ): boolean {
     const requestedGeneration = parseAppSshPtyId(ptyId)?.relayInstanceId
     const relayPtyId = this.getRelayPtyIdForSshLeaseStorage(targetId, ptyId)
-    const lease = this.state.sshRemotePtyLeases?.find(
-      (entry) =>
-        entry.targetId === targetId &&
-        entry.ptyId === relayPtyId &&
-        entry.relayInstanceId === requestedGeneration
+    const lease = this.getSshRemotePtyLeasesByIdentity().get(
+      sshRemotePtyLeaseIdentityKey(targetId, relayPtyId, requestedGeneration)
     )
     if (!lease) {
       return false
@@ -6610,17 +6621,16 @@ export class Store {
     relayInstanceId: string
   ): boolean {
     const relayPtyId = this.getRelayPtyIdForSshLeaseStorage(targetId, ptyId)
-    const lease = this.state.sshRemotePtyLeases?.find(
-      (entry) =>
-        entry.targetId === targetId &&
-        entry.ptyId === relayPtyId &&
-        entry.relayInstanceId === undefined
-    )
+    const legacyKey = sshRemotePtyLeaseIdentityKey(targetId, relayPtyId)
+    const leasesByIdentity = this.getSshRemotePtyLeasesByIdentity()
+    const lease = leasesByIdentity.get(legacyKey)
     if (!lease) {
       return false
     }
+    leasesByIdentity.delete(legacyKey)
     const now = Date.now()
     lease.relayInstanceId = relayInstanceId
+    leasesByIdentity.set(sshRemotePtyLeaseIdentityKey(targetId, relayPtyId, relayInstanceId), lease)
     lease.state = 'attached'
     lease.updatedAt = now
     lease.lastAttachedAt = now
@@ -6639,11 +6649,8 @@ export class Store {
   markSshRemotePtyShutdownRequested(targetId: string, ptyId: string): boolean {
     const requestedGeneration = parseAppSshPtyId(ptyId)?.relayInstanceId
     const relayPtyId = this.getRelayPtyIdForSshLeaseStorage(targetId, ptyId)
-    const lease = this.state.sshRemotePtyLeases?.find(
-      (entry) =>
-        entry.targetId === targetId &&
-        entry.ptyId === relayPtyId &&
-        entry.relayInstanceId === requestedGeneration
+    const lease = this.getSshRemotePtyLeasesByIdentity().get(
+      sshRemotePtyLeaseIdentityKey(targetId, relayPtyId, requestedGeneration)
     )
     if (!lease) {
       return false
@@ -6672,6 +6679,7 @@ export class Store {
         lease.relayInstanceId !== requestedGeneration
     )
     if (this.state.sshRemotePtyLeases.length !== before) {
+      this.sshRemotePtyLeasesByIdentity = null
       this.persistTerminalTeardownIntents({
         kind: 'ssh-set',
         targetId,
@@ -6689,6 +6697,7 @@ export class Store {
       (lease) => lease.targetId !== targetId
     )
     if (this.state.sshRemotePtyLeases.length !== before) {
+      this.sshRemotePtyLeasesByIdentity = null
       this.persistTerminalTeardownIntents({ kind: 'ssh-remove-target', targetId })
     }
   }

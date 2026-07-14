@@ -18,6 +18,11 @@ import type {
   TerminalTeardownIntentMutation,
   TerminalTeardownIntentSnapshot
 } from './terminal-teardown-intent-records'
+import {
+  indexSshRemotePtyLeases,
+  sshRemotePtyLeaseIdentityKey
+} from './ssh/ssh-remote-pty-lease-index'
+import type { SshRemotePtyLease } from '../shared/ssh-types'
 
 export type { TerminalTeardownIntentMutation } from './terminal-teardown-intent-records'
 
@@ -112,17 +117,15 @@ function readRecords(dataFile: string): {
 
 function applySshShutdowns(
   state: PersistedState,
-  pendingSshPtyShutdowns: TerminalTeardownIntentSnapshot['pendingSshPtyShutdowns']
+  pendingSshPtyShutdowns: TerminalTeardownIntentSnapshot['pendingSshPtyShutdowns'],
+  leasesByIdentity: Map<string, SshRemotePtyLease>
 ): void {
   for (const lease of state.sshRemotePtyLeases ?? []) {
     delete lease.shutdownRequestedAt
   }
   for (const pending of pendingSshPtyShutdowns) {
-    const lease = state.sshRemotePtyLeases?.find(
-      (candidate) =>
-        candidate.targetId === pending.targetId &&
-        candidate.ptyId === pending.ptyId &&
-        candidate.relayInstanceId === pending.relayInstanceId
+    const lease = leasesByIdentity.get(
+      sshRemotePtyLeaseIdentityKey(pending.targetId, pending.ptyId, pending.relayInstanceId)
     )
     if (lease) {
       lease.shutdownRequestedAt = pending.shutdownRequestedAt
@@ -133,13 +136,14 @@ function applySshShutdowns(
 
 function applyJournalRecord(
   state: PersistedState,
-  record: TerminalTeardownIntentJournalRecord
+  record: TerminalTeardownIntentJournalRecord,
+  leasesByIdentity: Map<string, SshRemotePtyLease>
 ): void {
   switch (record.kind) {
     case 'checkpoint':
       state.pendingLocalPtyShutdowns = record.pendingLocalPtyShutdowns
       state.pendingRuntimeTerminalCloses = record.pendingRuntimeTerminalCloses
-      applySshShutdowns(state, record.pendingSshPtyShutdowns)
+      applySshShutdowns(state, record.pendingSshPtyShutdowns, leasesByIdentity)
       return
     case 'local-upsert': {
       state.pendingLocalPtyShutdowns ??= []
@@ -183,27 +187,25 @@ function applyJournalRecord(
       )
       return
     case 'ssh-migrate-generation': {
-      const lease = state.sshRemotePtyLeases?.find(
-        (candidate) =>
-          candidate.targetId === record.targetId &&
-          candidate.ptyId === record.ptyId &&
-          candidate.relayInstanceId === undefined
-      )
+      const legacyKey = sshRemotePtyLeaseIdentityKey(record.targetId, record.ptyId)
+      const lease = leasesByIdentity.get(legacyKey)
       if (!lease) {
         return
       }
+      leasesByIdentity.delete(legacyKey)
       lease.relayInstanceId = record.relayInstanceId
+      leasesByIdentity.set(
+        sshRemotePtyLeaseIdentityKey(record.targetId, record.ptyId, record.relayInstanceId),
+        lease
+      )
       lease.state = 'attached'
       lease.updatedAt = Math.max(lease.updatedAt, record.attachedAt)
       lease.lastAttachedAt = Math.max(lease.lastAttachedAt ?? 0, record.attachedAt)
       return
     }
     case 'ssh-set': {
-      const lease = state.sshRemotePtyLeases?.find(
-        (candidate) =>
-          candidate.targetId === record.targetId &&
-          candidate.ptyId === record.ptyId &&
-          candidate.relayInstanceId === record.relayInstanceId
+      const lease = leasesByIdentity.get(
+        sshRemotePtyLeaseIdentityKey(record.targetId, record.ptyId, record.relayInstanceId)
       )
       if (!lease) {
         return
@@ -230,6 +232,7 @@ export function applyTerminalTeardownIntentSnapshot(
   dataFile: string
 ): boolean {
   const { records, journalReady } = readRecords(dataFile)
+  const leasesByIdentity = indexSshRemotePtyLeases(state.sshRemotePtyLeases ?? [])
   for (const record of records) {
     // Why: a failed journal append falls back to a synchronous full-store
     // write. Older valid records must not override that newer durable state.
@@ -243,17 +246,17 @@ export function applyTerminalTeardownIntentSnapshot(
     if (record.version === 1) {
       state.pendingLocalPtyShutdowns = record.pendingLocalPtyShutdowns
       state.pendingRuntimeTerminalCloses = record.pendingRuntimeTerminalCloses
-      applySshShutdowns(state, record.pendingSshPtyShutdowns)
+      applySshShutdowns(state, record.pendingSshPtyShutdowns, leasesByIdentity)
     } else {
-      applyJournalRecord(state, record)
+      applyJournalRecord(state, record, leasesByIdentity)
     }
     state.terminalTeardownIntentRevision = record.revision
   }
   return journalReady
 }
 
-function writeRecordAtomically(
-  record: TerminalTeardownIntentJournalRecord,
+function writeRecordsAtomically(
+  records: TerminalTeardownIntentJournalRecord[],
   dataFile: string
 ): void {
   const snapshotFile = getSnapshotFile(dataFile)
@@ -261,7 +264,8 @@ function writeRecordAtomically(
   mkdirSync(dirname(snapshotFile), { recursive: true })
   let renamed = false
   try {
-    writeFileSync(tmpFile, `${JSON.stringify(record)}\n`, 'utf-8')
+    const serialized = records.map((record) => JSON.stringify(record)).join('\n')
+    writeFileSync(tmpFile, `${serialized}\n`, 'utf-8')
     renameSync(tmpFile, snapshotFile)
     renamed = true
   } finally {
@@ -276,7 +280,7 @@ function writeRecordAtomically(
 }
 
 export function writeTerminalTeardownIntentSnapshot(state: PersistedState, dataFile: string): void {
-  writeRecordAtomically({ version: 2, ...checkpointForState(state) }, dataFile)
+  writeRecordsAtomically([{ version: 2, ...checkpointForState(state) }], dataFile)
 }
 
 export function appendTerminalTeardownIntentMutation(
@@ -286,6 +290,23 @@ export function appendTerminalTeardownIntentMutation(
   journalReady: boolean
 ): void {
   if (!journalReady) {
+    if (mutation.kind === 'ssh-migrate-generation') {
+      const revision = state.terminalTeardownIntentRevision ?? 0
+      // Why: the checkpoint schema contains teardown owners, not lease
+      // generations. The first legacy migration needs its own atomic record.
+      writeRecordsAtomically(
+        [
+          {
+            version: 2,
+            ...checkpointForState(state),
+            revision: Math.max(0, revision - 1)
+          },
+          { version: 2, revision, ...mutation }
+        ],
+        dataFile
+      )
+      return
+    }
     writeTerminalTeardownIntentSnapshot(state, dataFile)
     return
   }
