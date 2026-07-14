@@ -2109,7 +2109,7 @@
       "id": "terminal-provider.ssh-remote-reattach-contract",
       "title": "SSH and remote terminal restore never turn unknown liveness into destructive cleanup",
       "maturity": "experimental",
-      "protection": "none",
+      "protection": "partial",
       "owner": "terminal-provider",
       "layer": "provider-contract",
       "surfaces": [
@@ -2129,28 +2129,79 @@
         "remote-runtime",
         "wsl"
       ],
-      "coveredPlatforms": [],
-      "coveredProviders": [],
-      "coverageNotes": "Registered gap on main. The SSH unknown-liveness hardening and deferred-reattach contracts exist only on the pending reliability stack. It registers here with its owning split PR.",
+      "coveredPlatforms": [
+        "macos"
+      ],
+      "coveredProviders": [
+        "ssh"
+      ],
+      "coverageNotes": "Deterministic renderer coverage proves startup publishes the state returned by ssh.connect, remote or unresolved hosts cannot enter local-daemon cold activation deferral, and stale cleanup cannot unregister a replacement runtime terminal. A macOS Electron journey connects to a real Linux SSH relay in Docker, persists six terminals, reloads the renderer, and verifies all six original relay PTYs remount eagerly and still execute remote input. Linux and Windows desktop clients, WSL, and remote-runtime restore remain gaps.",
       "motivatingLinks": [
         "https://github.com/stablyai/orca/pull/6951",
         "https://github.com/stablyai/orca/pull/6955",
         "https://github.com/stablyai/orca/pull/6979",
-        "https://github.com/stablyai/orca/pull/7009"
+        "https://github.com/stablyai/orca/pull/7009",
+        "https://github.com/stablyai/orca/pull/8597"
       ],
-      "invariant": "SSH, WSL, and remote-runtime restore paths must treat provider listing failures and unknown liveness as unknown, not dead, while still avoiding duplicate spawn and clearing expired relay leases exactly once.",
-      "oracle": "The current executable slice asserts saved SSH sessions use relay attach, expired relay attach does not silently fresh-spawn inside the provider, provider listing and targeted-liveness failures are unknown rather than dead, deferred passphrase cancellation does not auto-reconnect, deferred SSH attach uses saved leaf/tab session ids once connected, transient deferred reattach failure preserves the saved restore id without fresh-spawning, deferred SSH no-result cleanup clears the pending serializer without consuming the saved restore id, disconnected SSH relay ids are retained as deferred reconnect metadata and sidebar wake hints rather than attached PTY proof, and expired deferred relay state clears stale pane/tab bindings before one fresh replacement spawn. WSL and remote-runtime mirror polling require separate follow-up contracts.",
-      "commands": [],
-      "testFiles": [],
-      "assertionRefs": [],
-      "evidenceRuns": [],
+      "invariant": "SSH, WSL, and remote-runtime restore paths must treat provider listing failures and unknown liveness as unknown, not dead, while still avoiding duplicate spawn and clearing expired relay leases exactly once. Snapshot-backed cold activation deferral is local-daemon-only; every restored remote terminal must mount a manager eagerly and preserve its provider PTY identity.",
+      "oracle": "Deterministic tests assert startup publishes ssh.connect's authoritative state before terminal reconnect, only an explicit local execution host can defer cold activation, host ownership changes clear old restrictions, and replacement runtime registrations survive stale cleanup. The live Docker SSH journey commits six terminal records to the relay, reloads Electron, requires the exact six manager ids with no parked tabs, compares all restored PTY ids to their pre-reload identities, and sends a marker through the restored terminal to a proof file on the Linux host.",
+      "commands": [
+        "pnpm exec vitest run --config config/vitest.config.ts src/renderer/src/startup/ssh-startup-reconnect.test.ts src/renderer/src/lib/resolved-worktree-execution-host.test.ts src/renderer/src/components/terminal/background-terminal-worktree-mount.test.ts src/renderer/src/runtime/sync-runtime-graph-scheduling.test.ts src/renderer/src/components/terminal-pane/use-terminal-pane-lifecycle.test.ts src/renderer/src/components/terminal-pane/pty-connection.test.ts",
+        "pnpm exec electron-vite build --mode e2e",
+        "SKIP_BUILD=1 pnpm exec playwright test tests/e2e/terminal-cold-activation-deferral.spec.ts --config tests/playwright.config.ts --project electron-headless --workers=1",
+        "ORCA_E2E_SSH_DOCKER=1 SKIP_BUILD=1 pnpm exec playwright test tests/e2e/ssh-cold-activation-restore.spec.ts --config tests/playwright.config.ts --project electron-headless --workers=1"
+      ],
+      "testFiles": [
+        "src/renderer/src/startup/ssh-startup-reconnect.test.ts",
+        "src/renderer/src/lib/resolved-worktree-execution-host.test.ts",
+        "src/renderer/src/components/terminal/background-terminal-worktree-mount.test.ts",
+        "src/renderer/src/runtime/sync-runtime-graph-scheduling.test.ts",
+        "src/renderer/src/components/terminal-pane/use-terminal-pane-lifecycle.test.ts",
+        "src/renderer/src/components/terminal-pane/pty-connection.test.ts",
+        "tests/e2e/terminal-cold-activation-deferral.spec.ts",
+        "tests/e2e/ssh-cold-activation-restore.spec.ts"
+      ],
+      "assertionRefs": [
+        {
+          "file": "src/renderer/src/startup/ssh-startup-reconnect.test.ts",
+          "assertions": [
+            "the state returned by ssh.connect is published before persisted terminals reconnect"
+          ]
+        },
+        {
+          "file": "src/renderer/src/components/terminal/background-terminal-worktree-mount.test.ts",
+          "assertions": [
+            "only an explicit local execution host can defer cold activation",
+            "SSH, remote-runtime, and unresolved owners remain eager"
+          ]
+        },
+        {
+          "file": "tests/e2e/ssh-cold-activation-restore.spec.ts",
+          "assertions": [
+            "six relay-backed tabs retain the same six PTY ids across renderer reload",
+            "all six SSH managers mount eagerly and none is parked",
+            "restored terminal input reaches a proof file on the Linux SSH host"
+          ]
+        }
+      ],
+      "evidenceRuns": [
+        {
+          "date": "2026-07-14",
+          "runner": "local",
+          "platform": "macos",
+          "command": "ORCA_E2E_SSH_DOCKER=1 SKIP_BUILD=1 pnpm exec playwright test tests/e2e/ssh-cold-activation-restore.spec.ts --config tests/playwright.config.ts --project electron-headless --workers=1",
+          "result": "passed",
+          "durationSeconds": 128,
+          "summary": "Six focused files and 475 tests passed; the local cold-activation journey passed; the Docker/Linux SSH journey restored six of six original relay PTYs, mounted six of six managers without parking, and executed remote input through the restored terminal."
+        }
+      ],
       "runtimeBudget": {
         "p95Seconds": 45,
         "scope": "provider contract plus optional SSH soak"
       },
       "flakeHistory": {
         "status": "unknown",
-        "evidence": "Focused provider/main/renderer SSH contract tests now run locally; needs soak history before promotion."
+        "evidence": "Focused renderer contracts and one clean Docker/Linux SSH Electron run pass locally; the live journey needs CI soak history before promotion."
       },
       "redGreenEvidence": {
         "status": "partial",
@@ -2158,7 +2209,7 @@
       },
       "performanceBudget": {
         "required": true,
-        "evidence": "Provider listing and polling must be bounded, targeted where possible, and absent from typing/focus hot paths."
+        "evidence": "Host eligibility is resolved from existing store metadata during activation and adds no provider listing or polling. The local journey preserves cold deferral, while SSH eagerly mounts six managers as required; no work is added to typing or terminal-output hot paths."
       },
       "promotionCriteria": [
         "Use deterministic fake providers for failure and unknown-liveness cases.",
@@ -2166,12 +2217,10 @@
         "Include reconnect/polling artifacts that identify provider, connection id, and lease state."
       ],
       "knownGaps": [
-        "No executable coverage on main yet; the slice lives on the pending fix-terminal-reliability stack.",
         "Current command covers store wake-hint metadata, main-process SSH provider failure semantics, provider attach/expired-attach behavior, and renderer deferred SSH reconnect/transient-failure/expired-relay fallback with mocked transports.",
-        "The store coverage asserts recoverability metadata, not a live attached PTY or user-visible connected state.",
-        "Live SSH/remote coverage remains environment-dependent.",
+        "The live SSH journey is environment-dependent and currently runs from a macOS Electron client against a Linux Docker host.",
         "WSL and remote-runtime mirror polling contracts are not wired yet.",
-        "The deferred SSH coverage does not boot Electron against a real SSH relay or exercise real network reconnect timing."
+        "Linux and Windows desktop-client journeys are not yet collected."
       ],
       "demotionRule": "Cannot promote if provider failure can close panes or if the oracle is screenshot-only."
     },
