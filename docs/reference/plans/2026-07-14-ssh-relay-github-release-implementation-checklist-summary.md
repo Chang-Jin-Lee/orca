@@ -18,8 +18,9 @@ Approved design decisions are listed separately and are not presented as impleme
 - Latest native proof: [GitHub Actions run 29365815434](https://github.com/stablyai/orca/actions/runs/29365815434)
   passed clean-build equality and runtime smoke on Linux x64/arm64, macOS x64/arm64, and Windows
   x64/arm64.
-- Active work package: finish the artifact/runtime closure audit, then address archive safety,
-  oldest-baseline execution, and native trust.
+- Active work package: exact runtime closure enforcement is locally green and awaiting all-six
+  native proof; SBOM/provenance completeness, archive safety, oldest-baseline execution, and native
+  trust remain open.
 
 ## Locked rollout decisions
 
@@ -73,6 +74,8 @@ Approved design decisions are listed separately and are not presented as impleme
 - [x] Prove bundled Node, real PTY input/resize/exit, watcher events, and Windows resource settlement.
 - [x] Prove two clean builds compare exactly on all six native GitHub runner families.
 - [x] Keep `/guard:cf`; fix Windows arm64 drift with copied-artifact-only `/INCREMENTAL:NO`.
+- [x] Define and locally test an exact 34/35/42-file per-tuple closure that rejects undeclared
+      package managers, sources, maps, build outputs, package drift, and missing licenses.
 - [ ] Complete the runtime closure, license, SBOM, provenance, and prohibited-content allowlist audit.
 - [ ] Prove each candidate on its oldest supported OS/libc/kernel baseline.
 - [ ] Sign macOS and Windows native bytes and verify target-native trust policy.
