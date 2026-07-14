@@ -112,6 +112,11 @@ export function registerRuntimeTerminalTab(tab: RegisteredTerminalTab): () => vo
   tabRegisteredAt.set(tab.tabId, Date.now())
   scheduleRuntimeGraphSync()
   return () => {
+    // Why: React can mount a replacement surface before the prior effect
+    // cleans up. Stale cleanup must not erase the successor's live registry.
+    if (registeredTabs.get(tab.tabId) !== tab) {
+      return
+    }
     registeredTabs.delete(tab.tabId)
     tabRegisteredAt.delete(tab.tabId)
     scheduleRuntimeGraphSync()

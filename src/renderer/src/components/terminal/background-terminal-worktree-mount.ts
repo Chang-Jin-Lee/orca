@@ -141,6 +141,14 @@ export function shouldMountBackgroundWorktreeTab(
 // until first reveal, parked byte watchers own their side effects meanwhile.
 export const COLD_ACTIVATION_TAB_DEFER_THRESHOLD = 4
 
+export function canDeferColdActivationTabsForHost(args: {
+  executionHostId: string | null
+}): boolean {
+  // Why: restored identities can be transient or stale while remote ownership
+  // hydrates. Only positively confirmed local execution has daemon snapshots.
+  return args.executionHostId === 'local'
+}
+
 function replaceActivationDeferredMountTabs(
   deferredMountTabIdsByWorktree: Map<string, ReadonlySet<string>>,
   worktreeId: string,

@@ -61,6 +61,7 @@ import { resolveRepairedActiveTerminalTabId } from './terminal/active-terminal-r
 import { scheduleBackgroundTerminalWorktreeMeasure } from './terminal/background-terminal-worktree-visibility'
 import {
   applyBackgroundMountTabRestriction,
+  canDeferColdActivationTabsForHost,
   planColdActivationTabDeferral,
   pruneClosedBackgroundMountTabs,
   revealActivationDeferredTabs,
@@ -130,6 +131,7 @@ import { openTabBarEntry, type TabCreateEntryArgs } from './tab-bar/tab-create-e
 import { closeTerminalTab } from './terminal/terminal-tab-actions'
 import { translate } from '@/i18n/i18n'
 import { getRuntimeEnvironmentIdForWorktree } from '@/lib/worktree-runtime-owner'
+import { getResolvedExecutionHostIdForWorktree } from '@/lib/resolved-worktree-execution-host'
 import { browserWorkspaceHasRemoteOwner } from '@/runtime/remote-browser-tab-ownership'
 
 const EditorPanel = lazy(() => import('./editor/EditorPanel'))
@@ -259,6 +261,9 @@ function Terminal(): React.JSX.Element | null {
   )
   const activeWorktreeId = useAppStore((s) => s.activeWorktreeId)
   const renderedActiveWorktreeId = activeWorktreeId
+  const activeWorktreeDeferralHostId = useAppStore((s) =>
+    getResolvedExecutionHostIdForWorktree(s, renderedActiveWorktreeId)
+  )
   const activeView = useAppStore((s) => s.activeView)
   const tabsByWorktree = useAppStore((s) => s.tabsByWorktree)
   const pendingStartupByTabId = useAppStore((s) => s.pendingStartupByTabId)
@@ -1035,6 +1040,9 @@ function Terminal(): React.JSX.Element | null {
         immediateTabIds.add(tab.id)
       }
     }
+    const activationHostSupportsDeferral = canDeferColdActivationTabsForHost({
+      executionHostId: activeWorktreeDeferralHostId
+    })
     if (lastActivationWorktreeIdRef.current !== renderedActiveWorktreeId) {
       lastActivationWorktreeIdRef.current = renderedActiveWorktreeId
       const tabById = new Map(worktreeTabs.map((tab) => [tab.id, tab]))
@@ -1051,17 +1059,19 @@ function Terminal(): React.JSX.Element | null {
           const tab = tabById.get(tabId)
           return (
             // Why: byte-mode watchers cannot reconstruct output emitted before
-            // registration; eager mount is the safe authority-kill-switch fallback.
+            // registration. Remote or unresolved ownership also mounts eagerly
+            // because only a confirmed local daemon can provide snapshots.
             coldActivationDeferralEnabled &&
+            activationHostSupportsDeferral &&
             tab !== undefined &&
             canWatcherCoverParkedTerminalTab(renderedActiveWorktreeId, tab)
           )
         },
         immediateTabIds
       })
-    } else if (!coldActivationDeferralEnabled) {
-      // Why: flipping either kill switch while active must restore the eager
-      // mount behavior immediately, not strand an old activation restriction.
+    } else if (!coldActivationDeferralEnabled || !activationHostSupportsDeferral) {
+      // Why: kill-switch or host-ownership changes while active must restore
+      // eager mounting immediately, not strand an old local-only restriction.
       backgroundMountTabIdsByWorktreeRef.current.delete(renderedActiveWorktreeId)
       activationDeferredMountTabIdsByWorktreeRef.current.delete(renderedActiveWorktreeId)
     } else {

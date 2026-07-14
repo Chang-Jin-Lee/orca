@@ -4,6 +4,7 @@ import {
   COLD_ACTIVATION_TAB_DEFER_THRESHOLD,
   addBackgroundMountedTerminalWorktree,
   applyBackgroundMountTabRestriction,
+  canDeferColdActivationTabsForHost,
   collectDeferredMountTabIds,
   hasRequestedBackgroundTerminalWorktreeMount,
   planColdActivationTabDeferral,
@@ -170,6 +171,13 @@ describe('pruneClosedBackgroundMountTabs', () => {
 describe('cold activation tab deferral', () => {
   const tabIds = (count: number): string[] =>
     Array.from({ length: count }, (_, index) => `tab-${index + 1}`)
+
+  it('enables deferral only for a positively resolved local execution host', () => {
+    expect(canDeferColdActivationTabsForHost({ executionHostId: 'local' })).toBe(true)
+    expect(canDeferColdActivationTabsForHost({ executionHostId: 'ssh:ssh-1' })).toBe(false)
+    expect(canDeferColdActivationTabsForHost({ executionHostId: 'runtime:runtime-1' })).toBe(false)
+    expect(canDeferColdActivationTabsForHost({ executionHostId: null })).toBe(false)
+  })
 
   it('mounts everything at once when few tabs would defer', () => {
     const restrictions = new Map<string, ReadonlySet<string>>([['wt-1', new Set(['tab-1'])]])
