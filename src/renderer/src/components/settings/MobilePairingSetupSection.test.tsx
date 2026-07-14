@@ -43,20 +43,18 @@ function renderSection(
 }
 
 describe('MobilePairingSetupSection', () => {
-  it('opens local settings by default for local-only pairing', () => {
+  it('keeps local settings visible for local-only pairing', () => {
     renderSection()
     expect(screen.getByRole('combobox')).toHaveTextContent('100.64.1.20 (tailscale0)')
     expect(screen.getByText(/connects only through the local network address/i)).toBeVisible()
   })
 
-  it('keeps local settings advanced for automatic Relay fallback', async () => {
-    const { user } = renderSection({ connectionMode: 'automatic' })
-    expect(screen.queryByRole('combobox')).not.toBeInTheDocument()
+  it('keeps local settings visible for automatic direct-first pairing', () => {
+    renderSection({ connectionMode: 'automatic' })
+    expect(screen.getByRole('combobox')).toBeVisible()
     expect(
       screen.getByText(/includes direct access and encrypted Orca Relay fallback/i)
     ).toBeVisible()
-    await user.click(screen.getByRole('button', { name: 'Local connection settings' }))
-    expect(screen.getByRole('combobox')).toBeVisible()
   })
 
   it('commits an OS interface picked from the list', async () => {

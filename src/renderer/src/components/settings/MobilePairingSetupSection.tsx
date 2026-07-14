@@ -69,62 +69,57 @@ export function MobilePairingSetupSection({
             )}
       </Button>
 
-      <Accordion
-        key={connectionMode}
-        type="single"
-        collapsible
-        defaultValue={connectionMode === 'local-only' ? 'local-address' : undefined}
-        className="mt-4 border-t border-border/60 pt-2"
-      >
-        <AccordionItem value="local-address">
-          <AccordionTrigger className="py-2 text-xs">
+      <div className="mt-4 space-y-3 border-t border-border/60 pt-4">
+        <div className="space-y-1">
+          <h4 className="text-xs font-medium">
             {translate(
               'auto.components.settings.MobilePairingSetupSection.localSettings',
               'Local connection settings'
             )}
-          </AccordionTrigger>
-          <AccordionContent className="space-y-3 text-xs text-muted-foreground">
-            <p>
+          </h4>
+          <p className="text-xs text-muted-foreground">
+            {translate(
+              'auto.components.settings.MobilePairingSetupSection.localAddressDescription',
+              'Choose the LAN or private-network address that Orca Mobile can use to reach this computer directly.'
+            )}
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-3">
+          <NetworkInterfacePicker
+            networkInterfaces={networkInterfaces}
+            selectedAddress={selectedAddress}
+            onSelectedAddressChange={onSelectedAddressChange}
+            className="min-w-[220px] justify-between font-normal"
+          />
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                onClick={onRefreshNetworkInterfaces}
+                disabled={refreshingNetworkInterfaces}
+                aria-label={translate(
+                  'auto.components.settings.MobilePairingSetupSection.refresh',
+                  'Refresh network interfaces'
+                )}
+                className="text-muted-foreground"
+              >
+                <RefreshCw className={refreshingNetworkInterfaces ? 'animate-spin' : ''} />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom" sideOffset={6}>
               {translate(
-                'auto.components.settings.MobilePairingSetupSection.localAddressDescription',
-                'Choose the LAN or private-network address that Orca Mobile can use to reach this computer directly.'
+                'auto.components.settings.MobilePairingSetupSection.refresh',
+                'Refresh network interfaces'
               )}
-            </p>
-            <div className="flex flex-wrap items-center gap-3">
-              <NetworkInterfacePicker
-                networkInterfaces={networkInterfaces}
-                selectedAddress={selectedAddress}
-                onSelectedAddressChange={onSelectedAddressChange}
-                className="min-w-[220px] justify-between font-normal"
-              />
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon-sm"
-                    onClick={onRefreshNetworkInterfaces}
-                    disabled={refreshingNetworkInterfaces}
-                    aria-label={translate(
-                      'auto.components.settings.MobilePairingSetupSection.refresh',
-                      'Refresh network interfaces'
-                    )}
-                    className="text-muted-foreground"
-                  >
-                    <RefreshCw className={refreshingNetworkInterfaces ? 'animate-spin' : ''} />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent side="bottom" sideOffset={6}>
-                  {translate(
-                    'auto.components.settings.MobilePairingSetupSection.refresh',
-                    'Refresh network interfaces'
-                  )}
-                </TooltipContent>
-              </Tooltip>
-            </div>
-          </AccordionContent>
-        </AccordionItem>
-        <AccordionItem value="tailnet-guide">
+            </TooltipContent>
+          </Tooltip>
+        </div>
+      </div>
+
+      <Accordion type="single" collapsible className="mt-2">
+        <AccordionItem value="tailnet-guide" className="border-b-0">
           <AccordionTrigger className="py-2 text-xs">
             {translate(
               'auto.components.settings.MobilePairingSetupSection.tailnet',

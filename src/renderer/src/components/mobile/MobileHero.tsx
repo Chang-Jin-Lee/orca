@@ -206,41 +206,36 @@ export function HeroFlow({
                 compact
               />
 
-              {connectionMode === 'local-only' ? (
-                <div className="mp-network-row">
-                  <span className="mp-network-label">
-                    {translate('auto.components.mobile.MobileHero.dfd2aa9d5d', 'Network')}
-                  </span>
-                  <NetworkInterfacePicker
-                    networkInterfaces={networkInterfaces}
-                    selectedAddress={selectedAddress}
-                    onSelectedAddressChange={onSelectedAddressChange}
-                    // Why: when discovery is empty, a custom address is the
-                    // only route to a Tailscale hostname or static IP.
-                    disabled={false}
-                    className="mp-network-select"
-                  />
-                  <button
-                    type="button"
-                    className={cn(
-                      'mp-network-refresh',
-                      refreshingNetworkInterfaces && 'is-spinning'
-                    )}
-                    onClick={onRefreshNetworkInterfaces}
-                    disabled={refreshingNetworkInterfaces}
-                    aria-label={translate(
-                      'auto.components.mobile.MobileHero.85067b9e06',
-                      'Refresh network interfaces'
-                    )}
-                    title={translate(
-                      'auto.components.mobile.MobileHero.85067b9e06',
-                      'Refresh network interfaces'
-                    )}
-                  >
-                    <RefreshCw className="size-3.5" />
-                  </button>
-                </div>
-              ) : null}
+              <div className="mp-network-row">
+                <span className="mp-network-label">
+                  {translate('auto.components.mobile.MobileHero.dfd2aa9d5d', 'Network')}
+                </span>
+                <NetworkInterfacePicker
+                  networkInterfaces={networkInterfaces}
+                  selectedAddress={selectedAddress}
+                  onSelectedAddressChange={onSelectedAddressChange}
+                  // Why: direct-first and local-only pairing both advertise a
+                  // local route; keeping it visible also prevents mode shifts.
+                  disabled={false}
+                  className="mp-network-select"
+                />
+                <button
+                  type="button"
+                  className={cn('mp-network-refresh', refreshingNetworkInterfaces && 'is-spinning')}
+                  onClick={onRefreshNetworkInterfaces}
+                  disabled={refreshingNetworkInterfaces}
+                  aria-label={translate(
+                    'auto.components.mobile.MobileHero.85067b9e06',
+                    'Refresh network interfaces'
+                  )}
+                  title={translate(
+                    'auto.components.mobile.MobileHero.85067b9e06',
+                    'Refresh network interfaces'
+                  )}
+                >
+                  <RefreshCw className="size-3.5" />
+                </button>
+              </div>
 
               <div className="mp-inline-actions">
                 <span className="mp-action-divider">
