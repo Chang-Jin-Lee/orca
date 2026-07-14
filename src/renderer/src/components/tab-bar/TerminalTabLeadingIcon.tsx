@@ -35,7 +35,8 @@ function activityDotState(status: TerminalTabActivityStatus): AgentDotState | nu
       return 'permission'
     case 'done':
       return 'done'
-    default:
+    case 'active':
+    case 'inactive':
       return null
   }
 }
