@@ -28,6 +28,7 @@ describe('SSH relay runtime artifact workflow', () => {
     expect(posixJob['timeout-minutes']).toBe(20)
     expect(windowsJob['timeout-minutes']).toBe(30)
     for (const job of [posixJob, windowsJob]) {
+      expect(job.env.ORCA_RUNTIME_REQUESTED_RUNNER).toBe('${{ matrix.runner }}')
       expect(job.steps[0].with.ref).toBe('${{ github.event.pull_request.head.sha || github.sha }}')
       for (const step of job.steps.filter((candidate) => candidate.uses)) {
         expect(step.uses).toMatch(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+@[0-9a-f]{40}$/)
@@ -62,6 +63,9 @@ describe('SSH relay runtime artifact workflow', () => {
     expect(source).toContain('ssh-relay-runtime-reproducibility.mjs')
     expect(source).toContain('ssh-relay-runtime-reproducibility.test.mjs')
     expect(source.match(/ssh-relay-runtime-closure\.test\.mjs/g)).toHaveLength(4)
+    expect(source.match(/ssh-relay-runtime-sbom\.test\.mjs/g)).toHaveLength(4)
+    expect(source.match(/ssh-relay-runtime-provenance\.test\.mjs/g)).toHaveLength(4)
+    expect(source.match(/ssh-relay-runtime-toolchain\.test\.mjs/g)).toHaveLength(4)
     expect(
       source.match(/node --check config\/scripts\/ssh-relay-runtime-closure\.mjs/g)
     ).toHaveLength(2)

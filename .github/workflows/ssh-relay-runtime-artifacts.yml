@@ -43,6 +43,8 @@ jobs:
             node_archive: node-v24.18.0-darwin-arm64.tar.xz
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 20
+    env:
+      ORCA_RUNTIME_REQUESTED_RUNNER: ${{ matrix.runner }}
 
     steps:
       - name: Checkout exact source revision
@@ -109,6 +111,11 @@ jobs:
           node --check config/scripts/ssh-relay-runtime-build.test.mjs
           node --check config/scripts/ssh-relay-runtime-closure.mjs
           node --check config/scripts/ssh-relay-runtime-closure.test.mjs
+          node --check config/scripts/ssh-relay-runtime-sbom.mjs
+          node --check config/scripts/ssh-relay-runtime-sbom.test.mjs
+          node --check config/scripts/ssh-relay-runtime-provenance.test.mjs
+          node --check config/scripts/ssh-relay-runtime-toolchain.mjs
+          node --check config/scripts/ssh-relay-runtime-toolchain.test.mjs
           pnpm exec vitest run --config config/vitest.config.ts \
             config/scripts/ssh-relay-node-release-verification.test.mjs \
             config/scripts/ssh-relay-node-tar-inspection.test.mjs \
@@ -122,6 +129,9 @@ jobs:
             config/scripts/ssh-relay-runtime-pty-smoke.test.mjs \
             config/scripts/ssh-relay-runtime-reproducibility.test.mjs \
             config/scripts/ssh-relay-runtime-resource-diagnostics.test.mjs \
+            config/scripts/ssh-relay-runtime-provenance.test.mjs \
+            config/scripts/ssh-relay-runtime-sbom.test.mjs \
+            config/scripts/ssh-relay-runtime-toolchain.test.mjs \
             config/scripts/ssh-relay-runtime-windows-tree.test.mjs \
             config/scripts/ssh-relay-runtime-zip.test.mjs \
             config/scripts/ssh-relay-runtime-workflow.test.mjs
@@ -208,6 +218,8 @@ jobs:
             msvc_arch: arm64
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
+    env:
+      ORCA_RUNTIME_REQUESTED_RUNNER: ${{ matrix.runner }}
 
     steps:
       - name: Checkout exact source revision
@@ -286,6 +298,16 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'runtime closure script syntax check failed' }
           node --check config/scripts/ssh-relay-runtime-closure.test.mjs
           if ($LASTEXITCODE -ne 0) { throw 'runtime closure test syntax check failed' }
+          node --check config/scripts/ssh-relay-runtime-sbom.mjs
+          if ($LASTEXITCODE -ne 0) { throw 'runtime SBOM script syntax check failed' }
+          node --check config/scripts/ssh-relay-runtime-sbom.test.mjs
+          if ($LASTEXITCODE -ne 0) { throw 'runtime SBOM test syntax check failed' }
+          node --check config/scripts/ssh-relay-runtime-provenance.test.mjs
+          if ($LASTEXITCODE -ne 0) { throw 'runtime provenance test syntax check failed' }
+          node --check config/scripts/ssh-relay-runtime-toolchain.mjs
+          if ($LASTEXITCODE -ne 0) { throw 'runtime toolchain script syntax check failed' }
+          node --check config/scripts/ssh-relay-runtime-toolchain.test.mjs
+          if ($LASTEXITCODE -ne 0) { throw 'runtime toolchain test syntax check failed' }
           pnpm exec vitest run --config config/vitest.config.ts `
             config/scripts/ssh-relay-node-release-verification.test.mjs `
             config/scripts/ssh-relay-node-tar-inspection.test.mjs `
@@ -299,6 +321,9 @@ jobs:
             config/scripts/ssh-relay-runtime-pty-smoke.test.mjs `
             config/scripts/ssh-relay-runtime-reproducibility.test.mjs `
             config/scripts/ssh-relay-runtime-resource-diagnostics.test.mjs `
+            config/scripts/ssh-relay-runtime-provenance.test.mjs `
+            config/scripts/ssh-relay-runtime-sbom.test.mjs `
+            config/scripts/ssh-relay-runtime-toolchain.test.mjs `
             config/scripts/ssh-relay-runtime-windows-pe-diagnostic.test.mjs `
             config/scripts/ssh-relay-runtime-windows-tree.test.mjs `
             config/scripts/ssh-relay-runtime-zip.test.mjs `

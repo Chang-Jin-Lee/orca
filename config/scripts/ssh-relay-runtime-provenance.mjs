@@ -1,41 +1,12 @@
 import { createHash } from 'node:crypto'
 import { readFile, stat, writeFile } from 'node:fs/promises'
-import { createRequire } from 'node:module'
 import { join } from 'node:path'
 
-const require = createRequire(import.meta.url)
+import { createSshRelayRuntimeSbom } from './ssh-relay-runtime-sbom.mjs'
+import { assertSshRelayRuntimeToolchain } from './ssh-relay-runtime-toolchain.mjs'
 
 function sha256(bytes) {
   return `sha256:${createHash('sha256').update(bytes).digest('hex')}`
-}
-
-function spdxId(value) {
-  return `SPDXRef-${value.replace(/[^A-Za-z0-9.-]/g, '-')}`
-}
-
-function packageRecord(name, version, license) {
-  return {
-    name,
-    SPDXID: spdxId(`Package-${name}`),
-    versionInfo: version,
-    downloadLocation: 'NOASSERTION',
-    filesAnalyzed: false,
-    licenseConcluded: license,
-    licenseDeclared: license,
-    copyrightText: 'NOASSERTION'
-  }
-}
-
-function installedPackage(name) {
-  const parsed = require(`${name}/package.json`)
-  return packageRecord(parsed.name, parsed.version, parsed.license ?? 'NOASSERTION')
-}
-
-function watcherNativePackage(tuple) {
-  if (tuple.startsWith('linux-')) {
-    return `@parcel/watcher-linux-${tuple.slice('linux-'.length)}`
-  }
-  return `@parcel/watcher-${tuple}`
 }
 
 async function writeJson(path, value) {
@@ -52,48 +23,14 @@ export async function writeSshRelayRuntimeMetadata({
   sourceDateEpoch,
   gitCommit,
   builder,
+  runner,
   toolchain
 }) {
-  const createdAt = new Date(sourceDateEpoch * 1000).toISOString()
+  assertSshRelayRuntimeToolchain(toolchain, identity.tupleId)
   const sbomName = `orca-ssh-relay-runtime-${identity.tupleId}.spdx.json`
   const provenanceName = `orca-ssh-relay-runtime-${identity.tupleId}.provenance.json`
   const identityName = `orca-ssh-relay-runtime-${identity.tupleId}.identity.json`
-  const files = identity.entries
-    .filter((entry) => entry.type === 'file')
-    .map((entry, index) => ({
-      fileName: entry.path,
-      SPDXID: `SPDXRef-File-${index + 1}`,
-      checksums: [{ algorithm: 'SHA256', checksumValue: entry.sha256.slice('sha256:'.length) }],
-      licenseConcluded: 'NOASSERTION',
-      copyrightText: 'NOASSERTION'
-    }))
-  const packages = [
-    packageRecord('node', identity.nodeVersion, 'NOASSERTION'),
-    packageRecord('orca-ssh-relay', '0.1.0', 'NOASSERTION'),
-    installedPackage('node-pty'),
-    installedPackage('@parcel/watcher'),
-    installedPackage(watcherNativePackage(identity.tupleId)),
-    installedPackage('detect-libc'),
-    installedPackage('is-glob'),
-    installedPackage('is-extglob'),
-    installedPackage('picomatch')
-  ]
-  const documentId = identity.contentId.slice('sha256:'.length)
-  const sbom = {
-    spdxVersion: 'SPDX-2.3',
-    dataLicense: 'CC0-1.0',
-    SPDXID: 'SPDXRef-DOCUMENT',
-    name: `Orca SSH relay runtime ${identity.tupleId}`,
-    documentNamespace: `https://github.com/stablyai/orca/ssh-relay-runtime/${documentId}`,
-    creationInfo: { created: createdAt, creators: ['Organization: Stably AI'] },
-    packages,
-    files,
-    relationships: packages.map((component) => ({
-      spdxElementId: 'SPDXRef-DOCUMENT',
-      relationshipType: 'DESCRIBES',
-      relatedSpdxElement: component.SPDXID
-    }))
-  }
+  const sbom = createSshRelayRuntimeSbom({ identity, archive, sourceDateEpoch })
   const nativeFiles = identity.entries
     .filter(
       (entry) =>
@@ -139,7 +76,10 @@ export async function writeSshRelayRuntimeMetadata({
       },
       runDetails: {
         builder: { id: builder },
-        metadata: { invocationId: process.env.GITHUB_RUN_ID ?? 'local-unpublished-build' },
+        metadata: {
+          invocationId: process.env.GITHUB_RUN_ID ?? 'local-unpublished-build',
+          runner
+        },
         byproducts: [{ name: 'native-files', content: nativeFiles }]
       }
     }

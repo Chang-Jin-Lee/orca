@@ -11,6 +11,11 @@ import {
   inspectSshRelayRuntimeArchive
 } from './ssh-relay-runtime-archive.mjs'
 import { writeSshRelayRuntimeMetadata } from './ssh-relay-runtime-provenance.mjs'
+import {
+  collectSshRelayRuntimeToolchain,
+  sshRelayRuntimeBuilderIdentity,
+  sshRelayRuntimeRunnerIdentity
+} from './ssh-relay-runtime-toolchain.mjs'
 import { assembleSshRelayRuntimeTree } from './ssh-relay-runtime-tree.mjs'
 import { validateSshRelayNodeReleaseContract } from './ssh-relay-node-release-verification.mjs'
 import { verifyNodeReleaseInputs } from './verify-ssh-relay-node-release-inputs.mjs'
@@ -130,36 +135,6 @@ async function run(command, args, options = {}) {
   return result.stdout.trim()
 }
 
-async function toolchainDetails(nodePath) {
-  const commands =
-    process.platform === 'win32'
-      ? [
-          ['bundledNode', nodePath, ['--version']],
-          ['compiler', 'cl.exe', []],
-          ['python', 'python.exe', ['--version']]
-        ]
-      : [
-          ['bundledNode', nodePath, ['--version']],
-          ['xz', 'xz', ['--version']],
-          ['compiler', 'c++', ['--version']],
-          [
-            'strip',
-            process.platform === 'darwin' ? 'xcrun' : 'strip',
-            process.platform === 'darwin' ? ['--find', 'strip'] : ['--version']
-          ],
-          ['python', 'python3', ['--version']]
-        ]
-  const details = {}
-  for (const [name, command, args] of commands) {
-    details[name] = (await run(command, args)).split(/\r?\n/)[0]
-  }
-  if (process.platform === 'win32') {
-    details.zip = 'yazl 3.3.1'
-  }
-  details.buildNode = process.version
-  return details
-}
-
 function relayPlatform(tuple) {
   return tuple.replace('-glibc', '')
 }
@@ -241,7 +216,7 @@ export async function buildSshRelayRuntime(options) {
       sourceDateEpoch: options.sourceDateEpoch
     })
     const inspection = await inspectSshRelayRuntimeArchive(archive.path, identity)
-    const toolchain = await toolchainDetails(extracted.nodePath)
+    const toolchain = await collectSshRelayRuntimeToolchain(extracted.nodePath)
     const metadata = await writeSshRelayRuntimeMetadata({
       outputDirectory: options.outputDirectory,
       identity,
@@ -249,7 +224,8 @@ export async function buildSshRelayRuntime(options) {
       nodeRelease: release,
       sourceDateEpoch: options.sourceDateEpoch,
       gitCommit: options.gitCommit,
-      builder: process.env.GITHUB_WORKFLOW_REF ?? `local://${process.platform}/${process.arch}`,
+      builder: sshRelayRuntimeBuilderIdentity({ gitCommit: options.gitCommit }),
+      runner: sshRelayRuntimeRunnerIdentity(),
       toolchain
     })
     return {
