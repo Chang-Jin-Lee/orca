@@ -2,7 +2,7 @@
 
 Date created: 2026-07-14<br>
 Last updated: 2026-07-14<br>
-Current phase: Milestone 3 / Work Package 2 target-native runtime assembly — exact-head run 29358223742 proves the lowercase-arm64 generated-setting correction on the real runner, keeps Linux x64/arm64, macOS x64/arm64, and Windows x64 exactly reproducible, and uploads exactly those five unpublished artifacts; Windows arm64 builds, verifies, and executes both complete runtimes, then fails closed with no upload because 2,879 linker-emitted 16-byte function thunks differ only in their unreachable fourth `udf` instruction while each thunk's `adrp`/`add`/`br` control flow is byte-identical; the remaining 68 bytes are derived `/Brepro` COFF/debug identities; the active bounded diagnostic must prove the generated incremental-link state that owns the thunks before any producer correction; oldest-baseline, native-trust, cross-family remote, and measured-baseline gates remain open; no bundled-runtime path is enabled<br>
+Current phase: Milestone 3 / Work Package 2 target-native runtime assembly — exact-head run 29358223742 proves the lowercase-arm64 generated-setting correction on the real runner, keeps Linux x64/arm64, macOS x64/arm64, and Windows x64 exactly reproducible, and uploads exactly those five unpublished artifacts; Windows arm64 builds, verifies, and executes both complete runtimes, then fails closed with no upload because 2,879 linker-emitted 16-byte function thunks differ only in their unreachable fourth `udf` instruction while each thunk's `adrp`/`add`/`br` control flow is byte-identical; the remaining 68 bytes are derived `/Brepro` COFF/debug identities; exact implementation commit `36a19f525` adds a bounded pre-staging MSBuild evaluation of the effective Release `LinkIncremental` state and is locally green under E-M3-WINDOWS-LINK-INCREMENTAL-DIAGNOSTIC-LOCAL-001; all six native cells remain required before any producer correction; oldest-baseline, native-trust, cross-family remote, and measured-baseline gates remain open; no bundled-runtime path is enabled<br>
 Primary design: [SSH relay GitHub Release plan](./2026-07-14-ssh-relay-github-release-plan.html)<br>
 Motivating issues: [#8450](https://github.com/stablyai/orca/issues/8450), [#1693](https://github.com/stablyai/orca/issues/1693)
 
@@ -169,11 +169,11 @@ same change as the work it records.
   per-target opt-in selects bundled-preferred behavior, and implementing the setting does not
   authorize default-on rollout or legacy removal (E-M1-ROLLOUT-DECISION-001).
 - Legacy fallback removal: not authorized.
-- Next required action: add a bounded generated-project diagnostic for the exact Windows Release
-  `LinkIncremental` state and rerun all six target-native cells. Require both Windows clean builds
-  to report the same state before considering one copied-artifact producer correction. Preserve all
-  five controls, strict comparison, rejected-arm64 no-upload, the repository-wide node-pty patch,
-  legacy/default path, and every other release gate.
+- Next required action: push exact implementation commit `36a19f525` plus its evidence-ledger head
+  and rerun all six target-native cells. Require both Windows clean builds to report the same
+  evaluated `LinkIncremental` state before considering one copied-artifact producer correction.
+  Preserve all five controls, strict comparison, rejected-arm64 no-upload, the repository-wide
+  node-pty patch, legacy/default path, and every other release gate.
 
 ## Non-Negotiable Invariants
 
@@ -694,7 +694,9 @@ disassembly proves each 16-byte function thunk has byte-identical `adrp x16`, `a
 before changing it. Add a bounded generated-project diagnostic for the exact Release
 `LinkIncremental` state while retaining the existing architecture, option, cardinality, strict
 comparison, and no-upload gates. The thunk layout is consistent with an incremental-link table, but
-that setting is not yet proved on the native runner. Do not normalize rejected bytes, weaken the
+that setting is not yet proved on the native runner. Exact implementation commit `36a19f525` is
+locally red/green and passes the complete artifact/static gate under
+E-M3-WINDOWS-LINK-INCREMENTAL-DIAGNOSTIC-LOCAL-001. Do not normalize rejected bytes, weaken the
 comparator, modify repository-wide node-pty, or connect a production consumer.
 
 Each runtime must contain only the executable closure required by the relay.
@@ -5008,6 +5010,92 @@ configuration` before runtime staging, verification, smoke, comparison, or diagn
   `LinkIncremental` state, require both Windows clean builds to report it, and rerun all six native
   controls before considering one copied-artifact producer correction.
 
+### E-M3-WINDOWS-LINK-INCREMENTAL-DIAGNOSTIC-LOCAL-001 — Effective MSBuild link-state gate
+
+- Date: 2026-07-14
+- Commit SHA / PR: exact implementation commit
+  `36a19f525cc63e488f49daa5c3a6aafc590acc08`; stacked draft
+  PR [#8741](https://github.com/stablyai/orca/pull/8741), target-native execution pending
+- Runner: macOS 26.2 build 25C56, native Apple M4 arm64; Node v26.0.0 and pnpm 10.24.0. This runner
+  cannot evaluate a native MSBuild project, so the two Windows jobs remain authoritative.
+- Remote and transport: none; strict command/output contracts and builder ordering only
+- Exact red command:
+
+  ```sh
+  pnpm exec vitest run --config config/vitest.config.ts \
+    config/scripts/ssh-relay-node-pty-windows-build-determinism.test.mjs
+  ```
+
+- Red result: FAIL as intended, one failed and four passed tests because
+  `windowsNodePtyLinkIncrementalCommand` was not implemented.
+- Exact green commands:
+
+  ```sh
+  node --check config/scripts/ssh-relay-node-pty-windows-build-determinism.mjs
+  node --check config/scripts/ssh-relay-node-pty-windows-build-determinism.test.mjs
+  node --check config/scripts/ssh-relay-node-pty-build.mjs
+  pnpm exec vitest run --config config/vitest.config.ts \
+    config/scripts/ssh-relay-node-pty-windows-build-determinism.test.mjs \
+    config/scripts/ssh-relay-node-pty-build.test.mjs \
+    config/scripts/ssh-relay-runtime-workflow.test.mjs
+  pnpm exec vitest run --config config/vitest.config.ts \
+    config/scripts/ssh-relay-node-release-verification.test.mjs \
+    config/scripts/ssh-relay-node-tar-inspection.test.mjs \
+    config/scripts/ssh-relay-node-pty-build.test.mjs \
+    config/scripts/ssh-relay-node-pty-windows-build-determinism.test.mjs \
+    config/scripts/ssh-relay-node-pty-windows-settlement.test.mjs \
+    config/scripts/ssh-relay-node-zip-inspection.test.mjs \
+    config/scripts/ssh-relay-runtime-artifact.test.mjs \
+    config/scripts/ssh-relay-runtime-build.test.mjs \
+    config/scripts/ssh-relay-runtime-pty-smoke.test.mjs \
+    config/scripts/ssh-relay-runtime-reproducibility.test.mjs \
+    config/scripts/ssh-relay-runtime-resource-diagnostics.test.mjs \
+    config/scripts/ssh-relay-runtime-windows-pe-diagnostic.test.mjs \
+    config/scripts/ssh-relay-runtime-windows-tree.test.mjs \
+    config/scripts/ssh-relay-runtime-workflow.test.mjs \
+    config/scripts/ssh-relay-runtime-zip.test.mjs
+  pnpm run typecheck
+  pnpm exec oxlint \
+    config/scripts/ssh-relay-node-pty-windows-build-determinism.mjs \
+    config/scripts/ssh-relay-node-pty-windows-build-determinism.test.mjs \
+    config/scripts/ssh-relay-node-pty-build.mjs
+  pnpm run check:max-lines-ratchet
+  GOMAXPROCS=2 pnpm run lint
+  pnpm exec oxfmt --check \
+    config/scripts/ssh-relay-node-pty-windows-build-determinism.mjs \
+    config/scripts/ssh-relay-node-pty-windows-build-determinism.test.mjs \
+    config/scripts/ssh-relay-node-pty-build.mjs \
+    docs/reference/plans/2026-07-14-ssh-relay-github-release-implementation-checklist.md
+  pnpm exec lint-staged
+  git diff --check
+  ```
+
+- Green result: PASS. All syntax checks exited zero; the purpose command passed 9/9 tests across
+  three suites; all 15 artifact suites passed 54/54 tests. Typecheck, focused oxlint, the 355-entry
+  max-lines ratchet, full repository lint/reliability/localization, formatting, staged hooks, and
+  diff checks exited zero. Full lint emitted only pre-existing warnings outside this package;
+  `lint-staged` reported no staged files in its standalone run and the commit hook subsequently ran
+  oxlint, React Doctor, and oxfmt successfully over all four staged files.
+- Duration and resource metrics: purpose gate 1.93 s wall / 459 ms Vitest; complete artifact gate
+  2.87 s wall / 1.35 s Vitest; typecheck 3.10 s; focused lint and line ratchet 3.09 s; full lint
+  12.91 s. Synthetic peak RSS, open files/channels, cancellation settlement, and fallback delay
+  were not instrumented.
+- Artifact/log/trace link: exact implementation commit and local command output; no binary artifact
+  was created or uploaded
+- Oracle proved: Windows builds form a bounded `MSBuild.exe` query for the exact generated
+  `conpty_console_list.vcxproj`, Release configuration, and tuple architecture; request only the
+  evaluated `LinkIncremental` property; accept exactly one case-insensitive boolean result; and
+  fail before staging on missing, noisy, or non-boolean output. x64 and arm64 commands are covered,
+  POSIX creates no query, and the result is appended to the existing generated-setting record.
+- Does not prove: `MSBuild.exe -getProperty` availability or result on either native Windows image,
+  the actual effective incremental-link state, the thunk owner, a safe producer correction, arm64
+  equality, oldest baselines, native trust, SSH, publication, transfer, fallback, UI, or any enabled
+  tuple.
+- Checklist items satisfied: local bounded effective-link-state diagnostic only; no tuple or
+  production checkbox.
+- Follow-up: push the exact implementation and ledger head, run all six target-native cells, and
+  require both Windows clean builds to report `linkIncremental` before changing the producer.
+
 ## Accepted Gaps
 
 No product gap is accepted merely because it appears in this list. Each entry requires explicit
@@ -5065,11 +5153,11 @@ The project is not complete until every applicable item below is checked with ev
 
 ## Next Required Action
 
-Add a bounded, purpose-tested generated-project diagnostic for the exact Windows Release
-`LinkIncremental` state, then rerun both Windows architectures and all four POSIX controls at the
-exact implementation head. Require both Windows clean builds to report the same setting. Only if
-that target-native evidence classifies the 2,879 function thunks may one copied-artifact producer
-correction be considered; retain strict comparison, all five controls, and rejected-arm64 no-upload.
+Push exact implementation commit `36a19f525` plus its evidence-ledger head, then rerun both Windows
+architectures and all four POSIX controls. Require both Windows clean builds to report the same
+evaluated `LinkIncremental` setting. Only if that target-native evidence classifies the 2,879
+function thunks may one copied-artifact producer correction be considered; retain strict
+comparison, all five controls, and rejected-arm64 no-upload.
 Cross-family Layer B targets, the protected manifest-signing environment,
 oldest-baseline/native-trust cells, and the paired legacy performance baseline remain
 release/default-path blockers; no publication, desktop resolver, SSH transfer/install, per-target
