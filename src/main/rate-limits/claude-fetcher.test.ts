@@ -276,6 +276,71 @@ describe('fetchClaudeRateLimits', () => {
     expect(readActiveClaudeKeychainCredentialsStrict).not.toHaveBeenCalledWith(undefined)
   })
 
+  it('does not retry with the legacy keychain for WSL targets', async () => {
+    // Why: a WSL target's stale credentials must never be answered with the
+    // host user's legacy macOS Keychain account.
+    const configDir = '\\\\wsl$\\Ubuntu\\home\\test\\.claude'
+    const authPreparation: ClaudeRuntimeAuthPreparation = {
+      configDir,
+      runtime: 'wsl',
+      wslDistro: 'Ubuntu',
+      wslLinuxConfigDir: '/home/test/.claude',
+      envPatch: { CLAUDE_CONFIG_DIR: '/home/test/.claude' },
+      stripAuthEnv: false,
+      provenance: 'system'
+    }
+    vi.mocked(readActiveClaudeKeychainCredentialsStrict).mockImplementation(async (dir) =>
+      dir
+        ? JSON.stringify({ claudeAiOauth: { accessToken: 'stale-wsl-token' } })
+        : JSON.stringify({ claudeAiOauth: { accessToken: 'fresh-legacy-token' } })
+    )
+    netFetchMock.mockResolvedValue(
+      new Response(JSON.stringify({ error: { message: 'Invalid authentication credentials' } }), {
+        status: 401
+      })
+    )
+
+    await expect(
+      fetchClaudeRateLimits({ authPreparation, allowPtyFallback: false })
+    ).resolves.toMatchObject({
+      provider: 'claude',
+      status: 'error'
+    })
+
+    expect(netFetchMock).toHaveBeenCalledTimes(1)
+    expect(readActiveClaudeKeychainCredentialsStrict).not.toHaveBeenCalledWith(undefined)
+  })
+
+  it('skips the legacy retry when the legacy item mirrors the failed scoped token', async () => {
+    // Why: Claude's usage endpoint has a tight request budget; retrying the
+    // identical token would double the request for a guaranteed second 401.
+    const configDir = '/Users/test/.claude'
+    const authPreparation: ClaudeRuntimeAuthPreparation = {
+      configDir,
+      envPatch: { CLAUDE_CONFIG_DIR: configDir },
+      stripAuthEnv: false,
+      provenance: 'system'
+    }
+    vi.mocked(readActiveClaudeKeychainCredentialsStrict).mockResolvedValue(
+      JSON.stringify({ claudeAiOauth: { accessToken: 'mirrored-token' } })
+    )
+    netFetchMock.mockResolvedValue(
+      new Response(JSON.stringify({ error: { message: 'Invalid authentication credentials' } }), {
+        status: 401
+      })
+    )
+
+    await expect(
+      fetchClaudeRateLimits({ authPreparation, allowPtyFallback: false })
+    ).resolves.toMatchObject({
+      provider: 'claude',
+      status: 'error'
+    })
+
+    expect(netFetchMock).toHaveBeenCalledTimes(1)
+    expect(readActiveClaudeKeychainCredentialsStrict).toHaveBeenCalledWith(undefined)
+  })
+
   it('accepts Claude Code statusline-style rate limit window fields', async () => {
     const configDir = '/Users/test/.claude'
     const authPreparation: ClaudeRuntimeAuthPreparation = {
