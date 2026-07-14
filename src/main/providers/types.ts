@@ -156,6 +156,8 @@ export type PtyProcessInfo = {
 
 export type IPtyProvider = {
   spawn(opts: PtySpawnOptions): Promise<PtySpawnResult>
+  /** Whether this spawn target can append the Git guard after its final env merge. */
+  supportsGitCredentialGuardHost?: (sessionId?: string) => boolean
   attach(id: string): Promise<void>
   hasPty?: (id: string) => boolean
   write(id: string, data: string): void

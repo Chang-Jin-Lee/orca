@@ -5,6 +5,7 @@ import type { TerminalTab, TuiAgent } from '../../../../shared/types'
 import { FilledBellIcon } from '../sidebar/WorktreeCardHelpers'
 import { ShellIcon } from './shell-icons'
 import type { TerminalTabActivityStatus } from './terminal-tab-activity-status'
+import { translate } from '@/i18n/i18n'
 
 type TerminalTabLeadingIconProps = {
   agent: TuiAgent | null
@@ -70,7 +71,10 @@ export function TerminalTabLeadingIcon({
     return (
       <span
         data-testid="tab-activity-bell"
-        aria-label="Unread agent completion"
+        aria-label={translate(
+          'auto.components.tab.bar.TerminalTabLeadingIcon.7ab2964bea',
+          'Unread agent completion'
+        )}
         className="mr-1 inline-flex shrink-0 items-center gap-1"
       >
         <FilledBellIcon className="size-3 text-amber-500 drop-shadow-sm" />

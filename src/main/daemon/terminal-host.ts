@@ -112,6 +112,7 @@ export class TerminalHost {
       envToDelete: opts.envToDelete,
       command: opts.command,
       startupCommandDelivery: opts.startupCommandDelivery,
+      ...(opts.launchAgent ? { launchAgent: opts.launchAgent } : {}),
       shellOverride: opts.shellOverride,
       terminalWindowsWslDistro: opts.terminalWindowsWslDistro,
       terminalWindowsPowerShellImplementation: opts.terminalWindowsPowerShellImplementation
@@ -211,8 +212,7 @@ export class TerminalHost {
     if (opts.immediate) {
       return session.forceKillAndWaitForExit()
     }
-    session.kill()
-    return Promise.resolve()
+    return Promise.resolve(session.kill())
   }
 
   // Why: dispose a dead session's headless emulator and drop it from the map so

@@ -30,6 +30,12 @@ import {
   scanForShellReady,
   type ShellReadyScanState
 } from '../main/shell-ready-marker-scanner'
+import { applyTerminalGitCredentialPromptGuard } from '../shared/terminal-git-credential-guard'
+import {
+  gitCredentialPromptGuardEnv,
+  mergeGitConfigEnvProtocol
+} from '../shared/git-credential-prompt-env'
+import { isTuiAgent } from '../shared/tui-agent-config'
 
 // Why: node-pty is a native addon that may not be installed on the remote.
 // Dynamic import keeps the require() lazy so loadPty() returns null gracefully
@@ -74,6 +80,7 @@ type ManagedPty = {
   terminalHandle?: string
   explicitTerm?: string
   envToDelete: string[]
+  gitCredentialPromptGuarded: boolean
   startupCommand?: ManagedStartupCommand
   physicalExit?: PhysicalExitTracker
   forceKillSent?: boolean
@@ -219,6 +226,8 @@ type SerializedPtyEntry = {
   terminalHandle?: string
   explicitTerm?: string
   envToDelete?: string[]
+  /** Optional for state serialized by relays predating the credential guard. */
+  gitCredentialPromptGuarded?: boolean
 }
 
 function sanitizeEnvToDelete(value: unknown): string[] {
@@ -362,16 +371,18 @@ export class PtyHandler {
     ctx: { id: string; paneKey?: string; shell: string; command?: string },
     envToDelete: readonly string[] = []
   ): Record<string, string> {
-    const baseEnv = {
-      ...process.env,
-      TERM: 'xterm-256color',
-      COLORTERM: 'truecolor',
-      TERM_PROGRAM: 'Orca',
-      TERM_PROGRAM_VERSION:
-        rendererEnv?.ORCA_APP_VERSION || process.env.ORCA_APP_VERSION || '0.0.0-dev',
-      FORCE_HYPERLINK: '1',
-      ...rendererEnv
-    } as Record<string, string>
+    const baseEnv = mergeGitConfigEnvProtocol(
+      {
+        ...process.env,
+        TERM: 'xterm-256color',
+        COLORTERM: 'truecolor',
+        TERM_PROGRAM: 'Orca',
+        TERM_PROGRAM_VERSION:
+          rendererEnv?.ORCA_APP_VERSION || process.env.ORCA_APP_VERSION || '0.0.0-dev',
+        FORCE_HYPERLINK: '1'
+      },
+      rendererEnv
+    ) as Record<string, string>
     const augmented: Record<string, string> = {}
     for (const augmenter of this.envAugmenters) {
       try {
@@ -382,7 +393,7 @@ export class PtyHandler {
         )
       }
     }
-    const result = { ...baseEnv, ...augmented }
+    const result = mergeGitConfigEnvProtocol(baseEnv, augmented) as Record<string, string>
     // Why: match local/daemon precedence so relay defaults and augmenters
     // cannot resurrect attribution or identity values explicitly removed.
     for (const key of envToDelete) {
@@ -771,6 +782,14 @@ export class PtyHandler {
     const shouldProviderDeliverCommand = commandDelivery === 'provider' && command !== undefined
     const spawnEnv = this.buildSpawnEnv(env, { id, paneKey, shell, command }, envToDelete)
     const launchCommandHint = resolveSetupAgentSequenceLaunchCommand(spawnEnv, command)
+    // Why: SSH PTYs bypass main's host-env builder. Apply the policy only
+    // after the relay merges its authoritative process environment so indexed
+    // Git config and remote Windows/WSL behavior remain intact.
+    const gitCredentialPromptGuarded = applyTerminalGitCredentialPromptGuard(spawnEnv, {
+      launchCommand: launchCommandHint,
+      isUnattended: isTuiAgent(params.launchAgent),
+      platform: process.platform
+    })
     const shouldEmitShellReadyMarker =
       launchCommandHint !== undefined &&
       shouldUseShellReadyStartupDelivery({
@@ -823,6 +842,7 @@ export class PtyHandler {
       worktreeId,
       ...(explicitTerm !== undefined ? { explicitTerm } : {}),
       envToDelete,
+      gitCredentialPromptGuarded,
       ...(terminalHandle ? { terminalHandle } : {}),
       ...(shouldProviderDeliverCommand
         ? {
@@ -1154,6 +1174,7 @@ export class PtyHandler {
         worktreeId: managed.worktreeId,
         ...(managed.explicitTerm !== undefined ? { explicitTerm: managed.explicitTerm } : {}),
         envToDelete: managed.envToDelete,
+        gitCredentialPromptGuarded: managed.gitCredentialPromptGuarded,
         ...(managed.terminalHandle ? { terminalHandle: managed.terminalHandle } : {})
       })
     }
@@ -1217,6 +1238,8 @@ export class PtyHandler {
     if (explicitTerm !== undefined) {
       revivedEnv.TERM = explicitTerm
     }
+    // Why: serialized state can come from an older or untrusted client, so
+    // revive reapplies the same bounds as a fresh spawn before retaining it.
     const envToDelete = sanitizeEnvToDelete(entry.envToDelete)
     const shell = resolveDefaultShell()
     const spawnEnv = this.buildSpawnEnv(
@@ -1224,6 +1247,12 @@ export class PtyHandler {
       { id: entry.id, paneKey: entry.paneKey, shell },
       envToDelete
     )
+    // Why: revive lacks the original launch command, so preserve the guard
+    // decision made at fresh spawn. Legacy state remains an ordinary shell.
+    const gitCredentialPromptGuarded = entry.gitCredentialPromptGuarded === true
+    if (gitCredentialPromptGuarded) {
+      Object.assign(spawnEnv, gitCredentialPromptGuardEnv(spawnEnv, process.platform))
+    }
     const shellLaunch = getRelayShellLaunchConfig(shell, spawnEnv)
     const term = ptyMod.spawn(shell, shellLaunch.args, {
       name: spawnEnv.TERM ?? 'xterm-256color',
@@ -1244,6 +1273,7 @@ export class PtyHandler {
       worktreeId: entry.worktreeId,
       ...(explicitTerm !== undefined ? { explicitTerm } : {}),
       envToDelete,
+      gitCredentialPromptGuarded,
       ...(entry.terminalHandle ? { terminalHandle: entry.terminalHandle } : {})
     })
 
