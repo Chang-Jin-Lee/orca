@@ -115,6 +115,14 @@ describe('orca skills CLI', () => {
     expect(stdoutText(stdoutSpy)).toBe('# Alpha\n\nShort.\n\n## References\n\nFull.\n')
   })
 
+  it('supports the canonical single-item show verb as an alias', async () => {
+    const stdoutSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true)
+
+    await main(['skills', 'show', 'alpha'], '/tmp/repo')
+
+    expect(stdoutText(stdoutSpy)).toBe('# Alpha\n\nShort.\n')
+  })
+
   it('gives list --json a stable canonical schema', async () => {
     const stdoutSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true)
 

@@ -14,6 +14,7 @@ export const SKILL_COMMAND_SPECS: CommandSpec[] = [
   },
   {
     path: ['skills', 'get'],
+    aliases: [['skills', 'show']],
     summary: 'Print a version-matched skill guide as Markdown',
     usage: 'orca skills get <topic> [--full] [--json]',
     allowedFlags: [...GLOBAL_FLAGS, 'topic', 'full'],
