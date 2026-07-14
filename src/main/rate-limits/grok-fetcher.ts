@@ -189,22 +189,24 @@ async function fetchBillingData(
   }
 }
 
+type GrokMonthlyFallbackOutcome =
+  | { kind: 'window'; window: RateLimitWindow | null }
+  | { kind: 'result'; result: ProviderRateLimits }
+
+// Why: request failures propagate as 'error' (thrown errors reach the caller's
+// catch) so the stale policy keeps the last good monthly snapshot — the
+// 'unavailable' status would discard it. Only a successful response without
+// monthly fields means the account truly has no visible quota.
 async function fetchMonthlyUsageFallback(
   session: GrokAuthSession,
   signal?: AbortSignal
-): Promise<RateLimitWindow | null> {
-  try {
-    const outcome = await fetchBillingData(BILLING_DEFAULT_URL, session, signal)
-    if (outcome.kind === 'result') {
-      return null
-    }
-    const config = outcome.data.config ?? outcome.data
-    return mapMonthlyUsage(config)
-  } catch {
-    // Why: the fallback read must not turn a signed-in no-credits account into
-    // an error chip; the credits-view 'unavailable' presentation stands.
-    return null
+): Promise<GrokMonthlyFallbackOutcome> {
+  const outcome = await fetchBillingData(BILLING_DEFAULT_URL, session, signal)
+  if (outcome.kind === 'result') {
+    return outcome
   }
+  const config = outcome.data.config ?? outcome.data
+  return { kind: 'window', window: mapMonthlyUsage(config) }
 }
 
 // Why: Orca never runs grok login; it only reads the session file the CLI updates.
@@ -245,9 +247,12 @@ export async function fetchGrokRateLimits(
     // Why: unified-billing accounts report a monthly included-usage budget
     // instead of weekly credits; the credits view omits creditUsagePercent
     // for them, so read the default billing view before giving up.
-    const monthly = await fetchMonthlyUsageFallback(session, options.signal)
-    if (monthly) {
-      return billingUsageResult({ monthly }, config, session)
+    const fallback = await fetchMonthlyUsageFallback(session, options.signal)
+    if (fallback.kind === 'result') {
+      return fallback.result
+    }
+    if (fallback.window) {
+      return billingUsageResult({ monthly: fallback.window }, config, session)
     }
     return result('unavailable', 'Grok billing response did not include credit usage')
   } catch (err) {

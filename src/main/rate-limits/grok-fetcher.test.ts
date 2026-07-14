@@ -164,15 +164,29 @@ describe('fetchGrokRateLimits', () => {
     )
   })
 
-  it('keeps the unavailable credits result when the monthly fallback request fails', async () => {
+  // Why: 'unavailable' would make applyStalePolicy discard the last good
+  // monthly snapshot; transient fallback failures must present like transient
+  // credits-view failures so stale data survives.
+  it('surfaces an error when the monthly fallback request fails', async () => {
     authState.file = freshAuthJson()
     netFetchMock
       .mockResolvedValueOnce(jsonResponse({ config: { isUnifiedBillingUser: true } }))
       .mockResolvedValueOnce(jsonResponse({}, 500))
 
     const result = await fetchGrokRateLimits()
-    expect(result.status).toBe('unavailable')
-    expect(result.error).toBe('Grok billing response did not include credit usage')
+    expect(result.status).toBe('error')
+    expect(result.error).toBe('Grok usage request failed (HTTP 500)')
+  })
+
+  it('surfaces an error when the monthly fallback request throws', async () => {
+    authState.file = freshAuthJson()
+    netFetchMock
+      .mockResolvedValueOnce(jsonResponse({ config: { isUnifiedBillingUser: true } }))
+      .mockRejectedValueOnce(new Error('network down'))
+
+    const result = await fetchGrokRateLimits()
+    expect(result.status).toBe('error')
+    expect(result.error).toBe('network down')
   })
 
   it('does not request the default billing view when weekly credits are present', async () => {
