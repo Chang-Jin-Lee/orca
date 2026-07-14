@@ -18,6 +18,7 @@ import {
 } from '../../shared/hosted-review-creation-providers'
 import { isAzureDevOpsReviewCreationAuthenticated } from '../azure-devops/pull-request-creation'
 import { isGiteaReviewCreationAuthenticated } from '../gitea/pull-request-creation'
+import { getEnterpriseGitHubRepoSlug } from '../github/github-enterprise-repository'
 import { acquire, ghExecFileAsync, gitExecFileAsync, release } from '../github/gh-utils'
 import { isNoUpstreamError, normalizeGitErrorMessage } from '../../shared/git-remote-error'
 import type { GitUpstreamStatus } from '../../shared/types'
@@ -59,6 +60,14 @@ async function isGitHubAuthenticated(
   connectionId?: string | null,
   options: HostedReviewExecutionOptions = {}
 ): Promise<boolean> {
+  // Why: a GHES remote is only routed to the GitHub provider once detection has
+  // confirmed gh is authenticated to its enterprise host, so a non-null slug
+  // already means authenticated — skip a redundant, rate-limited gh probe.
+  // Reaching the github.com check below therefore means the remote is github.com
+  // (its own custom host would have resolved above) (#8312).
+  if (await getEnterpriseGitHubRepoSlug(repoPath, connectionId, options)) {
+    return true
+  }
   await acquire()
   try {
     await ghExecFileAsync(
