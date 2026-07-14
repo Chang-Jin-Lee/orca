@@ -100,9 +100,11 @@ docs/reference/react-performance-audit.md
 validation-screenshots/
 .stably-browser
 
-# PR verification evidence screenshots are referenced from notes but should not
-# be committed.
+# PR verification evidence screenshots are regenerated on demand (notes/artifacts
+# manually, pr-evidence/ by the ORCA_CAPTURE_EVIDENCE e2e run) and must not be
+# committed.
 notes/artifacts/
+pr-evidence/
 
 # Playwright
 test-results/
