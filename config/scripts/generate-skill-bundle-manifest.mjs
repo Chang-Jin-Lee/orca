@@ -139,14 +139,17 @@ async function collectPackageFiles(packageRoot) {
       if (!fileStat.isFile()) {
         throw new Error(`Special file is not allowed in a shipped skill: ${manifestPath}`)
       }
-      files.push(
-        describeFile(manifestPath, await readFile(absolutePath), (fileStat.mode & 0o111) !== 0)
-      )
+      // Why: Windows observation cannot see execute bits, so an executable file in
+      // a shipped skill would misclassify every pristine Windows install as unrecognized.
+      if ((fileStat.mode & 0o111) !== 0) {
+        throw new Error(`Executable file is not allowed in a shipped skill: ${manifestPath}`)
+      }
+      files.push(describeFile(manifestPath, await readFile(absolutePath), false))
     }
   }
 
   await visit(packageRoot)
-  return files
+  return sortManifestFiles(files)
 }
 
 function collectGitPackageFiles(ref, name) {
@@ -156,7 +159,7 @@ function collectGitPackageFiles(ref, name) {
     .split('\0')
     .filter(Boolean)
   const caseFoldedPaths = new Map()
-  return output.map((line) => {
+  const files = output.map((line) => {
     const match = /^(\d+) (\w+) ([a-f0-9]+)\t(.+)$/.exec(line)
     if (!match) {
       throw new Error(`Unexpected git tree entry at ${ref}: ${line}`)
@@ -179,6 +182,28 @@ function collectGitPackageFiles(ref, name) {
       mode === '100755'
     )
   })
+  // Why: git ls-tree emits git byte-order, not the canonical walk order.
+  return sortManifestFiles(files)
+}
+
+// Why: snapshot matching compares files by array index, so every producer —
+// working-tree walk, git history, and runtime observation — must emit one
+// canonical order. This mirrors the sorted depth-first filesystem walk.
+function compareManifestPaths(left, right) {
+  const leftParts = left.split('/')
+  const rightParts = right.split('/')
+  const shared = Math.min(leftParts.length, rightParts.length)
+  for (let index = 0; index < shared; index += 1) {
+    const order = leftParts[index].localeCompare(rightParts[index], 'en')
+    if (order !== 0) {
+      return order
+    }
+  }
+  return leftParts.length - rightParts.length
+}
+
+function sortManifestFiles(files) {
+  return [...files].sort((left, right) => compareManifestPaths(left.path, right.path))
 }
 
 function packageDigest(files) {
@@ -273,6 +298,9 @@ function buildReleasedHistory() {
 
 async function buildArtifacts(appVersion) {
   const { registry, mapping } = buildReleasedHistory()
+  const releasedSnapshotCounts = Object.fromEntries(
+    Object.entries(registry.skills).map(([name, snapshots]) => [name, snapshots.length])
+  )
   const skillDirectories = (await readdir(SKILLS_ROOT, { withFileTypes: true }))
     .filter((entry) => entry.isDirectory())
     .map((entry) => entry.name)
@@ -312,7 +340,44 @@ async function buildArtifacts(appVersion) {
       skills: currentSkills
     },
     snapshotRegistry: registry,
-    releaseMapping: mapping
+    releaseMapping: mapping,
+    releasedSnapshotCounts
+  }
+}
+
+// Why: released snapshots are the detection ground truth for existing installs,
+// so a generation-logic change must not rewrite them silently. Only the one
+// unreleased working-tree append per skill may change between runs.
+function assertReleasedHistoryPreserved(committedRegistry, artifacts) {
+  if (!committedRegistry || committedRegistry.schemaVersion !== SCHEMA_VERSION) {
+    return
+  }
+  for (const [name, committedSnapshots] of Object.entries(committedRegistry.skills ?? {})) {
+    const releasedCount = artifacts.releasedSnapshotCounts[name] ?? 0
+    const regenerated = artifacts.snapshotRegistry.skills[name] ?? []
+    const protectedCount = Math.min(committedSnapshots.length, releasedCount)
+    for (let index = 0; index < protectedCount; index += 1) {
+      const committed = committedSnapshots[index]
+      const rebuilt = regenerated[index]
+      if (
+        !rebuilt ||
+        rebuilt.releaseRevision !== committed.releaseRevision ||
+        rebuilt.packageDigest !== committed.packageDigest
+      ) {
+        throw new Error(
+          `Released snapshot history changed for ${name} at revision ${committed.releaseRevision}. ` +
+            'Released snapshots are append-only; a deliberate identity migration must update this check.'
+        )
+      }
+    }
+  }
+}
+
+async function readCommittedRegistry() {
+  try {
+    return JSON.parse(await readFile(SNAPSHOT_REGISTRY_PATH, 'utf8'))
+  } catch {
+    return null
   }
 }
 
@@ -358,6 +423,7 @@ async function verifyArtifacts(artifacts) {
 async function main() {
   const packageJson = JSON.parse(await readFile(path.join(REPO_ROOT, 'package.json'), 'utf8'))
   const artifacts = await buildArtifacts(packageJson.version)
+  assertReleasedHistoryPreserved(await readCommittedRegistry(), artifacts)
   await (process.argv.includes('--write') ? writeArtifacts : verifyArtifacts)(artifacts)
 }
 
@@ -369,13 +435,16 @@ if (process.argv[1] && path.resolve(process.argv[1]) === import.meta.filename) {
 }
 
 export {
+  assertReleasedHistoryPreserved,
   buildArtifacts,
   buildReleasedHistory,
   classifyFile,
   collectPackageFiles,
+  describeFile,
   gitTreeSha,
   normalizeText,
   packageDigest,
+  sortManifestFiles,
   verifyArtifacts,
   writeArtifacts
 }
