@@ -2,7 +2,7 @@
 
 Date created: 2026-07-14<br>
 Last updated: 2026-07-14<br>
-Current phase: Milestone 3 / Work Package 2 target-native runtime assembly — the bounded same-head, same-runner two-clean-build identity oracle is locally green and awaits exact-head execution on all six glibc/macOS/Windows native runners; oldest-baseline, native-trust, cross-family remote, and measured-baseline gates remain open; no bundled-runtime path is enabled<br>
+Current phase: Milestone 3 / Work Package 2 target-native runtime assembly — completed exact-head two-clean-build run 29347236627 is an evidence-producing red: both Linux cells passed, both macOS cells exposed reproducibility drift, and both Windows cells exposed a comparator test-collection syntax failure; bounded diagnostic corrections are local only and await a new exact-head run; oldest-baseline, native-trust, cross-family remote, and measured-baseline gates remain open; no bundled-runtime path is enabled<br>
 Primary design: [SSH relay GitHub Release plan](./2026-07-14-ssh-relay-github-release-plan.html)<br>
 Motivating issues: [#8450](https://github.com/stablyai/orca/issues/8450), [#1693](https://github.com/stablyai/orca/issues/1693)
 
@@ -90,8 +90,14 @@ same change as the work it records.
   macOS x64/arm64 under E-M3-CI-001. A bounded comparator now rejects incomplete outputs and any
   runtime-tree, archive, identity, SPDX, provenance, type, mode, size, or digest drift after two
   independently verified clean builds; its exact implementation-commit contract and static gates
-  are locally green under E-M3-REPRODUCIBILITY-LOCAL-001, but exact-head native execution remains
-  pending. Oldest-baseline, native-trust, SSH, and musl cells remain open.
+  are locally green under E-M3-REPRODUCIBILITY-LOCAL-001. Exact-head run
+  [29347236627](https://github.com/stablyai/orca/actions/runs/29347236627) passed both Linux cells,
+  exposed macOS x64/arm64 runtime identity drift, and failed Windows x64/arm64 while collecting the
+  new comparator suite under E-M3-REPRODUCIBILITY-CI-RED-001.
+  E-M3-REPRODUCIBILITY-DIAGNOSTIC-LOCAL-001 removes the comparator shebang, checks both new files
+  with `node --check` on POSIX and Windows, and reports runtime-tree drift before derived metadata
+  drift; native proof of those corrections remains open. Oldest-baseline, native-trust, SSH, and
+  musl cells remain open.
 - Windows input correction: E-M3-WINDOWS-INPUT-GAP-001 proved the official Windows ZIP lacks headers
   and `node.lib`. Both artifacts now require the exact signed headers archive and tuple import
   library as explicit inputs. The schema, signed-checksum verifier, bounded ZIP/header extraction,
@@ -125,13 +131,16 @@ same change as the work it records.
 - Validation orchestration: GitHub Actions is the primary runner and evidence surface under
   E-M1-RUNNER-DECISION-001; exact native labels are recorded, while representative cross-family
   remote targets remain open.
-- Rollout control: existing per-SSH-target configuration; legacy is the default and the bundled
-  runtime is an explicit per-target Beta opt-in under E-M1-ROLLOUT-DECISION-001.
+- Rollout control: the Beta-tagged option lives on SSH target add/edit surfaces and is persisted per
+  target through existing target configuration. It is off by default for existing, new, imported,
+  missing, unknown, and malformed configurations, all of which resolve to legacy. Only an explicit
+  per-target opt-in selects bundled-preferred behavior, and implementing the setting does not
+  authorize default-on rollout or legacy removal (E-M1-ROLLOUT-DECISION-001).
 - Legacy fallback removal: not authorized.
-- Next required action: finish the exact implementation-commit local gates, push the bounded
-  two-clean-build comparator/workflow package to draft PR #8741, and require every target-native job
-  to compare complete runtime-tree, archive, identity, SPDX, and provenance outputs before upload.
-  Record every native drift instead of weakening the oracle. Keep oldest-baseline, cross-family
+- Next required action: finish the exact implementation-commit local gates for the bounded Windows
+  parser and diagnostic-order correction, then push and rerun all six target-native jobs. Use the
+  runtime-first comparator output to isolate
+  macOS producer nondeterminism without weakening the oracle. Keep oldest-baseline, cross-family
   remote infrastructure, signing/trust, and measured legacy baseline gates open; do not introduce
   publication, resolver, transfer, rollout, tuple enablement, or default behavior.
 
@@ -603,9 +612,12 @@ transfer, install, fallback, rollout setting, or tuple enablement belongs in thi
 six target-native artifact/executable jobs, including normal Windows x64/arm64 settlement and
 unpublished upload. E-M3-REPRODUCIBILITY-LOCAL-001 proves the bounded comparator requires two
 independently verified clean outputs and exact type/mode/size/SHA-256 equality for the runtime tree,
-archive, identity, SPDX, and provenance before uploading only the first output. Exact-head native
-execution remains open; artifact consumers, publication, the repository-wide node-pty patch, and
-the legacy/default path remain unchanged.
+archive, identity, SPDX, and provenance before uploading only the first output. Exact-head run
+29347236627 is intentionally red under E-M3-REPRODUCIBILITY-CI-RED-001: Linux x64/arm64 passed,
+macOS x64/arm64 produced unequal clean outputs, and Windows x64/arm64 failed comparator test
+collection. E-M3-REPRODUCIBILITY-DIAGNOSTIC-LOCAL-001 proves the bounded parser/diagnostic
+correction locally; native execution is still open. Artifact consumers, publication, the
+repository-wide node-pty patch, and the legacy/default path remain unchanged.
 
 Each runtime must contain only the executable closure required by the relay.
 
@@ -3618,6 +3630,129 @@ or unexpected token`; the first logs did not identify a source location.
 - Follow-up: push the exact head, run all six native jobs, and record the exact differing path/field
   for every red result before correcting producer nondeterminism without weakening this oracle.
 
+### E-M3-REPRODUCIBILITY-CI-RED-001 — First native clean-build comparison
+
+- Date: 2026-07-14
+- Commit SHA / PR: exact head `09b047f4eee224b45ca337b46b8402016290a1a9` in stacked draft
+  PR [#8741](https://github.com/stablyai/orca/pull/8741)
+- Run and jobs: [run 29347236627](https://github.com/stablyai/orca/actions/runs/29347236627);
+  Linux x64 `87134028593`, Linux arm64 `87134028669`, macOS arm64 `87134028547`, macOS x64
+  `87134028651`, Windows x64 `87134028652`, Windows arm64 `87134028632`
+- Runners: `ubuntu-24.04` x64, `ubuntu-24.04-arm` arm64, `macos-15-intel` x64,
+  `macos-15` arm64, `windows-2022` x64, and `windows-11-arm` arm64; Node v24.18.0. The macOS
+  arm64 failure ran on macOS 15.7.7 image `20260706.0213.1`; the x64 failure ran on macOS 15.7.7
+  image `20260629.0276.1`. Both used Xcode 16.4 build 16F6.
+- Remote and transport: none; GitHub-hosted target-native artifact jobs only
+- Exact evidence commands:
+
+  ```sh
+  gh run view 29347236627 --repo stablyai/orca \
+    --json databaseId,headSha,status,conclusion,url,jobs
+  gh api -H 'Accept: application/vnd.github+json' \
+    repos/stablyai/orca/actions/jobs/<completed-job-id>/logs
+  ```
+
+- Result: Linux x64 and arm64 independently built, verified, smoked, compared equal, and uploaded
+  unpublished evidence. macOS arm64 independently verified and smoked both outputs but failed the
+  equality gate: content IDs were
+  `sha256:f1bbc1de26d6e9aae3899754c4ac4aea694ad9f5197fcf1c773e29fc50401129` and
+  `sha256:c26eba0226e73542a0cd7aec0ca5fa7e3809051453e40095e47fe9d154ba944f`; archive
+  digests/sizes were
+  `sha256:9cd56317ff03eb4e89a811e46736dc7558e447b9f0cd2d7e20fdeb5e5c40114a` /
+  24,714,656 bytes and
+  `sha256:cde8fa92470fdf73ec02e8e6ebbf23417e43d98b465fa9c6bdea4373be8c3e84` /
+  24,714,700 bytes. macOS x64 likewise failed with content IDs
+  `sha256:b71d7d50bba78b6cf9e6dc24b006d48c709a784c7eb77f500e86ab5fe692690b` and
+  `sha256:ceae81924c97c917855af864239b87a7d2eecc28de7d00c21c32c47c5385354f`;
+  archive digests/sizes were
+  `sha256:01f7d4c6d54241e211c5063b89e92a3511433b18a50cb643bbfbe0384546a50e` /
+  26,384,540 bytes and
+  `sha256:f98dfdead87f4884382fedc3e3bff0197a3b2aa6981c38107e198cb38e8bdf67` /
+  26,384,576 bytes. The committed comparator first reported identity SHA-256 drift on both macOS
+  architectures. Windows x64 and arm64 stopped before downloading Node inputs or building artifacts
+  because Vitest collected zero comparator tests with `SyntaxError: Invalid or unexpected token`;
+  the other 10 suites passed with 31 tests passed and one skipped.
+- Duration and resource metrics: Linux build/compare steps completed in 125 seconds (x64) and 131
+  seconds (arm64); macOS arm64 failed after 123 seconds in the build/compare step. Windows contract
+  suites completed in 1.54 seconds on arm64 and before artifact assembly on both architectures.
+  Peak RSS, file/channel counts, and cancellation settlement were not instrumented by this gate.
+- Artifact/log/trace link: run and job links above. The two Linux evidence artifacts are unpublished;
+  failed cells uploaded no runtime artifact.
+- Oracle proved: the equality gate accepts both Linux glibc tuples and detects real macOS
+  clean-build drift; Windows contract collection fails before unverified artifact work can start.
+  No asset was published and no production or default path changed.
+- Does not prove: Windows parser correction, macOS producer determinism, oldest baselines, native
+  trust/signing, SSH, SFTP/system-SSH, release publication, resolver/cache,
+  transfer/install, fallback, UI, or any enabled tuple.
+- Checklist items satisfied: none newly complete; native reproducibility remains open.
+- Follow-up: remove the comparator shebang, add explicit native `node --check` gates, report
+  runtime-tree drift before derived metadata, rerun all six jobs, and correct the macOS producer only
+  after the exact differing runtime file is identified. Never ignore or normalize unequal bytes in
+  the comparator.
+
+### E-M3-REPRODUCIBILITY-DIAGNOSTIC-LOCAL-001 — Windows parser and runtime-first drift diagnostics
+
+- Date: 2026-07-14
+- Commit SHA / PR: exact implementation commit
+  `e58913d1a571f4c578a7fe1dc51ef5c93e9b3136` in stacked draft PR
+  [#8741](https://github.com/stablyai/orca/pull/8741)
+- Runner: macOS 26.2 build 25C56 arm64, native; Node v26.0.0 and pnpm 10.24.0. Node v24.18.0
+  target-native GitHub execution remains pending.
+- Remote and transport: none; local synthetic comparator fixtures and workflow source contract only
+- Exact commands:
+
+  ```sh
+  node --check config/scripts/ssh-relay-runtime-reproducibility.mjs
+  node --check config/scripts/ssh-relay-runtime-reproducibility.test.mjs
+  pnpm exec vitest run --config config/vitest.config.ts \
+    config/scripts/ssh-relay-runtime-reproducibility.test.mjs \
+    config/scripts/ssh-relay-runtime-workflow.test.mjs
+  pnpm exec vitest run --config config/vitest.config.ts \
+    config/scripts/ssh-relay-node-release-verification.test.mjs \
+    config/scripts/ssh-relay-node-tar-inspection.test.mjs \
+    config/scripts/ssh-relay-node-pty-windows-settlement.test.mjs \
+    config/scripts/ssh-relay-node-zip-inspection.test.mjs \
+    config/scripts/ssh-relay-runtime-artifact.test.mjs \
+    config/scripts/ssh-relay-runtime-pty-smoke.test.mjs \
+    config/scripts/ssh-relay-runtime-reproducibility.test.mjs \
+    config/scripts/ssh-relay-runtime-resource-diagnostics.test.mjs \
+    config/scripts/ssh-relay-runtime-windows-tree.test.mjs \
+    config/scripts/ssh-relay-runtime-zip.test.mjs \
+    config/scripts/ssh-relay-runtime-workflow.test.mjs
+  pnpm run typecheck
+  pnpm exec oxlint config/scripts/ssh-relay-runtime-reproducibility.mjs \
+    config/scripts/ssh-relay-runtime-reproducibility.test.mjs \
+    config/scripts/ssh-relay-runtime-workflow.test.mjs
+  pnpm run check:max-lines-ratchet
+  GOMAXPROCS=2 pnpm run lint
+  pnpm exec oxfmt --check .github/workflows/ssh-relay-runtime-artifacts.yml \
+    config/scripts/ssh-relay-runtime-reproducibility.mjs \
+    config/scripts/ssh-relay-runtime-reproducibility.test.mjs \
+    config/scripts/ssh-relay-runtime-workflow.test.mjs \
+    docs/reference/plans/2026-07-14-ssh-relay-github-release-implementation-checklist.md
+  git diff --check
+  ```
+
+- Result: PASS. Both new files passed `node --check`; the purpose suite passed 11/11 tests; the
+  complete artifact set passed 41/41 tests across 11 suites. Typecheck, focused oxlint, the
+  355-entry max-lines ratchet, full repository lint/reliability/localization, formatting, and diff
+  checks exited zero. Full lint emitted only pre-existing warnings outside this package.
+- Duration and resource metrics: syntax checks 60 ms and 50 ms; purpose suite 850 ms wall; complete
+  artifact suite 1.27 seconds wall; typecheck 2.00 seconds; focused oxlint 480 ms; max-lines 780 ms;
+  full lint 11.96 seconds. Synthetic fixture peak RSS/open files were not instrumented.
+- Artifact/log/trace link: exact sources in commit `e58913d1a`; target-native rerun pending
+- Oracle proved: the comparator and its test import parse locally without the shebang; both POSIX
+  and Windows workflow contract stages run explicit syntax checks before Vitest or artifact inputs;
+  a simultaneous runtime/identity drift reports the runtime-tree path first. The comparator still
+  compares every byte and does not normalize or ignore drift.
+- Does not prove: Windows x64/arm64 parsing, any native build, the differing macOS runtime path,
+  macOS determinism, oldest baselines, native trust, SSH, publication, transfer, fallback, UI, or an
+  enabled tuple.
+- Checklist items satisfied: no native or tuple box; this closes only the local diagnostic
+  correction required after E-M3-REPRODUCIBILITY-CI-RED-001.
+- Follow-up: push the exact commit, rerun all six native jobs, require both Windows syntax checks to
+  pass, and use the macOS runtime-first failure path to correct producer nondeterminism.
+
 ## Accepted Gaps
 
 No product gap is accepted merely because it appears in this list. Each entry requires explicit
@@ -3628,7 +3763,7 @@ owner and promotion condition.
 | Bundled runtime only partially implemented | Six unpublished native artifact proofs; no production consumer          | #8450/#1693 environment failures remain        | Codex implementation owner                              | Complete Work Packages 2–7 plus Milestones 3–14                                | Open         |
 | No bundled tuple enabled                   | Every target's default and effective mode remains legacy                | No bundled support claim can be made           | Codex implementation owner                              | Complete target-native build/trust and both required live-evidence layers      | Open         |
 | Windows runtime smoke incomplete           | Native x64/arm64 smoke settles and uploads exact evidence               | Historical blocker is closed                   | Codex implementation owner                              | Met by E-M3-WINDOWS-CI-001                                                     | CLOSED       |
-| Native clean-rebuild identity unproved     | Bounded local oracle is green; six target-native comparisons pending    | Toolchain drift may change native content IDs  | Codex implementation owner                              | Same-head, same-runner clean builds match or a reviewed reproducibility policy | Open         |
+| Native clean-rebuild identity unproved     | Linux x64/arm64 pass; macOS x64/arm64 and the Windows parser are red    | Toolchain drift may change native content IDs  | Codex implementation owner                              | All six same-head, same-runner clean builds match without weakening the oracle | Open         |
 | Cross-family Layer B remotes unavailable   | GitHub native runner labels exist; no approved reachable target pool    | Client/remote integration gaps may escape      | Repository release administrator + implementation owner | Approve provider/snapshots/credentials/egress/teardown/cost owner              | BLOCKED      |
 | Musl has no accepted official Node binary  | Musl is deliberately legacy-only                                        | Unofficial binary would break provenance trust | Codex implementation owner                              | Orca-owned target-native source build, signing, provenance, and live gates     | ACCEPTED GAP |
 | Native arm64 live matrices incomplete      | Hosted Linux/Windows arm64 labels exist; full SSH/runtime cells do not  | Cross-build or unit tests may hide native bugs | Codex implementation owner                              | Full native archive, trust, SFTP/system-SSH, RPC, and baseline evidence        | Open         |
