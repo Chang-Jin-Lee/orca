@@ -2,7 +2,7 @@
 
 Date created: 2026-07-14<br>
 Last updated: 2026-07-14<br>
-Current phase: Milestone 3 / Work Package 2 target-native runtime assembly — exact-head run 29358223742 isolates 2,879 Windows arm64 linker-emitted 16-byte function thunks whose `adrp`/`add`/`br` control flow is byte-identical and whose unreachable fourth `udf` instruction differs, plus 68 derived `/Brepro` identity bytes; exact-head run 29359948742 disproves the empty `LinkIncremental` property oracle; exact-head run 29361673339 proves the locally assumed fixed tracking path is absent; exact-head run 29362672415 then proves both native Windows builds fail closed because bounded discovery from the entire generated `build` tree reaches unrelated dependency depth, while all four POSIX controls remain reproducible and upload; exact implementation commit `6f28a8cbf` narrows discovery to the `build/Release` output tree and is locally green under E-M3-WINDOWS-LINK-COMMAND-RELEASE-ROOT-LOCAL-001; the next six-cell exact-head run remains required, and no evidence authorizes changing a bound, producer, comparator, or default path; oldest-baseline, native-trust, cross-family remote, and measured-baseline gates remain open; no bundled-runtime path is enabled<br>
+Current phase: Milestone 3 / Work Package 2 target-native runtime assembly — exact-head run [29363423068](https://github.com/stablyai/orca/actions/runs/29363423068) at commit `2db46d91b` proves bounded `build/Release` discovery on both native Windows architectures: both clean builds select three tracking candidates, search 82 entries, select one target record, and report the same `/brepro`, `/debug`, `/experimental:deterministic`, `/guard:cf` summary with no explicit `/incremental` switch; Linux x64/arm64, macOS x64/arm64, and Windows x64 compare exactly and upload, while Windows arm64 retains the 2,879 linker-thunk mismatch and fails before upload under E-M3-WINDOWS-LINK-COMMAND-RELEASE-ROOT-CI-RED-001; exact implementation commit `e7d9a1c8d` adds only a bounded target `.ilk` presence/size diagnostic and is locally green under E-M3-WINDOWS-INCREMENTAL-DATABASE-LOCAL-001; the next exact-head six-cell run is required before any producer change; no evidence authorizes changing a comparator, production/default path, or tuple state; oldest-baseline, native-trust, cross-family remote, and measured-baseline gates remain open; no bundled-runtime path is enabled<br>
 Primary design: [SSH relay GitHub Release plan](./2026-07-14-ssh-relay-github-release-plan.html)<br>
 Motivating issues: [#8450](https://github.com/stablyai/orca/issues/8450), [#1693](https://github.com/stablyai/orca/issues/1693)
 
@@ -732,6 +732,16 @@ under E-M3-WINDOWS-LINK-COMMAND-RELEASE-ROOT-LOCAL-001. No budget, parser, produ
 staging, upload, legacy, or production behavior changed. The active gate is another exact-head
 six-cell native run.
 
+Exact-head run 29363423068 proves the scoped discovery on both native Windows runners. Both clean
+builds on both architectures select three tracking candidates under 82 Release-tree entries and
+report the same allowlisted command summary: `/brepro`, `/debug`, `/experimental:deterministic`,
+and `/guard:cf`, with no explicit `/incremental` switch. Windows x64 and all four POSIX controls
+compare and upload; Windows arm64 still fails strict comparison at the same 2,879 linker thunks and
+uploads nothing (E-M3-WINDOWS-LINK-COMMAND-RELEASE-ROOT-CI-RED-001). Because `/DEBUG` may imply
+incremental linking without an explicit command switch, the next bounded diagnostic records only
+the exact target `.ilk` file's presence and size from the already bounded clean Release tree before
+any copied-artifact producer change.
+
 Each runtime must contain only the executable closure required by the relay.
 
 - [ ] Replace or extend `config/scripts/build-relay.mjs` without weakening its existing relay and
@@ -1339,7 +1349,7 @@ Update status and evidence as work begins. Do not combine these into one large b
 | ------------------------- | ------------------------------------------------------------------------------------------ | --------------------------- | ----------------------------------------------------- | ----------------------------------------------------------------------- |
 | 0. #8450 legacy fix       | Coherent Node/npm selection and live repro                                                 | Fixes legacy selection only | Complete and CI-green in draft PR #8724               | E-M0-UNIT-002, E-M0-LIVE-002, E-M0-STATIC-002, E-M0-PR-001, E-M0-CI-001 |
 | 1. Contract and selectors | Manifest schema, identity, platform/libc selection, hostile inputs                         | None                        | Complete and CI-green in draft PR #8728               | `b9d80a4cb`; E-M2-RED-001, E-M2-CONTRACT-001, E-M2-CI-001               |
-| 2. Runtime builds         | Per-tuple assembly, native smoke, SBOM/provenance/signing                                  | None                        | Draft PR #8741; native Release-tree discovery pending | `6f28a8cbf`; E-M3-WINDOWS-LINK-COMMAND-RELEASE-ROOT-LOCAL-001           |
+| 2. Runtime builds         | Per-tuple assembly, native smoke, SBOM/provenance/signing                                  | None                        | Draft PR #8741; native target `.ilk` evidence pending | `e7d9a1c8d`; E-M3-WINDOWS-INCREMENTAL-DATABASE-LOCAL-001                |
 | 3. Release publication    | Prerequisite DAG, embedded manifest, draft upload/read-back gates                          | Asset-only                  | Not started                                           | —                                                                       |
 | 4. Desktop resolver/cache | Verified download, extraction, cache, offline behavior                                     | None/forced mode only       | Not started                                           | —                                                                       |
 | 5. Transfer/install       | Bounded transports, structured sentinel, bundled launch behind per-target Beta/forced mode | Per-target opt-in only      | Not started                                           | —                                                                       |
@@ -5556,23 +5566,177 @@ the bounded depth` before opening or parsing a candidate. Starting at the comple
   require both Windows clean builds to select one target record and emit the same accepted summary
   before changing the producer.
 
+### E-M3-WINDOWS-LINK-COMMAND-RELEASE-ROOT-CI-RED-001 — Native command classified; arm64 drift retained
+
+- Date: 2026-07-14
+- Commit SHA / PR: exact head `2db46d91b17789ce70eed5e5e496dec2ff56442a`, containing exact
+  Release-root implementation commit `6f28a8cbf53d1cfe889ce259476eb4aaaead2d87`; stacked draft
+  PR [#8741](https://github.com/stablyai/orca/pull/8741)
+- Run and jobs: [run 29363423068](https://github.com/stablyai/orca/actions/runs/29363423068),
+  conclusion `failure`; Windows x64 `87188953411` success, Windows arm64 `87188953416` expected
+  strict-comparison failure, Linux arm64 `87188953471` success, Linux x64 `87188953495` success,
+  macOS x64 `87188953507` success, and macOS arm64 `87188953532` success
+- Runners: Windows x64 used `windows-2022` / `win22` `20260706.237.1`, native X64, Windows Server
+  2022 build 20348; Windows arm64 used `windows-11-arm` / `win11-arm64` `20260706.102.1`, native
+  ARM64, Windows build 26200. Both used Node v24.18.0 and MSVC 14.44.35207 / compiler 19.44.35228.
+  Linux x64 used `ubuntu-24.04` / `ubuntu24` `20260705.232.1`; Linux arm64 used
+  `ubuntu-24.04-arm` / `ubuntu24-arm64` `20260706.52.2`; macOS x64 used `macos-15-intel` /
+  `macos15` `20260629.0276.1`; macOS arm64 used `macos-15` / `macos15` `20260706.0213.1`.
+  Every runner checked out the exact head above.
+- Remote and transport: none; target-native artifact assembly, strict comparison, and unpublished
+  seven-day Actions artifacts only
+- Exact evidence commands:
+
+  ```sh
+  gh run view 29363423068 --repo stablyai/orca \
+    --json status,conclusion,headSha,createdAt,updatedAt,url,jobs
+  gh api repos/stablyai/orca/actions/jobs/87188953411/logs
+  gh api repos/stablyai/orca/actions/jobs/87188953416/logs
+  gh api 'repos/stablyai/orca/actions/runs/29363423068/artifacts?per_page=100'
+  ```
+
+- Result: FAIL as the intended strict reproducibility boundary. Each clean build on both Windows
+  architectures discovers three `link.command.1.tlog` candidates under 82 `build/Release` entries,
+  selects exactly one record naming `conpty_console_list.node`, and accepts fatal UTF-16LE input.
+  The two x64 records are 2,114 bytes and the two arm64 records are 2,092 bytes. All four report
+  `incremental: unspecified` and the identical allowlisted switches `/brepro`, `/debug`,
+  `/experimental:deterministic`, and `/guard:cf`; no explicit `/incremental` or `/opt` switch is
+  present. Windows x64 and all four POSIX jobs compare exactly. Windows arm64 builds, verifies, and
+  executes both candidates, then strict comparison rejects only
+  `runtime/node_modules/node-pty/build/Release/conpty_console_list.node` and skips upload.
+- Arm64 diagnostic: the two 956,928-byte modules differ at 5,826 bytes across 2,886 ranges: 5,758
+  bytes in 2,879 two-byte `.text` ranges spaced 16 bytes apart, plus 68 derived
+  COFF/debug/CodeView bytes. Their content IDs are
+  `sha256:4c4cc3b9ee0bac3a391a49ebfce230fef1d94984ef0f66eeba59fd2833b2a0d2` and
+  `sha256:26afc17c33337f6f1b8e767504a58207f4fc68cb26e807aca68a9d5e8040aba5`.
+- Uploaded controls: exactly five unpublished artifacts and no Windows arm64 artifact: Windows x64
+  `8323220212`, 37,075,312 bytes,
+  `sha256:10a07ff4863e4a0b4aef3325540660952f03f88cc7b2c2a4013f3081b5c9310c`; Linux x64
+  `8323166437`, 29,285,377 bytes,
+  `sha256:21ee42d19e6a9f15e7afda18f9e27ff5ae280a19da61ef4042ca5b0a3ce608fe`; Linux arm64
+  `8323165493`, 28,220,691 bytes,
+  `sha256:19cb887221810cd9e9df160d6ba6a185fd6282adee90d2dde6c66ad9a83e4fe1`; macOS x64
+  `8323238492`, 26,405,918 bytes,
+  `sha256:af41bae838a26b1e127bc1bd20c3d1f2a6d0d5de1f6aeb9372d2b19561a2351a`; and macOS arm64
+  `8323152771`, 24,729,554 bytes,
+  `sha256:aff001434f0d00db32d92a13ffbb40ed4f0cc0199cf29925109fc7f7bbf84977`.
+- Duration and resource metrics: jobs ran 5m33s Windows x64, 8m15s Windows arm64, 3m25s Linux
+  arm64, 3m30s Linux x64, 6m18s macOS x64, and 2m55s macOS arm64. Windows arm64 clean builds took
+  135,371.797 ms and 118,713.734 ms; smoke took 5,767.417 ms at 53,186,560-byte RSS and
+  5,443.331 ms at 51,802,112-byte RSS. SSH channels/files, cancellation, and fallback delay remain
+  outside this artifact-only run.
+- Artifact/log/trace link: run/jobs and the five unpublished artifacts above; rejected arm64 bytes
+  existed only in the bounded job workspace and logs and were not uploaded
+- Oracle proved: the native Release-tree shape, candidate and target cardinality, record encoding,
+  and allowlisted linker summary on both Windows architectures; no explicit incremental-link switch;
+  five exact clean-build controls; unchanged arm64 thunk drift; strict rejection and no-upload.
+- Does not prove: effective incremental linking when `/DEBUG` supplies a default, the target `.ilk`
+  state, a safe producer correction, arm64 equality, oldest baselines, native trust, SSH,
+  publication, transfer, fallback, UI, or any enabled tuple.
+- Checklist items satisfied: native Release-root/command diagnostic only; no tuple or production
+  checkbox.
+- Follow-up: inspect only the exact target `.ilk` file's presence and size within the already
+  bounded clean Release tree on both architectures. If it is present, require target-native evidence
+  before considering copied-artifact `/INCREMENTAL:NO`; if absent, investigate the next bounded
+  linker feature. Preserve `/guard:cf`, strict comparison, rejected-output no-upload, and all
+  repository-wide/default behavior.
+
+### E-M3-WINDOWS-INCREMENTAL-DATABASE-LOCAL-001 — Bounded target `.ilk` diagnostic
+
+- Date: 2026-07-14
+- Commit SHA / PR: exact implementation commit
+  `e7d9a1c8d3222ff5923679ad69b76b57d963c4f3`; stacked draft
+  PR [#8741](https://github.com/stablyai/orca/pull/8741), target-native execution pending
+- Runner: macOS 26.2 build 25C56, native Apple M4 arm64; Node v26.0.0 and pnpm 10.24.0. This runner
+  cannot produce a native MSVC `.ilk`, so Windows x64/arm64 jobs remain authoritative.
+- Remote and transport: none; bounded local discovery/result-shape contracts only
+- Red evidence: E-M3-WINDOWS-LINK-COMMAND-RELEASE-ROOT-CI-RED-001 proves both native commands carry
+  `/DEBUG` but no explicit `/INCREMENTAL`; no synthetic local result substitutes for the pending
+  target-native file-state evidence
+- Exact green commands:
+
+  ```sh
+  node --check config/scripts/ssh-relay-node-pty-windows-build-determinism.mjs
+  node --check config/scripts/ssh-relay-node-pty-windows-build-determinism.test.mjs
+  /usr/bin/time -lp pnpm exec vitest run --config config/vitest.config.ts \
+    config/scripts/ssh-relay-node-pty-windows-build-determinism.test.mjs \
+    config/scripts/ssh-relay-node-pty-build.test.mjs \
+    config/scripts/ssh-relay-runtime-workflow.test.mjs
+  /usr/bin/time -lp pnpm exec vitest run --config config/vitest.config.ts \
+    config/scripts/ssh-relay-node-release-verification.test.mjs \
+    config/scripts/ssh-relay-node-tar-inspection.test.mjs \
+    config/scripts/ssh-relay-node-pty-build.test.mjs \
+    config/scripts/ssh-relay-node-pty-windows-build-determinism.test.mjs \
+    config/scripts/ssh-relay-node-pty-windows-settlement.test.mjs \
+    config/scripts/ssh-relay-node-zip-inspection.test.mjs \
+    config/scripts/ssh-relay-runtime-artifact.test.mjs \
+    config/scripts/ssh-relay-runtime-build.test.mjs \
+    config/scripts/ssh-relay-runtime-pty-smoke.test.mjs \
+    config/scripts/ssh-relay-runtime-reproducibility.test.mjs \
+    config/scripts/ssh-relay-runtime-resource-diagnostics.test.mjs \
+    config/scripts/ssh-relay-runtime-windows-pe-diagnostic.test.mjs \
+    config/scripts/ssh-relay-runtime-windows-tree.test.mjs \
+    config/scripts/ssh-relay-runtime-workflow.test.mjs \
+    config/scripts/ssh-relay-runtime-zip.test.mjs
+  pnpm run typecheck
+  pnpm exec oxlint \
+    config/scripts/ssh-relay-node-pty-windows-build-determinism.mjs \
+    config/scripts/ssh-relay-node-pty-windows-build-determinism.test.mjs \
+    config/scripts/ssh-relay-node-pty-build.mjs
+  pnpm run check:max-lines-ratchet
+  GOMAXPROCS=2 pnpm run lint
+  pnpm exec oxfmt --check \
+    config/scripts/ssh-relay-node-pty-windows-build-determinism.mjs \
+    config/scripts/ssh-relay-node-pty-windows-build-determinism.test.mjs \
+    config/scripts/ssh-relay-node-pty-build.mjs \
+    docs/reference/plans/2026-07-14-ssh-relay-github-release-implementation-checklist.md
+  git diff --check
+  ```
+
+- Result: PASS. The purpose suites pass 13/13 tests and all 15 artifact suites pass 58/58. Syntax,
+  typecheck, focused oxlint, the 355-entry max-lines ratchet, full repository
+  lint/reliability/localization, formatting, diff, and staged pre-commit hooks exit zero. Full lint
+  emits only pre-existing warnings outside this artifact package.
+- Duration and resource metrics: purpose gate 0.94 s wall / 204 ms Vitest with 131,940,352-byte
+  maximum RSS and 96,081,224-byte peak footprint; complete artifact gate 3.50 s wall / 1.59 s
+  Vitest with 132,235,264-byte maximum RSS and 96,392,544-byte peak footprint. The parallel
+  typecheck/focused-lint/max-lines group completed in 3.8 s; full lint completed in 17.3 s and
+  formatting/diff checks in 0.8 s. No runtime archive, SSH channel/file, cancellation, fallback, or
+  launch-latency metric is exercised by this diagnostic-only package.
+- Artifact/log/trace link: exact implementation commit and local command output; no runtime artifact
+  was created, staged, published, or uploaded
+- Oracle proved: the already bounded and deterministic `build/Release` traversal detects at most one
+  exact case-insensitive `conpty_console_list.ilk`; duplicate target databases fail closed; a present
+  file reports only a safe numeric byte size, absence reports no guessed link state, symbolic links
+  retain the existing rejection, and POSIX remains a no-op. The diagnostic result is appended to
+  the existing allowlisted MSBuild summary before staging.
+- Does not prove: whether either native Windows build emits the target `.ilk`, that `.ilk` presence
+  alone owns the arm64 thunk drift, that `/INCREMENTAL:NO` is a safe correction, arm64 equality,
+  oldest baselines, native trust, SSH, publication, transfer, fallback, UI, or any enabled tuple.
+- Checklist items satisfied: local bounded target incremental-database diagnostic only; no tuple or
+  production checkbox.
+- Follow-up: push the exact implementation plus ledger head, rerun all six native cells, and require
+  both clean builds on both Windows architectures to report the target `.ilk` state before any
+  producer change. Preserve `/guard:cf`, strict comparison, no rejected upload, and every
+  default/legacy boundary.
+
 ## Accepted Gaps
 
 No product gap is accepted merely because it appears in this list. Each entry requires explicit
 owner and promotion condition.
 
-| Gap                                        | Current behavior                                                          | Risk                                           | Owner                                                   | Promotion/removal condition                                                           | Status       |
-| ------------------------------------------ | ------------------------------------------------------------------------- | ---------------------------------------------- | ------------------------------------------------------- | ------------------------------------------------------------------------------------- | ------------ |
-| Bundled runtime only partially implemented | Six unpublished native artifact proofs; no production consumer            | #8450/#1693 environment failures remain        | Codex implementation owner                              | Complete Work Packages 2–7 plus Milestones 3–14                                       | Open         |
-| No bundled tuple enabled                   | Every target's default and effective mode remains legacy                  | No bundled support claim can be made           | Codex implementation owner                              | Complete target-native build/trust and both required live-evidence layers             | Open         |
-| Windows runtime smoke incomplete           | Native x64/arm64 smoke settles and uploads exact evidence                 | Historical blocker is closed                   | Codex implementation owner                              | Met by E-M3-WINDOWS-CI-001                                                            | CLOSED       |
-| Native clean-rebuild identity unproved     | Four POSIX controls pass; bounded Release-tree discovery is locally green | Toolchain drift may change native content IDs  | Codex implementation owner                              | Prove the actual target linker command natively, then make all six clean builds match | Open         |
-| Cross-family Layer B remotes unavailable   | GitHub native runner labels exist; no approved reachable target pool      | Client/remote integration gaps may escape      | Repository release administrator + implementation owner | Approve provider/snapshots/credentials/egress/teardown/cost owner                     | BLOCKED      |
-| Musl has no accepted official Node binary  | Musl is deliberately legacy-only                                          | Unofficial binary would break provenance trust | Codex implementation owner                              | Orca-owned target-native source build, signing, provenance, and live gates            | ACCEPTED GAP |
-| Native arm64 live matrices incomplete      | Hosted Linux/Windows arm64 labels exist; full SSH/runtime cells do not    | Cross-build or unit tests may hide native bugs | Codex implementation owner                              | Full native archive, trust, SFTP/system-SSH, RPC, and baseline evidence               | Open         |
-| Legacy performance baseline unmeasured     | Numeric budgets exist; paired cold/warm measurements do not               | Regression thresholds lack a measured baseline | Codex implementation owner                              | Purpose-built paired harness with ten samples on pinned runner classes                | Open         |
-| Manifest signing environment unprovisioned | Ed25519/key-rotation policy exists; no protected runtime signing secret   | Runtime assets cannot be safely published      | Repository release administrator                        | Protected environment, reviewers, two test keys, rehearsals, and access audit         | BLOCKED      |
-| Bootstrap primitives lack full live proof  | POSIX/Windows contracts exist; bounded SSH implementations do not         | Hidden dependency or transfer corruption       | Codex implementation owner                              | Purpose-named full-size SFTP/POSIX/Windows system-SSH live suites                     | Open         |
+| Gap                                        | Current behavior                                                        | Risk                                           | Owner                                                   | Promotion/removal condition                                                   | Status       |
+| ------------------------------------------ | ----------------------------------------------------------------------- | ---------------------------------------------- | ------------------------------------------------------- | ----------------------------------------------------------------------------- | ------------ |
+| Bundled runtime only partially implemented | Six unpublished native artifact proofs; no production consumer          | #8450/#1693 environment failures remain        | Codex implementation owner                              | Complete Work Packages 2–7 plus Milestones 3–14                               | Open         |
+| No bundled tuple enabled                   | Every target's default and effective mode remains legacy                | No bundled support claim can be made           | Codex implementation owner                              | Complete target-native build/trust and both required live-evidence layers     | Open         |
+| Windows runtime smoke incomplete           | Native x64/arm64 smoke settles and uploads exact evidence               | Historical blocker is closed                   | Codex implementation owner                              | Met by E-M3-WINDOWS-CI-001                                                    | CLOSED       |
+| Native clean-rebuild identity unproved     | Five controls pass; arm64 target command has no explicit `/INCREMENTAL` | Toolchain drift may change native content IDs  | Codex implementation owner                              | Classify target `.ilk`, then make all six clean builds match                  | Open         |
+| Cross-family Layer B remotes unavailable   | GitHub native runner labels exist; no approved reachable target pool    | Client/remote integration gaps may escape      | Repository release administrator + implementation owner | Approve provider/snapshots/credentials/egress/teardown/cost owner             | BLOCKED      |
+| Musl has no accepted official Node binary  | Musl is deliberately legacy-only                                        | Unofficial binary would break provenance trust | Codex implementation owner                              | Orca-owned target-native source build, signing, provenance, and live gates    | ACCEPTED GAP |
+| Native arm64 live matrices incomplete      | Hosted Linux/Windows arm64 labels exist; full SSH/runtime cells do not  | Cross-build or unit tests may hide native bugs | Codex implementation owner                              | Full native archive, trust, SFTP/system-SSH, RPC, and baseline evidence       | Open         |
+| Legacy performance baseline unmeasured     | Numeric budgets exist; paired cold/warm measurements do not             | Regression thresholds lack a measured baseline | Codex implementation owner                              | Purpose-built paired harness with ten samples on pinned runner classes        | Open         |
+| Manifest signing environment unprovisioned | Ed25519/key-rotation policy exists; no protected runtime signing secret | Runtime assets cannot be safely published      | Repository release administrator                        | Protected environment, reviewers, two test keys, rehearsals, and access audit | BLOCKED      |
+| Bootstrap primitives lack full live proof  | POSIX/Windows contracts exist; bounded SSH implementations do not       | Hidden dependency or transfer corruption       | Codex implementation owner                              | Purpose-named full-size SFTP/POSIX/Windows system-SSH live suites             | Open         |
 
 ## Final Definition of Done
 
@@ -5613,11 +5777,11 @@ The project is not complete until every applicable item below is checked with ev
 
 ## Next Required Action
 
-Push exact implementation commit `6f28a8cbf` plus its evidence-ledger head, then rerun both Windows
-architectures and all four POSIX controls. Require both Windows clean builds to select one target
-record and report the same allowlisted switch summary. Only if that target-native evidence
-classifies the 2,879 function thunks may one copied-artifact producer correction be considered;
-retain strict parsing/comparison and rejected-output no-upload.
+Add a purpose-tested bounded diagnostic for the exact target `conpty_console_list.ilk` file under
+the already bounded clean `build/Release` traversal, recording only presence and size. Rerun both
+Windows architectures and all four POSIX controls. Only if target-native evidence proves implicit
+incremental linking may a copied-artifact `/INCREMENTAL:NO` producer correction be considered;
+retain `/guard:cf`, strict parsing/comparison, and rejected-output no-upload.
 Cross-family Layer B targets, the protected manifest-signing environment,
 oldest-baseline/native-trust cells, and the paired legacy performance baseline remain
 release/default-path blockers; no publication, desktop resolver, SSH transfer/install, per-target
