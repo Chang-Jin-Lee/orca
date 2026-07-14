@@ -13038,7 +13038,8 @@
         "otherPlaceholder": "Type your answer",
         "cancel": "Cancel",
         "send": "Send answer",
-        "next": "Next"
+        "next": "Next",
+        "skip": "Skip"
       },
       "approval": {
         "title": "Allow {{value0}}?",
