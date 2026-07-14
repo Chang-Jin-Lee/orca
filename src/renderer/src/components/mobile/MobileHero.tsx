@@ -1,3 +1,4 @@
+import { useLayoutEffect, useRef, useState } from 'react'
 import { ArrowLeft, ArrowRight, Copy, RefreshCw } from 'lucide-react'
 import { cn } from '../../lib/utils'
 import type { MobileNetworkInterface } from '../settings/mobile-network-interface-selection'
@@ -80,11 +81,40 @@ export function HeroFlow({
   onDone
 }: HeroFlowProps): React.JSX.Element {
   const isLast = stepIdx === 1
+  const screenRefs = useRef<(HTMLDivElement | null)[]>([])
+  const [viewportHeight, setViewportHeight] = useState<number>()
+
+  useLayoutEffect(() => {
+    const activeScreen = screenRefs.current[stepIdx]
+    if (!activeScreen) {
+      return
+    }
+
+    const measure = (): void => setViewportHeight(activeScreen.scrollHeight)
+    measure()
+
+    if (typeof ResizeObserver === 'undefined') {
+      return
+    }
+    const observer = new ResizeObserver(measure)
+    observer.observe(activeScreen)
+    return () => observer.disconnect()
+  }, [stepIdx])
 
   return (
     <div className="mp-flow-card">
-      <div className="mp-flow-viewport">
-        <div className={cn('mp-flow-screen', stepIdx === 0 ? 'is-active' : 'is-past')}>
+      <div
+        className="mp-flow-viewport"
+        style={viewportHeight === undefined ? undefined : { height: viewportHeight }}
+      >
+        <div
+          ref={(element) => {
+            screenRefs.current[0] = element
+          }}
+          className={cn('mp-flow-screen', stepIdx === 0 ? 'is-active' : 'is-past')}
+          aria-hidden={stepIdx !== 0}
+          inert={stepIdx !== 0}
+        >
           <div className="mp-step2-layout">
             <div className="mp-step2-copy">
               <div className="mp-eyebrow-row">
@@ -179,7 +209,14 @@ export function HeroFlow({
           </div>
         </div>
 
-        <div className={cn('mp-flow-screen', stepIdx === 1 && 'is-active')}>
+        <div
+          ref={(element) => {
+            screenRefs.current[1] = element
+          }}
+          className={cn('mp-flow-screen', stepIdx === 1 && 'is-active')}
+          aria-hidden={stepIdx !== 1}
+          inert={stepIdx !== 1}
+        >
           <div className="mp-pairing-layout">
             <div className="mp-step2-copy mp-pairing-copy">
               <div className="mp-eyebrow-row">

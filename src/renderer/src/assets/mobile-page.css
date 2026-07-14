@@ -383,16 +383,19 @@
   color: var(--foreground);
 }
 
-/* Why: stack both step screens in the same grid cell so the viewport
-   sizes to the tallest child. This keeps the back button at the same
-   Y on Step 1 and Step 2 even though Step 2 has more rows of content. */
+/* Why: only the active step contributes to layout; the measured height lets
+   the card grow for Step 2 without making the shorter Step 1 oversized. */
 .mobile-page-root .mp-flow-viewport {
-  display: grid;
-  grid-template-areas: 'stack';
+  position: relative;
+  overflow: hidden;
+  transition: height 280ms cubic-bezier(0.32, 0.72, 0.24, 1);
 }
 
 .mobile-page-root .mp-flow-screen {
-  grid-area: stack;
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
   transform: translateX(40px);
   opacity: 0;
   pointer-events: none;
@@ -402,6 +405,7 @@
 }
 
 .mobile-page-root .mp-flow-screen.is-active {
+  position: relative;
   transform: translateX(0);
   opacity: 1;
   pointer-events: auto;
@@ -1988,7 +1992,9 @@
 
 /* Reduced motion: pin to home, no slide transitions */
 @media (prefers-reduced-motion: reduce) {
-  .mobile-page-root .mp-screen-slide {
+  .mobile-page-root .mp-screen-slide,
+  .mobile-page-root .mp-flow-viewport,
+  .mobile-page-root .mp-flow-screen {
     transition: none;
   }
 }
