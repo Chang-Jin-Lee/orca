@@ -3126,6 +3126,12 @@ export function registerPtyHandlers(
             trustedTerminalHandleEnv.add(args.preAllocatedHandle)
           }
           result = await provider.spawn(spawnOptions)
+          if (typeof result.snapshotOutputSequence === 'number') {
+            runtime?.anchorPtyOutputSequenceFromProviderSnapshot?.(
+              result.id,
+              result.snapshotOutputSequence
+            )
+          }
         } catch (err) {
           const rawMessage = err instanceof Error ? err.message : String(err)
           const spawnError = normalizeNodePtySpawnError(err)
@@ -4044,6 +4050,12 @@ export function registerPtyHandlers(
           }
           spawnTiming.mark('options')
           result = await provider.spawn(spawnOptions)
+          if (typeof result.snapshotOutputSequence === 'number') {
+            runtime?.anchorPtyOutputSequenceFromProviderSnapshot?.(
+              result.id,
+              result.snapshotOutputSequence
+            )
+          }
           spawnTiming.mark('provider_spawn')
         } catch (err) {
           // Why: a failed spawn must not leave a stale hidden mark on a session

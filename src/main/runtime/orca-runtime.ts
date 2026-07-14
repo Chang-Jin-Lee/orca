@@ -2249,6 +2249,7 @@ export class OrcaRuntimeService {
   private titleObservationSequence = 0
   private headlessTerminals = new Map<string, RuntimeHeadlessTerminal>()
   private ptyOutputSequenceById = new Map<string, number>()
+  private providerSequenceAnchoredPtys = new Set<string>()
   private recentPtyPathCandidatesById = new Map<string, string[]>()
   // Why: OSC 9999 status can span PTY chunks. Keeping parser state in the
   // runtime lets hidden/model-owned terminals observe agent state without a
@@ -6599,6 +6600,29 @@ export class OrcaRuntimeService {
     return this.ptyOutputSequenceById.get(ptyId) ?? 0
   }
 
+  anchorPtyOutputSequenceFromProviderSnapshot(ptyId: string, providerSequence: number): number {
+    if (
+      this.providerSequenceAnchoredPtys.has(ptyId) ||
+      !Number.isFinite(providerSequence) ||
+      providerSequence < 0
+    ) {
+      return this.getPtyOutputSequence(ptyId)
+    }
+    const baseline = Math.floor(providerSequence)
+    const anchoredSequence = baseline + this.getPtyOutputSequence(ptyId)
+    this.ptyOutputSequenceById.set(ptyId, anchoredSequence)
+    this.providerSequenceAnchoredPtys.add(ptyId)
+    const headless = this.headlessTerminals.get(ptyId)
+    if (headless) {
+      // Why: daemon bytes can reach main just before spawn resolves. Queue the
+      // baseline behind those writes so their emulator sequence is rebased too.
+      headless.writeChain = headless.writeChain.then(() => {
+        headless.outputSequence += baseline
+      })
+    }
+    return anchoredSequence
+  }
+
   subscribeToTerminalData(
     ptyId: string,
     listener: (data: string, meta?: { seq?: number; rawLength?: number; cwd?: string }) => void
@@ -8269,6 +8293,7 @@ export class OrcaRuntimeService {
     this.clearWaitBlockedCheckState(ptyId)
     this.recentPtyPathCandidatesById.delete(ptyId)
     this.ptyOutputSequenceById.delete(ptyId)
+    this.providerSequenceAnchoredPtys.delete(ptyId)
     this.agentStatusOscProcessorsByPtyId.delete(ptyId)
     this.terminalSpawnCommandsByPtyId.delete(ptyId)
     this.disposePtyTitleTracker(ptyId)
@@ -20486,6 +20511,7 @@ export class OrcaRuntimeService {
     this.clearWaitBlockedCheckState(ptyId)
     this.recentPtyPathCandidatesById.delete(ptyId)
     this.ptyOutputSequenceById.delete(ptyId)
+    this.providerSequenceAnchoredPtys.delete(ptyId)
     this.agentStatusOscProcessorsByPtyId.delete(ptyId)
     this.terminalSpawnCommandsByPtyId.delete(ptyId)
     this.disposePtyTitleTracker(ptyId)

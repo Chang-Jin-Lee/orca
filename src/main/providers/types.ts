@@ -117,6 +117,9 @@ export type PtySpawnResult = {
    *  writing the snapshot so ANSI cursor positions land correctly. */
   snapshotCols?: number
   snapshotRows?: number
+  /** Provider output sequence at snapshot capture. Main uses this to keep
+   *  post-reattach live bytes in the same deduplication domain. */
+  snapshotOutputSequence?: number
   /** Kitty keyboard flags persisted in the daemon snapshot, threaded so the
    *  re-seeded runtime emulator answers hidden `CSI ? u` with the real flags
    *  (terminal-query-authority.md §kitty). Never replayed into a renderer

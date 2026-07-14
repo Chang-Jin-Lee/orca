@@ -506,6 +506,7 @@ describe('DaemonPtyAdapter (IPtyProvider)', () => {
       expect(second.launchAgent).toBe('droid')
       expect(second.snapshot).toBeDefined()
       expect(second.snapshot).toContain('hello from shell')
+      expect(second.snapshotOutputSequence).toBe('hello from shell\r\n'.length)
     })
 
     it('includes rehydrateSequences in snapshot when terminal modes are active', async () => {

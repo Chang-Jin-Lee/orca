@@ -10437,6 +10437,42 @@ describe('registerPtyHandlers', () => {
     expect(mockProc.proc.write).not.toHaveBeenCalled()
   })
 
+  it('anchors runtime output sequencing from a provider reattach snapshot', async () => {
+    setLocalPtyProvider({
+      spawn: vi.fn(async () => ({
+        id: 'pty-restored',
+        isReattach: true,
+        snapshotOutputSequence: 900
+      })),
+      write: vi.fn(),
+      resize: vi.fn(),
+      kill: vi.fn(),
+      shutdown: vi.fn(),
+      onData: vi.fn(() => vi.fn()),
+      onExit: vi.fn(() => vi.fn()),
+      listProcesses: vi.fn(async () => []),
+      getForegroundProcess: vi.fn(async () => null)
+    } as never)
+    const runtime = {
+      setPtyController: vi.fn(),
+      noteTerminalSpawnCommand: vi.fn(),
+      anchorPtyOutputSequenceFromProviderSnapshot: vi.fn(),
+      onPtySpawned: vi.fn(),
+      onPtyData: vi.fn(),
+      onPtyExit: vi.fn(),
+      createPreAllocatedTerminalHandle: vi.fn(() => null),
+      preAllocateHandleForPty: vi.fn()
+    }
+    registerPtyHandlers(mainWindow as never, runtime as never)
+
+    await handlers.get('pty:spawn')!(null, { cols: 80, rows: 24 })
+
+    expect(runtime.anchorPtyOutputSequenceFromProviderSnapshot).toHaveBeenCalledWith(
+      'pty-restored',
+      900
+    )
+  })
+
   it('seeds headless terminal state with cold-restore cwd metadata', async () => {
     const oscLinks = [{ row: 0, startCol: 0, endCol: 8, uri: 'https://example.com/restored' }]
     const coldRestore = {

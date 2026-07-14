@@ -410,6 +410,9 @@ export class DaemonPtyAdapter implements IPtyProvider {
       snapshot: snapshotPayload,
       snapshotCols: result.snapshot.cols,
       snapshotRows: result.snapshot.rows,
+      ...(typeof result.snapshot.outputSequence === 'number'
+        ? { snapshotOutputSequence: result.snapshot.outputSequence }
+        : {}),
       ...(typeof kittyKeyboardFlags === 'number' && kittyKeyboardFlags > 0
         ? { snapshotKittyKeyboardFlags: kittyKeyboardFlags }
         : {}),

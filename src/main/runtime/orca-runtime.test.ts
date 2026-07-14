@@ -7117,6 +7117,24 @@ describe('OrcaRuntimeService', () => {
       expect(runtime.getPtyOutputSequence('pty-1')).toBe(0)
     })
 
+    it('anchors post-reattach live output to the provider snapshot sequence', async () => {
+      const { runtime } = createSideEffectRuntime()
+
+      // Simulate a stream-socket byte winning the race with the spawn response.
+      runtime.onPtyData('pty-restored', 'queued', 100)
+      expect(runtime.anchorPtyOutputSequenceFromProviderSnapshot('pty-restored', 900)).toBe(906)
+      runtime.onPtyData('pty-restored', 'fresh', 101)
+
+      expect(runtime.getPtyOutputSequence('pty-restored')).toBe(911)
+      await expect(runtime.serializeMainTerminalBuffer('pty-restored')).resolves.toMatchObject({
+        data: expect.stringContaining('queuedfresh'),
+        seq: 911,
+        source: 'headless'
+      })
+      // Renderer remounts can attach the same provider PTY again in one main lifetime.
+      expect(runtime.anchorPtyOutputSequenceFromProviderSnapshot('pty-restored', 911)).toBe(911)
+    })
+
     it('carries the synthetic permission BEL as a bell fact', () => {
       const { runtime, batches } = createSideEffectRuntime()
       syncSinglePty(runtime)
