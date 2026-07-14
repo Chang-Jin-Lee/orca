@@ -138,13 +138,18 @@ function scheduleRecoveryRetry(request: RecoveryRequest, delayMs: number): void 
   const timer = setTimeout(
     () => {
       pendingRetryByTabId.delete(request.tabId)
-      const currentRequest = [...requestsByInstanceId.values()].find(
+      const currentRequests = [...requestsByInstanceId.values()].filter(
         isCurrentTerminalRecoveryRequest
       )
-      if (!currentRequest) {
+      if (currentRequests.length === 0) {
         return
       }
-      void requestTerminalPaneRecovery(currentRequest)
+      // Why: one split's liveness probe may fail or never settle while a
+      // sibling has a probe-certified dead renderer. Start every current
+      // request so the first valid remount wins and invalidates the rest.
+      void Promise.all(
+        currentRequests.map((currentRequest) => requestTerminalPaneRecovery(currentRequest))
+      )
     },
     Math.max(delayMs, 1_000)
   )

@@ -301,6 +301,47 @@ describe('requestTerminalPaneRecovery', () => {
     secondSplit.unregister()
   })
 
+  it('does not abandon a certified sibling behind a failed liveness retry', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(0)
+    await requestTerminalPaneRecovery({
+      tabId: 'tab-1',
+      ptyId: 'pty-initial',
+      reason: 'write-stalled'
+    })
+    const recoveryGeneration = captureTerminalPaneRecoveryGeneration('tab-1')
+    const livenessSplit = registerTerminalPaneRecoveryInstance('tab-1')
+    const certifiedSplit = registerTerminalPaneRecoveryInstance('tab-1')
+    mocks.hasPty.mockResolvedValue(false)
+
+    await requestTerminalPaneRecovery({
+      tabId: 'tab-1',
+      ptyId: 'pty-not-live',
+      reason: 'input-undeliverable',
+      terminalRecoveryGeneration: recoveryGeneration,
+      terminalRecoveryInstanceId: livenessSplit.id,
+      requireAuthoritativeLiveness: true
+    })
+    await requestTerminalPaneRecovery({
+      tabId: 'tab-1',
+      ptyId: 'pty-certified-dead',
+      reason: 'write-stalled',
+      terminalRecoveryGeneration: recoveryGeneration,
+      terminalRecoveryInstanceId: certifiedSplit.id
+    })
+
+    await vi.advanceTimersByTimeAsync(15_000)
+
+    expect(mocks.hasPty).toHaveBeenCalledWith('pty-not-live')
+    expect(mocks.remountTerminalTabForRecovery).toHaveBeenCalledTimes(2)
+    expect(mocks.recordRendererCrashBreadcrumb).toHaveBeenLastCalledWith(
+      'terminal_pane_recovery_remount',
+      { tabId: 'tab-1', reason: 'write-stalled' }
+    )
+    livenessSplit.unregister()
+    certifiedSplit.unregister()
+  })
+
   it('budgets tabs independently', async () => {
     expect(
       await requestTerminalPaneRecovery({ tabId: 'tab-1', ptyId: 'pty-1', reason: 'write-stalled' })
