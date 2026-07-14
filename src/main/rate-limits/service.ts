@@ -811,6 +811,18 @@ export class RateLimitService {
       return
     }
     if (plan.kind === 'full') {
+      // Why: a full fetch retries failing providers too. Restart their retry
+      // clocks so the individual failure lane doesn't fire again right after,
+      // ahead of its backoff window. Skip when a fetch is already in flight —
+      // fetchAll would no-op and the throttle must not be consumed for free.
+      if (!this.isFetching) {
+        const now = Date.now()
+        for (const { provider, limits } of this.getActiveProviderState()) {
+          if (limits?.status === 'error') {
+            this.lastActiveFailureRetryAtByProvider[provider] = now
+          }
+        }
+      }
       await this.fetchAll()
       return
     }
