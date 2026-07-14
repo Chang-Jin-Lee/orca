@@ -156,6 +156,35 @@ describe('createGitHubPullRequest', () => {
     expect(args[args.indexOf('--repo') + 1]).toBe('github.acme-corp.com/team/orca')
   })
 
+  it('keeps a custom GHES port in the host-qualified --repo (P2)', async () => {
+    getOwnerRepoMock.mockResolvedValueOnce(null)
+    getEnterpriseGitHubRepoSlugMock.mockResolvedValueOnce({
+      owner: 'team',
+      repo: 'orca',
+      host: 'ghe.acme.com:8443'
+    })
+    ghExecFileAsyncMock.mockResolvedValueOnce({
+      stdout: 'https://ghe.acme.com:8443/team/orca/pull/11\n'
+    })
+
+    await expect(
+      createGitHubPullRequest('/repo-root', {
+        provider: 'github',
+        base: 'main',
+        head: 'feature/create-pr',
+        title: 'GHES PR'
+      })
+    ).resolves.toEqual({
+      ok: true,
+      number: 11,
+      url: 'https://ghe.acme.com:8443/team/orca/pull/11'
+    })
+
+    const [args] = ghExecFileAsyncMock.mock.calls[0]
+    // Dropping :8443 would send gh to the wrong (or default-port) Enterprise host.
+    expect(args[args.indexOf('--repo') + 1]).toBe('ghe.acme.com:8443/team/orca')
+  })
+
   it('host-qualifies --repo for the GHES existing-PR fallback lookup (#8312)', async () => {
     getOwnerRepoMock.mockResolvedValue(null)
     getEnterpriseGitHubRepoSlugMock.mockResolvedValue({

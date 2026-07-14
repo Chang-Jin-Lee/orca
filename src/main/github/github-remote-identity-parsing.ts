@@ -8,6 +8,18 @@ function normalizeGitHubRemoteHost(host: string): string {
   return normalizedHost === 'ssh.github.com' ? 'github.com' : normalizedHost
 }
 
+// Why: for http(s) remotes the URL port is the GHES web/API endpoint (e.g. an
+// Enterprise server on :8443), which `gh --hostname` and host-qualified
+// `--repo host/owner/repo` must target, so it is kept via `url.host`. For
+// ssh/git remotes the port is a transport port (e.g. ssh.github.com:443) that
+// does not identify the host, so only the hostname is used — preserving
+// ssh.github.com normalization and SSH-over-HTTPS. Mirrors GitLab's project-ref
+// host resolution.
+function hostFromRemoteUrl(url: URL): string {
+  const protocol = url.protocol.toLowerCase()
+  return protocol === 'http:' || protocol === 'https:' ? url.host : url.hostname
+}
+
 function parseGitHubRemotePath(path: string): Pick<GitHubRemoteIdentity, 'owner' | 'repo'> | null {
   const parts = path.replace(/^\/+/, '').replace(/\/+$/, '').split('/')
   if (parts.length !== 2) {
@@ -34,7 +46,7 @@ export function parseGitHubRemoteIdentity(remoteUrl: string): GitHubRemoteIdenti
       return null
     }
     const path = parseGitHubRemotePath(url.pathname)
-    return path ? { host: normalizeGitHubRemoteHost(url.hostname), ...path } : null
+    return path ? { host: normalizeGitHubRemoteHost(hostFromRemoteUrl(url)), ...path } : null
   } catch {
     return null
   }

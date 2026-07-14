@@ -79,6 +79,23 @@ describe('getEnterpriseGitHubRepoSlug', () => {
     })
   })
 
+  it('preserves a custom GHES port when probing gh auth and in the slug (P2)', async () => {
+    mockOriginRemote('https://ghe.acme.com:8443/team/orca.git')
+    mockHostAuthenticated('ghe.acme.com:8443')
+
+    await expect(getEnterpriseGitHubRepoSlug('/repo')).resolves.toEqual({
+      owner: 'team',
+      repo: 'orca',
+      host: 'ghe.acme.com:8443'
+    })
+    // The auth probe must target the port-qualified endpoint, not the bare host,
+    // so a login stored under ghe.acme.com:8443 is honored.
+    expect(ghExecFileAsyncMock).toHaveBeenCalledWith(
+      ['auth', 'status', '--hostname', 'ghe.acme.com:8443'],
+      { cwd: '/repo' }
+    )
+  })
+
   it('probes gh in the repository WSL runtime, not the host/default distro', async () => {
     mockOriginRemote('https://github.acme-corp.com/team/orca.git')
     mockHostAuthenticated()
