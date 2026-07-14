@@ -1,5 +1,3 @@
-#!/usr/bin/env node
-
 import { execFile } from 'node:child_process'
 import { mkdir, readFile, rm } from 'node:fs/promises'
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'

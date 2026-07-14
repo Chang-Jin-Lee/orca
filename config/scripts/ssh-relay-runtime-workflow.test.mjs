@@ -64,9 +64,15 @@ describe('SSH relay runtime artifact workflow', () => {
     expect(source).toContain(
       'node --check config/scripts/ssh-relay-runtime-reproducibility.test.mjs'
     )
+    expect(
+      source.match(/node --check config\/scripts\/build-ssh-relay-runtime\.mjs/g)
+    ).toHaveLength(2)
+    expect(
+      source.match(/node --check config\/scripts\/ssh-relay-runtime-build\.test\.mjs/g)
+    ).toHaveLength(2)
     expect(source.match(/ssh-relay-node-pty-build\.test\.mjs/g)).toHaveLength(2)
     expect(source.match(/ssh-relay-node-pty-windows-build-determinism\.test\.mjs/g)).toHaveLength(2)
-    expect(source.match(/ssh-relay-runtime-build\.test\.mjs/g)).toHaveLength(2)
+    expect(source.match(/ssh-relay-runtime-build\.test\.mjs/g)).toHaveLength(4)
     expect(source.match(/--work-directory/g)).toHaveLength(2)
     expect(source).toContain('work_directory="$RUNNER_TEMP/orca-ssh-relay-runtime-build-work"')
     expect(source).toContain(
