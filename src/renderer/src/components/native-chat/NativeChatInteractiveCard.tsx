@@ -24,7 +24,8 @@ export function NativeChatInteractiveCard({
   paneKey,
   send,
   canSend,
-  onShowingQuestionChange
+  onShowingQuestionChange,
+  answerInputRef
 }: {
   paneKey: string
   send: NativeChatInteractiveSend
@@ -32,6 +33,9 @@ export function NativeChatInteractiveCard({
   /** Reports whether a question card is on screen so the view can replace the
    *  composer with it (the card's free-text row is the answer input). */
   onShowingQuestionChange?: (showing: boolean) => void
+  /** Forwarded to the question card's free-text row so pane-level Paste keeps
+   *  a target while the composer is unmounted. */
+  answerInputRef?: React.RefObject<HTMLInputElement | null>
 }): React.JSX.Element | null {
   const interactivePrompt = useAppStore(
     (s) => s.agentStatusByPaneKey[paneKey]?.interactivePrompt ?? null
@@ -59,7 +63,10 @@ export function NativeChatInteractiveCard({
     }
     submittingRef.current = false
   }
-  useEffect(() => clearDismissTimer, [])
+  // Keyed on cardKey (and unmount): a new prompt can replace the current one
+  // before the settle timer fires, and a stale `submitting` gate would swallow
+  // the new card's first answer.
+  useEffect(() => clearDismissTimer, [cardKey])
 
   // Forget the dismissal once the prompt clears so a fresh prompt can show.
   const present = card != null
@@ -86,6 +93,7 @@ export function NativeChatInteractiveCard({
       <NativeChatQuestionCard
         key={cardKey ?? 'question'}
         prompt={card.prompt}
+        answerInputRef={answerInputRef}
         onAnswer={(text) => {
           if (submittingRef.current) {
             return

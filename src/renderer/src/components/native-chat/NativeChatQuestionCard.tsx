@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type RefObject } from 'react'
 import { Check, Pencil, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { translate } from '@/i18n/i18n'
@@ -10,6 +10,9 @@ export type NativeChatQuestionCardProps = {
   onAnswer: (text: string) => void
   /** Dismiss the prompt (sends Escape to the agent). */
   onCancel: () => void
+  /** Exposes the free-text row so pane-level Paste can target it while the
+   *  card replaces the composer. */
+  answerInputRef?: RefObject<HTMLInputElement | null>
 }
 
 /**
@@ -22,7 +25,8 @@ export type NativeChatQuestionCardProps = {
 export function NativeChatQuestionCard({
   prompt,
   onAnswer,
-  onCancel
+  onCancel,
+  answerInputRef
 }: NativeChatQuestionCardProps): React.JSX.Element {
   const [index, setIndex] = useState(0)
   const [selections, setSelections] = useState<string[][]>(() => prompt.questions.map(() => []))
@@ -177,6 +181,7 @@ export function NativeChatQuestionCard({
                 <Pencil className="size-3.5" />
               </span>
               <input
+                ref={answerInputRef}
                 value={otherText[index]}
                 onChange={(e) => setOther(index, e.target.value)}
                 onKeyDown={(e) => {
@@ -238,6 +243,9 @@ function OptionRow({
     <button
       type="button"
       onClick={onSelect}
+      // Selection is otherwise only the visual check/badge swap; expose it to
+      // assistive tech.
+      aria-pressed={selected}
       className={cn(
         'flex w-full items-center gap-3 px-3.5 py-2.5 text-left transition-colors',
         selected ? 'bg-accent' : 'hover:bg-accent'

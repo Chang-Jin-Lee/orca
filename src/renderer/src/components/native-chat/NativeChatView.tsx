@@ -177,12 +177,16 @@ function NativeChatResolvedView({
   const [questionActive, setQuestionActive] = useState(false)
   const rootRef = useRef<HTMLDivElement>(null)
   const composerRef = useRef<NativeChatComposerHandle>(null)
+  // The question card's free-text row; keeps Paste working while the card
+  // replaces the composer.
+  const questionAnswerInputRef = useRef<HTMLInputElement>(null)
   const fileLinkContext = useAppStore(
     useShallow((s) => resolveNativeChatFileLinkContext(s, terminalTabId))
   )
   const pasteClipboardIntoComposer = useNativeChatPasteBridge({
     rootRef,
-    composerRef
+    composerRef,
+    questionAnswerInputRef
   })
   const contextMenu = useNativeChatContextMenu({
     rootRef,
@@ -439,6 +443,7 @@ function NativeChatResolvedView({
         send={interactiveSend}
         canSend={canSend}
         onShowingQuestionChange={setQuestionActive}
+        answerInputRef={questionAnswerInputRef}
       />
       {/* canSend reflects the mobile presence-lock: when a mobile client holds
           the pty, the composer shows its guarded state instead of racing the

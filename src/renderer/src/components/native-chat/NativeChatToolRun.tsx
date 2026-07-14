@@ -84,7 +84,7 @@ function ToolLine({ block }: { block: NativeChatBlock }): React.JSX.Element | nu
           />
         ) : null}
       </button>
-      {expanded ? (
+      {hasDetail && expanded ? (
         <div className="space-y-1.5 py-1">
           {diff ? <NativeChatDiffView lines={diff} /> : null}
           {!diff && body ? (
