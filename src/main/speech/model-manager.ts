@@ -1,7 +1,14 @@
 /* eslint-disable max-lines -- Why: model download, checksum, extraction, and cleanup share one state machine so progress/error transitions stay coupled. */
 import { app, net } from 'electron'
 import { join, resolve, relative } from 'node:path'
-import { existsSync, mkdirSync, createWriteStream, createReadStream, rmSync } from 'node:fs'
+import {
+  existsSync,
+  mkdirSync,
+  createWriteStream,
+  createReadStream,
+  rmSync,
+  statSync
+} from 'node:fs'
 import { readdir, rm } from 'node:fs/promises'
 import { createHash } from 'node:crypto'
 import { pipeline } from 'node:stream/promises'
@@ -31,8 +38,66 @@ type DownloadIncomingMessage = Electron.IncomingMessage &
     resume: () => void
     destroy?: () => void
   }
+type HttpStatusError = Error & { httpStatusCode?: number }
+type DownloadTotals = { totalBytes: number }
 
 const DOWNLOAD_IDLE_TIMEOUT_MS = 120_000
+// Why: flaky networks and scanning proxies commonly kill long CDN transfers
+// near the end (reported as "stuck at 90%, then fails"); resuming with a Range
+// request lets those connections finish instead of failing the same way on
+// every full restart.
+const DOWNLOAD_RETRY_DELAYS_MS = [1_000, 2_000, 4_000]
+const MAX_DOWNLOAD_ATTEMPTS = 8
+const RETRYABLE_NET_ERROR =
+  /net::ERR_(CONTENT_LENGTH_MISMATCH|INCOMPLETE_CHUNKED_ENCODING|CONNECTION_(RESET|CLOSED|ABORTED|REFUSED|TIMED_OUT)|EMPTY_RESPONSE|NETWORK_CHANGED|TIMED_OUT|INTERNET_DISCONNECTED|ADDRESS_UNREACHABLE|NAME_NOT_RESOLVED|SOCKET_NOT_CONNECTED|HTTP2_PROTOCOL_ERROR|QUIC_PROTOCOL_ERROR)\b/
+const RETRYABLE_HTTP_STATUSES = new Set([408, 416, 425, 429, 500, 502, 503, 504])
+
+function isRetryableDownloadError(error: unknown): boolean {
+  if (!(error instanceof Error)) {
+    return false
+  }
+  const statusCode = (error as HttpStatusError).httpStatusCode
+  if (statusCode !== undefined) {
+    return RETRYABLE_HTTP_STATUSES.has(statusCode)
+  }
+  return (
+    RETRYABLE_NET_ERROR.test(error.message) || error.message.includes('without network activity')
+  )
+}
+
+function describeInterruptedDownload(
+  cause: unknown,
+  receivedBytes: number,
+  totalBytes: number,
+  attempts: number
+): Error {
+  const causeMessage = cause instanceof Error ? cause.message : String(cause)
+  const received =
+    totalBytes > 0
+      ? `${Math.min(99, Math.floor((receivedBytes / totalBytes) * 100))}% (${receivedBytes} of ${totalBytes} bytes)`
+      : `${receivedBytes} bytes`
+  return new Error(
+    `Model download interrupted at ${received} after ${attempts} attempts: ${causeMessage}`
+  )
+}
+
+function sleepUnlessAborted(ms: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve) => {
+    if (signal.aborted) {
+      resolve()
+      return
+    }
+    const onAbort = (): void => {
+      clearTimeout(timer)
+      resolve()
+    }
+    const timer = setTimeout(() => {
+      signal.removeEventListener('abort', onAbort)
+      resolve()
+    }, ms)
+    signal.addEventListener('abort', onAbort, { once: true })
+  })
+}
 
 export class ModelManager {
   private modelsDir: string
@@ -177,6 +242,15 @@ export class ModelManager {
     this.updateState(modelId, 'downloading', 0)
 
     const archivePath = join(this.modelsDir, `${modelId}.tar.bz2`)
+    // Why: resume appends to the partial archive from this download run only;
+    // a leftover file from a crashed run would corrupt the resumed archive.
+    try {
+      if (existsSync(archivePath)) {
+        rmSync(archivePath)
+      }
+    } catch {
+      // best-effort; the first (non-resumed) attempt truncates on write
+    }
     let aborted = false
     const abortController = new AbortController()
 
@@ -191,7 +265,7 @@ export class ModelManager {
     this.activeDownloads.set(modelId, handle)
 
     try {
-      await this.downloadFile(
+      await this.downloadArchiveWithRetry(
         manifest.downloadUrl,
         archivePath,
         manifest.sizeBytes,
@@ -239,6 +313,7 @@ export class ModelManager {
       this.updateState(modelId, 'ready')
     } catch (err) {
       if (!aborted) {
+        console.error('[speech] Model download failed:', modelId, err)
         this.updateState(modelId, 'error', undefined, String(err))
       }
       this.cleanup(modelId, archivePath)
@@ -309,6 +384,67 @@ export class ModelManager {
     }
   }
 
+  private getPartialArchiveBytes(archivePath: string): number {
+    try {
+      return statSync(archivePath).size
+    } catch {
+      return 0
+    }
+  }
+
+  private async downloadArchiveWithRetry(
+    url: string,
+    archivePath: string,
+    expectedSize: number,
+    modelId: string,
+    isAborted: () => boolean,
+    signal: AbortSignal
+  ): Promise<void> {
+    let attempt = 0
+    let noProgressStreak = 0
+    const totals: DownloadTotals = { totalBytes: expectedSize }
+    for (;;) {
+      attempt += 1
+      const offset = this.getPartialArchiveBytes(archivePath)
+      try {
+        // Why: each attempt restarts from the canonical URL rather than the
+        // last redirect target, because CDN redirect URLs are signed and expire.
+        await this.downloadFile(
+          url,
+          archivePath,
+          expectedSize,
+          modelId,
+          isAborted,
+          signal,
+          0,
+          offset,
+          totals
+        )
+        return
+      } catch (err) {
+        if (isAborted() || signal.aborted) {
+          throw err
+        }
+        const receivedBytes = this.getPartialArchiveBytes(archivePath)
+        noProgressStreak = receivedBytes > offset ? 0 : noProgressStreak + 1
+        if (!isRetryableDownloadError(err)) {
+          throw err
+        }
+        if (
+          attempt >= MAX_DOWNLOAD_ATTEMPTS ||
+          noProgressStreak > DOWNLOAD_RETRY_DELAYS_MS.length
+        ) {
+          throw describeInterruptedDownload(err, receivedBytes, totals.totalBytes, attempt)
+        }
+        console.warn(`[speech] Model download attempt ${attempt} failed, retrying:`, modelId, err)
+        await sleepUnlessAborted(
+          DOWNLOAD_RETRY_DELAYS_MS[Math.min(noProgressStreak, DOWNLOAD_RETRY_DELAYS_MS.length - 1)],
+          signal
+        )
+      }
+    }
+  }
+
   private downloadFile(
     url: string,
     dest: string,
@@ -316,7 +452,9 @@ export class ModelManager {
     modelId: string,
     isAborted: () => boolean,
     signal?: AbortSignal,
-    redirectCount = 0
+    redirectCount = 0,
+    resumeOffset = 0,
+    totals?: DownloadTotals
   ): Promise<void> {
     return new Promise((resolve, reject) => {
       if (signal?.aborted) {
@@ -425,28 +563,48 @@ export class ModelManager {
           modelId,
           isAborted,
           signal,
-          redirectCount + 1
+          redirectCount + 1,
+          resumeOffset,
+          totals
         )
           .then(resolveOnce)
           .catch(rejectOnce)
       }
       const onResponse = (incoming: Electron.IncomingMessage): void => {
         const response = incoming as DownloadIncomingMessage
-        if (response.statusCode !== 200) {
+        const resumed = resumeOffset > 0 && response.statusCode === 206
+        if (response.statusCode !== 200 && !resumed) {
           response.resume()
-          rejectOnce(new Error(`HTTP ${response.statusCode}`))
+          if (response.statusCode === 416) {
+            // Why: the server rejected our resume offset; drop the partial so
+            // the retry loop can restart this download from scratch.
+            try {
+              rmSync(dest)
+            } catch {
+              // best-effort
+            }
+          }
+          const statusError: HttpStatusError = new Error(`HTTP ${response.statusCode}`)
+          statusError.httpStatusCode = response.statusCode
+          rejectOnce(statusError)
           return
         }
 
+        // Why: a 200 despite our Range request means the server restarted the
+        // transfer from byte zero, so the partial file must be overwritten.
+        const progressBase = resumed ? resumeOffset : 0
         const contentLength = response.headers['content-length']
-        const totalSize =
-          Number.parseInt(
-            Array.isArray(contentLength) ? contentLength[0] : contentLength || '0',
-            10
-          ) || expectedSize
+        const parsedLength = Number.parseInt(
+          Array.isArray(contentLength) ? contentLength[0] : contentLength || '0',
+          10
+        )
+        const totalSize = parsedLength > 0 ? progressBase + parsedLength : expectedSize
+        if (totals) {
+          totals.totalBytes = totalSize
+        }
         let downloaded = 0
 
-        const fileStream = createWriteStream(dest)
+        const fileStream = createWriteStream(dest, { flags: resumed ? 'a' : 'w' })
 
         const cleanupResponseProgressListener = (): void => {
           response.off('data', onResponseData)
@@ -460,7 +618,7 @@ export class ModelManager {
             return
           }
           downloaded += chunk.length
-          const progress = Math.min(0.9, downloaded / totalSize)
+          const progress = Math.min(0.9, (progressBase + downloaded) / totalSize)
           this.updateState(modelId, 'downloading', progress)
         }
 
@@ -481,6 +639,9 @@ export class ModelManager {
       }
 
       request = net.request({ method: 'GET', url: parsedUrl.toString() })
+      if (resumeOffset > 0) {
+        request.setHeader('Range', `bytes=${resumeOffset}-`)
+      }
 
       // Why: Electron's net stack honors app proxy settings, unlike Node's
       // https client, but it does not expose request.setTimeout().
