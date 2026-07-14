@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { AGENT_AWAKE_BLOCKER_SWAP_RETRY_MS } from './agent-awake-blocker-swap-retry'
 import {
   AgentAwakeService,
   AGENT_AWAKE_DISPLAY_KEEP_AFTER_MS,
@@ -164,9 +165,10 @@ describe('AgentAwakeService', () => {
     macosAssertion.stop.mockClear()
     linuxAssertion.stop.mockClear()
 
-    // Cross the display-keep boundary with no newer status.
-    now = 1_000 + AGENT_AWAKE_DISPLAY_KEEP_AFTER_MS + 1
-    vi.advanceTimersByTime(AGENT_AWAKE_DISPLAY_KEEP_AFTER_MS + 1)
+    // Hit the exact boundary: it must be expired here or the scheduler will
+    // move directly to the 2h system expiry and leave the display blocker on.
+    now = 1_000 + AGENT_AWAKE_DISPLAY_KEEP_AFTER_MS
+    vi.advanceTimersByTime(AGENT_AWAKE_DISPLAY_KEEP_AFTER_MS)
 
     // The display assertion is swapped for a system-only one; the platform
     // (system) assertions are never stopped, so the agent keeps running.
@@ -193,7 +195,7 @@ describe('AgentAwakeService', () => {
     service.dispose()
   })
 
-  it('does not stack a second blocker if a display->system swap cannot stop the old one', () => {
+  it('retries a transient display->system swap failure without stacking blockers', () => {
     vi.useFakeTimers()
     let now = 1_000
     const blocker = createBlocker()
@@ -205,17 +207,41 @@ describe('AgentAwakeService', () => {
 
     // The swap tries to stop id 1 first, but stop fails and Electron still
     // reports it started — the old assertion must NOT be leaked under a new one.
-    blocker.stop.mockImplementation(() => {
+    blocker.stop.mockImplementationOnce(() => {
       throw new Error('stop failed')
     })
-    blocker.isStarted.mockReturnValue(true)
     blocker.start.mockClear()
 
-    now = 1_000 + AGENT_AWAKE_DISPLAY_KEEP_AFTER_MS + 1
-    vi.advanceTimersByTime(AGENT_AWAKE_DISPLAY_KEEP_AFTER_MS + 1)
+    now = 1_000 + AGENT_AWAKE_DISPLAY_KEEP_AFTER_MS
+    vi.advanceTimersByTime(AGENT_AWAKE_DISPLAY_KEEP_AFTER_MS)
 
     expect(blocker.start).not.toHaveBeenCalled()
+    vi.advanceTimersByTime(AGENT_AWAKE_BLOCKER_SWAP_RETRY_MS)
+
+    expect(blocker.stop).toHaveBeenCalledTimes(2)
+    expect(blocker.start).toHaveBeenCalledTimes(1)
+    expect(blocker.start).toHaveBeenCalledWith('prevent-app-suspension')
     service.dispose()
+  })
+
+  it('clears a pending blocker-swap retry on dispose', () => {
+    vi.useFakeTimers()
+    let now = 1_000
+    const blocker = createBlocker()
+    const service = createService(() => now, blocker)
+
+    service.setEnabled(true)
+    service.setStatuses([workingStatus({ receivedAt: 1_000 })])
+    blocker.stop.mockImplementationOnce(() => {
+      throw new Error('stop failed')
+    })
+    now = 1_000 + AGENT_AWAKE_DISPLAY_KEEP_AFTER_MS
+    vi.advanceTimersByTime(AGENT_AWAKE_DISPLAY_KEEP_AFTER_MS)
+    service.dispose()
+    blocker.stop.mockClear()
+
+    vi.advanceTimersByTime(AGENT_AWAKE_BLOCKER_SWAP_RETRY_MS)
+    expect(blocker.stop).not.toHaveBeenCalled()
   })
 
   it.each(['win32', 'linux'] as const)(

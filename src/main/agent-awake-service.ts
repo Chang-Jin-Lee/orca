@@ -1,5 +1,6 @@
 import { powerMonitor, powerSaveBlocker } from 'electron'
 import type { AgentStatusState } from '../shared/agent-status-types'
+import { AgentAwakeBlockerSwapRetry } from './agent-awake-blocker-swap-retry'
 import { LinuxLidSleepAssertion } from './linux-lid-sleep-assertion'
 import { MacosSystemSleepAssertion } from './macos-system-sleep-assertion'
 
@@ -65,6 +66,7 @@ export class AgentAwakeService {
   private statuses: AgentAwakeStatus[] = []
   private blockerId: number | null = null
   private blockerType: AgentAwakeBlockerType | null = null
+  private readonly blockerSwapRetry: AgentAwakeBlockerSwapRetry
   private staleTimer: ReturnType<typeof setTimeout> | null = null
   private readonly blocker: PowerSaveBlocker
   private readonly linuxAssertion: PlatformAwakeAssertion
@@ -79,6 +81,7 @@ export class AgentAwakeService {
     this.logger = options.logger ?? console
     this.now = options.now ?? Date.now
     this.platform = options.platform ?? process.platform
+    this.blockerSwapRetry = new AgentAwakeBlockerSwapRetry(() => this.refresh('blocker-swap-retry'))
     // Windows lid close is intentionally not modeled as an assertion here:
     // keeping it awake requires mutating the user's global power plan.
     this.linuxAssertion =
@@ -120,6 +123,7 @@ export class AgentAwakeService {
 
   dispose(): void {
     this.clearStaleTimer()
+    this.blockerSwapRetry.clear()
     this.unsubscribeResume?.()
     this.stopBlocker('dispose')
     this.macosAssertion.dispose()
@@ -152,6 +156,7 @@ export class AgentAwakeService {
       this.startMacosAssertion(reason)
       this.startLinuxAssertion(reason)
     } else {
+      this.blockerSwapRetry.clear()
       this.stopBlocker(reason, runningStatusCount)
       this.stopMacosAssertion(reason)
       this.stopLinuxAssertion(reason)
@@ -166,7 +171,7 @@ export class AgentAwakeService {
     return this.statuses.filter(
       (status) =>
         this.isWakeEligible(status, now) &&
-        now - status.receivedAt <= AGENT_AWAKE_DISPLAY_KEEP_AFTER_MS
+        now - status.receivedAt < AGENT_AWAKE_DISPLAY_KEEP_AFTER_MS
     ).length
   }
 
@@ -232,6 +237,7 @@ export class AgentAwakeService {
     // display<->system transition must swap the assertion.
     if (this.blockerId !== null && this.blockerType === desiredType) {
       if (this.reconcileBlocker('start-reconcile')) {
+        this.blockerSwapRetry.clear()
         return
       }
     }
@@ -242,7 +248,8 @@ export class AgentAwakeService {
       if (this.blockerId !== null) {
         // The old blocker could not be stopped (stop threw and Electron still
         // reports it started). Do NOT stack a second assertion — keep the
-        // current one and retry the swap on the next refresh.
+        // current one and make one prompt retry without creating a poll loop.
+        this.blockerSwapRetry.schedule(desiredType)
         return
       }
     }
@@ -250,7 +257,9 @@ export class AgentAwakeService {
       const id = this.blocker.start(desiredType)
       this.blockerId = id
       this.blockerType = desiredType
-      this.reconcileBlocker('post-start')
+      if (this.reconcileBlocker('post-start')) {
+        this.blockerSwapRetry.clear()
+      }
     } catch (err) {
       this.logger.warn('[agent-awake] failed to start blocker', {
         reason,
