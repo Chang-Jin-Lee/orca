@@ -15,7 +15,7 @@ Orca ships agent skills in `skills/` (orca-cli, orchestration, computer-use, orc
 linear-tickets, orca-per-workspace-env, orca-emulator, orca-emulator-android). Users install
 them with the skills CLI:
 
-```
+```sh
 npx skills add https://github.com/stablyai/orca --skill <names> --global
 ```
 
@@ -538,7 +538,12 @@ install shape as its own manifest or mark it ineligible), (4) the link shapes, (
 (6) whether any lockfile `skills` object was populated. If Developer Mode can be toggled, run the
 block once with it on and once off to capture both junction and copy-fallback shapes.
 
-## Rollout
+## Historical rollout (superseded; do not implement)
+
+The steps below preserve the retired write-based rollout for research context only. The
+active rollout is defined in `skill-freshness-design.md` and uses read-only detection plus a
+user-invoked, targeted `npx skills update <names...> --global` command; it has no ledger,
+adoption flow, background updater, transactional writer, WSL reconciler, or SSH reconciler.
 
 1. **Detection and adoption:** ship current/historical manifests, lockfile parsing, topology
    classification, destination-scoped ledger, settings states, and an explicit “Manage and

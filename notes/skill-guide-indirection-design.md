@@ -18,29 +18,32 @@ binary and the problems shrink to a residue the existing machinery already handl
 
 New CLI surface (topic names match skill names):
 
-```
+```sh
 orca skills list                 # enumerate available guides, one line each
 orca skills get <topic>          # full version-matched guide for one skill, markdown to stdout
 orca skills get <topic> --full   # include bundled reference docs, if any
 ```
 
-- Content is compiled into the CLI at build time from the same `skills/` sources — authoring
-  workflow does not change; the skill file and the served guide are projections of one source.
+- Content is authored in `skill-guides/<topic>.md`. A generator embeds those authoritative
+  sources in the CLI and emits `skills/<name>/SKILL.md` as an installable projection;
+  `skills/` is generated output, not an authoring source.
 - Output contract: plain markdown on stdout, exit 0; unknown topic exits nonzero with the
   topic list. No network, no filesystem reads outside the binary's own resources.
 - Verb choice: `skills get` (not `guide`) to match the convention agents are already being
   taught by other tools (see Prior art).
 
-### 2. The installed SKILL.md becomes a permanent thin stub
+### 2. Historical stub sketch (superseded; do not copy)
 
-One stub per skill (frontmatter descriptions are the agent-routing layer and must stay
-per-skill registry entries). Shape:
+This sketch records the indirection idea only. The resolver and first-generation hybrid stub
+contract in `skill-freshness-design.md` are authoritative and must cover packaged `orca`,
+Linux/WSL `orca-ide`, SSH `orca`, and development `orca-dev` without blindly invoking bare
+`orca` on Linux.
 
 ```markdown
 ---
 name: orca-cli
 description: <unchanged per-skill trigger copy — this is the discovery surface>
-allowed-tools: Bash(orca:*)
+allowed-tools: <all supported Orca CLI command names>
 ---
 
 # Orca CLI
@@ -48,9 +51,9 @@ allowed-tools: Bash(orca:*)
 This file is a discovery stub, not the usage guide. The full, version-matched reference
 lives in the `orca` binary itself.
 
-Before using Orca commands, run once per session:
+Before using Orca commands, resolve the CLI for this session and load the guide once:
 
-    orca skills get orca-cli
+    <resolved-orca-cli> skills get orca-cli
 
 Don't guess subcommands or flags from memory or from cached copies of this skill — they
 change between Orca releases; the command above always matches the installed binary.
@@ -59,35 +62,36 @@ change between Orca releases; the command above always matches the installed bin
 Stub rules:
 - Body is deliberately version-independent: it says when to engage Orca and where to fetch
   the how — never the how itself. A stub should survive many releases unchanged.
-- `allowed-tools: Bash(orca:*)` so the fetch costs no permission prompt in Claude Code.
+- `allowed-tools` must cover every executable that the authoritative resolver can select.
 - Stub must not ship before the binary that serves its topic: gate stub rollout on the
-  release that includes `orca skills get` (a stub pointing at a command that does not exist
+  release that includes `skills get` (a stub pointing at a command that does not exist
   is worse than a fat skill). Enforce with a build check: every stub topic must resolve
   against the compiled guide table.
-- Stub should degrade honestly when `orca` is not on PATH: one line telling the agent the
-  skill requires the Orca app/CLI and how to check (`command -v orca`).
+- Stub should degrade honestly when no supported Orca command is on PATH and must retain a
+  bounded legacy bootstrap for binaries that predate `skills get`.
 
 ### 3. What this retires, what it keeps
 
 Retired / collapsed:
-- Per-release skill-content updates as the normal case. Stub churn is rare (new skill,
-  reworded trigger, spec change), so the background updater becomes a low-frequency
-  maintenance rail. The auto-vs-manual default argument mostly evaporates.
+- The ownership ledger, adoption and installer-attribution flows, background updater,
+  transactional publish/rollback/orphan sweep, and all automatic writes into user-owned
+  skill directories.
 - Phases 3–4 of skill-auto-update-design.md (WSL/SSH remote file reconcilers). Wherever the
   skill is useful the `orca` binary is present, and the remote binary serves the guide
   matching its own host's version. No remote file-sync problem remains.
 
-Kept (and required by the migration):
-- Detection/inventory + content-addressed registry + release mapping + CI gates: stubs are
-  still content with identity; modified stubs, unknown copies, and "newer than Orca" states
-  still need classification, and the fat→stub migration must recognize exact official fat
-  copies in the field.
-- Adoption consent + ledger + installer attribution: a stub replacement is still a write to
-  a user-owned directory; nothing about consent changes.
-- Transactional publish/rollback/orphan sweep: the fat→stub conversion is a normal managed
-  update executed by exactly this machinery.
-- The skills-CLI round-trip CI: still proves the install rail preserves stub bytes.
-- Settings UI: rows/statuses unchanged; update-available simply becomes rare.
+Kept (read-only):
+- Bounded discovery, LF-normalized content identities, the released-snapshot registry,
+  release mapping, and CI gates. Statuses are `current`, `outdated`, `newer-known`,
+  `unrecognized`, and `inaccessible`; no ledger is needed to compute them.
+- Name-scoped eligibility across every placement. One newer, unrecognized, external,
+  read-only, repo-scoped, plugin, or inaccessible placement poisons the update offer for
+  that skill name.
+- The skills-CLI round-trip CI, extended to prove historical fat installs migrate to stubs
+  through targeted global updates across supported hosts and topologies.
+- Read-only settings rows and a dismissible nudge that pre-fill a targeted
+  `npx skills update <eligible-names...> --global` command. Orca never submits it or writes
+  into a skill directory.
 
 ## Prior art (verified live 2026-07-13)
 
@@ -112,21 +116,20 @@ Kept (and required by the migration):
 
 ## Migration plan
 
-0. **Spike (gate for everything else): pointer compliance.** Convert orca-cli's skill to a
-   stub in a test home, run our real agents (Claude Code, Codex) on representative Orca
-   tasks, measure how often the agent fetches the guide before its first orca command, and
-   compare task success vs the fat skill. Ship nothing until compliance is demonstrated.
-   Also measure token deltas (stub preload + one fetch vs fat preload).
-1. `orca skills get`/`list` in the CLI, content compiled from `skills/` at build; build
-   check that stub topics resolve. Unit + CLI tests.
-2. Convert orca-cli to a stub in `skills/` (one skill first). This bumps its registry
-   revision like any content change; the shipped updater delivers fat→stub to managed
-   installs; the adoption nudge covers legacy unmanaged fat installs (their migration path
-   is: adopt → auto/manual update to stub).
-3. Watch a release cycle; then convert the remaining skills (orchestration, computer-use,
-   orca-linear, linear-tickets, per-workspace-env, emulator skills).
-4. Retire the WSL/SSH reconciler phases from skill-auto-update-design.md; note the
-   indirection design as the remote strategy.
+0. Release `orca skills list/get` first from authoritative `skill-guides/` sources while
+   distributed skills remain fat. No stub may reach repository main before a public binary
+   can serve it.
+1. Add read-only freshness detection, name-scoped update eligibility, the targeted
+   user-invoked `npx skills update <names...> --global` action, and migration-rail CI. Keep
+   distributed skills fat.
+2. Spike pointer compliance against the released guide-serving binary with Claude Code and
+   Codex, including Linux/WSL/SSH/dev command resolution, old-binary fallback, task success,
+   and token cost.
+3. Convert only `orca-cli` to a first-generation hybrid stub. Existing exact official fat
+   copies become eligible for the targeted ecosystem update rail; users who ignore the
+   nudge retain their existing skills.
+4. Cut an RC, measure the gates, and thin the hybrid only if it passes. Convert remaining
+   skills gradually in later PRs.
 
 ## Open questions
 

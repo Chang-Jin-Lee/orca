@@ -55,7 +55,7 @@ Orca returns a clear message when the SDK is missing
 
 ## Mental model
 
-```
+```text
 ┌────────────────────────┐
 │ orca CLI (agents)      │  e.g. orca emulator tap 0.5 0.7 --device emulator-5554
 └───────────┬────────────┘

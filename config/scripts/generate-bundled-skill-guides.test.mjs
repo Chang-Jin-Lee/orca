@@ -63,6 +63,18 @@ describe('bundled skill guide generator', () => {
     }
   })
 
+  it('keeps every orca-cli example bound to the session-selected executable', async () => {
+    const source = await readFile(path.join(projectDir, 'skill-guides', 'orca-cli.md'), 'utf8')
+
+    expect(source).toContain('ORCA_BIN="$ORCA_CLI_COMMAND"')
+    expect(source).toContain('ORCA_BIN=orca-dev')
+    expect(source).toContain('ORCA_BIN=orca-ide')
+    expect(source).toContain('ORCA_BIN=orca')
+    expect(source).toContain('"$ORCA_BIN" status --json')
+    // Why: a later bare command could launch GNOME Orca or escape a dev session.
+    expect(source).not.toMatch(/^orca /mu)
+  })
+
   it('builds deterministic artifacts and verifies the checked-in outputs', async () => {
     const first = await buildArtifacts(projectDir)
     const second = await buildArtifacts(projectDir)

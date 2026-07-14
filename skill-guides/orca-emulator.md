@@ -42,7 +42,7 @@ An active emulator "session" for the worktree is required for most commands. Use
 
 ## Mental model
 
-```
+```text
 ┌────────────────────┐
 │ Orca worktree      │
 │  - active emulator │◄── orca emulator tap / type / ...

@@ -49,15 +49,14 @@ Three moves, replacing the in-app write machinery entirely:
   Orca-owned writer. The rail is treated as an external dependency with a tested contract,
   not assumed trustworthy from its lock file alone.
 - The full write implementation exists, reviewed and green, on branch
-  `brennanb2025/skill-auto-update-research` (PR #8496, still open and intended to be closed
-  as superseded). If in-app writes are ever genuinely needed, start from that branch, not
-  from scratch.
+  `brennanb2025/skill-auto-update-research` (PR #8496, closed as superseded). If in-app
+  writes are ever genuinely needed, start from that branch, not from scratch.
 
 ## Design
 
 ### A. Binary-served guides
 
-```
+```sh
 orca skills list                 # one line per topic: name + when to use
 orca skills get <topic>          # full version-matched guide, markdown to stdout
 orca skills get <topic> --full   # include bundled reference docs, if any
