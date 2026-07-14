@@ -82,6 +82,10 @@ same change as the work it records.
   and therefore exercised a weaker system-ConPTY smoke. E-M3-WINDOWS-LOCAL-002 proves the corrected
   local tree-closure and smoke configuration contracts; native execution remains open and no
   Windows executable cell is complete.
+- First Windows native run: E-M3-WINDOWS-CI-RED-002 failed before download/build on both Windows
+  architectures. One failure is a confirmed NTFS fixture-mode assumption; two import-time
+  `SyntaxError` failures remain unexplained until the corrected exact-head rerun. No Windows
+  executable evidence is claimed from the run.
 - Production behavior: unchanged; Orca embeds relay JavaScript and installs `node-pty` plus
   `@parcel/watcher` with remote npm.
 - New runtime assets published: none.
@@ -95,11 +99,12 @@ same change as the work it records.
   runtime is an explicit per-target Beta opt-in under E-M1-ROLLOUT-DECISION-001.
 - Legacy fallback removal: not authorized.
 - Next required action: finish the final local audit of the bounded Windows runtime/ZIP builder and
-  verifier, commit the artifact-only implementation, and collect exact Windows x64/arm64 plus POSIX
-  regression evidence from draft-PR CI. A same-head/same-runner clean-rebuild identity oracle for
-  native build reproducibility remains a separate open gate. Keep cross-family remote
-  infrastructure, signing/trust, and measured legacy baseline gates open; do not introduce
-  publication, resolver, transfer, rollout, tuple enablement, or default behavior.
+  verifier, correct the Windows-only test failures from E-M3-WINDOWS-CI-RED-002, and collect exact
+  Windows x64/arm64 plus POSIX regression evidence from the corrected draft-PR head. A
+  same-head/same-runner clean-rebuild identity oracle for native build reproducibility remains a
+  separate open gate. Keep cross-family remote infrastructure, signing/trust, and measured legacy
+  baseline gates open; do not introduce publication, resolver, transfer, rollout, tuple enablement,
+  or default behavior.
 
 ## Non-Negotiable Invariants
 
@@ -2519,6 +2524,52 @@ fragmentLinks=9`.
   per-tuple build/executable and ConPTY implementation boxes remain unchecked pending native CI.
 - Follow-up: push this exact implementation head and record exact Windows x64/arm64 jobs, images,
   artifact IDs/hashes/sizes, build/verify/smoke durations, RSS, and any discriminating failure.
+
+### E-M3-WINDOWS-CI-RED-002 — First Windows native jobs stopped at contract tests
+
+- Date: 2026-07-14
+- Commit SHA / PR: exact workflow head `539cd060e74386ba33bf1291c940b68fba9af13b` containing
+  implementation commit `922edb6ff28199b394f508731fd18a635bec49a0`; draft PR
+  [#8741](https://github.com/stablyai/orca/pull/8741)
+- Run: [SSH Relay Runtime Artifacts 29338911990](https://github.com/stablyai/orca/actions/runs/29338911990)
+- Native jobs:
+  - x64 job `87105197603`: requested `windows-2022`; resolved `win22` image
+    `20260706.237.1`, GitHub-hosted X64, Windows Server 2022 Datacenter build 20348, Node v24.18.0;
+    failed after 1m17s.
+  - arm64 job `87105197605`: requested `windows-11-arm`; resolved `win11-arm64` image
+    `20260706.102.1`, GitHub-hosted ARM64, Windows 10 Enterprise build 26200, Node v24.18.0; failed
+    after 3m37s.
+- Remote and transport: none. Both jobs stopped before Node input download, native build, runtime
+  smoke, or artifact upload.
+- Exact commands:
+
+  ```sh
+  gh api repos/stablyai/orca/actions/jobs/87105197603/logs > /tmp/orca-win-x64-red.log
+  gh api repos/stablyai/orca/actions/jobs/87105197605/logs > /tmp/orca-win-arm64-red.log
+  rg -n "requested_runner=|resolved_image_os=|resolved_image_version=|runner_arch=|WindowsProductName|WindowsVersion|OsBuildNumber|source_commit=|FAIL|SyntaxError|Node archive is missing" \
+    /tmp/orca-win-x64-red.log /tmp/orca-win-arm64-red.log
+  ```
+
+- Result: FAIL as a discriminating pre-build gate on both architectures. Each run reported three
+  failed and four passed suites, with one failed and ten passed collected tests. The x64 test phase
+  took 1.26s; arm64 took 1.33s. `ssh-relay-node-tar-inspection.test.mjs` created its POSIX tar
+  fixture from an NTFS file and therefore lost the declared `bin/node` execute bit; the production
+  inspector correctly rejected it. `ssh-relay-node-release-verification.test.mjs` and
+  `ssh-relay-runtime-artifact.test.mjs` separately failed at import with only `SyntaxError: Invalid
+or unexpected token`; the first logs did not identify a source location.
+- Oracle proved: both requested hosted runner labels resolve to native Node 24 environments, MSVC
+  setup succeeds, Git for Windows supplies both required GPG tools, frozen source installation
+  succeeds, and the test command stops the artifact build before any download or upload. It also
+  discriminated one cross-platform fixture assumption.
+- Does not prove: that the explicit-mode fixture correction is green on Windows; the cause of the
+  two import-time syntax errors; Node input download/signature verification; native compilation;
+  offline `node-gyp`; bundled Node/ConPTY/watcher execution; ZIP output; native trust; SSH; or any
+  enabled tuple.
+- Checklist items satisfied: exact Windows runner-label resolution only. No Windows build,
+  executable, archive, or artifact cell is checked.
+- Follow-up: declare `0o755` in the tar fixture's archive metadata instead of relying on NTFS,
+  rerun the same seven suites on both native architectures, and diagnose the two import failures if
+  they recur before allowing either job to download inputs.
 
 ### E-M3-RUNTIME-LOCAL-001 — First target-native Linux arm64 runtime artifact
 

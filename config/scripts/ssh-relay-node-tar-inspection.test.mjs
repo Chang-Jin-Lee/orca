@@ -1,4 +1,4 @@
-import { chmod, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Readable } from 'node:stream'
@@ -87,8 +87,19 @@ async function validTarStream() {
     writeFile(join(directory, root, 'LICENSE'), 'Node license'),
     writeFile(join(directory, root, 'include', 'node', 'node.h'), 'Node header')
   ])
-  await chmod(join(directory, root, 'bin', 'node'), 0o755)
-  return create({ cwd: directory, portable: true }, [root])
+  return create(
+    {
+      cwd: directory,
+      portable: true,
+      // Why: NTFS cannot express POSIX execute bits, so the archive fixture must declare its mode.
+      onWriteEntry: (entry) => {
+        if (entry.path.replaceAll('\\', '/') === `${root}/bin/node` && entry.stat) {
+          entry.stat.mode = (entry.stat.mode & ~0o777) | 0o755
+        }
+      }
+    },
+    [root]
+  )
 }
 
 function rawTar(entries) {
