@@ -21,11 +21,12 @@ complete a box.
 ## Active work
 
 - [ ] **WP2 — Finish target-native artifact metadata and provenance.**
-  - Four POSIX GitHub runner cells pass build, smoke, equality, and metadata upload.
-  - Windows x64/arm64 currently fail closed while reading the linker PE file version in
-    [run 29369925932](https://github.com/stablyai/orca/actions/runs/29369925932).
-  - Local commit `714308114` isolates the linker path through a child environment variable and is
-    green across 20 test files / 98 tests plus typecheck, lint, formatting, and diff checks.
+  - Four POSIX GitHub runner cells pass build, smoke, equality, metadata upload, and direct payload
+    audit in [run 29370926985](https://github.com/stablyai/orca/actions/runs/29370926985).
+  - Windows x64/arm64 fail closed because hosted `link.exe` returns an empty string-valued PE
+    `FileVersion`; neither cell downloads inputs or produces an artifact.
+  - Local commit `1b775e6af` formats the PE version from bounded numeric fields and rejects an absent
+    all-zero version. It is green across 20 test files / 99 tests plus static gates.
   - Next gate: push that exact correction, rerun all six native jobs, then inspect every uploaded
     artifact before completing the metadata/provenance box.
 
