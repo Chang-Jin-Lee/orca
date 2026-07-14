@@ -50,7 +50,13 @@ export function notifyUndeliverableWrite(terminal: object, reason: Undeliverable
     return
   }
   certifiedDeadTerminals.add(terminal)
-  handlersByTerminal.get(terminal)?.(reason)
+  try {
+    handlersByTerminal.get(terminal)?.(reason)
+  } catch {
+    // Why: notify fires from timer and write-callback contexts where a throw
+    // becomes an unhandled error; recovery is best-effort by contract (see
+    // terminal-pane-recovery.ts).
+  }
 }
 
 export function isTerminalWritePipelineCertifiedDead(terminal: object): boolean {
@@ -85,7 +91,13 @@ export function armTerminalWriteStallWatch(
       return
     }
     stallWatchByTerminal.delete(terminal)
-    watch.onCertifiedDead?.()
+    try {
+      watch.onCertifiedDead?.()
+    } catch {
+      // Why: the discard callback bottoms out in window.api (ack credits); a
+      // partial surface must not kill the timer unhandled — or suppress the
+      // recovery notification below, which is the whole point of certifying.
+    }
     notifyUndeliverableWrite(terminal, 'write-stalled')
   }
   function probeForStall(): void {

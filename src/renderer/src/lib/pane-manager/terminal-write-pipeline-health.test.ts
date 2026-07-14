@@ -96,6 +96,39 @@ describe('terminal write pipeline health', () => {
     _resetWritePipelineHealthForTests(terminal)
   })
 
+  it('a throwing discard callback does not suppress the recovery notification', () => {
+    vi.useFakeTimers()
+    const terminal = makeTerminal()
+    terminal.dropCallbacks = true
+    const handler = vi.fn()
+    const onCertifiedDead = vi.fn(() => {
+      throw new TypeError('window.api is gone')
+    })
+    registerUndeliverableWriteHandler(terminal, handler)
+
+    armTerminalWriteStallWatch(terminal, { onCertifiedDead })
+    expect(() => vi.advanceTimersByTime(WRITE_PIPELINE_STALL_CHECK_MS * 2)).not.toThrow()
+
+    expect(handler).toHaveBeenCalledWith('write-stalled')
+    expect(isTerminalWritePipelineCertifiedDead(terminal)).toBe(true)
+    _resetWritePipelineHealthForTests(terminal)
+  })
+
+  it('a throwing handler never escapes the certification timer', () => {
+    vi.useFakeTimers()
+    const terminal = makeTerminal()
+    terminal.dropCallbacks = true
+    registerUndeliverableWriteHandler(terminal, () => {
+      throw new TypeError('partial store surface')
+    })
+
+    armTerminalWriteStallWatch(terminal)
+    expect(() => vi.advanceTimersByTime(WRITE_PIPELINE_STALL_CHECK_MS * 2)).not.toThrow()
+
+    expect(isTerminalWritePipelineCertifiedDead(terminal)).toBe(true)
+    _resetWritePipelineHealthForTests(terminal)
+  })
+
   it('certifies dead immediately when the probe write throws (disposed terminal)', () => {
     vi.useFakeTimers()
     const terminal = makeTerminal()
