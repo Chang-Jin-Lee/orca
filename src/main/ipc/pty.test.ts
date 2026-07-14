@@ -3612,6 +3612,49 @@ describe('registerPtyHandlers', () => {
     expect(remove).toHaveBeenCalledTimes(2)
   })
 
+  it('keeps exit fanout live while durable removal retries', async () => {
+    vi.useFakeTimers()
+    const exitListeners = new Set<(payload: { id: string; code: number }) => void>()
+    const shutdown = vi.fn().mockResolvedValue(undefined)
+    const remove = vi
+      .fn()
+      .mockImplementationOnce(() => {
+        throw new Error('exit intent removal disk full')
+      })
+      .mockReturnValue(undefined)
+    const runtime = { onPtyExit: vi.fn(), setPtyController: vi.fn() }
+    setLocalPtyProvider({
+      requiresShutdownExitProof: true,
+      shutdown,
+      listProcesses: vi.fn().mockResolvedValue([{ id: 'local-exit', cwd: '', title: 'shell' }]),
+      onData: vi.fn(() => () => {}),
+      onReplay: vi.fn(() => () => {}),
+      onExit: vi.fn((listener) => {
+        exitListeners.add(listener)
+        return () => exitListeners.delete(listener)
+      })
+    } as never)
+    handlers.clear()
+    registerPtyHandlers(mainWindow as never, runtime as never, undefined, undefined, undefined, {
+      getPendingLocalPtyShutdowns: () => [],
+      upsertPendingLocalPtyShutdown: vi.fn(),
+      removePendingLocalPtyShutdown: remove
+    } as never)
+
+    await expect(handlers.get('pty:kill')!(null, { id: 'local-exit' })).resolves.toBeUndefined()
+    expect(() => {
+      for (const listener of exitListeners) {
+        listener({ id: 'local-exit', code: 0 })
+      }
+    }).not.toThrow()
+
+    expect(runtime.onPtyExit).toHaveBeenCalledWith('local-exit', 0)
+    expect(remove).toHaveBeenCalledOnce()
+    await vi.advanceTimersByTimeAsync(500)
+    expect(shutdown).toHaveBeenCalledOnce()
+    expect(remove).toHaveBeenCalledTimes(2)
+  })
+
   it('keeps accepted local kills until provider readback proves physical exit', async () => {
     vi.useFakeTimers()
     const shutdown = vi.fn().mockResolvedValue(undefined)
@@ -3773,9 +3816,14 @@ describe('registerPtyHandlers', () => {
     vi.useRealTimers()
   })
 
-  it('retires a persisted legacy-daemon shutdown that cannot recover pane identity', async () => {
+  it('retries legacy intent retirement when durable removal fails', async () => {
     vi.useFakeTimers()
-    const removePendingLocalPtyShutdown = vi.fn()
+    const removePendingLocalPtyShutdown = vi
+      .fn()
+      .mockImplementationOnce(() => {
+        throw new Error('legacy intent removal disk full')
+      })
+      .mockReturnValue(undefined)
     const onPtyExit = vi.fn()
     setLocalPtyProvider({
       shutdown: vi.fn().mockRejectedValue(new Error('Legacy PTY identity unavailable for "p"')),
@@ -3808,7 +3856,12 @@ describe('registerPtyHandlers', () => {
 
     expect(removePendingLocalPtyShutdown).toHaveBeenCalledWith('legacy-pty')
     expect(onPtyExit).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(249)
+    expect(removePendingLocalPtyShutdown).toHaveBeenCalledOnce()
+    await vi.advanceTimersByTimeAsync(1)
+    expect(removePendingLocalPtyShutdown).toHaveBeenCalledTimes(2)
     await vi.advanceTimersByTimeAsync(30_000)
+    expect(removePendingLocalPtyShutdown).toHaveBeenCalledTimes(2)
     vi.useRealTimers()
   })
 

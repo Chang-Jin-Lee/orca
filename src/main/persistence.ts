@@ -6410,6 +6410,12 @@ export class Store {
     return [...(this.state.pendingLocalPtyShutdowns ?? [])]
   }
 
+  private shouldPersistTerminalTeardownMutation(changed: boolean): boolean {
+    // Why: an earlier failed journal write can leave disk behind memory, so an
+    // idempotent retry must checkpoint even after memory already changed.
+    return changed || !this.terminalTeardownIntentJournalReady
+  }
+
   upsertPendingLocalPtyShutdown(request: PersistedLocalPtyShutdown): void {
     this.state.pendingLocalPtyShutdowns ??= []
     const index = this.state.pendingLocalPtyShutdowns.findIndex(
@@ -6428,7 +6434,11 @@ export class Store {
     this.state.pendingLocalPtyShutdowns = (this.state.pendingLocalPtyShutdowns ?? []).filter(
       (entry) => entry.ptyId !== ptyId
     )
-    if (this.state.pendingLocalPtyShutdowns.length !== before) {
+    if (
+      this.shouldPersistTerminalTeardownMutation(
+        this.state.pendingLocalPtyShutdowns.length !== before
+      )
+    ) {
       this.persistTerminalTeardownIntents({ kind: 'local-remove', ptyId })
     }
   }
@@ -6455,7 +6465,11 @@ export class Store {
     this.state.pendingRuntimeTerminalCloses = (
       this.state.pendingRuntimeTerminalCloses ?? []
     ).filter((entry) => entry.environmentId !== environmentId || entry.handle !== handle)
-    if (this.state.pendingRuntimeTerminalCloses.length !== before) {
+    if (
+      this.shouldPersistTerminalTeardownMutation(
+        this.state.pendingRuntimeTerminalCloses.length !== before
+      )
+    ) {
       this.persistTerminalTeardownIntents({
         kind: 'runtime-remove',
         environmentId,
@@ -6469,7 +6483,11 @@ export class Store {
     this.state.pendingRuntimeTerminalCloses = (
       this.state.pendingRuntimeTerminalCloses ?? []
     ).filter((entry) => entry.environmentId !== environmentId)
-    if (this.state.pendingRuntimeTerminalCloses.length !== before) {
+    if (
+      this.shouldPersistTerminalTeardownMutation(
+        this.state.pendingRuntimeTerminalCloses.length !== before
+      )
+    ) {
       this.persistTerminalTeardownIntents({
         kind: 'runtime-remove-environment',
         environmentId
@@ -6567,7 +6585,7 @@ export class Store {
     const bindingsChanged = shouldClearBindings
       ? this.clearSshRemotePtyBindingsForLeases(targetId, leasesToClear)
       : false
-    if (changed || bindingsChanged) {
+    if (this.shouldPersistTerminalTeardownMutation(changed || bindingsChanged)) {
       if (shouldClearBindings) {
         this.persistTerminalTeardownIntents({ kind: 'ssh-remove-target', targetId })
       } else {
@@ -6598,7 +6616,7 @@ export class Store {
     if (lease.state === state) {
       const bindingsChanged =
         shouldClearBindings && this.clearSshRemotePtyBindingsForLeases(targetId, [lease])
-      if (bindingsChanged || intentChanged) {
+      if (this.shouldPersistTerminalTeardownMutation(bindingsChanged || intentChanged)) {
         this.persistTerminalTeardownIntents(this.sshTeardownIntentMutationForLease(lease))
       }
       return true
@@ -6683,7 +6701,9 @@ export class Store {
         lease.ptyId !== relayPtyId ||
         lease.relayInstanceId !== requestedGeneration
     )
-    if (this.state.sshRemotePtyLeases.length !== before) {
+    if (
+      this.shouldPersistTerminalTeardownMutation(this.state.sshRemotePtyLeases.length !== before)
+    ) {
       this.sshRemotePtyLeasesByIdentity = null
       this.persistTerminalTeardownIntents({
         kind: 'ssh-set',
@@ -6701,7 +6721,9 @@ export class Store {
     this.state.sshRemotePtyLeases = this.state.sshRemotePtyLeases.filter(
       (lease) => lease.targetId !== targetId
     )
-    if (this.state.sshRemotePtyLeases.length !== before) {
+    if (
+      this.shouldPersistTerminalTeardownMutation(this.state.sshRemotePtyLeases.length !== before)
+    ) {
       this.sshRemotePtyLeasesByIdentity = null
       this.persistTerminalTeardownIntents({ kind: 'ssh-remove-target', targetId })
     }

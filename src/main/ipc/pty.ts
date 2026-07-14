@@ -629,7 +629,9 @@ function scheduleRetainedShutdownRetries(): void {
         ...pendingSshShutdownRetries.values()
       ]) {
         if (!retained.inFlight && retained.nextRetryAt <= now) {
-          void attemptRetainedPtyShutdown(retained)
+          // Why: timer-owned retries have no caller to observe a persistence
+          // rejection after provider shutdown has already completed.
+          void attemptRetainedPtyShutdown(retained).catch(() => {})
         }
       }
     },
@@ -662,10 +664,15 @@ function retireUnprovableLegacyPtyShutdown(retained: RetainedPtyShutdown): void 
   }
   // Why: legacy restart loses pane identity permanently. Drop only the stale
   // durable request; without exit proof, provider/UI ownership must survive.
-  ownerMap.delete(retained.id)
   if (!retained.connectionId) {
-    retained.store?.removePendingLocalPtyShutdown?.(retained.id)
+    try {
+      retained.store?.removePendingLocalPtyShutdown?.(retained.id)
+    } catch (error) {
+      recordRetainedPtyShutdownFailure(retained, error)
+      return
+    }
   }
+  ownerMap.delete(retained.id)
 }
 
 function deferRetainedPtyShutdownRetry(retained: RetainedPtyShutdown): void {
@@ -673,6 +680,27 @@ function deferRetainedPtyShutdownRetry(retained: RetainedPtyShutdown): void {
   retained.nextRetryAt =
     Date.now() +
     Math.min(MAX_RETAINED_SHUTDOWN_BACKOFF_MS, 250 * 2 ** Math.min(retained.attempts - 1, 7))
+}
+
+function recordRetainedPtyShutdownFailure(retained: RetainedPtyShutdown, error: unknown): void {
+  retained.lastError = error instanceof Error ? error : new Error(String(error))
+  deferRetainedPtyShutdownRetry(retained)
+  if (retained.attempts <= 2 || retained.attempts === 8) {
+    console.warn('[pty] retained shutdown retry failed:', error)
+  }
+}
+
+function settleRetainedPtyShutdownOnExit(retained: RetainedPtyShutdown): void {
+  retained.providerShutdownComplete = true
+  retained.providerExitObserved = true
+  try {
+    completeRetainedPtyShutdown(retained, true)
+  } catch (error) {
+    // Why: persistence failure must keep the retry owner without aborting the
+    // provider's exit fanout into runtime and renderer cleanup.
+    recordRetainedPtyShutdownFailure(retained, error)
+    scheduleRetainedShutdownRetries()
+  }
 }
 
 function attemptRetainedPtyShutdown(retained: RetainedPtyShutdown): Promise<void> {
@@ -774,11 +802,7 @@ function attemptRetainedPtyShutdown(retained: RetainedPtyShutdown): Promise<void
         retireUnprovableLegacyPtyShutdown(retained)
         return
       }
-      retained.lastError = error instanceof Error ? error : new Error(String(error))
-      deferRetainedPtyShutdownRetry(retained)
-      if (retained.attempts <= 2 || retained.attempts === 8) {
-        console.warn('[pty] retained shutdown retry failed:', error)
-      }
+      recordRetainedPtyShutdownFailure(retained, error)
     })
     .finally(() => {
       if (retained.inFlight === attempt) {
@@ -1536,7 +1560,7 @@ export function registerSshPtyProvider(connectionId: string, provider: IPtyProvi
         ) {
           // Why: exit may arrive after shutdown RPC acceptance. Settle the exact
           // provider owner here so its next timer cannot synthesize a duplicate.
-          completeRetainedPtyShutdown(retained, true)
+          settleRetainedPtyShutdownOnExit(retained)
         }
       })
     )
@@ -2228,7 +2252,7 @@ export function registerPtyHandlers(
       onExit: (id, code) => {
         const retained = pendingLocalShutdownRetries.get(id)
         if (retained?.provider === localProvider) {
-          completeRetainedPtyShutdown(retained, true)
+          settleRetainedPtyShutdownOnExit(retained)
         }
         clearProviderPtyState(id)
         ptyOwnership.delete(id)
@@ -3367,7 +3391,7 @@ export function registerPtyHandlers(
       if (!isLocalProvider) {
         const retained = pendingLocalShutdownRetries.get(payload.id)
         if (retained?.provider === localProvider) {
-          completeRetainedPtyShutdown(retained, true)
+          settleRetainedPtyShutdownOnExit(retained)
         }
         clearProviderPtyState(payload.id)
         ptyOwnership.delete(payload.id)

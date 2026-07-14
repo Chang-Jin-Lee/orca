@@ -9109,6 +9109,52 @@ describe('Store', () => {
     reloaded.flush()
   })
 
+  it.each(['local', 'runtime'] as const)(
+    'retries a failed %s teardown removal against the real durable store',
+    async (kind) => {
+      const store = await createStore()
+      if (kind === 'local') {
+        store.upsertPendingLocalPtyShutdown({ ptyId: 'local-a', requestedAt: 1 })
+      } else {
+        store.upsertPendingRuntimeTerminalClose({
+          environmentId: 'environment-a',
+          handle: 'terminal-a',
+          runtimeId: 'runtime-a',
+          requestedAt: 1
+        })
+      }
+      store.flush()
+      const persistedState = readFileSync(dataFile(), 'utf-8')
+      const persistedJournal = readFileSync(terminalTeardownIntentFile(), 'utf-8')
+      rmSync(terminalTeardownIntentFile(), { force: true })
+      mkdirSync(terminalTeardownIntentFile())
+      rmSync(dataFile(), { force: true })
+      mkdirSync(dataFile())
+      vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+      const remove = () =>
+        kind === 'local'
+          ? store.removePendingLocalPtyShutdown('local-a')
+          : store.removePendingRuntimeTerminalClose('environment-a', 'terminal-a')
+      expect(remove).toThrow()
+
+      rmSync(terminalTeardownIntentFile(), { recursive: true, force: true })
+      writeFileSync(terminalTeardownIntentFile(), persistedJournal, 'utf-8')
+      rmSync(dataFile(), { recursive: true, force: true })
+      writeFileSync(dataFile(), persistedState, 'utf-8')
+      expect(remove).not.toThrow()
+
+      const reloaded = await createStore()
+      if (kind === 'local') {
+        expect(reloaded.getPendingLocalPtyShutdowns()).toEqual([])
+      } else {
+        expect(reloaded.getPendingRuntimeTerminalCloses()).toEqual([])
+      }
+      store.flush()
+      reloaded.flush()
+    }
+  )
+
   it('keeps the 50-PTY SSH shutdown journal within the constant-record budget', async () => {
     const store = await createStore()
     const owners = Array.from({ length: 50 }, (_, index) => ({

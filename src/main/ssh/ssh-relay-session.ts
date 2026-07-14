@@ -1168,7 +1168,13 @@ export class SshRelaySession {
       clearProviderPtyState(payload.id)
       deletePtyOwnership(payload.id)
       this.forwardedReattachReplayByPty.delete(payload.id)
-      this.store.markSshRemotePtyLease(this.targetId, payload.id, 'terminated')
+      try {
+        this.store.markSshRemotePtyLease(this.targetId, payload.id, 'terminated')
+      } catch (error) {
+        // Why: disk failure must not abort PTY exit delivery; a retained kill
+        // owner, when present, retries the durable lease transition separately.
+        console.warn('[ssh-relay-session] Failed to persist PTY exit:', error)
+      }
       this.runtime?.onPtyExit(payload.id, payload.code)
       const win = this.getMainWindow()
       if (win && !win.isDestroyed()) {
