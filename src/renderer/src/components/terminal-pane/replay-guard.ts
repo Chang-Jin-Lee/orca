@@ -2,6 +2,7 @@ import type { ManagedPane } from '@/lib/pane-manager/pane-manager'
 import { writeForegroundTerminalChunk } from '@/lib/pane-manager/pane-terminal-foreground-render-settle'
 import { recordRendererCrashBreadcrumb } from '@/lib/crash-breadcrumb-recorder'
 import { ensureArabicShapingJoinerForText } from '@/lib/pane-manager/terminal-arabic-shaping-joiner'
+import { notifyUndeliverableWrite } from '@/lib/pane-manager/terminal-write-pipeline-health'
 
 // Why: xterm.js auto-responds to terminal query sequences (DA1 `CSI c`,
 // DECRQM `CSI ? Ps $ p`, OSC 10/11 color queries, focus events, CPR) by
@@ -105,6 +106,9 @@ function engageReplayGuard(
         `[terminal] replay guard released for pane ${paneId} — the probe write never parsed (wedged xterm write pipeline; pane likely needs recovery)`
       )
       recordRendererCrashBreadcrumb('terminal_replay_guard_wedged_release', { paneId })
+      // Why: the probe already certified the pipeline dead — hand the pane to
+      // recovery instead of leaving a fossil frame that eats keystrokes.
+      notifyUndeliverableWrite(terminal, 'replay-wedged')
     }
     onRelease?.()
   }

@@ -50,6 +50,8 @@ import { shouldClaimRemoteDesktopViewport } from './remote-desktop-viewport-clai
 import { getAppliedSizeReadE2eDelayMs } from './pty-applied-size-read-e2e-delay'
 import { createPtySizeReassertion } from './pty-size-reassertion'
 import { isPaneReplaying, replayIntoTerminal, replayIntoTerminalAsync } from './replay-guard'
+import { registerUndeliverableWriteHandler } from '@/lib/pane-manager/terminal-write-pipeline-health'
+import { requestTerminalPaneRecovery } from './terminal-pane-recovery'
 import {
   isDocumentVisibilityProvenStale,
   registerStaleDocumentVisibilityRecovery
@@ -3326,6 +3328,38 @@ export function connectPanePty(
     }
   }
 
+  // Why: an unbound transport (detached during a remount/move and never
+  // rebound) silently rejects every keystroke while the PTY stays alive and
+  // the last frame stays painted — the pane looks healthy and eats input
+  // (issue #8104 class). None of the dead-session reconciles cover it because
+  // the PTY is live; recover by remounting the tab over the live PTY.
+  const requestRecoveryForUndeliverableInput = (): void => {
+    if (transport.isConnected() && transport.getPtyId() !== null) {
+      return
+    }
+    const storePtyId = useAppStore.getState().ptyIdsByTabId[deps.tabId]?.[0] ?? null
+    void requestTerminalPaneRecovery({
+      tabId: deps.tabId,
+      ptyId: transport.getPtyId() ?? storePtyId,
+      reason: 'input-undeliverable'
+    })
+  }
+  // Why: the write-pipeline health watch (scheduler stall probe, replay-guard
+  // wedge certification) detects a dead xterm pipeline; route its verdict to
+  // the same tab remount. Registered per xterm instance — recovery replaces
+  // the instance, which resets certification naturally.
+  const unregisterUndeliverableWriteHandler = registerUndeliverableWriteHandler(
+    pane.terminal,
+    (reason) => {
+      const storePtyId = useAppStore.getState().ptyIdsByTabId[deps.tabId]?.[0] ?? null
+      void requestTerminalPaneRecovery({
+        tabId: deps.tabId,
+        ptyId: transport.getPtyId() ?? storePtyId,
+        reason
+      })
+    }
+  )
+
   const onDataDisposable = pane.terminal.onData((data) => {
     // Why: xterm auto-replies to embedded query sequences (DA1, DECRQM,
     // OSC 10/11, focus, CPR) via onData. When we replay recorded PTY bytes
@@ -3398,6 +3432,10 @@ export function connectPanePty(
             observeAcceptedTerminalInput(data, acknowledgedIntent)
             interruptInference.observeInputIntent(acknowledgedIntent)
             observeTitleOnlyInterrupt()
+          } else {
+            // Why: Esc/Ctrl+C are the first keys users press on a frozen pane;
+            // an unbound-transport reject here must arm recovery too.
+            requestRecoveryForUndeliverableInput()
           }
         })
         .catch((err) => {
@@ -3412,6 +3450,8 @@ export function connectPanePty(
         markAcceptedTerminalInputSent()
         observeAcceptedShellCommandInput(data)
         observeAcceptedTerminalInput(data, intent)
+      } else {
+        requestRecoveryForUndeliverableInput()
       }
       clearPendingTerminalInputIntent()
       return
@@ -3424,6 +3464,7 @@ export function connectPanePty(
       observeSentTerminalInputIntent(data)
     } else {
       clearPendingTerminalInputIntent()
+      requestRecoveryForUndeliverableInput()
     }
   })
 
@@ -7416,6 +7457,7 @@ export function connectPanePty(
     reconcileIfSessionMissing,
     dispose() {
       disposed = true
+      unregisterUndeliverableWriteHandler()
       // Why: the post-spawn reconcile polls across frames; cancel its pending
       // rAF so a torn-down pane cannot keep fitting/resizing after disposal.
       ptySizeReconcileHandle?.cancel()

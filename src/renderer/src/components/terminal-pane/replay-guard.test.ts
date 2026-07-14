@@ -7,6 +7,10 @@ import {
   type ReplayingPanesRef
 } from './replay-guard'
 import { configureLazyArabicShapingJoiner } from '@/lib/pane-manager/terminal-arabic-shaping-joiner'
+import {
+  _resetWritePipelineHealthForTests,
+  registerUndeliverableWriteHandler
+} from '@/lib/pane-manager/terminal-write-pipeline-health'
 
 const mocks = vi.hoisted(() => ({
   recordRendererCrashBreadcrumb: vi.fn()
@@ -229,6 +233,45 @@ describe('replay-guard', () => {
 
       expect(isPaneReplaying(ref, 1)).toBe(false)
       expect(ref.current.has(1)).toBe(false)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('a wedged release hands the terminal to pane recovery', () => {
+    vi.useFakeTimers()
+    try {
+      const ref = makeRef()
+      const { pane } = makeFakePane(1)
+      const onUndeliverable = vi.fn()
+      registerUndeliverableWriteHandler(pane.terminal, onUndeliverable)
+
+      replayIntoTerminal(pane, ref, 'fossil frame bytes', { stallCheckMs: 400 })
+      // Never flush: probe never parses → wedged release.
+      vi.advanceTimersByTime(1000)
+
+      expect(onUndeliverable).toHaveBeenCalledTimes(1)
+      expect(onUndeliverable).toHaveBeenCalledWith('replay-wedged')
+      _resetWritePipelineHealthForTests(pane.terminal)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('a healthy parse completion never notifies pane recovery', () => {
+    vi.useFakeTimers()
+    try {
+      const ref = makeRef()
+      const { pane, terminal } = makeFakePane(1)
+      const onUndeliverable = vi.fn()
+      registerUndeliverableWriteHandler(pane.terminal, onUndeliverable)
+
+      replayIntoTerminal(pane, ref, 'healthy bytes', { stallCheckMs: 400 })
+      terminal.flush()
+      vi.advanceTimersByTime(1000)
+
+      expect(onUndeliverable).not.toHaveBeenCalled()
+      _resetWritePipelineHealthForTests(pane.terminal)
     } finally {
       vi.useRealTimers()
     }
