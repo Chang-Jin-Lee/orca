@@ -149,10 +149,14 @@ export function createNewTerminalTab(
   state.setTabBarOrder(activeWorktreeId, order)
 }
 
-export function closeTerminalTab(tabId: string, options?: { force?: boolean }): void {
+export function closeTerminalTab(
+  tabId: string,
+  options?: { force?: boolean; onClosed?: () => void; onCancel?: () => void }
+): void {
   const state = useAppStore.getState()
   const target = resolveCloseTerminalTabTarget(state, tabId)
   if (!target) {
+    options?.onClosed?.()
     return
   }
   const { worktreeId: owningWorktreeId, terminalTabId } = target
@@ -163,7 +167,8 @@ export function closeTerminalTab(tabId: string, options?: { force?: boolean }): 
     guardPinnedTabClose({
       isPinned: true,
       tabLabel: resolvePinnedTabLabel(state, owningWorktreeId, terminalTabId),
-      onClose: () => closeTerminalTab(tabId, { force: true })
+      onClose: () => closeTerminalTab(tabId, { ...options, force: true }),
+      ...(options?.onCancel ? { onCancel: options.onCancel } : {})
     })
     return
   }
@@ -193,6 +198,7 @@ export function closeTerminalTab(tabId: string, options?: { force?: boolean }): 
       tabId: hostBackedTabId,
       environmentId: runtimeEnvironmentId
     })
+    options?.onClosed?.()
     return
   }
 
@@ -217,6 +223,7 @@ export function closeTerminalTab(tabId: string, options?: { force?: boolean }): 
         }
       }
     }
+    options?.onClosed?.()
     return
   }
 
@@ -230,6 +237,7 @@ export function closeTerminalTab(tabId: string, options?: { force?: boolean }): 
   }
 
   closeLocalTerminalTabState(terminalTabId)
+  options?.onClosed?.()
 }
 
 export function closeOtherTerminalTabs(tabId: string, activeWorktreeId: string | null): void {

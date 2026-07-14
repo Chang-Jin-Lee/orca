@@ -61,7 +61,6 @@ import { resolveRepairedActiveTerminalTabId } from './terminal/active-terminal-r
 import { scheduleBackgroundTerminalWorktreeMeasure } from './terminal/background-terminal-worktree-visibility'
 import {
   applyBackgroundMountTabRestriction,
-  collectDeferredMountTabIds,
   planColdActivationTabDeferral,
   pruneClosedBackgroundMountTabs,
   revealActivationDeferredTabs,
@@ -85,6 +84,7 @@ import {
 import { getTerminalParkingPolicyOverrides } from './terminal-pane/terminal-parking-e2e-overrides'
 import {
   canWatcherCoverParkedTerminalTab,
+  disposeAllParkedTerminalWatchers,
   pruneParkedTerminalWatchers,
   shouldDeferParkedPtyExitTabClose,
   syncParkedTerminalTabWatchers
@@ -785,6 +785,10 @@ function Terminal(): React.JSX.Element | null {
   // wake/resume) must not instantiate a TerminalPane per saved tab. A worktree
   // absent from this map mounts all of its tabs.
   const backgroundMountTabIdsByWorktreeRef = useRef(new Map<string, ReadonlySet<string>>())
+  // Why: targeted background mounts share the allowed-tab map above, but only
+  // cold activation deferral should immediately create watcher coverage for
+  // every unmounted tab.
+  const activationDeferredMountTabIdsByWorktreeRef = useRef(new Map<string, ReadonlySet<string>>())
   // Why: the cold-activation deferral decision must run once per activation
   // transition, not on every re-render of an already-active worktree.
   const lastActivationWorktreeIdRef = useRef<string | null>(null)
@@ -799,6 +803,18 @@ function Terminal(): React.JSX.Element | null {
         worktreeId,
         detail.tabIds
       )
+      // Why: a targeted wake can reveal a tab that was deferred by an earlier
+      // user activation. Remove it from watcher ownership before its pane mounts.
+      const worktreeTabIds = (useAppStore.getState().tabsByWorktree[worktreeId] ?? []).map(
+        (tab) => tab.id
+      )
+      revealActivationDeferredTabs({
+        restrictions: backgroundMountTabIdsByWorktreeRef.current,
+        deferredMountTabIdsByWorktree: activationDeferredMountTabIdsByWorktreeRef.current,
+        worktreeId,
+        allTabIds: worktreeTabIds,
+        immediateTabIds: new Set(detail.tabIds ?? worktreeTabIds)
+      })
       scheduleBackgroundTerminalWorktreeMeasure({
         mountedWorktreeIds: mountedWorktreeIdsRef.current,
         measurableBackgroundWorktreeIds: measurableBackgroundWorktreeIdsRef.current,
@@ -1024,6 +1040,7 @@ function Terminal(): React.JSX.Element | null {
       const tabById = new Map(worktreeTabs.map((tab) => [tab.id, tab]))
       planColdActivationTabDeferral({
         restrictions: backgroundMountTabIdsByWorktreeRef.current,
+        deferredMountTabIdsByWorktree: activationDeferredMountTabIdsByWorktreeRef.current,
         worktreeId: renderedActiveWorktreeId,
         allTabIds: worktreeTabs.map((tab) => tab.id),
         isTabLive: hasRegisteredRuntimeTerminalTab,
@@ -1046,9 +1063,19 @@ function Terminal(): React.JSX.Element | null {
       // Why: flipping either kill switch while active must restore the eager
       // mount behavior immediately, not strand an old activation restriction.
       backgroundMountTabIdsByWorktreeRef.current.delete(renderedActiveWorktreeId)
+      activationDeferredMountTabIdsByWorktreeRef.current.delete(renderedActiveWorktreeId)
     } else {
+      // Why: tabs added after activation never passed the original coverage
+      // gate. Uncoverable/no-PTY tabs must mount now so they can spawn or keep
+      // their non-snapshot-backed live transport.
+      for (const tab of worktreeTabs) {
+        if (!canWatcherCoverParkedTerminalTab(renderedActiveWorktreeId, tab)) {
+          immediateTabIds.add(tab.id)
+        }
+      }
       revealActivationDeferredTabs({
         restrictions: backgroundMountTabIdsByWorktreeRef.current,
+        deferredMountTabIdsByWorktree: activationDeferredMountTabIdsByWorktreeRef.current,
         worktreeId: renderedActiveWorktreeId,
         allTabIds: worktreeTabs.map((tab) => tab.id),
         immediateTabIds
@@ -1063,7 +1090,8 @@ function Terminal(): React.JSX.Element | null {
   pruneClosedBackgroundMountTabs(
     backgroundMountTabIdsByWorktreeRef.current,
     mountedWorktreeIdsRef.current,
-    tabsByWorktree
+    tabsByWorktree,
+    activationDeferredMountTabIdsByWorktreeRef.current
   )
   // Prune IDs of worktrees that no longer exist (deleted/removed)
   const allWorktreeIds = new Set(workspaceSurfaces.map((workspace) => workspace.id))
@@ -1071,6 +1099,7 @@ function Terminal(): React.JSX.Element | null {
     if (!allWorktreeIds.has(id)) {
       mountedWorktreeIdsRef.current.delete(id)
       backgroundMountTabIdsByWorktreeRef.current.delete(id)
+      activationDeferredMountTabIdsByWorktreeRef.current.delete(id)
     }
   }
   const anyMountedWorktreeHasLayout = computeAnyMountedWorktreeHasLayout(
@@ -1115,16 +1144,14 @@ function Terminal(): React.JSX.Element | null {
             }
           }
         }
-        // Why: mount-restricted (activation-deferred / targeted-background)
-        // tabs are unmounted like parked ones; the same byte watchers own
-        // their side effects until first reveal.
-        deferredTabIds = collectDeferredMountTabIds(
-          backgroundMountTabIdsByWorktreeRef.current.get(workspace.id) ?? null,
-          tabs.map((tab) => tab.id)
-        )
+        // Why: activation-deferred tabs are unmounted like parked ones; the
+        // same byte watchers own their side effects until first reveal.
+        // Targeted restrictions keep their existing delayed parking policy.
+        deferredTabIds =
+          activationDeferredMountTabIdsByWorktreeRef.current.get(workspace.id) ?? null
         for (const tab of tabs) {
           if (
-            deferredTabIds.has(tab.id) &&
+            deferredTabIds?.has(tab.id) &&
             !parkedTabIds.has(tab.id) &&
             canWatcherCoverParkedTerminalTab(workspace.id, tab) &&
             !findActivityTerminalPortal(activityTerminalPortals, {
@@ -1152,19 +1179,25 @@ function Terminal(): React.JSX.Element | null {
     activeTabId,
     activeView,
     activityTerminalPortals,
+    activeTabIdByWorktree,
     anyMountedWorktreeHasLayout,
     backgroundMountRevision,
     getEffectiveLayoutForWorktree,
+    groupsByWorktree,
     parkedTerminalWorktreeIds,
+    pendingStartupByTabId,
     renderedActiveWorktreeId,
     tabsByWorktree,
+    terminalParkingEnabled,
+    terminalTitleSnapshotAuthorityEnabled,
+    workspaceSessionReady,
     workspaceSurfaces
   ])
   // Why: symmetric with useTerminalTabColdParking's unmount cleanup — when
   // the terminal host unmounts, no reconciliation effect will run again, so
   // dispose every remaining parked watcher here (overlay-layer children have
   // already disposed theirs by the time this parent cleanup runs).
-  useEffect(() => () => pruneParkedTerminalWatchers(new Set()), [])
+  useEffect(() => () => disposeAllParkedTerminalWatchers(), [])
   // Auto-create first tab when worktree activates
   useEffect(() => {
     if (!workspaceSessionReady) {
@@ -2219,6 +2252,9 @@ function Terminal(): React.JSX.Element | null {
                   backgroundMountTabIds={
                     backgroundMountTabIdsByWorktreeRef.current.get(workspace.id) ?? null
                   }
+                  activationDeferredMountTabIds={
+                    activationDeferredMountTabIdsByWorktreeRef.current.get(workspace.id) ?? null
+                  }
                 />
               )
             })}
@@ -2516,7 +2552,8 @@ const WorktreeSplitSurface = React.memo(function WorktreeSplitSurface({
   shouldMeasureHiddenWorktree,
   shouldColdParkTerminalPanes,
   activityTerminalPortals,
-  backgroundMountTabIds
+  backgroundMountTabIds,
+  activationDeferredMountTabIds
 }: {
   worktreeId: string
   worktreePath: string
@@ -2527,6 +2564,7 @@ const WorktreeSplitSurface = React.memo(function WorktreeSplitSurface({
   shouldColdParkTerminalPanes: boolean
   activityTerminalPortals: ActivityTerminalPortalTarget[]
   backgroundMountTabIds: ReadonlySet<string> | null
+  activationDeferredMountTabIds: ReadonlySet<string> | null
 }): React.JSX.Element {
   const browserPageIds = useAppStore(
     useShallow((state) =>
@@ -2569,6 +2607,7 @@ const WorktreeSplitSurface = React.memo(function WorktreeSplitSurface({
         shouldMeasureHiddenWorktree={shouldMeasureHiddenWorktree}
         activityTerminalPortals={activityTerminalPortals}
         backgroundMountTabIds={backgroundMountTabIds}
+        activationDeferredMountTabIds={activationDeferredMountTabIds}
       />
       {isVisible || backgroundMountTabIds === null ? (
         <>

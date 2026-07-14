@@ -53,9 +53,9 @@ export function useTerminalTabColdParking(args: {
    *  mounted for their first xterm fit, mirroring the worktree-level guard. */
   shouldMeasureHiddenWorktree: boolean
   activityTerminalPortals: ActivityTerminalPortalTarget[]
-  /** Tabs the mount restriction keeps unmounted (activation deferral /
-   *  targeted background mounts) — parked-equivalent for watcher purposes. */
-  deferredMountTabIds?: ReadonlySet<string>
+  /** Tabs cold activation keeps unmounted — parked-equivalent for watcher
+   *  purposes. Targeted background restrictions intentionally stay bounded. */
+  activationDeferredMountTabIds?: ReadonlySet<string> | null
 }): ReadonlySet<string> {
   const {
     worktreeId,
@@ -65,7 +65,7 @@ export function useTerminalTabColdParking(args: {
     coldParkTerminalPanes,
     shouldMeasureHiddenWorktree,
     activityTerminalPortals,
-    deferredMountTabIds
+    activationDeferredMountTabIds
   } = args
   const pendingStartupByTabId = useAppStore((state) => state.pendingStartupByTabId)
   const terminalParkingEnabled = useAppStore(
@@ -216,12 +216,11 @@ export function useTerminalTabColdParking(args: {
       ) {
         parked.add(terminalTab.id)
       }
-      // Why: mount-restricted tabs render no pane regardless of the park
-      // policy (the layer filters them out before parking is consulted), so
-      // the watchers must own their side effects. The measure probe never
-      // mounts them either, hence no shouldMeasureHiddenWorktree gate.
+      // Why: activation-deferred tabs render no pane regardless of the park
+      // policy, so watchers must own their side effects immediately. Targeted
+      // restrictions do not enter this set or add a new eager watcher burst.
       if (
-        deferredMountTabIds?.has(terminalTab.id) &&
+        activationDeferredMountTabIds?.has(terminalTab.id) &&
         !hasActivityTerminalPortal &&
         canWatcherCoverParkedTerminalTab(worktreeId, terminalTab)
       ) {
@@ -234,7 +233,7 @@ export function useTerminalTabColdParking(args: {
     assignments,
     coldParkTerminalPanes,
     coldParkedTerminalTabIds,
-    deferredMountTabIds,
+    activationDeferredMountTabIds,
     isWorktreeActive,
     shouldMeasureHiddenWorktree,
     terminalTabs,
@@ -250,11 +249,11 @@ export function useTerminalTabColdParking(args: {
       worktreeId,
       tabs: terminalTabs,
       parkedTabIds: parkedTerminalTabIds,
-      // Why: mount-restricted tabs have no prior pane-owned title slot; pull
-      // main's title-only snapshot when their watcher starts.
-      restoreTitleOnStartTabIds: deferredMountTabIds
+      // Why: activation-deferred tabs have no prior pane-owned title slot;
+      // pull main's title-only snapshot when their watcher starts.
+      restoreTitleOnStartTabIds: activationDeferredMountTabIds ?? undefined
     })
-  }, [deferredMountTabIds, parkedTerminalTabIds, terminalTabs, worktreeId])
+  }, [activationDeferredMountTabIds, parkedTerminalTabIds, terminalTabs, worktreeId])
 
   useEffect(() => () => disposeParkedTerminalWatchersForWorktree(worktreeId), [worktreeId])
 

@@ -141,6 +141,24 @@ export function shouldMountBackgroundWorktreeTab(
 // until first reveal, parked byte watchers own their side effects meanwhile.
 export const COLD_ACTIVATION_TAB_DEFER_THRESHOLD = 4
 
+function replaceActivationDeferredMountTabs(
+  deferredMountTabIdsByWorktree: Map<string, ReadonlySet<string>>,
+  worktreeId: string,
+  restrictedTabIds: ReadonlySet<string> | null,
+  allTabIds: readonly string[]
+): void {
+  const next = collectDeferredMountTabIds(restrictedTabIds, allTabIds)
+  if (next.size === 0) {
+    deferredMountTabIdsByWorktree.delete(worktreeId)
+    return
+  }
+  const current = deferredMountTabIdsByWorktree.get(worktreeId)
+  if (current?.size === next.size && Array.from(next).every((tabId) => current.has(tabId))) {
+    return
+  }
+  deferredMountTabIdsByWorktree.set(worktreeId, next)
+}
+
 /**
  * Decides whether activating `worktreeId` should defer mounting its hidden
  * terminal tabs until each is first revealed. Installs the restriction (tabs
@@ -149,6 +167,7 @@ export const COLD_ACTIVATION_TAB_DEFER_THRESHOLD = 4
  */
 export function planColdActivationTabDeferral(opts: {
   restrictions: Map<string, ReadonlySet<string>>
+  deferredMountTabIdsByWorktree: Map<string, ReadonlySet<string>>
   worktreeId: string
   allTabIds: readonly string[]
   isTabLive: (tabId: string) => boolean
@@ -157,7 +176,15 @@ export function planColdActivationTabDeferral(opts: {
   isTabDeferrable: (tabId: string) => boolean
   immediateTabIds: ReadonlySet<string>
 }): boolean {
-  const { restrictions, worktreeId, allTabIds, isTabLive, isTabDeferrable, immediateTabIds } = opts
+  const {
+    restrictions,
+    deferredMountTabIdsByWorktree,
+    worktreeId,
+    allTabIds,
+    isTabLive,
+    isTabDeferrable,
+    immediateTabIds
+  } = opts
   const previouslyAllowed = restrictions.get(worktreeId)
   const initial = new Set<string>()
   for (const tabId of allTabIds) {
@@ -175,9 +202,11 @@ export function planColdActivationTabDeferral(opts: {
   const deferredCount = allTabIds.length - initial.size
   if (deferredCount <= COLD_ACTIVATION_TAB_DEFER_THRESHOLD) {
     restrictions.delete(worktreeId)
+    deferredMountTabIdsByWorktree.delete(worktreeId)
     return false
   }
   restrictions.set(worktreeId, initial)
+  replaceActivationDeferredMountTabs(deferredMountTabIdsByWorktree, worktreeId, initial, allTabIds)
   return true
 }
 
@@ -189,13 +218,21 @@ export function planColdActivationTabDeferral(opts: {
  */
 export function revealActivationDeferredTabs(opts: {
   restrictions: Map<string, ReadonlySet<string>>
+  deferredMountTabIdsByWorktree: Map<string, ReadonlySet<string>>
   worktreeId: string
   allTabIds: readonly string[]
   immediateTabIds: ReadonlySet<string>
 }): void {
-  const { restrictions, worktreeId, allTabIds, immediateTabIds } = opts
+  const { restrictions, deferredMountTabIdsByWorktree, worktreeId, allTabIds, immediateTabIds } =
+    opts
+  // Why: targeted background mounts share the allowed-tab restriction map,
+  // but only activation deferral may eagerly fan out parked watcher coverage.
+  if (!deferredMountTabIdsByWorktree.has(worktreeId)) {
+    return
+  }
   const existing = restrictions.get(worktreeId)
   if (!existing) {
+    deferredMountTabIdsByWorktree.delete(worktreeId)
     return
   }
   let grew = false
@@ -208,11 +245,13 @@ export function revealActivationDeferredTabs(opts: {
   const next = grew ? new Set([...existing, ...immediateTabIds]) : existing
   if (allTabIds.length > 0 && allTabIds.every((tabId) => next.has(tabId))) {
     restrictions.delete(worktreeId)
+    deferredMountTabIdsByWorktree.delete(worktreeId)
     return
   }
   if (grew) {
     restrictions.set(worktreeId, next)
   }
+  replaceActivationDeferredMountTabs(deferredMountTabIdsByWorktree, worktreeId, next, allTabIds)
 }
 
 /** Tabs a restriction currently keeps unmounted — the set that needs parked
@@ -234,25 +273,49 @@ export function collectDeferredMountTabIds(
 }
 
 /**
- * Releases targeted mounts after their owning tabs close. Whole-worktree and
- * user-visited mounts have no restriction entry and are intentionally retained.
+ * Releases closed tabs from targeted and activation restrictions. Whole-worktree
+ * and fully user-visited mounts have no restriction entry and are retained.
  */
 export function pruneClosedBackgroundMountTabs(
   restrictions: Map<string, ReadonlySet<string>>,
   mountedWorktreeIds: Set<string>,
-  tabsByWorktree: Record<string, readonly { id: string }[]>
+  tabsByWorktree: Record<string, readonly { id: string }[]>,
+  deferredMountTabIdsByWorktree?: Map<string, ReadonlySet<string>>
 ): boolean {
   let changed = false
   for (const [worktreeId, tabIds] of restrictions) {
     const liveTabIds = new Set((tabsByWorktree[worktreeId] ?? []).map((tab) => tab.id))
     const retained = new Set([...tabIds].filter((tabId) => liveTabIds.has(tabId)))
+    const deferred = deferredMountTabIdsByWorktree?.get(worktreeId)
+    const retainedDeferred = deferred
+      ? new Set([...deferred].filter((tabId) => liveTabIds.has(tabId)))
+      : null
+    const deferredChanged = deferred !== undefined && retainedDeferred?.size !== deferred.size
+    if (deferredChanged) {
+      changed = true
+      if (retainedDeferred && retainedDeferred.size > 0) {
+        deferredMountTabIdsByWorktree?.set(worktreeId, retainedDeferred)
+      } else {
+        deferredMountTabIdsByWorktree?.delete(worktreeId)
+        // Why: once every deferred tab is gone, the remaining live tabs are
+        // already allowed; release the now-redundant activation restriction.
+        restrictions.delete(worktreeId)
+        continue
+      }
+    }
     if (retained.size === tabIds.size) {
       continue
     }
     changed = true
     if (retained.size === 0) {
-      restrictions.delete(worktreeId)
-      mountedWorktreeIds.delete(worktreeId)
+      // Why: an activation restriction may legitimately have no allowed tabs
+      // while live deferred tabs remain; keep the active surface mounted.
+      if (retainedDeferred && retainedDeferred.size > 0) {
+        restrictions.set(worktreeId, retained)
+      } else {
+        restrictions.delete(worktreeId)
+        mountedWorktreeIds.delete(worktreeId)
+      }
     } else {
       restrictions.set(worktreeId, retained)
     }
