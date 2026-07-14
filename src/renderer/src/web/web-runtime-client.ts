@@ -198,6 +198,7 @@ export class WebRuntimeClient {
     let stopped = false
     let remoteSubscriptionId: string | null = null
     let transportInterrupted = false
+    let pendingReplayResync = false
     let unwatchStarted = false
     let handle: WebRuntimeSubscriptionHandle | null = null
     const dropLocalSubscription = (): void => {
@@ -270,6 +271,13 @@ export class WebRuntimeClient {
         }
         if (!stopped) {
           callbacks.onResponse(response)
+          if (pendingReplayResync && nextSubscriptionId && response.ok) {
+            pendingReplayResync = false
+            // Why: a replayed watch reports changes only from its own native
+            // setup; the reconnect gap produced no events, so consumers must
+            // conservatively re-scan once the replacement is ready.
+            callbacks.onResponse(createFileWatchReplayOverflowResponse(response, params))
+          }
         } else if (response.ok === false) {
           dropLocalSubscription()
         }
@@ -301,6 +309,7 @@ export class WebRuntimeClient {
       },
       onTransportReplayed: () => {
         transportInterrupted = false
+        pendingReplayResync = true
       }
     }
     handle = await this.subscribeOnCurrentConnection(
@@ -891,6 +900,29 @@ function getFileWatchSubscriptionId(response: RuntimeRpcResponse<unknown>): stri
   }
   const subscriptionId = (result as { subscriptionId?: unknown }).subscriptionId
   return typeof subscriptionId === 'string' ? subscriptionId : null
+}
+
+function createFileWatchReplayOverflowResponse(
+  readyResponse: RuntimeRpcSuccess<unknown>,
+  params: unknown
+): RuntimeRpcSuccess<{
+  type: 'changed'
+  worktree: string
+  events: { kind: 'overflow'; absolutePath: string }[]
+}> {
+  const worktree = (params as { worktree?: unknown } | null)?.worktree
+  return {
+    id: readyResponse.id,
+    ok: true,
+    result: {
+      type: 'changed',
+      worktree: typeof worktree === 'string' ? worktree : '',
+      // Why: overflow consumers re-scan the whole root and never read the
+      // path; the client does not know the server-side root path here.
+      events: [{ kind: 'overflow', absolutePath: '' }]
+    },
+    _meta: readyResponse._meta
+  }
 }
 
 function isFileWatchStartingResponse(
