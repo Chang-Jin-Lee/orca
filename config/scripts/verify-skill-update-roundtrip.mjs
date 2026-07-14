@@ -146,6 +146,8 @@ function execSkills(args) {
         ...process.env,
         HOME: home,
         USERPROFILE: home,
+        CODEX_HOME: path.join(home, '.codex'),
+        CLAUDE_CONFIG_DIR: path.join(home, '.claude'),
         XDG_STATE_HOME: stateHome,
         GIT_CONFIG_COUNT: '1',
         GIT_CONFIG_KEY_0: 'core.autocrlf',
@@ -211,9 +213,18 @@ try {
   if (shape === 'symlink' && targetProviderAfter !== currentSkill(targetName).packageDigest) {
     throw new Error(`${targetName} provider alias did not converge with the canonical update`)
   }
-  if (shape === 'copy' && targetProviderAfter !== targetProviderBefore) {
-    throw new Error(
-      'The skills CLI now updates independent provider copies; reconsider freshness eligibility'
+  if (
+    shape === 'copy' &&
+    targetProviderAfter !== targetProviderBefore &&
+    targetProviderAfter !== currentSkill(targetName).packageDigest
+  ) {
+    throw new Error('Independent provider copy changed to an unexpected package identity')
+  }
+  if (shape === 'copy') {
+    // Why: 1.5.17 copy convergence differs between otherwise equivalent
+    // environments. Record either honest outcome while eligibility stays poisoned.
+    console.log(
+      `[skill-update-roundtrip] independent copy ${targetProviderAfter === targetProviderBefore ? 'remained historical' : 'converged'}`
     )
   }
   if ((await packageDigestAt(controlCanonical)) !== controlBefore) {

@@ -126,6 +126,7 @@ Rules:
 ### C. Read-only detection (kept from Phase 1, slimmed)
 
 Kept as-is:
+
 - Bundled `skills/` packages + current manifest + released-snapshot registry + release
   mapping, with the generation script and merge-queue monotonicity gate (static data + CI,
   not runtime machinery).
@@ -135,10 +136,12 @@ Kept as-is:
   plugin caches and repo scopes excluded), and the launch / focus / post-install triggers.
 - The skills-CLI round-trip CI on macOS/Linux/Windows — extended from current-install tests
   to historical-fat-install → targeted global update → stub migration. The matrix covers
-  LF/CRLF and provider aliases as a positive convergence contract, plus independent copies as
-  a negative oracle until upstream can update them. Post-update bytes, not exit status, decide.
+  LF/CRLF and provider aliases as a positive convergence contract, plus independent-copy
+  observation that accepts only unchanged historical or exact-current bytes. Post-update
+  bytes, not exit status, decide.
 
 Slimmed:
+
 - Statuses collapse to: `current`, `outdated` (exact match of an older released snapshot),
   `newer-known`, `unrecognized`, and `inaccessible`. Without a ledger, Orca cannot honestly
   distinguish a locally modified official copy from unrelated same-named content;
@@ -159,8 +162,9 @@ Slimmed:
   placement is an exact `current` or `outdated` official snapshot in a topology the validated
   rail actually converges. With skills CLI 1.5.17 that means the canonical global copy and
   provider aliases to it. Independent provider copies are informational and poison the offer:
-  empirical copy-mode testing showed targeted update refreshes the canonical copy but leaves
-  the independent provider copy stale. One `newer-known`, unrecognized, external, read-only,
+  empirical copy-mode testing produced both stale and converged provider copies in otherwise
+  equivalent 1.5.17 environments, so that topology is not deterministic enough to offer. One
+  `newer-known`, unrecognized, external, read-only,
   inaccessible, repo/plugin, independent-copy, or otherwise unsupported placement poisons the
   update offer for that name entirely.
 - The action combines only eligible outdated Orca names into
@@ -216,16 +220,16 @@ not thin, until the relevant variant passes.
   topology changes. The historical-fat → targeted-global-update → stub CI is a release gate,
   not an early-warning job. Detection always re-checks bytes after the user updates, so a
   failed or no-op update re-surfaces `outdated` instead of lying. Minimum validated version is
-  1.5.17: 1.5.16 failed the multi-provider convergence contract, and 1.5.17 still does not
-  update independent provider copies. CI pins 1.5.17 and probes latest; monitor and contribute
-  upstream fixes before broadening eligibility.
+  1.5.17: 1.5.16 failed the provider-alias convergence contract, while 1.5.17 copy convergence
+  still varies by environment. CI pins 1.5.17 and probes latest; monitor and contribute upstream
+  fixes before broadening eligibility.
 - **Trigger-copy iteration slows.** Improvements to stub descriptions reach existing
   installs only when users run the npx command. Acceptable at stub-change cadence; the
   compiled guides (the content that matters) are exempt by construction.
 - **Multi-file skills.** Current shipped packages are single-file. If a future skill needs
   scripts/assets, either the binary serves them (`--full` / `--script`) or that skill
   accepts the fat-file decay model. Decide when it happens.
-- **Remote hosts.** Detection ships local-host-only. Stubs make remote *content* a non-issue:
+- **Remote hosts.** Detection ships local-host-only. Stubs make remote _content_ a non-issue:
   SSH/WSL launchers forward to the host's bundled CLI, so the guide matches the command
   surface that will handle subsequent requests. Remote stub installs can lag on trigger
   copy, which is the accepted residual. The WSL/SSH reconciler phases of the old design are
