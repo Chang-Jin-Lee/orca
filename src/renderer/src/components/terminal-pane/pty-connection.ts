@@ -3335,7 +3335,7 @@ export function connectPanePty(
   // the PTY is live; recover by remounting the tab over the live PTY.
   let transportConnectInFlight = false
   const requestRecoveryForUndeliverableInput = (): void => {
-    if (transport.isConnected() && transport.getPtyId() !== null) {
+    if (transport.isConnected?.() && transport.getPtyId() !== null) {
       return
     }
     // Why: input rejected while a connect/reattach is still settling is "not

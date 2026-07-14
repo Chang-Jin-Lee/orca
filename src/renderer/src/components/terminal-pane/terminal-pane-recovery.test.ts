@@ -202,6 +202,12 @@ describe('requestTerminalPaneRecovery', () => {
     await expect(
       requestTerminalPaneRecovery({ tabId: 'tab-1', ptyId: 'pty-1', reason: 'write-stalled' })
     ).resolves.toBe(false)
+    // The failure must leave a trace — it is the only forensic signal for a
+    // production remount-failure loop (budget unconsumed → cooldown retries).
+    expect(mocks.recordRendererCrashBreadcrumb).toHaveBeenCalledWith(
+      'terminal_pane_recovery_failed',
+      { tabId: 'tab-1', reason: 'write-stalled' }
+    )
   })
 
   it('does not consume budget when the tab no longer exists', async () => {
