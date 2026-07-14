@@ -535,6 +535,9 @@ describe('Electron runtime package contract', () => {
     expect(packageScripts['test:e2e:terminal-rendering-golden']).toContain(
       'terminal-raw-emoji-table-scroll-restore.spec.ts'
     )
+    expect(packageScripts['test:e2e:terminal-rendering-golden']).toContain(
+      'terminal-webgl-atlas-budget.spec.ts'
+    )
     expect(packageScripts['test:e2e:terminal-rendering-golden']).not.toContain(
       'terminal-long-table-scroll-restore.spec.ts'
     )
@@ -548,6 +551,8 @@ describe('Electron runtime package contract', () => {
       expect(runStep?.run).toContain('pnpm run test:e2e:terminal-rendering-golden')
     }
     expect(pullRequestPaths).toContain('tests/e2e/terminal-raw-emoji-table-scroll-restore.spec.ts')
+    expect(pullRequestPaths).toContain('tests/e2e/terminal-webgl-atlas-budget.spec.ts')
+    expect(pullRequestPaths).toContain('config/patches/@xterm__addon-webgl@0.20.0-beta.286.patch')
     expect(pullRequestPaths).toContain('tests/e2e/fixtures/terminal-emoji-table.md')
     expect(pullRequestPaths).toContain('src/renderer/src/lib/pane-manager/**')
     expect(releaseBuildNeeds).not.toContain('terminal-rendering-golden')
