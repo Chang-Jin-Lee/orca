@@ -1,0 +1,1915 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="Implementation and validation plan for distributing Orca's self-contained SSH relay through GitHub Releases."
+    />
+    <title>SSH relay distribution plan · Orca</title>
+    <style>
+      @font-face {
+        font-family: 'Geist';
+        src: url('../../../src/renderer/src/assets/fonts/Geist-Variable.woff2') format('woff2');
+        font-weight: 100 900;
+        font-style: normal;
+        font-display: swap;
+      }
+
+      :root {
+        color-scheme: light dark;
+        --background: #fff;
+        --foreground: #0a0a0a;
+        --card: #fff;
+        --card-foreground: #0a0a0a;
+        --primary: #171717;
+        --primary-foreground: #fafafa;
+        --secondary: #f5f5f5;
+        --secondary-foreground: #171717;
+        --muted: #f5f5f5;
+        --muted-foreground: #737373;
+        --accent: #f5f5f5;
+        --accent-foreground: #171717;
+        --destructive: #e40014;
+        --border: #e5e5e5;
+        --ring: #a1a1a1;
+        --status-success: #15803d;
+        --annotation-highlight: #f59e0b;
+        --radius: 0.625rem;
+        --font-sans: 'Geist', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        --font-mono:
+          'SF Mono', SFMono-Regular, ui-monospace, 'Cascadia Code', Menlo, Consolas,
+          'Liberation Mono', monospace;
+      }
+
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --background: #0a0a0a;
+          --foreground: #fafafa;
+          --card: #171717;
+          --card-foreground: #fafafa;
+          --primary: #e5e5e5;
+          --primary-foreground: #171717;
+          --secondary: #262626;
+          --secondary-foreground: #fafafa;
+          --muted: #262626;
+          --muted-foreground: #a1a1a1;
+          --accent: #404040;
+          --accent-foreground: #fafafa;
+          --destructive: #ff6568;
+          --border: rgb(255 255 255 / 0.07);
+          --ring: #737373;
+          --status-success: #86efac;
+          --annotation-highlight: #fbbf24;
+        }
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html {
+        scroll-behavior: smooth;
+      }
+
+      body {
+        margin: 0;
+        background: var(--background);
+        color: var(--foreground);
+        font-family: var(--font-sans);
+        font-size: 14px;
+        line-height: 1.55;
+        letter-spacing: 0.01em;
+      }
+
+      a {
+        color: inherit;
+        text-decoration-color: var(--ring);
+        text-underline-offset: 3px;
+      }
+
+      a:hover {
+        text-decoration-color: currentColor;
+      }
+
+      a:focus-visible,
+      summary:focus-visible,
+      .table-wrap:focus-visible {
+        border-radius: calc(var(--radius) * 0.6);
+        outline: 2px solid var(--ring);
+        outline-offset: 3px;
+      }
+
+      code,
+      pre {
+        font-family: var(--font-mono);
+      }
+
+      code {
+        border: 1px solid var(--border);
+        border-radius: calc(var(--radius) * 0.6);
+        background: var(--muted);
+        padding: 0.08rem 0.3rem;
+        font-size: 0.86em;
+      }
+
+      .shell {
+        display: grid;
+        grid-template-columns: 248px minmax(0, 1fr);
+        min-height: 100vh;
+      }
+
+      .sidebar {
+        position: sticky;
+        top: 0;
+        height: 100vh;
+        overflow-y: auto;
+        border-right: 1px solid var(--border);
+        background: var(--card);
+        padding: 28px 20px;
+      }
+
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 28px;
+        font-weight: 650;
+      }
+
+      .brand-mark {
+        display: grid;
+        width: 28px;
+        height: 28px;
+        place-items: center;
+        border-radius: calc(var(--radius) * 0.8);
+        background: var(--primary);
+        color: var(--primary-foreground);
+        font-size: 12px;
+        letter-spacing: 0;
+      }
+
+      .eyebrow,
+      .nav-heading,
+      .section-kicker {
+        color: var(--muted-foreground);
+        font-size: 11px;
+        font-weight: 650;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+      }
+
+      .nav-heading {
+        margin: 22px 10px 8px;
+      }
+
+      nav a {
+        display: block;
+        border-radius: calc(var(--radius) * 0.8);
+        padding: 7px 10px;
+        color: var(--muted-foreground);
+        font-size: 13px;
+        text-decoration: none;
+      }
+
+      nav a:hover {
+        background: var(--accent);
+        color: var(--accent-foreground);
+      }
+
+      main {
+        width: min(1080px, 100%);
+        margin: 0 auto;
+        padding: 64px 56px 96px;
+      }
+
+      header {
+        padding-bottom: 42px;
+      }
+
+      .meta-row,
+      .pill-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        align-items: center;
+      }
+
+      .meta-row {
+        justify-content: space-between;
+        margin-bottom: 26px;
+      }
+
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        min-height: 24px;
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        background: var(--secondary);
+        padding: 2px 9px;
+        color: var(--secondary-foreground);
+        font-size: 11px;
+        font-weight: 600;
+      }
+
+      h1,
+      h2,
+      h3,
+      p {
+        margin-top: 0;
+      }
+
+      h1 {
+        max-width: 850px;
+        margin-bottom: 18px;
+        font-size: clamp(2.15rem, 5vw, 4.25rem);
+        font-weight: 680;
+        letter-spacing: -0.045em;
+        line-height: 0.98;
+      }
+
+      h2 {
+        margin-bottom: 12px;
+        font-size: 1.55rem;
+        font-weight: 650;
+        letter-spacing: -0.025em;
+        line-height: 1.2;
+      }
+
+      h3 {
+        margin-bottom: 8px;
+        font-size: 1rem;
+        font-weight: 650;
+        letter-spacing: -0.01em;
+      }
+
+      .lede {
+        max-width: 780px;
+        margin-bottom: 24px;
+        color: var(--muted-foreground);
+        font-size: 1.08rem;
+      }
+
+      .decision {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr);
+        gap: 14px;
+        max-width: 820px;
+        border: 1px solid var(--border);
+        border-radius: calc(var(--radius) * 1.4);
+        background: var(--card);
+        padding: 18px;
+      }
+
+      .decision-index,
+      .phase-index {
+        display: grid;
+        width: 30px;
+        height: 30px;
+        flex: 0 0 auto;
+        place-items: center;
+        border-radius: 999px;
+        background: var(--primary);
+        color: var(--primary-foreground);
+        font-family: var(--font-mono);
+        font-size: 11px;
+        font-weight: 700;
+      }
+
+      .decision p,
+      .phase p,
+      .risk p {
+        margin-bottom: 0;
+        color: var(--muted-foreground);
+      }
+
+      section {
+        scroll-margin-top: 28px;
+        border-top: 1px solid var(--border);
+        padding: 52px 0;
+      }
+
+      .section-heading {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(240px, 0.72fr);
+        gap: 40px;
+        align-items: end;
+        margin-bottom: 28px;
+      }
+
+      .section-heading p {
+        margin-bottom: 0;
+        color: var(--muted-foreground);
+      }
+
+      .architecture {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 10px;
+        align-items: stretch;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
+
+      .architecture-step {
+        position: relative;
+        min-height: 150px;
+        border: 1px solid var(--border);
+        border-radius: calc(var(--radius) * 1.4);
+        background: var(--card);
+        padding: 18px;
+      }
+
+      .architecture-step:not(:last-child)::after {
+        position: absolute;
+        z-index: 2;
+        top: 50%;
+        right: -16px;
+        width: 20px;
+        border-top: 1px solid var(--ring);
+        content: '';
+      }
+
+      .architecture-step strong {
+        display: block;
+        margin: 18px 0 7px;
+      }
+
+      .architecture-step p {
+        margin: 0;
+        color: var(--muted-foreground);
+        font-size: 12px;
+      }
+
+      .step-number {
+        color: var(--muted-foreground);
+        font-family: var(--font-mono);
+        font-size: 11px;
+      }
+
+      .callout {
+        margin-top: 18px;
+        border-left: 3px solid var(--annotation-highlight);
+        background: color-mix(in srgb, var(--annotation-highlight) 8%, transparent);
+        padding: 14px 16px;
+      }
+
+      .callout strong {
+        display: block;
+        margin-bottom: 4px;
+      }
+
+      .callout p {
+        margin: 0;
+        color: var(--muted-foreground);
+      }
+
+      .comparison {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 16px;
+      }
+
+      .comparison article,
+      .risk,
+      details {
+        border: 1px solid var(--border);
+        border-radius: calc(var(--radius) * 1.4);
+        background: var(--card);
+      }
+
+      .comparison article,
+      .risk {
+        padding: 20px;
+      }
+
+      .comparison ul,
+      .phase ul,
+      .gate-list,
+      .definition-list {
+        margin: 12px 0 0;
+        padding-left: 20px;
+      }
+
+      li + li {
+        margin-top: 7px;
+      }
+
+      .phases {
+        display: grid;
+        gap: 12px;
+      }
+
+      .phase {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr) minmax(140px, 0.25fr);
+        gap: 16px;
+        align-items: start;
+        border: 1px solid var(--border);
+        border-radius: calc(var(--radius) * 1.4);
+        background: var(--card);
+        padding: 20px;
+      }
+
+      .phase-output {
+        border-left: 1px solid var(--border);
+        padding-left: 16px;
+        color: var(--muted-foreground);
+        font-size: 12px;
+      }
+
+      .phase-output strong {
+        display: block;
+        margin-bottom: 4px;
+        color: var(--foreground);
+      }
+
+      .table-wrap {
+        overflow-x: auto;
+        border: 1px solid var(--border);
+        border-radius: calc(var(--radius) * 1.4);
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        background: var(--card);
+        font-size: 13px;
+      }
+
+      .visually-hidden {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip: rect(0 0 0 0);
+        clip-path: inset(50%);
+        white-space: nowrap;
+      }
+
+      th,
+      td {
+        border-bottom: 1px solid var(--border);
+        padding: 13px 14px;
+        text-align: left;
+        vertical-align: top;
+      }
+
+      th {
+        background: var(--muted);
+        color: var(--muted-foreground);
+        font-size: 11px;
+        font-weight: 650;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+      }
+
+      tr:last-child td {
+        border-bottom: 0;
+      }
+
+      td:first-child {
+        font-weight: 620;
+      }
+
+      .status-required {
+        color: var(--status-success);
+        font-weight: 650;
+      }
+
+      .status-blocked {
+        color: var(--destructive);
+        font-weight: 650;
+      }
+
+      .artifact-grid,
+      .risk-grid,
+      .gate-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 14px;
+      }
+
+      .artifact {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        border-bottom: 1px solid var(--border);
+        padding: 10px 0;
+      }
+
+      .artifact code {
+        border: 0;
+        background: transparent;
+        padding: 0;
+      }
+
+      details {
+        overflow: hidden;
+      }
+
+      details + details {
+        margin-top: 10px;
+      }
+
+      summary {
+        cursor: pointer;
+        padding: 15px 18px;
+        font-weight: 620;
+      }
+
+      details[open] summary {
+        border-bottom: 1px solid var(--border);
+        background: var(--muted);
+      }
+
+      .details-body {
+        padding: 18px;
+      }
+
+      .details-body p:last-child,
+      .details-body ul:last-child {
+        margin-bottom: 0;
+      }
+
+      .gate {
+        border-top: 2px solid var(--foreground);
+        background: var(--card);
+        padding: 18px 0 0;
+      }
+
+      .subsection-heading {
+        margin-top: 28px;
+      }
+
+      .gate small {
+        color: var(--muted-foreground);
+      }
+
+      .risk strong {
+        display: block;
+        margin-bottom: 7px;
+      }
+
+      .rollout {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 0;
+      }
+
+      .rollout-step {
+        position: relative;
+        border-top: 1px solid var(--ring);
+        padding: 24px 20px 0 0;
+      }
+
+      .rollout-step::before {
+        position: absolute;
+        top: -5px;
+        left: 0;
+        width: 9px;
+        height: 9px;
+        border-radius: 999px;
+        background: var(--foreground);
+        content: '';
+      }
+
+      .rollout-step p {
+        color: var(--muted-foreground);
+        font-size: 12px;
+      }
+
+      .source-list {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
+
+      .source-list a {
+        display: inline-flex;
+        min-height: 32px;
+        align-items: center;
+        border: 1px solid var(--border);
+        border-radius: calc(var(--radius) * 0.8);
+        background: var(--card);
+        padding: 5px 10px;
+        text-decoration: none;
+      }
+
+      .source-list a:hover {
+        background: var(--accent);
+      }
+
+      footer {
+        border-top: 1px solid var(--border);
+        padding-top: 28px;
+        color: var(--muted-foreground);
+        font-size: 12px;
+      }
+
+      @media (max-width: 900px) {
+        .shell {
+          display: block;
+        }
+
+        .sidebar {
+          position: static;
+          width: 100%;
+          height: auto;
+          border-right: 0;
+          border-bottom: 1px solid var(--border);
+          padding: 18px 24px;
+        }
+
+        .brand {
+          margin-bottom: 12px;
+        }
+
+        .nav-heading {
+          display: none;
+        }
+
+        nav {
+          display: flex;
+          gap: 4px;
+          overflow-x: auto;
+          padding-bottom: 2px;
+        }
+
+        nav a {
+          flex: 0 0 auto;
+        }
+
+        main {
+          padding: 48px 28px 72px;
+        }
+
+        .section-heading,
+        .architecture,
+        .rollout {
+          grid-template-columns: 1fr 1fr;
+        }
+
+        .architecture-step:not(:last-child)::after {
+          display: none;
+        }
+      }
+
+      @media (max-width: 640px) {
+        main {
+          padding-inline: 18px;
+        }
+
+        .section-heading,
+        .architecture,
+        .comparison,
+        .artifact-grid,
+        .risk-grid,
+        .gate-grid,
+        .rollout {
+          grid-template-columns: 1fr;
+        }
+
+        .phase {
+          grid-template-columns: auto minmax(0, 1fr);
+        }
+
+        .phase-output {
+          grid-column: 2;
+          border-top: 1px solid var(--border);
+          border-left: 0;
+          padding: 12px 0 0;
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        html {
+          scroll-behavior: auto;
+        }
+      }
+
+      @media print {
+        :root {
+          color-scheme: light;
+        }
+
+        .shell {
+          display: block;
+        }
+
+        .sidebar {
+          display: none;
+        }
+
+        main {
+          width: 100%;
+          padding: 0;
+        }
+
+        body {
+          print-color-adjust: exact;
+          -webkit-print-color-adjust: exact;
+        }
+
+        .phase,
+        .risk,
+        .architecture-step,
+        .comparison article,
+        .gate,
+        .rollout-step {
+          break-inside: avoid;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="shell">
+      <aside class="sidebar" aria-label="Plan navigation">
+        <div class="brand">
+          <span class="brand-mark" aria-hidden="true">O</span>
+          <span>Orca engineering</span>
+        </div>
+        <div class="nav-heading">Plan</div>
+        <nav aria-label="Plan sections">
+          <a href="#decision">Decision</a>
+          <a href="#architecture">Architecture</a>
+          <a href="#phases">Implementation</a>
+          <a href="#artifacts">Artifacts</a>
+          <a href="#fallback">Fallback</a>
+          <a href="#validation">Validation</a>
+          <a href="#risks">Risks</a>
+          <a href="#rollout">Rollout</a>
+          <a href="#done">Definition of done</a>
+        </nav>
+        <div class="nav-heading">Context</div>
+        <nav aria-label="Related issues">
+          <a href="https://github.com/stablyai/orca/issues/8450">Issue #8450</a>
+          <a href="https://github.com/stablyai/orca/issues/1693">Issue #1693</a>
+        </nav>
+      </aside>
+
+      <main>
+        <header id="decision">
+          <div class="meta-row">
+            <span class="eyebrow">Implementation plan · 14 July 2026</span>
+            <div class="pill-row" role="list" aria-label="Plan status">
+              <span class="pill" role="listitem">Draft</span>
+              <span class="pill" role="listitem">SSH relay</span>
+              <span class="pill" role="listitem">Regression gated</span>
+            </div>
+          </div>
+          <h1>Ship the relay as a verified runtime, not a remote npm project.</h1>
+          <p class="lede">
+            Publish self-contained, platform-specific relay runtimes through the same GitHub Release
+            used by the Orca desktop app. Orca downloads and verifies the matching runtime locally,
+            transfers it over the existing SSH connection, and launches it from an immutable remote
+            cache.
+          </p>
+          <div class="decision">
+            <span class="decision-index" aria-hidden="true">✓</span>
+            <div>
+              <h3>Recommended decision</h3>
+              <p>
+                Make the verified runtime the primary path, keep the existing embedded relay plus
+                remote Node/npm installer as an automatic fallback only for classified availability
+                and compatibility failures, and remove or narrow that fallback only after the
+                complete declared support matrix has passed and soaked. Build and sign relay
+                artifacts before desktop packaging so every app embeds the exact signed
+                tuple-to-content manifest needed for offline remote-cache reuse.
+              </p>
+            </div>
+          </div>
+        </header>
+
+        <section id="architecture">
+          <div class="section-heading">
+            <div>
+              <div class="section-kicker">Target architecture</div>
+              <h2>The SSH host never needs GitHub access.</h2>
+            </div>
+            <p>
+              The desktop owns release access, signature verification, caching, and extraction. SSH
+              authentication/connection and relay RPC transport stay unchanged. Bootstrap artifact
+              transfer is materially redesigned, independently gated, and still travels only through
+              the authenticated SSH connection.
+            </p>
+          </div>
+
+          <ol class="architecture" aria-label="Relay artifact delivery flow">
+            <li class="architecture-step">
+              <span class="step-number">01</span>
+              <strong>GitHub Release</strong>
+              <p>
+                Relay build precedes desktop builds and emits the signed manifest plus exact
+                archives.
+              </p>
+            </li>
+            <li class="architecture-step">
+              <span class="step-number">02</span>
+              <strong>Local cache</strong>
+              <p>
+                Embedded manifest resolves identity offline; downloaded bytes are verified and
+                extracted atomically.
+              </p>
+            </li>
+            <li class="architecture-step">
+              <span class="step-number">03</span>
+              <strong>SSH transfer</strong>
+              <p>Bounded streaming over SFTP or system SSH; remote tar is an optional fast path.</p>
+            </li>
+            <li class="architecture-step">
+              <span class="step-number">04</span>
+              <strong>Remote cache</strong>
+              <p>
+                Match the embedded content ID, verify transferred files once, record proof, then
+                launch.
+              </p>
+            </li>
+          </ol>
+
+          <div class="callout">
+            <strong>What “100% validated” means</strong>
+            <p>
+              Every required cell in the declared two-layer, risk-based matrix has evidence. It does
+              not mean every possible client × SSH server combination. A tuple without
+              real-environment proof stays on the legacy path and is not enabled by default.
+            </p>
+          </div>
+        </section>
+
+        <section id="baseline">
+          <div class="section-heading">
+            <div>
+              <div class="section-kicker">Baseline</div>
+              <h2>Change the dependency boundary without changing relay behavior.</h2>
+            </div>
+            <p>
+              The protocol, SSH authentication/connection, relay RPC transport, immutable install
+              directories, locks, reconnect logic, and garbage collection stay in place. Packaging
+              and bootstrap artifact transfer are the moving parts.
+            </p>
+          </div>
+
+          <div class="comparison">
+            <article>
+              <h3>Today</h3>
+              <ul>
+                <li>Orca embeds platform-neutral relay JavaScript.</li>
+                <li>The remote supplies Node and npm.</li>
+                <li>Remote npm installs <code>node-pty</code> and <code>@parcel/watcher</code>.</li>
+                <li>Linux may require Python, make, a compiler, and registry access.</li>
+                <li>Incomplete Node/npm pairs reproduce issue #8450.</li>
+              </ul>
+            </article>
+            <article>
+              <h3>Target</h3>
+              <ul>
+                <li>GitHub stores a complete, signed relay runtime per tuple.</li>
+                <li>The desktop downloads, verifies, and caches it.</li>
+                <li>
+                  POSIX targets require a declared POSIX <code>sh</code>/byte-stream/file-operation
+                  baseline; Windows targets require a declared PowerShell/.NET baseline.
+                </li>
+                <li>
+                  The authenticated account needs permission to write and execute; Node, Python,
+                  npm, and tar are not prerequisites.
+                </li>
+                <li>Bundled Node loads native modules built against that exact runtime.</li>
+                <li>The existing installer remains available if compatibility probing fails.</li>
+              </ul>
+            </article>
+          </div>
+        </section>
+
+        <section id="phases">
+          <div class="section-heading">
+            <div>
+              <div class="section-kicker">Implementation</div>
+              <h2>Eight reviewable phases, no big-bang switch.</h2>
+            </div>
+            <p>
+              Each phase has an independently testable output. Early phases add evidence and
+              artifacts without changing the default SSH connection path.
+            </p>
+          </div>
+
+          <div class="phases">
+            <article class="phase">
+              <span class="phase-index">0</span>
+              <div>
+                <h3>Stabilize the legacy fallback</h3>
+                <p>
+                  Finish the narrow #8450 change so Node and npm are selected as one coherent
+                  toolchain. Keep it separate from runtime distribution so affected users receive a
+                  small, reviewable fix first.
+                </p>
+              </div>
+              <div class="phase-output">
+                <strong>Output</strong>Legacy bootstrap handles the reported NVM layout.
+              </div>
+            </article>
+
+            <article class="phase">
+              <span class="phase-index">1</span>
+              <div>
+                <h3>Define the runtime contract</h3>
+                <p>
+                  Specify archive layout, manifest schema, platform/libc selection, Node version,
+                  protocol identity, dependency versions, licenses, file modes, support baselines,
+                  and exact POSIX/Windows bootstrap primitives. Hash the full runtime contents
+                  rather than only relay JavaScript.
+                </p>
+              </div>
+              <div class="phase-output">
+                <strong>Output</strong>Versioned schema plus pure selector and identity tests.
+              </div>
+            </article>
+
+            <article class="phase">
+              <span class="phase-index">2</span>
+              <div>
+                <h3>Build self-contained runtimes</h3>
+                <p>
+                  Assemble pinned Node, relay entries, patched <code>node-pty</code>, the exact
+                  <code>@parcel/watcher</code> package, and required JavaScript dependencies on
+                  matching CI environments. Run executable smoke probes before archiving.
+                </p>
+              </div>
+              <div class="phase-output">
+                <strong>Output</strong>Locally verifiable archives for every enabled tuple.
+              </div>
+            </article>
+
+            <article class="phase">
+              <span class="phase-index">3</span>
+              <div>
+                <h3>Sign and publish release assets</h3>
+                <p>
+                  Use target-native relay build jobs plus native signing jobs. A fail-closed
+                  aggregate job waits for every signed macOS/Windows byte, computes final hashes,
+                  signs the canonical manifest, and makes its immutable output a prerequisite of
+                  every desktop packaging job. Upload those exact archives, manifest, and signature
+                  to the existing draft GitHub Release. Extend the required-assets gate to verify
+                  presence, size, signature, manifest coverage, byte identity, and read-back before
+                  publication; timeout, signing failure, exhausted retry, or manual-approval failure
+                  leaves a recoverable draft and blocks every consumer.
+                </p>
+              </div>
+              <div class="phase-output">
+                <strong>Output</strong>Atomic app-and-relay release publication.
+              </div>
+            </article>
+
+            <article class="phase">
+              <span class="phase-index">4</span>
+              <div>
+                <h3>Add the desktop artifact resolver</h3>
+                <p>
+                  Resolve the remote tuple and content ID from the embedded signed manifest, use its
+                  exact build tag and direct release URL, download through Electron networking,
+                  verify before extraction, and atomically populate a content-addressed cache.
+                  Coordinate cache ownership across app processes and preserve
+                  <code>ORCA_RELAY_PATH</code> for development.
+                </p>
+              </div>
+              <div class="phase-output">
+                <strong>Output</strong>Safe cold, warm, concurrent, and offline cache paths.
+              </div>
+            </article>
+
+            <article class="phase">
+              <span class="phase-index">5</span>
+              <div>
+                <h3>Deploy and validate the runtime</h3>
+                <p>
+                  Replace whole-tree buffering and serial-only assumptions with bounded file
+                  streaming: capability-probed tar may accelerate POSIX system SSH, but no-tar file
+                  streaming is required and uses the SSH channel as a byte-preserving stdin stream
+                  into exclusive per-file staging with only the declared shell/file primitives;
+                  Windows uses a bounded binary PowerShell/.NET path and must not materialize the
+                  runtime as one JSON/base64 buffer; SFTP uses bounded concurrency. After locally
+                  verifying signed metadata and archive/tree hashes, transfer through authenticated
+                  SSH, restore every declared executable bit, then execute the transferred bundled
+                  Node to hash the entire staging tree. Verify the full tree, run bundled
+                  Node/native-module and minimal PTY/watcher probes, write a structured
+                  <code>.install-complete</code> containing schema, mode, and digest, atomically
+                  publish the immutable install, and only then launch. Preserve current locks,
+                  reconnect, and garbage collection.
+                </p>
+              </div>
+              <div class="phase-output">
+                <strong>Output</strong>Primary path performs no remote npm or HTTP operation.
+              </div>
+            </article>
+
+            <article class="phase">
+              <span class="phase-index">6</span>
+              <div>
+                <h3>Make fallback explicit and observable</h3>
+                <p>
+                  Add <code>auto</code>, <code>bundled</code>, and <code>legacy</code> modes. The
+                  public Beta is a per-SSH-target <code>bundled-auto</code> choice that maps to
+                  <code>auto</code>; absent or unknown configuration maps to <code>legacy</code>,
+                  and forced <code>bundled</code> remains an engineering/support diagnostic. Record
+                  privacy-safe stage and fallback reason codes in diagnostics, without hostnames,
+                  usernames, or paths. Give every stage a budget and shared AbortSignal. Before
+                  fallback, cancel and await all download, extraction, upload, and probe work.
+                  Bundled and legacy installs use distinct identities, locks, and sentinels so late
+                  work cannot mutate the other mode. Only availability/compatibility failures may
+                  enter proven legacy behavior in <code>auto</code>; signature, hash,
+                  archive-safety, or native-signature failures fail closed without automatic mode
+                  switching.
+                </p>
+              </div>
+              <div class="phase-output">
+                <strong>Output</strong>Automatic recovery plus a support escape hatch.
+              </div>
+            </article>
+
+            <article class="phase">
+              <span class="phase-index">7</span>
+              <div>
+                <h3>Gate rollout by evidence</h3>
+                <p>
+                  Publish assets before consuming them, then progress through opt-in RC, internal
+                  canary, default-on RC, and stable. Enable only tuples with complete live evidence;
+                  keep the fallback through at least two stable cycles.
+                </p>
+              </div>
+              <div class="phase-output">
+                <strong>Output</strong>Reversible rollout with per-tuple promotion.
+              </div>
+            </article>
+          </div>
+        </section>
+
+        <section id="artifacts">
+          <div class="section-heading">
+            <div>
+              <div class="section-kicker">Artifact contract</div>
+              <h2>Build for the runtime, architecture, and libc together.</h2>
+            </div>
+            <p>
+              Bundling Node with its native modules removes ABI ambiguity. Linux libc remains a
+              separate compatibility boundary and must be detected before artifact selection.
+            </p>
+          </div>
+
+          <div class="artifact-grid">
+            <div>
+              <div class="artifact">
+                <code>linux-x64-glibc</code><span>Decision-gated candidate</span>
+              </div>
+              <div class="artifact">
+                <code>linux-arm64-glibc</code><span>Decision-gated candidate</span>
+              </div>
+              <div class="artifact">
+                <code>linux-x64-musl</code><span>Gate on runtime source</span>
+              </div>
+              <div class="artifact">
+                <code>linux-arm64-musl</code><span>Gate on real runner</span>
+              </div>
+            </div>
+            <div>
+              <div class="artifact">
+                <code>darwin-x64</code><span>Decision-gated candidate</span>
+              </div>
+              <div class="artifact">
+                <code>darwin-arm64</code><span>Decision-gated candidate</span>
+              </div>
+              <div class="artifact">
+                <code>win32-x64</code><span>Decision-gated candidate</span>
+              </div>
+              <div class="artifact"><code>win32-arm64</code><span>Gate on real runner</span></div>
+            </div>
+          </div>
+
+          <div class="callout">
+            <strong>Promotion rule</strong>
+            <p>
+              Milestone 1 starts with no declared bundled tuples and decides which candidates become
+              enabled. Once enabled, a tuple blocks release if its asset or live proof is missing.
+              Candidates awaiting a trustworthy Node runtime source or real hardware remain
+              supported only if their legacy E2E still proves current behavior. Otherwise they stay
+              ineligible for rollout rather than being silently claimed as supported.
+            </p>
+          </div>
+
+          <details open>
+            <summary>Archive contents</summary>
+            <div class="details-body">
+              <ul>
+                <li>Bundled Node executable pinned to one version.</li>
+                <li><code>relay.js</code> and crash-isolated <code>relay-watcher.js</code>.</li>
+                <li>Orca-patched <code>node-pty@1.1.0</code> built for the bundled runtime.</li>
+                <li>
+                  <code>@parcel/watcher@2.5.6</code> with exactly one native optional package.
+                </li>
+                <li>Runtime metadata, dependency licenses, and a file-level SHA-256 manifest.</li>
+                <li>
+                  No development dependencies, package manager, compiler, source maps, or PDBs
+                  unless explicitly needed for diagnostics.
+                </li>
+              </ul>
+            </div>
+          </details>
+
+          <details open>
+            <summary>Release trust and identity</summary>
+            <div class="details-body">
+              <ul>
+                <li>
+                  The packaged app embeds the signed manifest, exact build tag, and accepted public
+                  keys.
+                </li>
+                <li>
+                  Relay artifacts are immutable inputs to every desktop build, and those exact bytes
+                  are uploaded.
+                </li>
+                <li>
+                  A protected release environment signs canonical, versioned manifest bytes with
+                  narrowly scoped key access.
+                </li>
+                <li>
+                  Define key IDs, dual-sign rotation, revocation response, and exact-tag
+                  anti-rollback before implementation.
+                </li>
+                <li>
+                  Every Node/CVE/runtime/key change ships as a new desktop tag/build with a newly
+                  embedded manifest; old clients stay frozen to their embedded manifest and accepted
+                  keys.
+                </li>
+                <li>
+                  There is no mutable freshness channel or runtime-only <code>latest</code> lookup;
+                  emergency refresh and key response use the normal desktop update path.
+                </li>
+                <li>Archive identity includes every executable and native artifact.</li>
+                <li>
+                  Downloads use <code>/releases/download/&lt;exact-tag&gt;/&lt;asset&gt;</code>,
+                  never a mutable latest URL.
+                </li>
+                <li>
+                  Signature or hash failure rejects and deletes the artifact before any remote
+                  transfer.
+                </li>
+                <li>
+                  Preserve official Node signatures where possible and sign Orca-built macOS and
+                  Windows native code.
+                </li>
+                <li>
+                  Native build/signing jobs verify platform-native trust on native runners and put
+                  the attestation plus exact byte hashes in the signed manifest; clients verify that
+                  portable signed evidence rather than assuming local tooling for a different target
+                  OS.
+                </li>
+                <li>
+                  The target repeats native-policy execution probes before finalization;
+                  native-trust failure at either boundary fails closed.
+                </li>
+              </ul>
+            </div>
+          </details>
+
+          <details open>
+            <summary>Platform and compatibility selection</summary>
+            <div class="details-body">
+              <ul>
+                <li>
+                  Detect Linux libc without Node: prefer marked
+                  <code>getconf GNU_LIBC_VERSION</code>, then parse marked
+                  <code>ldd --version</code> output and musl loader paths.
+                </li>
+                <li>
+                  Treat conflicting, noisy, absent, or unparseable libc evidence as unknown;
+                  <code>auto</code> deterministically selects legacy.
+                </li>
+                <li>
+                  Manifest entries declare minimum glibc or musl, libstdc++, kernel, macOS, and
+                  Windows build requirements.
+                </li>
+                <li>
+                  Probe requirements before download and again by executing bundled Node before
+                  install finalization.
+                </li>
+                <li>
+                  Cover BusyBox, Alpine, old glibc, containers, Rosetta, startup noise, and
+                  ambiguous output in selector and live tests.
+                </li>
+                <li>
+                  Define the exact POSIX baseline: POSIX <code>sh</code>, byte-preserving
+                  stdin-to-file via <code>cat</code> or a proven equivalent, and required
+                  <code>mkdir</code
+                  >/<code>rm</code>/<code>mv</code>/<code>chmod</code>/<code>test</code>/<code
+                    >nohup</code
+                  >
+                  semantics.
+                </li>
+                <li>
+                  Define the exact Windows OpenSSH PowerShell/.NET versions and binary
+                  file/rename/permission/process primitives; missing primitives are an explicit
+                  compatibility result.
+                </li>
+                <li>
+                  The no-tar path needs no Node, Python, or archive program: Orca frames manifest
+                  files locally and streams each file over SSH into exclusive staging.
+                </li>
+              </ul>
+            </div>
+          </details>
+        </section>
+
+        <section id="fallback">
+          <div class="section-heading">
+            <div>
+              <div class="section-kicker">Compatibility</div>
+              <h2>Fallback is part of the design, not an afterthought.</h2>
+            </div>
+            <p>
+              Availability and compatibility failures may use a separately proven legacy path.
+              Signature, hash, archive-safety, extracted-tree, and native-signature failures fail
+              closed in <code>auto</code>; they never trigger an automatic mode switch.
+            </p>
+          </div>
+
+          <div class="table-wrap" role="region" aria-label="Fallback decisions" tabindex="0">
+            <table>
+              <caption class="visually-hidden">
+                Relay runtime fallback decisions and expected user impact
+              </caption>
+              <thead>
+                <tr>
+                  <th scope="col">Condition</th>
+                  <th scope="col">Action</th>
+                  <th scope="col">User impact</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>
+                    Previously validated runtime with matching structured sentinel and warm-path
+                    structural checks
+                  </td>
+                  <td>
+                    Trust initial-install proof under the immutable-directory assumption and launch
+                    without a full-tree rehash
+                  </td>
+                  <td>No download, transfer, or npm work</td>
+                </tr>
+                <tr>
+                  <td>Verified local cache hit</td>
+                  <td>Upload and validate</td>
+                  <td>Remote may remain fully offline</td>
+                </tr>
+                <tr>
+                  <td>Detected local or remote cache corruption</td>
+                  <td>
+                    Quarantine it and reinstall only from freshly verified bundled bytes; if
+                    recovery cannot complete, fail closed without automatic legacy
+                  </td>
+                  <td>No corrupted cache is launched or hidden by fallback</td>
+                </tr>
+                <tr>
+                  <td>GitHub timeout, 404, 429, or 5xx</td>
+                  <td>Use legacy path in <code>auto</code> mode</td>
+                  <td>Existing behavior remains available</td>
+                </tr>
+                <tr>
+                  <td>
+                    Unsupported tuple or pre-execution compatibility probe proves the runtime cannot
+                    execute
+                  </td>
+                  <td>Use legacy path and record reason</td>
+                  <td>Current behavior is retained only where the legacy E2E passes</td>
+                </tr>
+                <tr>
+                  <td>
+                    Signature, hash, archive-safety, extracted/transferred-tree, bundled-Node
+                    integrity, or native-signature failure
+                  </td>
+                  <td>
+                    Fail closed, delete or quarantine rejected bytes, and do not start automatic
+                    legacy
+                  </td>
+                  <td>
+                    Security failure is explicit and requires a trusted update or operator-selected
+                    recovery
+                  </td>
+                </tr>
+                <tr>
+                  <td>Forced <code>bundled</code> mode fails</td>
+                  <td>Fail with the exact stage and recovery guidance</td>
+                  <td>No hidden change of requested mode</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <details open>
+            <summary>Fallback state machine</summary>
+            <div class="details-body">
+              <ol>
+                <li>Resolve the tuple and expected content identity from the embedded manifest.</li>
+                <li>
+                  Run bundled stages under one parent AbortController with separate download,
+                  extraction, transfer, and probe budgets.
+                </li>
+                <li>
+                  On an eligible failure, abort the stage, close child processes/channels, and await
+                  every task and cleanup promise.
+                </li>
+                <li>
+                  Confirm no bundled lock or partial writer remains, then start legacy deployment
+                  under a mode-qualified identity and lock.
+                </li>
+                <li>
+                  Ignore late callbacks by generation; they may report diagnostics but cannot write
+                  sentinels, launch, or mutate either install.
+                </li>
+              </ol>
+              <p>
+                Integrity failures, including detected cache mutation, stop before this transition
+                and cannot automatically select legacy. Hostile control of the authenticated remote
+                account is outside the integrity threat model; the remote proof establishes initial
+                transfer/finalization correctness. Warm launches assume Orca's completed directory
+                remains immutable; the sentinel is not ongoing proof against later filesystem
+                mutation. Detected warm-cache mutation fails closed. This does not protect against a
+                remote user who can replace both runtime and sentinel.
+              </p>
+            </div>
+          </details>
+
+          <details open>
+            <summary>Remote verification trust boundary and order</summary>
+            <div class="details-body">
+              <ol>
+                <li>
+                  Verify the embedded signature, tuple, limits, archive SHA-256, and extracted tree
+                  locally.
+                </li>
+                <li>
+                  Transfer only those verified files through authenticated SSH into an exclusive
+                  staging directory.
+                </li>
+                <li>
+                  Do not depend on remote <code>sha256sum</code> or <code>shasum</code>; execute the
+                  transferred bundled Node to hash every staged file and compare the complete
+                  manifest.
+                </li>
+                <li>
+                  Only after full-tree hashing, native probes, and PTY/watcher smoke may Orca write
+                  the structured completion sentinel and publish the install.
+                </li>
+              </ol>
+              <p>
+                Local verification plus authenticated transfer and exclusive staging is the
+                pre-execution integrity boundary. Executing bundled Node is intentionally the first
+                staged binary execution and verifies transfer correctness before completion. A
+                hostile authenticated remote account remains outside scope because it can replace
+                both the runtime and its proof.
+              </p>
+            </div>
+          </details>
+        </section>
+
+        <section id="validation">
+          <div class="section-heading">
+            <div>
+              <div class="section-kicker">Validation</div>
+              <h2>Prove production behavior, failure behavior, and rollback behavior.</h2>
+            </div>
+            <p>
+              Mock tests protect decision logic. Release promotion additionally requires the real
+              archive, real native binaries, a real SSH daemon, and the exact packaged desktop path.
+            </p>
+          </div>
+
+          <div class="table-wrap" role="region" aria-label="Validation matrix" tabindex="0">
+            <table>
+              <caption class="visually-hidden">
+                Required relay validation surfaces, cases, and pass oracles
+              </caption>
+              <thead>
+                <tr>
+                  <th scope="col">Surface</th>
+                  <th scope="col">Required cases</th>
+                  <th scope="col">Oracle</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Build</td>
+                  <td>
+                    Every declared tuple; minimum OS baseline; exact Node and native dependency
+                    versions; SBOM and provenance
+                  </td>
+                  <td>
+                    Archive runs on target, contents match manifest, native signatures pass, no
+                    unexpected platform package remains
+                  </td>
+                </tr>
+                <tr>
+                  <td>Platform selection</td>
+                  <td>
+                    glibc/musl and version probes, BusyBox, Alpine, containers, old glibc, Rosetta,
+                    noisy and conflicting output
+                  </td>
+                  <td>
+                    One compatible tuple is selected, or unknown deterministically selects tested
+                    legacy behavior
+                  </td>
+                </tr>
+                <tr>
+                  <td>Remote environment</td>
+                  <td>
+                    No Node/npm/Python/compiler/tar/hash tools; blocked egress; missing required
+                    primitives; BusyBox; NVM below shell guard; read-only/noexec home; quota and
+                    inode exhaustion
+                  </td>
+                  <td>
+                    Declared POSIX or Windows primitive baselines connect without undeclared tools;
+                    missing primitives and filesystem constraints classify compatibly and never
+                    improvise an untrusted command path
+                  </td>
+                </tr>
+                <tr>
+                  <td>Download and cache</td>
+                  <td>
+                    Redirect and header scoping, proxy, deleted asset, cold/warm/offline cache,
+                    multiple app processes, eviction, permissions, cancellation, timeout,
+                    404/429/5xx, disk full, corruption
+                  </td>
+                  <td>
+                    One verified cache entry or clean availability fallback; corruption is
+                    quarantined and recovered only from freshly verified bytes or fails closed
+                  </td>
+                </tr>
+                <tr>
+                  <td>Archive security</td>
+                  <td>
+                    Bad signature/hash/native signature, wrong tuple, traversal path, absolute path,
+                    symlink escape, oversized expansion
+                  </td>
+                  <td>
+                    Manifest/archive failures are rejected before transfer; native trust is verified
+                    on target-native build/read-back and again by target-policy probes before
+                    finalization; every integrity failure fails closed
+                  </td>
+                </tr>
+                <tr>
+                  <td>SSH deployment</td>
+                  <td>
+                    Full-size runtime over SFTP and POSIX/Windows system SSH; tar/no-tar; no remote
+                    hash tools; corrupted upload; bundled-Node corruption/failure; bounded memory
+                    and concurrency; <code>MaxSessions=1</code>; interrupted upload; stale lock
+                  </td>
+                  <td>
+                    Bundled Node hashes the full staged tree before sentinel write;
+                    corruption/failure leaves no complete install, memory stays in budget, and the
+                    ordering is asserted
+                  </td>
+                </tr>
+                <tr>
+                  <td>PTY and watcher</td>
+                  <td>
+                    Spawn, input, resize, exit, shell environment, create/rename/modify/delete
+                    events, watcher crash
+                  </td>
+                  <td>
+                    Exact PTY bytes and watcher events; relay PID and existing PTY survive watcher
+                    replacement
+                  </td>
+                </tr>
+                <tr>
+                  <td>Relay API conformance</td>
+                  <td>
+                    PTY, Git, filesystem and streaming RPCs, preflight, agent hooks, port scan,
+                    aborts, and protocol handshake
+                  </td>
+                  <td>
+                    The packaged runtime matches existing relay request, response, streaming,
+                    cancellation, and error contracts
+                  </td>
+                </tr>
+                <tr>
+                  <td>Lifecycle and fallback</td>
+                  <td>
+                    Reconnect, PTY reattach, restart, concurrent clients, upgrade, downgrade,
+                    interrupted upgrade, GC, timeout-to-legacy, forced rollback
+                  </td>
+                  <td>
+                    No lost session, protocol drift, late mutation, background process, cross-mode
+                    lock/sentinel use, or deletion of a live version
+                  </td>
+                </tr>
+                <tr>
+                  <td>Performance</td>
+                  <td>Cold and warm paths over 1/10/100 Mbps links and 50–200 ms latency</td>
+                  <td>
+                    Warm path has no meaningful regression; cold p95 does not exceed agreed legacy
+                    baseline
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="callout">
+            <strong>Risk-based matrix, not an implied full Cartesian</strong>
+            <p>
+              Evidence has two layers. Every enabled remote tuple must pass both built-in SFTP and
+              system SSH, including Windows remote/system SSH and <code>MaxSessions=1</code>. Every
+              supported client OS/architecture must separately prove resolver/cache plus both
+              transfer families against representative POSIX and Windows remotes. Each required cell
+              has an evidence ID; untested client × remote combinations are not claimed.
+            </p>
+          </div>
+
+          <div class="callout">
+            <strong>GitHub Actions runner policy</strong>
+            <p>
+              GitHub Actions is the primary orchestration and evidence surface for PR, nightly,
+              release, and promotion gates. A GitHub-hosted runner may fill a required cell only
+              when it provides real hardware or native virtualization for the declared
+              OS/architecture and exercises a real OpenSSH daemon, the full-size packaged runtime,
+              and the production transport named by that cell. Same-host and native-container
+              targets qualify only when they preserve the declared remote, SSH, primitive, egress,
+              and isolation conditions; mocks, reduced fixtures, cross-builds, and QEMU-only runs do
+              not qualify as live evidence.
+            </p>
+            <p>
+              Cross-family client-to-remote cells use workflow-provisioned ephemeral native SSH
+              targets or an approved self-hosted target pool; the remote need not itself be
+              GitHub-hosted. Each job records the runner label and image, native architecture,
+              remote image or snapshot identity, teardown result, commands, metrics, and artifacts.
+              A tuple stays on proven legacy behavior when no qualifying native runner or reachable
+              representative remote is available. Numeric regression comparisons use a repeatable
+              runner class or a dedicated runner when hosted-runner variance would make the agreed
+              threshold inconclusive.
+            </p>
+          </div>
+
+          <h3 class="subsection-heading">Release gates</h3>
+          <div class="gate-grid">
+            <article class="gate">
+              <h3>PR gate</h3>
+              <small>Every change</small>
+              <ul class="gate-list">
+                <li>
+                  Selector, identity, manifest, cache, extraction, fallback, and install fault
+                  tests.
+                </li>
+                <li>Existing SSH relay, PTY, watcher, reconnect, and release contract suites.</li>
+                <li>At least Linux x64 glibc live artifact E2E.</li>
+              </ul>
+            </article>
+            <article class="gate">
+              <h3>Nightly gate</h3>
+              <small>Broad compatibility</small>
+              <ul class="gate-list">
+                <li>All available real remote tuples and both SSH transport families.</li>
+                <li>Network fault matrix and constrained bandwidth/latency runs.</li>
+                <li>Upgrade, downgrade, concurrent install, and remote cache GC soak.</li>
+              </ul>
+            </article>
+            <article class="gate">
+              <h3>Release gate</h3>
+              <small>Blocks publication</small>
+              <ul class="gate-list">
+                <li>
+                  Every enabled archive built, signed, uploaded, downloaded back, and executed.
+                </li>
+                <li>
+                  Target-native build jobs and native signing jobs feed one fail-closed
+                  aggregate/manifest-signing job.
+                </li>
+                <li>
+                  Signed macOS and Windows bytes return before final hashes and manifest signature
+                  are produced.
+                </li>
+                <li>
+                  Every desktop embeds the same signed manifest whose exact bytes and archives are
+                  uploaded.
+                </li>
+                <li>Manifest covers the exact app tag and contains no missing or extra tuple.</li>
+                <li>
+                  Platform-native signatures, SBOM, provenance, and signing-key policy checks pass.
+                </li>
+                <li>Packaged desktop completes the no-Node, no-egress SSH E2E.</li>
+                <li>
+                  Timeout, retry exhaustion, manual-approval failure, signing failure, and
+                  recovered-draft rehearsals all block unsafe publication.
+                </li>
+              </ul>
+            </article>
+            <article class="gate">
+              <h3>Promotion gate</h3>
+              <small>Blocks default-on</small>
+              <ul class="gate-list">
+                <li>Three consecutive RC builds pass without unexplained fallback.</li>
+                <li>No new PTY, watcher, reconnect, or bootstrap regression in canary evidence.</li>
+                <li>
+                  Forced rollback and the legacy E2E pass for every tuple where fallback is claimed.
+                </li>
+              </ul>
+            </article>
+          </div>
+        </section>
+
+        <section id="risks">
+          <div class="section-heading">
+            <div>
+              <div class="section-kicker">Risk register</div>
+              <h2>Resolve these before default-on.</h2>
+            </div>
+            <p>
+              The largest risks are compatibility boundaries and release coupling, not the GitHub
+              download itself.
+            </p>
+          </div>
+
+          <div class="risk-grid">
+            <article class="risk">
+              <strong>Linux baseline mismatch</strong>
+              <p>
+                Build against the oldest supported glibc and libstdc++ baseline; run on that exact
+                baseline before promotion.
+              </p>
+            </article>
+            <article class="risk">
+              <strong>Untrusted musl runtime source</strong>
+              <p>
+                Do not invent a binary source. Document provenance and updates, or retain legacy
+                mode for musl until Orca can build it.
+              </p>
+            </article>
+            <article class="risk">
+              <strong>Native patch drift</strong>
+              <p>
+                Build from Orca’s lockfile and patch set; assert the patched diagnostic exports and
+                real PTY behavior in every artifact.
+              </p>
+            </article>
+            <article class="risk">
+              <strong>Missing release assets</strong>
+              <p>
+                Keep releases draft until all relay assets pass read-back verification; publication
+                depends on the completeness job.
+              </p>
+            </article>
+            <article class="risk">
+              <strong>Cold-transfer latency</strong>
+              <p>
+                Cache by content, prefetch last-known target tuples after updates, preserve progress
+                stages, and keep a bounded fallback.
+              </p>
+            </article>
+            <article class="risk">
+              <strong>Home directory cannot execute binaries</strong>
+              <p>
+                Probe bundled Node before finalizing. Auto mode falls back to the remote runtime
+                path with a precise diagnostic reason.
+              </p>
+            </article>
+            <article class="risk">
+              <strong>Release asset tampering</strong>
+              <p>
+                Verify a signed canonical manifest and archive SHA-256 before extraction; never
+                execute or transfer rejected bytes.
+              </p>
+            </article>
+            <article class="risk">
+              <strong>Fallback masks defects</strong>
+              <p>
+                Record stage-specific reason codes and require zero unexplained fallback across the
+                RC promotion window.
+              </p>
+            </article>
+            <article class="risk">
+              <strong>Bundled Node lifecycle</strong>
+              <p>
+                Own a supported-version/EOL policy, SBOM and provenance, update cadence, and CVE
+                response SLA. Every refresh ships a new desktop build and embedded manifest;
+                installed old clients remain pinned.
+              </p>
+            </article>
+            <article class="risk">
+              <strong>Signing-key lifecycle</strong>
+              <p>
+                Specify canonical bytes, protected-environment access, key IDs, dual-key rotation,
+                revocation response through a desktop update, and exact-tag anti-rollback. Do not
+                add mutable freshness lookup.
+              </p>
+            </article>
+            <article class="risk">
+              <strong>OS-native trust controls</strong>
+              <p>
+                Preserve official Node signatures where possible, sign Orca-built native code, and
+                test macOS Gatekeeper plus Windows Authenticode, WDAC, and antivirus behavior.
+              </p>
+            </article>
+            <article class="risk">
+              <strong>Large-runtime transfer</strong>
+              <p>
+                Use bounded streaming and cancellation per transport; prohibit whole-tree
+                JSON/base64 buffering and require a no-tar path before default-on.
+              </p>
+            </article>
+            <article class="risk">
+              <strong>Fallback races</strong>
+              <p>
+                Abort and join every bundled stage before legacy starts; separate mode identities
+                and reject callbacks from stale generations.
+              </p>
+            </article>
+            <article class="risk">
+              <strong>Ambiguous host detection</strong>
+              <p>
+                Use marked no-Node probes and conservative version checks. Unknown, conflicting, or
+                unsupported results choose proven legacy behavior.
+              </p>
+            </article>
+          </div>
+        </section>
+
+        <section id="rollout">
+          <div class="section-heading">
+            <div>
+              <div class="section-kicker">Rollout</div>
+              <h2>Publish, observe, enable, then simplify.</h2>
+            </div>
+            <p>
+              Artifact availability lands before production consumption. Every later stage remains
+              reversible from the same app build.
+            </p>
+          </div>
+
+          <div class="rollout">
+            <article class="rollout-step">
+              <h3>Asset-only</h3>
+              <p>Build and publish runtimes, run read-back E2E, leave production on legacy.</p>
+            </article>
+            <article class="rollout-step">
+              <h3>Per-target Beta</h3>
+              <p>
+                Ship a Beta-tagged option on SSH target add/edit surfaces; every existing and new
+                target remains on legacy unless explicitly opted in.
+              </p>
+            </article>
+            <article class="rollout-step">
+              <h3>Stable Beta soak</h3>
+              <p>
+                Gather privacy-safe real-host evidence while the packaged and persisted default
+                remains legacy.
+              </p>
+            </article>
+            <article class="rollout-step">
+              <h3>Future default review</h3>
+              <p>
+                Change a tuple to default-on only through a separate reviewed decision after CI,
+                native-runner, Beta-usage, support, and rollback gates pass.
+              </p>
+            </article>
+          </div>
+
+          <div class="callout">
+            <strong>Per-target Beta contract</strong>
+            <p>
+              Store an extensible runtime mode per SSH target rather than a global boolean. Missing,
+              malformed, imported, existing, and newly created target configuration defaults to
+              <code>legacy</code>. The Beta option selects bundled-preferred
+              <code>auto</code> behavior only for that target and only on its next connection or an
+              explicit reconnect; it never hot-swaps a live PTY, watcher, or relay generation.
+            </p>
+            <p>
+              Classified availability and compatibility failures may enter proven legacy
+              automatically. Integrity and security failures still fail closed, but the local error
+              surface provides an explicit action to disable Beta for that target and reconnect
+              through legacy. Shipping this option does not authorize changing the default or
+              removing legacy behavior.
+            </p>
+          </div>
+        </section>
+
+        <section id="done">
+          <div class="section-heading">
+            <div>
+              <div class="section-kicker">Definition of done</div>
+              <h2>Stable is blocked until every statement is evidence-backed.</h2>
+            </div>
+            <p>
+              These are release criteria, not aspirations. Missing bundled evidence keeps the
+              affected tuple on legacy only when its legacy E2E passes; otherwise Orca must not
+              claim that tuple as supported.
+            </p>
+          </div>
+
+          <div class="comparison">
+            <article>
+              <h3>Functional and compatibility</h3>
+              <ul class="definition-list">
+                <li>Every enabled tuple passes its real-environment artifact E2E.</li>
+                <li>
+                  A host with no Node, npm, compiler, or egress gets working PTYs and file watching.
+                </li>
+                <li>The exact #8450 environment passes bundled and forced-legacy modes.</li>
+                <li>
+                  Reconnect, reattach, upgrade, downgrade, and rollback preserve live sessions.
+                </li>
+                <li>All relay RPC families pass conformance through the packaged runtime.</li>
+                <li>Existing relay, PTY, watcher, Git, and release suites remain green.</li>
+              </ul>
+            </article>
+            <article>
+              <h3>Release and operations</h3>
+              <ul class="definition-list">
+                <li>
+                  Every asset is signed, hashed, uploaded, read back, and executed before
+                  publication.
+                </li>
+                <li>
+                  Every desktop embeds the exact signed manifest used to identify offline remote
+                  caches.
+                </li>
+                <li>
+                  Transfer memory, cancellation, no-tar, permissions, and structured-sentinel gates
+                  pass.
+                </li>
+                <li>No primary-path remote command invokes npm or opens an HTTP connection.</li>
+                <li>GitHub failure falls back without corrupting local or remote cache state.</li>
+                <li>
+                  Every integrity/security failure fails closed in auto and never starts legacy
+                  automatically.
+                </li>
+                <li>
+                  Node lifecycle, SBOM, provenance, key rotation, and native signing policies are
+                  operational.
+                </li>
+                <li>
+                  Each required two-layer matrix cell links an evidence ID; no untested Cartesian
+                  combinations are claimed.
+                </li>
+                <li>
+                  Warm connections show no meaningful latency regression against the recorded
+                  baseline.
+                </li>
+                <li>Three consecutive RCs pass with zero unexplained fallback reasons.</li>
+              </ul>
+            </article>
+          </div>
+
+          <div class="callout">
+            <strong>Stop condition</strong>
+            <p>
+              If a required live runner, trusted runtime source, compatibility baseline, or rollback
+              proof is unavailable, do not declare the tuple bundled-by-default. Continue serving it
+              through the tested legacy path.
+            </p>
+          </div>
+        </section>
+
+        <section id="references">
+          <div class="section-heading">
+            <div>
+              <div class="section-kicker">Repository anchors</div>
+              <h2>Primary implementation touchpoints.</h2>
+            </div>
+            <p>Links are relative so this document remains useful from a local checkout.</p>
+          </div>
+          <ul class="source-list">
+            <li><a href="../../../config/scripts/build-relay.mjs">Relay build</a></li>
+            <li><a href="../../../src/main/ssh/ssh-relay-deploy.ts">SSH deploy</a></li>
+            <li>
+              <a href="../../../src/main/ssh/ssh-relay-versioned-install.ts">Versioned install</a>
+            </li>
+            <li>
+              <a href="../../../src/main/ssh/ssh-remote-platform-detection.ts"
+                >Platform detection</a
+              >
+            </li>
+            <li>
+              <a href="../../../config/scripts/verify-release-required-assets.mjs"
+                >Release asset gate</a
+              >
+            </li>
+            <li><a href="../../../.github/workflows/release-cut.yml">Release workflow</a></li>
+            <li>
+              <a href="../../../tests/e2e/helpers/docker-ssh-relay-target.ts">Live SSH harness</a>
+            </li>
+          </ul>
+        </section>
+
+        <footer>
+          This plan intentionally keeps the current installer available during rollout. “No
+          regressions” is enforced through declared support, executable evidence, automatic
+          fallback, and a tested rollback—not through an untestable claim about every SSH host.
+        </footer>
+      </main>
+    </div>
+  </body>
+</html>
