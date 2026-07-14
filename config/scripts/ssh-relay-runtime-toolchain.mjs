@@ -173,6 +173,14 @@ export function sshRelayRuntimeRunnerIdentity({ env = process.env } = {}) {
   return identity
 }
 
+export function sshRelayRuntimeStripVersionProbe(platform) {
+  // Why: GNU strip is silent/versionless without --version, while Apple strip delegates its
+  // version identity to the selected Xcode toolchain.
+  return platform === 'darwin'
+    ? { versionCommand: 'xcodebuild', versionArgs: ['-version'] }
+    : { args: ['--version'] }
+}
+
 export function assertSshRelayRuntimeToolchain(toolchain, tuple) {
   const common = ['buildNode', 'bundledNode', 'compiler', 'buildSystem', 'python', 'archive']
   const expected = tuple.startsWith('win32-')
@@ -216,7 +224,8 @@ export async function collectSshRelayRuntimeToolchain(nodePath) {
       }),
       linker: await executableRecord({
         command: 'link.exe',
-        args: [],
+        // Why: direct no-argument invocation is silent on current hosted MSVC runners.
+        args: ['/?'],
         versionPattern: /Linker Version/i
       }),
       buildSystem: await executableRecord({
@@ -241,9 +250,7 @@ export async function collectSshRelayRuntimeToolchain(nodePath) {
     archive: await executableRecord({ command: 'xz', args: ['--version'] }),
     strip: await executableRecord({
       command: 'strip',
-      args: [],
-      versionCommand: process.platform === 'darwin' ? 'xcodebuild' : undefined,
-      versionArgs: process.platform === 'darwin' ? ['-version'] : undefined,
+      ...sshRelayRuntimeStripVersionProbe(process.platform),
       xcrun: process.platform === 'darwin'
     })
   }

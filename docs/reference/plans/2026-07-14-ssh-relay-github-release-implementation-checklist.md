@@ -8,7 +8,7 @@ work; keep exact commands, runner identities, hashes, metrics, and residual gaps
 
 Date created: 2026-07-14<br>
 Last updated: 2026-07-14<br>
-Current phase: Milestone 3 / Work Package 2 SBOM/provenance closure — exact-head run [29367559831](https://github.com/stablyai/orca/actions/runs/29367559831) at ledger head `ace3d4f41` passes the builder-enforced 34/35/42-file closure, unchanged runtime content IDs, complete smoke, clean-build equality, and upload on all six native runner families under E-M3-RUNTIME-CLOSURE-CI-001; exact metadata implementation commit `26bbd7b67` adds file-to-package SPDX ownership/dependency relationships, archive-scoped document identity, exact-commit builder identity, resolved runner image/architecture, and bounded SHA-256 records for native executables and complete build-package trees, and is locally green under E-M3-METADATA-LOCAL-001; the next exact-head six-cell run must prove those records and metadata equality target-natively before the remaining SBOM/provenance/toolchain boxes are checked; oldest-baseline, native-trust, cross-family remote, and measured-baseline gates remain open; production/default behavior and every tuple state remain unchanged; no bundled-runtime path is enabled<br>
+Current phase: Milestone 3 / Work Package 2 SBOM/provenance closure — **In progress — 2026-07-14, Codex implementation owner**; exact-head run [29368482959](https://github.com/stablyai/orca/actions/runs/29368482959) proves the corrected metadata path on the completed POSIX cells but fails closed in both Windows contract-test cells before build or upload because direct no-argument `link.exe` invocation returns no selectable version line; the active correction requests bounded linker help explicitly and must pass both native Windows architectures plus clean-build metadata equality before any remaining SBOM/provenance/toolchain box is checked; the same evidence audit exposed that generated x64/arm64 Windows compatibility floors were both 20348 despite the reviewed 19045/26100 contract, so the plan now makes the single monotonic manifest floors explicit before correcting code and regenerating native identities; oldest-baseline, native-trust, cross-family remote, and measured-baseline gates remain open; production/default behavior and every tuple state remain unchanged; no bundled-runtime path is enabled<br>
 Primary design: [SSH relay GitHub Release plan](./2026-07-14-ssh-relay-github-release-plan.html)<br>
 Motivating issues: [#8450](https://github.com/stablyai/orca/issues/8450), [#1693](https://github.com/stablyai/orca/issues/1693)
 
@@ -282,7 +282,9 @@ No production implementation begins until every blocking item has an owner and d
 - [x] Define macOS 13.5 as the minimum for both x64 and arm64 candidates. (E-M1-BASELINE-001)
 - [x] Define the initial Windows candidates as Windows 10 22H2 build 19045 or Server 2022 build
       20348 for x64, and Windows 11 24H2 build 26100 for arm64, with OpenSSH for Windows 8.1p1,
-      Windows PowerShell 5.1, and .NET Framework 4.8 as minimum bootstrap primitives.
+      Windows PowerShell 5.1, and .NET Framework 4.8 as minimum bootstrap primitives. Because the
+      manifest has one monotonic `minimumBuild` per tuple, encode 19045 for x64 (which admits Server
+      2022 build 20348 and newer) and 26100 for arm64.
       (E-M1-BASELINE-001)
 - [x] Treat a Rosetta-translated shell as x64 process architecture, but keep it on legacy until an
       x64 artifact passes a live Rosetta SSH cell. A native arm64 shell selects arm64; detection
@@ -836,6 +838,8 @@ Rules:
       dependencies, spawns a real PTY, performs input/resize/exit, and observes
       create/modify/rename/delete watcher events. (E-M3-REPRODUCIBILITY-CI-001)
 - [ ] Every build records compiler/toolchain/container image digests and runner architecture.
+      **In progress — 2026-07-14, Codex implementation owner:** run 29368482959 failed closed on
+      both Windows architectures at the linker-version probe; no Windows build or upload followed.
 
 ## Milestone 4 — Make Relay Artifacts Prerequisites of Desktop Builds
 
@@ -6246,11 +6250,12 @@ The project is not complete until every applicable item below is checked with ev
 
 ## Next Required Action
 
-Push exact metadata implementation commit `26bbd7b67` plus its evidence-ledger head and rerun all six
-target-native cells. Require exact SPDX ownership, archive-scoped document identity, commit-pinned
-builder identity, resolved runner identity, complete bounded tool records with SHA-256, clean-build
-metadata equality, smoke, and upload before checking the remaining Milestone 3 metadata/toolchain
-claims. Then proceed to oldest-baseline and native-trust proof.
+Finish the bounded Windows linker-version correction and the reviewed 19045/26100 Windows
+compatibility-floor correction, run the focused local gates, and rerun all six target-native cells.
+Require exact SPDX ownership, archive-scoped document identity, commit-pinned builder identity,
+resolved runner identity, complete bounded tool records with SHA-256, clean-build metadata equality,
+smoke, upload, and regenerated Windows content identities before checking the remaining Milestone 3
+metadata/toolchain claims. Then proceed to oldest-baseline and native-trust proof.
 
 Cross-family Layer B targets, the protected manifest-signing environment, oldest-baseline/native-
 trust cells, and the paired legacy performance baseline remain release/default-path blockers. No

@@ -5,7 +5,8 @@ import {
   collectSshRelayRuntimeToolchain,
   selectSshRelayRuntimeToolVersion,
   sshRelayRuntimeBuilderIdentity,
-  sshRelayRuntimeRunnerIdentity
+  sshRelayRuntimeRunnerIdentity,
+  sshRelayRuntimeStripVersionProbe
 } from './ssh-relay-runtime-toolchain.mjs'
 
 const commit = 'a'.repeat(40)
@@ -24,6 +25,20 @@ describe('SSH relay runtime build provenance', () => {
         /Compiler Version/i
       )
     ).toBe('Microsoft (R) C/C++ Optimizing Compiler Version 19.44.35228 for ARM64')
+  })
+
+  it('selects the Windows linker version from bounded help output', () => {
+    expect(
+      selectSshRelayRuntimeToolVersion(
+        {
+          stdout: [
+            'Microsoft (R) Incremental Linker Version 14.44.35228.0',
+            'usage: LINK [options] [files]'
+          ].join('\r\n')
+        },
+        /Linker Version/i
+      )
+    ).toBe('Microsoft (R) Incremental Linker Version 14.44.35228.0')
   })
 
   it('pins GitHub builder identity to the exact source commit', () => {
@@ -81,6 +96,14 @@ describe('SSH relay runtime build provenance', () => {
         }
       })
     ).toThrow(/runner identity/i)
+  })
+
+  it('requests an actual GNU strip version and pins Apple strip to Xcode', () => {
+    expect(sshRelayRuntimeStripVersionProbe('linux')).toEqual({ args: ['--version'] })
+    expect(sshRelayRuntimeStripVersionProbe('darwin')).toEqual({
+      versionCommand: 'xcodebuild',
+      versionArgs: ['-version']
+    })
   })
 
   it('records bounded native tool versions and SHA-256 executable or code digests', async () => {

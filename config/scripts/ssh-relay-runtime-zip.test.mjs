@@ -34,7 +34,7 @@ async function fixture() {
     architecture: 'x64',
     compatibility: {
       kind: 'win32',
-      minimumBuild: 20348,
+      minimumBuild: 19045,
       minimumOpenSshVersion: '8.1p1',
       minimumPowerShellVersion: '5.1',
       minimumDotNetFrameworkRelease: 528040

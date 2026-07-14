@@ -1124,8 +1124,10 @@
               candidates require kernel 4.18, glibc 2.28, and libstdc++ 6.0.25 with
               <code>GLIBCXX_3.4.25</code>; macOS candidates require 13.5. Initial Windows x64
               candidates require Windows 10 22H2 build 19045 or Server 2022 build 20348, and arm64
-              requires Windows 11 24H2 build 26100. Windows bootstrap additionally requires OpenSSH
-              for Windows 8.1p1, Windows PowerShell 5.1, and .NET Framework 4.8.
+              requires Windows 11 24H2 build 26100. The immutable manifest's single monotonic
+              <code>minimumBuild</code> is therefore 19045 for x64 (which also admits Server 2022
+              build 20348 and newer builds) and 26100 for arm64. Windows bootstrap additionally
+              requires OpenSSH for Windows 8.1p1, Windows PowerShell 5.1, and .NET Framework 4.8.
             </p>
             <p>
               Node's detached checksum signature is verified against a build-input-pinned official

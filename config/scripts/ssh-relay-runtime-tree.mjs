@@ -44,14 +44,14 @@ const COMPATIBILITY = Object.freeze({
   'darwin-arm64': { kind: 'darwin', minimumVersion: '13.5' },
   'win32-x64': {
     kind: 'win32',
-    minimumBuild: 20348,
+    minimumBuild: 19045,
     minimumOpenSshVersion: '8.1p1',
     minimumPowerShellVersion: '5.1',
     minimumDotNetFrameworkRelease: 528040
   },
   'win32-arm64': {
     kind: 'win32',
-    minimumBuild: 20348,
+    minimumBuild: 26100,
     minimumOpenSshVersion: '8.1p1',
     minimumPowerShellVersion: '5.1',
     minimumDotNetFrameworkRelease: 528040

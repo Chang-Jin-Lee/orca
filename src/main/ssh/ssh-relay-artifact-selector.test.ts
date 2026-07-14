@@ -16,16 +16,22 @@ const compatibleLinuxHost = {
   glibcxxVersion: '3.4.33'
 }
 
-function windowsManifest() {
+function windowsManifest({
+  architecture = 'x64',
+  minimumBuild = architecture === 'x64' ? 19045 : 26100
+}: {
+  architecture?: 'x64' | 'arm64'
+  minimumBuild?: number
+} = {}) {
   const manifest = createSshRelayArtifactTestManifest()
   const tuple = structuredClone(manifest.tuples[0]) as unknown as Record<string, unknown>
   Object.assign(tuple, {
-    tupleId: 'win32-x64',
+    tupleId: `win32-${architecture}`,
     os: 'win32',
-    architecture: 'x64',
+    architecture,
     compatibility: {
       kind: 'windows',
-      minimumBuild: 20348,
+      minimumBuild,
       minimumOpenSshVersion: '8.1p1',
       minimumPowerShellVersion: '5.1',
       minimumDotNetFrameworkRelease: 528040
@@ -39,7 +45,7 @@ const compatibleWindowsHost = {
   os: 'win32' as const,
   architecture: 'x64' as const,
   processTranslated: false,
-  build: 20348,
+  build: 19045,
   openSshVersion: '8.1p1',
   powerShellVersion: '5.1',
   dotNetFrameworkRelease: 528040
@@ -130,7 +136,7 @@ describe('SSH relay artifact selector', () => {
   it('checks Windows bootstrap versions before selection', () => {
     const manifest = windowsManifest()
     expect(selectSshRelayArtifact(manifest, compatibleWindowsHost).kind).toBe('selected')
-    expect(selectSshRelayArtifact(manifest, { ...compatibleWindowsHost, build: 20347 })).toEqual({
+    expect(selectSshRelayArtifact(manifest, { ...compatibleWindowsHost, build: 19044 })).toEqual({
       kind: 'legacy',
       reason: 'os-too-old'
     })
@@ -153,6 +159,25 @@ describe('SSH relay artifact selector', () => {
       })
     ).toEqual({ kind: 'legacy', reason: 'dotnet-too-old' })
   })
+
+  it.each([
+    ['x64', 19044, 19045],
+    ['arm64', 26099, 26100]
+  ] as const)(
+    'enforces the reviewed Windows %s build boundary',
+    (architecture, rejectedBuild, acceptedBuild) => {
+      const manifest = windowsManifest({ architecture })
+      const host = { ...compatibleWindowsHost, architecture }
+
+      expect(selectSshRelayArtifact(manifest, { ...host, build: rejectedBuild })).toEqual({
+        kind: 'legacy',
+        reason: 'os-too-old'
+      })
+      expect(selectSshRelayArtifact(manifest, { ...host, build: acceptedBuild }).kind).toBe(
+        'selected'
+      )
+    }
+  )
 
   it('selects legacy when Windows bootstrap evidence is absent or malformed', () => {
     const manifest = windowsManifest()

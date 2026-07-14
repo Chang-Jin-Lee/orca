@@ -48,7 +48,10 @@ async function createWindowsNodePtyBuild(root) {
 }
 
 describe('SSH relay Windows runtime tree', () => {
-  it('carries the production ConPTY runtime closure in the hashed identity', async () => {
+  it.each([
+    ['win32-x64', 19045],
+    ['win32-arm64', 26100]
+  ])('carries the %s ConPTY closure and reviewed build floor', async (tuple, minimumBuild) => {
     const directory = await mkdtemp(join(tmpdir(), 'orca-runtime-windows-tree-'))
     temporaryDirectories.push(directory)
     const nodeRoot = join(directory, 'node')
@@ -72,13 +75,15 @@ describe('SSH relay Windows runtime tree', () => {
     ])
 
     const identity = await assembleSshRelayRuntimeTree({
-      tuple: 'win32-x64',
+      tuple,
       nodeRoot,
       nodePtyBuildDirectory,
       relayDirectory,
       runtimeRoot,
       nodeVersion: '24.18.0'
     })
+
+    expect(identity.compatibility.minimumBuild).toBe(minimumBuild)
 
     for (const name of ['conpty.dll', 'OpenConsole.exe']) {
       const path = `node_modules/node-pty/build/Release/conpty/${name}`

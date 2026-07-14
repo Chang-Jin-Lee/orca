@@ -18,9 +18,10 @@ Approved design decisions are listed separately and are not presented as impleme
 - Latest native proof: [GitHub Actions run 29367559831](https://github.com/stablyai/orca/actions/runs/29367559831)
   passed clean-build equality and runtime smoke on Linux x64/arm64, macOS x64/arm64, and Windows
   x64/arm64.
-- Active work package: exact runtime closure is green on all six native runner families; the SPDX,
-  builder/runner identity, and hashed-toolchain correction is locally green and awaiting the same
-  native proof. Archive safety, oldest-baseline execution, and native trust remain open.
+- Active work package: exact runtime closure is green on all six native runner families. The first
+  metadata run failed closed before Windows build/upload because its linker-version probe was
+  silent; the bounded probe correction and reviewed Windows 19045/26100 build-floor correction are
+  in progress. Archive safety, oldest-baseline execution, and native trust remain open.
 
 ## Locked rollout decisions
 
