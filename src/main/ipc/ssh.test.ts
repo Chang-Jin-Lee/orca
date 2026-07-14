@@ -1332,7 +1332,11 @@ describe('SSH IPC handlers', () => {
 
     expect(mockConnectionManager.connect).toHaveBeenCalledWith(target)
     expect(mockForceStopRelayForTarget).toHaveBeenCalledWith(conn, 'ssh-1')
-    expect(mockStore.markSshRemotePtyLease).toHaveBeenCalledWith('ssh-1', 'pty-1', 'expired')
+    expect(mockStore.markSshRemotePtyLease).toHaveBeenCalledWith(
+      'ssh-1',
+      'ssh:ssh-1@@pty-1',
+      'expired'
+    )
     expect(mockStore.markSshRemotePtyLease).not.toHaveBeenCalledWith(
       'ssh-1',
       'pty-expired',
@@ -1341,7 +1345,7 @@ describe('SSH IPC handlers', () => {
     expect(mockConnectionManager.disconnect).toHaveBeenCalledWith('ssh-1')
   })
 
-  it('ssh:resetRelay clears scoped live PTYs while expiring raw leases', async () => {
+  it('ssh:resetRelay clears scoped live PTYs and exact generation-qualified leases', async () => {
     const target: SshTarget = {
       id: 'ssh-1',
       label: 'Server',
@@ -1354,17 +1358,21 @@ describe('SSH IPC handlers', () => {
     mockConnectionManager.connect.mockResolvedValue(conn)
     mockConnectionManager.getConnection.mockReturnValue(undefined)
     mockStore.getSshRemotePtyLeases.mockReturnValue([
-      { targetId: 'ssh-1', ptyId: 'pty-lease', state: 'detached' }
+      { targetId: 'ssh-1', ptyId: 'pty-lease', relayInstanceId: 'boot-a', state: 'detached' }
     ])
     vi.mocked(getPtyIdsForConnection).mockReturnValue(['ssh:ssh-1@@pty-live'])
 
     await handlers.get('ssh:resetRelay')!(null, { targetId: 'ssh-1' })
 
-    expect(mockStore.markSshRemotePtyLease).toHaveBeenCalledWith('ssh-1', 'pty-lease', 'expired')
+    expect(mockStore.markSshRemotePtyLease).toHaveBeenCalledWith(
+      'ssh-1',
+      'ssh:ssh-1@@boot-a@@pty-lease',
+      'expired'
+    )
     expect(clearProviderPtyState).toHaveBeenCalledWith('ssh:ssh-1@@pty-live')
-    expect(clearProviderPtyState).toHaveBeenCalledWith('ssh:ssh-1@@pty-lease')
+    expect(clearProviderPtyState).toHaveBeenCalledWith('ssh:ssh-1@@boot-a@@pty-lease')
     expect(deletePtyOwnership).toHaveBeenCalledWith('ssh:ssh-1@@pty-live')
-    expect(deletePtyOwnership).toHaveBeenCalledWith('ssh:ssh-1@@pty-lease')
+    expect(deletePtyOwnership).toHaveBeenCalledWith('ssh:ssh-1@@boot-a@@pty-lease')
     expect(mockConnectionManager.disconnect).toHaveBeenCalledWith('ssh-1')
   })
 
@@ -1667,7 +1675,11 @@ describe('SSH IPC handlers', () => {
 
     expect(mockStore.markSshRemotePtyLeases).not.toHaveBeenCalledWith('ssh-1', 'terminated')
     expect(mockStore.markSshRemotePtyLeases).toHaveBeenCalledWith('ssh-1', 'detached')
-    expect(mockStore.markSshRemotePtyLease).toHaveBeenCalledWith('ssh-1', 'pty-1', 'expired')
+    expect(mockStore.markSshRemotePtyLease).toHaveBeenCalledWith(
+      'ssh-1',
+      'ssh:ssh-1@@pty-1',
+      'expired'
+    )
     expect(mockForceStopRelayForTarget).toHaveBeenCalledWith(conn, 'ssh-1')
   })
 

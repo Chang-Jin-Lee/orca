@@ -3793,7 +3793,11 @@ export class Store {
       // is not what the file holds.
       if (this.writeGeneration === gen) {
         this.lastWrittenStateHash = stateHash
-        this.compactTerminalTeardownIntentJournal()
+        // Why: a teardown mutation can append while this stale payload is in
+        // flight. Keep its journal record until that newer state reaches disk.
+        if (this.computeStateHash() === stateHash) {
+          this.compactTerminalTeardownIntentJournal()
+        }
       }
     } finally {
       if (!renamed) {

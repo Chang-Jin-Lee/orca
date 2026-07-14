@@ -1106,8 +1106,9 @@ export function registerSshHandlers(
       const ptyIds = new Set(getPtyIdsForConnection(targetId))
       for (const lease of persistedStore!.getSshRemotePtyLeases(targetId)) {
         if (lease.state !== 'terminated' && lease.state !== 'expired') {
-          ptyIds.add(lease.ptyId)
-          persistedStore!.markSshRemotePtyLease(targetId, lease.ptyId, 'expired')
+          const appPtyId = toAppSshPtyId(targetId, lease.ptyId, lease.relayInstanceId)
+          ptyIds.add(appPtyId)
+          persistedStore!.markSshRemotePtyLease(targetId, appPtyId, 'expired')
         }
       }
       // Why: reset force-kills the remote relay daemon, so every local PTY

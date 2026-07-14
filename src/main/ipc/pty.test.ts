@@ -2469,11 +2469,15 @@ describe('registerPtyHandlers', () => {
           })
         ).rejects.toThrow('SSH_SESSION_EXPIRED: remote-pty')
 
-        expect(store.markSshRemotePtyLease).toHaveBeenCalledWith('ssh-1', 'remote-pty', 'expired')
+        expect(store.markSshRemotePtyLease).toHaveBeenCalledWith(
+          'ssh-1',
+          'ssh:ssh-1@@remote-pty',
+          'expired'
+        )
       })
 
-      it('marks a scoped SSH session expired using the raw relay lease id', async () => {
-        const scopedPtyId = 'ssh:ssh-1@@remote-pty'
+      it('marks a generation-scoped SSH session expired using its exact lease identity', async () => {
+        const scopedPtyId = 'ssh:ssh-1@@boot-a@@remote-pty'
         const sshSpawn = vi.fn(async () => {
           throw new Error('SSH_SESSION_EXPIRED: remote-pty')
         })
@@ -2527,7 +2531,7 @@ describe('registerPtyHandlers', () => {
           deletePtyOwnership(scopedPtyId)
         }
 
-        expect(store.markSshRemotePtyLease).toHaveBeenCalledWith('ssh-1', 'remote-pty', 'expired')
+        expect(store.markSshRemotePtyLease).toHaveBeenCalledWith('ssh-1', scopedPtyId, 'expired')
         expect(openCodeClearPtyMock).toHaveBeenCalledWith(scopedPtyId)
         expect(piClearPtyMock).toHaveBeenCalledWith(scopedPtyId)
       })
@@ -6677,7 +6681,7 @@ describe('registerPtyHandlers', () => {
         persistHostSessionBinding?: boolean
       }): Promise<{ id: string }>
     }
-    const appPtyId = 'ssh:ssh-expired-runtime@@relay-pty'
+    const appPtyId = 'ssh:ssh-expired-runtime@@boot-a@@relay-pty'
     const remoteWrite = vi.fn()
     registerSshPtyProvider('ssh-expired-runtime', {
       spawn: vi.fn(async () => {
@@ -6751,7 +6755,7 @@ describe('registerPtyHandlers', () => {
 
       expect(store.markSshRemotePtyLease).toHaveBeenCalledWith(
         'ssh-expired-runtime',
-        'relay-pty',
+        appPtyId,
         'expired'
       )
       expect(store.upsertSshRemotePtyLease).not.toHaveBeenCalled()

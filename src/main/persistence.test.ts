@@ -14,6 +14,7 @@ import {
   statSync,
   symlinkSync
 } from 'node:fs'
+import type * as NodeFsPromises from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import type {
@@ -8870,6 +8871,62 @@ describe('Store', () => {
     expect(reloaded.getSshRemotePtyLeases('ssh-1')[0]).toEqual(
       expect.objectContaining({ relayInstanceId: 'boot-a' })
     )
+  })
+
+  it('keeps an SSH generation migration journaled behind an in-flight stale save', async () => {
+    vi.useFakeTimers()
+    const actualFs = await vi.importActual<typeof NodeFsPromises>('node:fs/promises')
+    let releaseWrite!: () => void
+    let markWriteStarted!: () => void
+    const writeCanFinish = new Promise<void>((resolve) => {
+      releaseWrite = resolve
+    })
+    const writeStarted = new Promise<void>((resolve) => {
+      markWriteStarted = resolve
+    })
+    let blockNextDataWrite = true
+    vi.doMock('node:fs/promises', () => ({
+      ...actualFs,
+      writeFile: async (...args: unknown[]) => {
+        const path = String(args[0])
+        if (blockNextDataWrite && path.includes('orca-data.json.') && path.endsWith('.tmp')) {
+          blockNextDataWrite = false
+          markWriteStarted()
+          await writeCanFinish
+        }
+        return Reflect.apply(actualFs.writeFile, actualFs, args)
+      }
+    }))
+    try {
+      const store = await createStore()
+      store.upsertSshRemotePtyLease({
+        targetId: 'ssh-1',
+        ptyId: 'remote-pty',
+        state: 'detached'
+      })
+      store.updateUI({ sidebarWidth: 401 })
+      vi.advanceTimersByTime(1_000)
+      await writeStarted
+
+      expect(store.migrateLegacySshRemotePtyLeaseGeneration('ssh-1', 'remote-pty', 'boot-a')).toBe(
+        true
+      )
+      releaseWrite()
+      await store.waitForPendingWrite()
+
+      expect(readTerminalTeardownIntentJournal()).toContainEqual(
+        expect.objectContaining({ kind: 'ssh-migrate-generation', relayInstanceId: 'boot-a' })
+      )
+      const reloaded = await createStore()
+      expect(reloaded.getSshRemotePtyLeases('ssh-1')).toEqual([
+        expect.objectContaining({ ptyId: 'remote-pty', relayInstanceId: 'boot-a' })
+      ])
+    } finally {
+      vi.clearAllTimers()
+      vi.doUnmock('node:fs/promises')
+      vi.resetModules()
+      vi.useRealTimers()
+    }
   })
 
   it('preserves exact local and runtime close intent across app restart', async () => {

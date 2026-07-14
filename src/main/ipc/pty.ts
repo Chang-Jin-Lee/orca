@@ -3755,9 +3755,7 @@ export function registerPtyHandlers(
             if (effectiveSessionAppId !== undefined && !isIdentityMismatch) {
               clearProviderPtyState(effectiveSessionAppId)
               deletePtyOwnership(effectiveSessionAppId)
-            }
-            if (!isIdentityMismatch) {
-              store?.markSshRemotePtyLease(args.connectionId, effectiveSessionRelayId, 'expired')
+              store?.markSshRemotePtyLease(args.connectionId, effectiveSessionAppId, 'expired')
             }
           }
           if (isMintedSessionId && sessionId !== undefined) {
@@ -4689,13 +4687,7 @@ export function registerPtyHandlers(
                 if (effectiveSessionAppId !== undefined && !isIdentityMismatch) {
                   clearProviderPtyState(effectiveSessionAppId)
                   deletePtyOwnership(effectiveSessionAppId)
-                }
-                if (!isIdentityMismatch) {
-                  store?.markSshRemotePtyLease(
-                    args.connectionId,
-                    effectiveSessionRelayId,
-                    'expired'
-                  )
+                  store?.markSshRemotePtyLease(args.connectionId, effectiveSessionAppId, 'expired')
                 }
               }
               // Why: if buildPtyHostEnv materialized provider state for this minted
