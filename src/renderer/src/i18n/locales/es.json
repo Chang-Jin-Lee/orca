@@ -9079,7 +9079,7 @@
         "MobileRelayBetaAvailability": {
           "about": "Acerca de la beta de Orca Relay",
           "beta": "Beta",
-          "availability": "Orca Relay está disponible actualmente en la versión preliminar de iOS en TestFlight y en el APK de Android, pero no en la versión pública de App Store.",
+          "availability": "Orca Relay está disponible actualmente en la versión preliminar de iOS en TestFlight y en el APK de Android.",
           "testFlight": "Abrir TestFlight",
           "androidApk": "Descargar APK de Android"
         }

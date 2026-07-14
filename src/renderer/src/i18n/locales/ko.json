@@ -9079,7 +9079,7 @@
         "MobileRelayBetaAvailability": {
           "about": "Orca Relay 베타 정보",
           "beta": "베타",
-          "availability": "Orca Relay는 현재 iOS TestFlight 미리 보기 및 Android APK에서 사용할 수 있으며, 공개 App Store 빌드에서는 사용할 수 없습니다.",
+          "availability": "Orca Relay는 현재 iOS TestFlight 미리 보기 및 Android APK에서 사용할 수 있습니다.",
           "testFlight": "TestFlight 열기",
           "androidApk": "Android APK 다운로드"
         }

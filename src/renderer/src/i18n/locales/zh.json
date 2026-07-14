@@ -9079,7 +9079,7 @@
         "MobileRelayBetaAvailability": {
           "about": "关于 Orca Relay 测试版",
           "beta": "测试版",
-          "availability": "Orca Relay 目前仅在 iOS TestFlight 预览版和 Android APK 中提供，公开的 App Store 版本暂不支持。",
+          "availability": "Orca Relay 目前在 iOS TestFlight 预览版和 Android APK 中提供。",
           "testFlight": "打开 TestFlight",
           "androidApk": "下载 Android APK"
         }

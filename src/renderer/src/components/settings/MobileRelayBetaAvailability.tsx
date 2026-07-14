@@ -2,7 +2,7 @@ import { Info } from 'lucide-react'
 import { translate } from '@/i18n/i18n'
 import { badgeVariants } from '../ui/badge'
 import { Button } from '../ui/button'
-import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover'
+import { HoverCard, HoverCardContent, HoverCardTrigger } from '../ui/hover-card'
 
 const TESTFLIGHT_URL = 'https://testflight.apple.com/join/YjeGMQBA'
 const ANDROID_APK_URL =
@@ -10,8 +10,8 @@ const ANDROID_APK_URL =
 
 export function MobileRelayBetaAvailability(): React.JSX.Element {
   return (
-    <Popover>
-      <PopoverTrigger asChild>
+    <HoverCard openDelay={150} closeDelay={100}>
+      <HoverCardTrigger asChild>
         <button
           type="button"
           aria-label={translate(
@@ -26,12 +26,12 @@ export function MobileRelayBetaAvailability(): React.JSX.Element {
           {translate('auto.components.settings.MobileRelayBetaAvailability.beta', 'Beta')}
           <Info />
         </button>
-      </PopoverTrigger>
-      <PopoverContent side="bottom" align="start" className="w-72 space-y-2 p-3">
+      </HoverCardTrigger>
+      <HoverCardContent side="bottom" align="start" className="w-72 space-y-2 p-3">
         <p className="text-xs text-muted-foreground">
           {translate(
             'auto.components.settings.MobileRelayBetaAvailability.availability',
-            'Orca Relay is currently available on the iOS TestFlight preview and Android APK, not the public App Store build.'
+            'Orca Relay is currently available on the iOS TestFlight preview and Android APK.'
           )}
         </p>
         <div className="flex items-center gap-3">
@@ -60,7 +60,7 @@ export function MobileRelayBetaAvailability(): React.JSX.Element {
             )}
           </Button>
         </div>
-      </PopoverContent>
-    </Popover>
+      </HoverCardContent>
+    </HoverCard>
   )
 }

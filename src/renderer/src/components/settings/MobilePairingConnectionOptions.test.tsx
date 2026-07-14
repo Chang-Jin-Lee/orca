@@ -97,8 +97,10 @@ describe('MobilePairingConnectionOptions', () => {
     const user = userEvent.setup()
     render(<MobilePairingConnectionOptions value="local-only" onChange={vi.fn()} />)
 
-    await user.click(screen.getByRole('button', { name: 'About the Orca Relay beta' }))
-    expect(screen.getByText(/currently available on the iOS TestFlight preview/i)).toBeVisible()
+    await user.hover(screen.getByRole('button', { name: 'About the Orca Relay beta' }))
+    await waitFor(() =>
+      expect(screen.getByText(/currently available on the iOS TestFlight preview/i)).toBeVisible()
+    )
 
     await user.click(screen.getByRole('button', { name: 'Open TestFlight' }))
     expect(window.api.shell.openUrl).toHaveBeenCalledWith(
