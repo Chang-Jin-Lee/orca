@@ -17,10 +17,18 @@ export type ReadTranscriptResult =
   | { error: string; notFound?: true }
 
 // Why: a not-yet-created (or momentarily-vanished) transcript file surfaces as
-// ENOENT once resolve returns a path. That's the lazy-flush race, not a real
-// failure, so it becomes a retryable notFound; every other error stays hard.
-function isFileNotFoundError(err: unknown): boolean {
-  return err instanceof Error && 'code' in err && (err as NodeJS.ErrnoException).code === 'ENOENT'
+// ENOENT once resolve returns a path — the lazy-flush race (#8401), not a real
+// failure. On Windows an antivirus/indexer can also briefly lock the just-created
+// file, which surfaces as EBUSY (a share/lock violation) in that same window; a
+// regular file's EBUSY on read is inherently transient on every platform. Both
+// become a RETRYABLE notFound so the caller polls until the first write settles;
+// every other errno (EISDIR/EACCES/EIO) and any parse failure stays a hard error.
+export function isRetryableTranscriptReadError(err: unknown): boolean {
+  if (!(err instanceof Error) || !('code' in err)) {
+    return false
+  }
+  const code = (err as NodeJS.ErrnoException).code
+  return code === 'ENOENT' || code === 'EBUSY'
 }
 
 export type ReadTranscriptOptions = ResolveSessionFileOptions & {
@@ -58,7 +66,7 @@ export async function readNativeChatTranscript(
     }
     return { error: `Unsupported agent for native chat transcript: ${agent}` }
   } catch (err) {
-    if (isFileNotFoundError(err)) {
+    if (isRetryableTranscriptReadError(err)) {
       return { error: errorMessage(err), notFound: true }
     }
     return { error: errorMessage(err) }

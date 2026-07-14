@@ -11,8 +11,11 @@ vi.mock('./transcript-reader', async (importOriginal) => {
   return {
     ...actual,
     readNativeChatTranscript: (...args: Parameters<typeof actual.readNativeChatTranscript>) => {
-      readSpy(...args)
-      return actual.readNativeChatTranscript(...args)
+      // A test may return a value from readSpy to force a specific reader result
+      // (e.g. a notFound miss on an existing file); undefined falls through to
+      // the real reader, so the call-counting tests are unaffected.
+      const forced = readSpy(...args)
+      return forced === undefined ? actual.readNativeChatTranscript(...args) : Promise.resolve(forced)
     }
   }
 })
@@ -108,6 +111,25 @@ describe('readNativeChatTranscriptCached', () => {
     await seedSession('present', 1)
     const result = await readNativeChatTranscriptCached('claude', 'absent')
     expect('error' in result && result.error).toBeTruthy()
+  })
+
+  it('does not cache a notFound miss on an existing file, so the next read recovers (#8401)', async () => {
+    // The file EXISTS (resolve + stat succeed → FINITE mtime) but the reader
+    // reports a retryable notFound (an ENOENT/EBUSY that raced the read). The
+    // line-112 guard must skip caching it, or the next read at the same mtime is
+    // masked by the cached miss and the pane sticks on "No transcript found".
+    await seedSession('exists-read-misses', 1)
+    readSpy.mockReturnValueOnce({ error: 'raced miss', notFound: true })
+
+    const first = await readNativeChatTranscriptCached('claude', 'exists-read-misses')
+    expect('notFound' in first && first.notFound).toBe(true)
+
+    // Same mtime, but the miss must not have been cached: the second read hits
+    // the real reader (readSpy falls through) and returns the transcript. If the
+    // guard were dropped, this would be a cache hit and readSpy would run once.
+    const second = await readNativeChatTranscriptCached('claude', 'exists-read-misses')
+    expect(readSpy).toHaveBeenCalledTimes(2)
+    expect('messages' in second).toBe(true)
   })
 
   // Why: two worktrees can present the SAME (agent, sessionId) via different

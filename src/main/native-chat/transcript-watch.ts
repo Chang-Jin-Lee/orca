@@ -29,8 +29,8 @@ export type SubscribeNativeChatTranscriptArgs = ResolveSessionFileOptions & {
   filePath?: string
   /** Coalesce window for rapid fs.watch events (ms). Defaults to 40ms. */
   debounceMs?: number
-  /** Re-resolve interval while the session file doesn't exist yet (ms).
-   *  Defaults to RESOLVE_POLL_MS; overridable so tests run fast. */
+  /** First re-resolve interval while the session file doesn't exist yet (ms).
+   *  Defaults to RESOLVE_POLL_INITIAL_MS; overridable so tests run fast. */
   resolvePollMs?: number
 }
 

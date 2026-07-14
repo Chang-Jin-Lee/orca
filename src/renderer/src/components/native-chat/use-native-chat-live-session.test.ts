@@ -273,6 +273,37 @@ describe('useNativeChatLiveSession — transport routing', () => {
     }
   })
 
+  it('stops the notFound retry after unmount (no stale read against the old session)', async () => {
+    vi.useFakeTimers()
+    try {
+      const transport = getMockTransport('env-1')
+      // Every read races the lazy flush → notFound, so the backoff keeps retrying
+      // until teardown clears the pending timer.
+      transport.readSession.mockResolvedValue({ error: 'No transcript found', notFound: true })
+
+      const root = await render({
+        paneKey: PANE,
+        agent: AGENT,
+        sessionId: SESSION,
+        runtimeEnvironmentId: 'env-1'
+      })
+      expect(transport.readSession).toHaveBeenCalledTimes(1)
+
+      await act(async () => {
+        root.unmount()
+      })
+
+      // Advancing well past several backoff steps must fire NO further read: an
+      // uncleared retry timer would leak a stale readSession against the old id.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(60_000)
+      })
+      expect(transport.readSession).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('never calls the transport when there is no session id', async () => {
     await render({ paneKey: PANE, agent: AGENT, sessionId: null, runtimeEnvironmentId: 'env-1' })
 

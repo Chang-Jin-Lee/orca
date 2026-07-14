@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { readNativeChatTranscript } from './transcript-reader'
+import { isRetryableTranscriptReadError, readNativeChatTranscript } from './transcript-reader'
 import {
   clearNativeChatTranscriptCache,
   readNativeChatTranscriptCached
@@ -35,6 +35,34 @@ async function emptyProjectsDir(): Promise<string> {
   tempRoots.push(root)
   return join(root, 'projects')
 }
+
+describe('isRetryableTranscriptReadError — errno classification', () => {
+  function errno(code: string): NodeJS.ErrnoException {
+    const err = new Error(code) as NodeJS.ErrnoException
+    err.code = code
+    return err
+  }
+
+  it('treats ENOENT (not-yet-flushed file) as retryable', () => {
+    expect(isRetryableTranscriptReadError(errno('ENOENT'))).toBe(true)
+  })
+
+  it('treats EBUSY (transient share/lock, e.g. Windows AV on the fresh file) as retryable', () => {
+    expect(isRetryableTranscriptReadError(errno('EBUSY'))).toBe(true)
+  })
+
+  it('keeps EISDIR/EACCES/EIO hard errors (not retryable)', () => {
+    expect(isRetryableTranscriptReadError(errno('EISDIR'))).toBe(false)
+    expect(isRetryableTranscriptReadError(errno('EACCES'))).toBe(false)
+    expect(isRetryableTranscriptReadError(errno('EIO'))).toBe(false)
+  })
+
+  it('is not fooled by a non-Error or code-less value', () => {
+    expect(isRetryableTranscriptReadError('ENOENT')).toBe(false)
+    expect(isRetryableTranscriptReadError(new Error('no code'))).toBe(false)
+    expect(isRetryableTranscriptReadError(null)).toBe(false)
+  })
+})
 
 describe('readNativeChatTranscript — notFound vs hard error', () => {
   it('flags an unresolvable session as notFound (retryable), not a hard error', async () => {
