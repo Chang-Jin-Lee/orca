@@ -72,6 +72,11 @@ import {
 } from '../../../../shared/workspace-scope'
 import { folderWorkspaceToWorktree } from '../../../../shared/folder-workspace-worktree'
 import {
+  CLIENT_WORKTREE_CREATE_MAX_ATTEMPTS,
+  getClientWorktreeCreateCandidate,
+  isRetryableWorktreeCreateConflict
+} from '../../../../shared/new-workspace/worktree-create-retry-policy'
+import {
   classifyWorktreeForceDeleteReason,
   getLockedWorktreeRemovalReason,
   isLockedWorktreeRemovalError
@@ -2954,22 +2959,13 @@ export const createWorktreeSlice: StateCreator<AppState, [], [], WorktreeSlice> 
     options
   ) => {
     const automationProvenanceRequest = options?.automationProvenanceRequest
-    const retryableConflictPatterns = [
-      /already exists locally/i,
-      /already exists on a remote/i,
-      /^Branch ".+" already exists\./i,
-      /already has pr #\d+/i
-    ]
-    const nextCandidateName = (current: string, attempt: number): string =>
-      attempt === 0 ? current : `${current}-${attempt + 1}`
-
     try {
-      for (let attempt = 0; attempt < 25; attempt += 1) {
-        const candidateName = nextCandidateName(name, attempt)
+      for (let attempt = 0; attempt < CLIENT_WORKTREE_CREATE_MAX_ATTEMPTS; attempt += 1) {
+        const candidateName = getClientWorktreeCreateCandidate(name, attempt)
         // Why: older runtimes may still reject exact PR branch overrides on
         // collision, so the renderer retries both branch and worktree names.
         const candidateBranchNameOverride = branchNameOverride
-          ? nextCandidateName(branchNameOverride, attempt)
+          ? getClientWorktreeCreateCandidate(branchNameOverride, attempt)
           : undefined
         try {
           // Why: Manual sort is user-authored order. Stamp new workspaces
@@ -3130,8 +3126,8 @@ export const createWorktreeSlice: StateCreator<AppState, [], [], WorktreeSlice> 
           return result
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error)
-          const shouldRetry = retryableConflictPatterns.some((pattern) => pattern.test(message))
-          if (!shouldRetry || attempt === 24) {
+          const shouldRetry = isRetryableWorktreeCreateConflict(message)
+          if (!shouldRetry || attempt === CLIENT_WORKTREE_CREATE_MAX_ATTEMPTS - 1) {
             throw error
           }
         }

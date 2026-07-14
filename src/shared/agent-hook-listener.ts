@@ -38,8 +38,9 @@ import {
   claudeRosterHasWorkingSubagent,
   claudeRosterToSnapshots,
   claudeTeammateIdMatchesName,
+  finishClaudeSubagent,
   foldClaudeBackgroundTasksIntoRoster,
-  markClaudeSubagentIdle,
+  isClaudeTeammateLifecycleId,
   markClaudeTeammateIdleByName,
   readClaudeBackgroundAgentTasks,
   upsertWorkingClaudeSubagent,
@@ -2411,7 +2412,14 @@ function normalizeClaudeSubagentLifecycleEvent(
         Date.now()
       )
     } else {
-      markClaudeSubagentIdle(roster, agentId)
+      // Why: SubagentStop carries the session's task inventory; a stopping
+      // agent listed id-exact as a subagent task is a workflow/named one-shot
+      // (teammate lifecycle ids never appear there), not a resumable teammate.
+      const stopTasks = readClaudeBackgroundAgentTasks(hookPayload)
+      finishClaudeSubagent(roster, agentId, {
+        listedAsSubagentTask:
+          stopTasks.present && stopTasks.tasks.some((task) => !task.teammate && task.id === agentId)
+      })
       // Why: a blocked child that dies (killed, errored) without another tool
       // event would otherwise pin its permission/question wait on the pane
       // forever — nothing else references that agent again.
@@ -2449,9 +2457,13 @@ export function seedClaudeSubagentRosterFromSnapshots(
       startedAt: snapshot.startedAt,
       agentType: snapshot.agentType,
       description: snapshot.description,
+      // Why: teammate name and agent type can differ, but the provider id
+      // shape survives persistence and keeps the row across restart folds.
+      ...(isClaudeTeammateLifecycleId(snapshot.id) ? { teammate: true as const } : {}),
       // Why: the seed can be a phantom (child finished while Orca was down,
       // its SubagentStop lost). Let a PRESENT background_tasks list that
-      // omits the id demote it instead of gating the pane 'working' forever.
+      // omits the id remove it (or demote a teammate) instead of gating the
+      // pane 'working' forever.
       backgroundTasksAuthoritative: true
     })
   }
@@ -2609,7 +2621,8 @@ function normalizeClaudeEvent(
       foldClaudeBackgroundTasksIntoRoster(
         getOrCreateClaudeSubagentRoster(state, paneKey),
         backgroundTasks.tasks,
-        Date.now()
+        Date.now(),
+        { inventoryComplete: !backgroundTasks.truncated }
       )
     }
   }

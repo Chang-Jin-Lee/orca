@@ -3470,6 +3470,7 @@ const api = {
         launchConfig?: SleepingAgentLaunchConfig
         launchToken?: string
         launchAgent?: TuiAgent
+        viewMode?: 'terminal' | 'chat'
         title?: string
         ptyId?: string
         activate?: boolean
@@ -3492,6 +3493,7 @@ const api = {
           launchConfig?: SleepingAgentLaunchConfig
           launchToken?: string
           launchAgent?: TuiAgent
+          viewMode?: 'terminal' | 'chat'
           title?: string
           ptyId?: string
           activate?: boolean

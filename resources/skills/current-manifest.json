@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
-  "appVersion": "1.4.138-rc.6",
+  "appVersion": "1.4.139-rc.2",
   "skills": [
     {
       "name": "computer-use",
       "sourcePath": "skills/computer-use",
-      "appVersion": "1.4.138-rc.6",
+      "appVersion": "1.4.139-rc.2",
       "releaseRevision": 4,
       "packageDigest": "35b6d91d1d3d38f3828c60e5b856a91324bdd09273db33664f508392c5c48dfc",
       "gitTreeSha": "b4e2d7e7af8f8f29c6d0df6e92f23c1b2c439e3b",
@@ -24,7 +24,7 @@
     {
       "name": "linear-tickets",
       "sourcePath": "skills/linear-tickets",
-      "appVersion": "1.4.138-rc.6",
+      "appVersion": "1.4.139-rc.2",
       "releaseRevision": 4,
       "packageDigest": "f198d7b22e5ee1673dac403f9cca0553b124e0a90e4fdd05d2c23b7344e32d2b",
       "gitTreeSha": "de9fc106bbb4e313a90ff9a9513a720909bbd176",
@@ -43,7 +43,7 @@
     {
       "name": "orca-cli",
       "sourcePath": "skills/orca-cli",
-      "appVersion": "1.4.138-rc.6",
+      "appVersion": "1.4.139-rc.2",
       "releaseRevision": 31,
       "packageDigest": "c52a999a35f8e96ec72c97a537ce5906ef098879495382d85f50c70a888ba901",
       "gitTreeSha": "77be03ea57ddbc4c4067bca22ab58c3af5ae3d2c",
@@ -62,7 +62,7 @@
     {
       "name": "orca-emulator",
       "sourcePath": "skills/orca-emulator",
-      "appVersion": "1.4.138-rc.6",
+      "appVersion": "1.4.139-rc.2",
       "releaseRevision": 3,
       "packageDigest": "1807d287d2c08b1c535ba4e14ca2f29afe39274c4bde5737995a1792e44d5412",
       "gitTreeSha": "dbb8e0daba768527885715ee5efebeaa1ee38f0f",
@@ -81,7 +81,7 @@
     {
       "name": "orca-emulator-android",
       "sourcePath": "skills/orca-emulator-android",
-      "appVersion": "1.4.138-rc.6",
+      "appVersion": "1.4.139-rc.2",
       "releaseRevision": 1,
       "packageDigest": "cf86dd085b981febd8e4e11b7796c90d69a60bd9c1dfaab5a16b99f77841aaa4",
       "gitTreeSha": "6299122f69f0218ec01214e2a14c479b1811cdf6",
@@ -100,7 +100,7 @@
     {
       "name": "orca-linear",
       "sourcePath": "skills/orca-linear",
-      "appVersion": "1.4.138-rc.6",
+      "appVersion": "1.4.139-rc.2",
       "releaseRevision": 2,
       "packageDigest": "d44d09e6ecb6a64da177083aad26a95f031cd1cf26ba059fdc888c2628aef64f",
       "gitTreeSha": "c34f42030f43e5a85737996fa375bbd79cb5bea8",
@@ -119,7 +119,7 @@
     {
       "name": "orca-per-workspace-env",
       "sourcePath": "skills/orca-per-workspace-env",
-      "appVersion": "1.4.138-rc.6",
+      "appVersion": "1.4.139-rc.2",
       "releaseRevision": 2,
       "packageDigest": "fa3b65a1a107fca3f0375c696852477b62f58c154b9eb5c0663c41edc4bcd30d",
       "gitTreeSha": "354e775b79ea6952ec63acac4d3ee8a9ae07a650",
@@ -138,7 +138,7 @@
     {
       "name": "orchestration",
       "sourcePath": "skills/orchestration",
-      "appVersion": "1.4.138-rc.6",
+      "appVersion": "1.4.139-rc.2",
       "releaseRevision": 24,
       "packageDigest": "9fbfa2ae3f3f99441563a4b8b1c6302107944480db8718ddb326a862a51f7ab9",
       "gitTreeSha": "086c41e0b353b4908d2963694b4a7c791d4b3982",
