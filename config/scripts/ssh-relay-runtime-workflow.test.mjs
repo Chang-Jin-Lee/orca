@@ -61,6 +61,9 @@ describe('SSH relay runtime artifact workflow', () => {
     expect(source).toContain('foreach ($output in @($firstOutput, $secondOutput))')
     expect(source).toContain('ssh-relay-runtime-reproducibility.mjs')
     expect(source).toContain('ssh-relay-runtime-reproducibility.test.mjs')
+    expect(source).toContain(
+      'node --check config/scripts/ssh-relay-runtime-reproducibility.test.mjs'
+    )
     expect(source).toContain('cp "$first_output"/*.tar.xz')
     expect(source).toContain("Get-ChildItem -LiteralPath $firstOutput -Filter '*.zip'")
     expect(source).toContain('ssh-relay-node-zip-inspection.test.mjs')

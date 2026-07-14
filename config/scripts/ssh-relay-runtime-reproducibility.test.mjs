@@ -71,6 +71,23 @@ describe('SSH relay runtime clean-build reproducibility', () => {
     )
   })
 
+  it('reports runtime drift before derived identity drift', async () => {
+    const fixture = await createOutputs()
+    await writeFile(join(fixture.secondOutputDirectory, 'runtime', 'relay.js'), 'other bytes')
+    const identityPath = join(
+      fixture.secondOutputDirectory,
+      `orca-ssh-relay-runtime-${tuple}.identity.json`
+    )
+    await writeFile(
+      identityPath,
+      `${JSON.stringify({ tupleId: tuple, contentId: `sha256:${'c'.repeat(64)}`, archive: { name: archiveName, sha256: archiveSha256 } })}\n`
+    )
+
+    await expect(verifySshRelayRuntimeReproducibility({ ...fixture, tuple })).rejects.toThrow(
+      'reproducibility mismatch for runtime/relay.js: sha256'
+    )
+  })
+
   it('rejects SBOM byte drift', async () => {
     const fixture = await createOutputs()
     await writeFile(

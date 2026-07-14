@@ -1,5 +1,3 @@
-#!/usr/bin/env node
-
 import { createHash } from 'node:crypto'
 import { createReadStream } from 'node:fs'
 import { lstat, opendir, readFile, realpath } from 'node:fs/promises'
@@ -148,7 +146,14 @@ async function validateCompleteOutput(directory, label, tuple, snapshot) {
 }
 
 function compareSnapshots(first, second) {
-  const paths = [...new Set([...first.entries.keys(), ...second.entries.keys()])].sort()
+  const paths = [...new Set([...first.entries.keys(), ...second.entries.keys()])].sort(
+    (left, right) => {
+      // Runtime bytes are the producer root cause; metadata and archive names often drift after them.
+      const leftPriority = left === 'runtime' || left.startsWith('runtime/') ? 0 : 1
+      const rightPriority = right === 'runtime' || right.startsWith('runtime/') ? 0 : 1
+      return leftPriority - rightPriority || left.localeCompare(right)
+    }
+  )
   for (const path of paths) {
     const left = first.entries.get(path)
     const right = second.entries.get(path)
