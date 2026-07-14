@@ -37,13 +37,6 @@ export function deriveNeededSectionIds(args: {
   return next
 }
 
-export function deriveNeededRepoIds(
-  repos: readonly { id: string }[],
-  neededSectionIds: Set<string>
-): string[] {
-  return repos.map((repo) => repo.id).filter((repoId) => neededSectionIds.has(`repo-${repoId}`))
-}
-
 export function getInitialMountedSectionIds(): Set<string> {
   return new Set(EAGER_SECTION_IDS)
 }

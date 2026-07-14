@@ -1,5 +1,9 @@
 import { useMemo, useState } from 'react'
-import { getExecutionHostLabel } from '../../../../shared/execution-host'
+import {
+  getExecutionHostLabel,
+  getRepoExecutionHostId,
+  type ExecutionHostId
+} from '../../../../shared/execution-host'
 import { buildExecutionHostRegistry } from '../../../../shared/execution-host-registry'
 import { getHostDisplayLabelOverrides } from '../../../../shared/host-setting-overrides'
 import type { Repo } from '../../../../shared/types'
@@ -32,6 +36,9 @@ export function RepositoryHostSetupsSection({
 }: RepositoryHostSetupsSectionProps): React.JSX.Element | null {
   const openSettingsPage = useAppStore((state) => state.openSettingsPage)
   const openSettingsTarget = useAppStore((state) => state.openSettingsTarget)
+  const setSettingsProjectHostSelection = useAppStore(
+    (state) => state.setSettingsProjectHostSelection
+  )
   const setupProjectExistingFolder = useAppStore((state) => state.setupProjectExistingFolder)
   const setupProjectClone = useAppStore((state) => state.setupProjectClone)
   const createProjectHostSetup = useAppStore((state) => state.createProjectHostSetup)
@@ -82,6 +89,17 @@ export function RepositoryHostSetupsSection({
   })
   const hostOptionById = new Map(hostOptions.map((option) => [option.id, option]))
   const [deletingSetupId, setDeletingSetupId] = useState<string | null>(null)
+  const selectedHostId = getRepoExecutionHostId(repo)
+  const projectId = selectedProjectHostSetup?.projectId
+  // Why: the single project pane switches host in place — set the ephemeral
+  // per-project selection instead of navigating to a separate repo section.
+  const selectHost = (hostId: ExecutionHostId) => {
+    if (projectId) {
+      setSettingsProjectHostSelection(projectId, hostId)
+    }
+  }
+  // Why: the "Add to another host" flow lands on a freshly-created repo row —
+  // navigate so the deep-link → selection coupling switches to that new host.
   const openSetup = (repoId: string) => {
     openSettingsPage()
     openSettingsTarget({ pane: 'repo', repoId })
@@ -116,12 +134,12 @@ export function RepositoryHostSetupsSection({
                 {translate('auto.components.settings.RepositoryPane.viewingHost', 'Viewing host')}
               </span>
               <Select
-                value={repo.id}
-                onValueChange={(repoId) => {
-                  if (repoId === repo.id) {
+                value={selectedHostId}
+                onValueChange={(hostId) => {
+                  if (hostId === selectedHostId) {
                     return
                   }
-                  openSetup(repoId)
+                  selectHost(hostId as ExecutionHostId)
                 }}
               >
                 <SelectTrigger className="h-8 w-44 min-w-0 text-xs">
@@ -129,7 +147,7 @@ export function RepositoryHostSetupsSection({
                 </SelectTrigger>
                 <SelectContent>
                   {openableProjectHostSetups.map((setup) => (
-                    <SelectItem key={setup.id} value={setup.repoId}>
+                    <SelectItem key={setup.id} value={setup.hostId}>
                       <span className="block min-w-0 truncate">
                         {hostOptionById.get(setup.hostId)?.label ??
                           getExecutionHostLabel(setup.hostId)}
@@ -150,7 +168,7 @@ export function RepositoryHostSetupsSection({
       </div>
       <div className="divide-y divide-border rounded-md border border-border">
         {projectHostSetups.map((setup) => {
-          const isCurrentSetup = setup.repoId === repo.id
+          const isCurrentSetup = setup.hostId === selectedHostId
           const canOpenSetup = setup.repoId.trim().length > 0
           const canRemoveSetup = !canOpenSetup && deletingSetupId !== setup.id
           return (
@@ -189,7 +207,7 @@ export function RepositoryHostSetupsSection({
                   variant="outline"
                   size="sm"
                   onClick={() => {
-                    openSetup(setup.repoId)
+                    selectHost(setup.hostId)
                   }}
                 >
                   {translate('auto.components.settings.RepositoryPane.openSetup', 'Open')}

@@ -1,9 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import type { ProjectHostSetup, Repo } from '../../../../shared/types'
 import {
+  buildRepoIdToHostSelection,
+  buildRepoIdToRepresentative,
   buildSettingsProjectList,
+  getSettingsProjectHostRepo,
   getSettingsProjectRepresentativeRepoId,
-  resolveEffectiveProjectHost
+  resolveEffectiveProjectHost,
+  resolveSettingsTargetRepoId
 } from './settings-project-list'
 
 function makeRepo(overrides: Partial<Repo> & Pick<Repo, 'id'>): Repo {
@@ -130,5 +134,63 @@ describe('resolveEffectiveProjectHost', () => {
 
   it('returns undefined when there are no setups', () => {
     expect(resolveEffectiveProjectHost([], 'local')).toBeUndefined()
+  })
+})
+
+describe('deep-link resolution', () => {
+  const repos: Repo[] = [
+    makeRepo({ id: 'local-1', gitRemoteIdentity: gitRemote }),
+    makeRepo({ id: 'remote-9', gitRemoteIdentity: gitRemote, executionHostId: 'runtime:home-mac' })
+  ]
+  const projects = buildSettingsProjectList(repos)
+
+  it('maps every host repoId to the representative section (getSettingsSectionId resolver)', () => {
+    const map = buildRepoIdToRepresentative(projects)
+    expect(map.get('remote-9')).toBe('local-1')
+    expect(map.get('local-1')).toBe('local-1')
+  })
+
+  it('maps a repoId to its owning project + host for selection', () => {
+    const map = buildRepoIdToHostSelection(projects)
+    expect(map.get('remote-9')).toEqual({
+      projectId: projects[0].projectId,
+      hostId: 'runtime:home-mac'
+    })
+  })
+
+  it('parses a repoId from a host-specific subsection sectionId', () => {
+    const repoIds = [...buildRepoIdToHostSelection(projects).keys()]
+    expect(
+      resolveSettingsTargetRepoId(
+        { repoId: null, sectionId: 'repo-remote-9-source-control-ai' },
+        repoIds
+      )
+    ).toBe('remote-9')
+  })
+
+  it('prefers an explicit target repoId over the sectionId', () => {
+    expect(
+      resolveSettingsTargetRepoId({ repoId: 'local-1', sectionId: 'repo-remote-9-icon' }, [
+        'local-1',
+        'remote-9'
+      ])
+    ).toBe('local-1')
+  })
+
+  it('disambiguates repo ids where one is a prefix of another (longest match wins)', () => {
+    expect(
+      resolveSettingsTargetRepoId({ repoId: null, sectionId: 'repo-app-2-icon' }, ['app', 'app-2'])
+    ).toBe('app-2')
+  })
+
+  it('resolves the remote host repo row when a remote host is selected', () => {
+    const hostSelection = buildRepoIdToHostSelection(projects).get('remote-9')
+    expect(getSettingsProjectHostRepo(projects[0], repos, hostSelection?.hostId)?.id).toBe(
+      'remote-9'
+    )
+  })
+
+  it('defaults to the local host repo row when no host is selected', () => {
+    expect(getSettingsProjectHostRepo(projects[0], repos, undefined)?.id).toBe('local-1')
   })
 })

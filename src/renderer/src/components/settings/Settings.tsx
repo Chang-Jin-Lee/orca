@@ -10,7 +10,7 @@ import {
   type MutableRefObject
 } from 'react'
 import { toast } from 'sonner'
-import type { GlobalSettings, OrcaHooks } from '../../../../shared/types'
+import type { GlobalSettings, OrcaHooks, ProjectHostSetup } from '../../../../shared/types'
 import type { SpeechModelState } from '../../../../shared/speech-types'
 import type {
   SourceControlAiSettings,
@@ -97,14 +97,19 @@ import {
 } from '@/hooks/useInstalledAgentSkills'
 import { useActiveProjectSkillRuntime } from '@/hooks/useActiveProjectSkillRuntime'
 import {
-  deriveNeededRepoIds,
   deriveNeededSectionIds,
   getInitialMountedSectionIds,
   getRuntimeTargetIdentity
 } from './settings-load-performance'
 import { translate } from '@/i18n/i18n'
 import { getProjectHostSetupProjectionFromState } from '../../store/selectors'
-import { buildSettingsProjectList, resolveEffectiveProjectHost } from './settings-project-list'
+import {
+  buildRepoIdToHostSelection,
+  buildRepoIdToRepresentative,
+  buildSettingsProjectList,
+  getSettingsProjectHostRepo,
+  resolveSettingsTargetRepoId
+} from './settings-project-list'
 
 const DevToolsPane = import.meta.env.DEV
   ? lazy(() => import('./DevToolsPane').then((module) => ({ default: module.DevToolsPane })))
@@ -291,6 +296,8 @@ function Settings(): React.JSX.Element {
   const removeProject = useAppStore((s) => s.removeProject)
   const settingsNavigationTarget = useAppStore((s) => s.settingsNavigationTarget)
   const clearSettingsTarget = useAppStore((s) => s.clearSettingsTarget)
+  const settingsProjectHostSelection = useAppStore((s) => s.settingsProjectHostSelection)
+  const setSettingsProjectHostSelection = useAppStore((s) => s.setSettingsProjectHostSelection)
   const settingsSearchInputQuery = useAppStore((s) => s.settingsSearchInputQuery)
   const settingsSearchQuery = useAppStore((s) => s.settingsSearchQuery)
   const setSettingsSearchQuery = useAppStore((s) => s.setSettingsSearchQuery)
@@ -300,17 +307,30 @@ function Settings(): React.JSX.Element {
   // Why: collapse repo rows into one entry per project (derived from repos so it
   // matches the nav metadata exactly) — the source of truth for the pane list.
   const settingsProjectList = useMemo(() => buildSettingsProjectList(repos), [repos])
-  const repoIdToRepresentative = useMemo(() => {
-    const map = new Map<string, string>()
-    for (const settingsProject of settingsProjectList) {
-      for (const setup of settingsProject.setups) {
+  const repoIdToRepresentative = useMemo(
+    () => buildRepoIdToRepresentative(settingsProjectList),
+    [settingsProjectList]
+  )
+  // Why: lets a deep-link's repoId select the owning project's host so
+  // host-specific subsection anchors exist under the now-selected host.
+  const repoIdToHostSelection = useMemo(
+    () => buildRepoIdToHostSelection(settingsProjectList),
+    [settingsProjectList]
+  )
+  // Why: the pane-level "Remove Project" removes the whole project (every host
+  // setup), not just the selected host — the per-host remove lives inside
+  // "Available Hosts". Sequential so each host's teardown + projection recompute
+  // don't interleave.
+  const removeProjectAllHosts = useCallback(
+    async (setups: readonly ProjectHostSetup[]): Promise<void> => {
+      for (const setup of setups) {
         if (setup.repoId.trim().length > 0) {
-          map.set(setup.repoId, settingsProject.representativeRepoId)
+          await removeProject(setup.repoId, { hostId: setup.hostId })
         }
       }
-    }
-    return map
-  }, [settingsProjectList])
+    },
+    [removeProject]
+  )
 
   const [repoHooksMap, setRepoHooksMap] = useState<
     Record<string, { hasHooks: boolean; hooks: OrcaHooks | null; mayNeedUpdate: boolean }>
@@ -641,6 +661,19 @@ function Settings(): React.JSX.Element {
       settingsNavigationTarget.repoId,
       repoIdToRepresentative
     )
+    // Why: couple the deep link to the in-pane host switcher before scrolling —
+    // select the target repo's host so its host-specific subsection anchor
+    // (e.g. `repo-<remoteId>-source-control-ai`) renders and the scroll lands.
+    const targetRepoId = resolveSettingsTargetRepoId(
+      settingsNavigationTarget,
+      repoIdToHostSelection.keys()
+    )
+    if (targetRepoId) {
+      const hostSelection = repoIdToHostSelection.get(targetRepoId)
+      if (hostSelection) {
+        setSettingsProjectHostSelection(hostSelection.projectId, hostSelection.hostId)
+      }
+    }
     pendingNavSectionRef.current = paneSectionId
     pendingScrollTargetRef.current = settingsNavigationTarget.sectionId ?? paneSectionId
     // Why: Appearance nests status-bar controls under a collapsed accordion;
@@ -664,7 +697,14 @@ function Settings(): React.JSX.Element {
     // scroll effect runs even when the visible section set is otherwise stable.
     setPendingNavRequestTick((tick) => tick + 1)
     clearSettingsTarget()
-  }, [clearSettingsTarget, repoIdToRepresentative, settings, settingsNavigationTarget])
+  }, [
+    clearSettingsTarget,
+    repoIdToHostSelection,
+    repoIdToRepresentative,
+    setSettingsProjectHostSelection,
+    settings,
+    settingsNavigationTarget
+  ])
 
   // Why: only recompute scrollback mode when the row value actually changes,
   // not on every unrelated settings mutation.
@@ -829,10 +869,26 @@ function Settings(): React.JSX.Element {
     setMountedSectionIds(neededSectionIds)
   }
 
-  const neededRepoIds = useMemo(
-    () => deriveNeededRepoIds(repos, neededSectionIds),
-    [neededSectionIds, repos]
-  )
+  // Why: each mounted project pane renders its SELECTED host's repo, so hooks
+  // must load for that repo id — not the representative id parsed from the
+  // section string (they differ when a non-default host is selected).
+  const neededRepoIds = useMemo(() => {
+    const ids = new Set<string>()
+    for (const settingsProject of settingsProjectList) {
+      if (!neededSectionIds.has(`repo-${settingsProject.representativeRepoId}`)) {
+        continue
+      }
+      const repo = getSettingsProjectHostRepo(
+        settingsProject,
+        repos,
+        settingsProjectHostSelection[settingsProject.projectId]
+      )
+      if (repo) {
+        ids.add(repo.id)
+      }
+    }
+    return [...ids]
+  }, [neededSectionIds, repos, settingsProjectHostSelection, settingsProjectList])
 
   useEffect(() => {
     const repoIdSet = new Set(repos.map((repo) => repo.id))
@@ -1672,20 +1728,14 @@ function Settings(): React.JSX.Element {
 
                 {settingsProjectList.map((settingsProject) => {
                   const repoSectionId = `repo-${settingsProject.representativeRepoId}`
-                  // Why: render the project's effective host row so the pane
-                  // defaults to the user's own machine (local) when present.
-                  const effectiveHostId = resolveEffectiveProjectHost(
-                    settingsProject.setups,
-                    undefined
+                  // Why: render the switcher-selected host's repo row (validated
+                  // against live setups) so identity edits and host-specific
+                  // settings follow the "Available Hosts" selection.
+                  const repo = getSettingsProjectHostRepo(
+                    settingsProject,
+                    repos,
+                    settingsProjectHostSelection[settingsProject.projectId]
                   )
-                  const repo =
-                    repos.find(
-                      (entry) =>
-                        entry.id === settingsProject.representativeRepoId &&
-                        getRepoExecutionHostId(entry) === effectiveHostId
-                    ) ??
-                    repos.find((entry) => getRepoExecutionHostId(entry) === effectiveHostId) ??
-                    repos.find((entry) => entry.id === settingsProject.representativeRepoId)
                   if (!repo) {
                     return null
                   }
@@ -1712,7 +1762,7 @@ function Settings(): React.JSX.Element {
                           hooksInspectionReady={Boolean(repoHooksState)}
                           mayNeedUpdate={repoHooksState?.mayNeedUpdate ?? false}
                           updateRepo={updateRepo}
-                          removeProject={removeProject}
+                          removeProject={() => void removeProjectAllHosts(settingsProject.setups)}
                           project={project}
                           isLocalWindowsProject={
                             getRepoExecutionHostId(repo) === LOCAL_EXECUTION_HOST_ID &&

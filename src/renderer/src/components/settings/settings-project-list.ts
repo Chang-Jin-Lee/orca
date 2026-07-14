@@ -1,5 +1,9 @@
 import type { Project, ProjectHostSetup, Repo } from '../../../../shared/types'
-import { LOCAL_EXECUTION_HOST_ID, type ExecutionHostId } from '../../../../shared/execution-host'
+import {
+  getRepoExecutionHostId,
+  LOCAL_EXECUTION_HOST_ID,
+  type ExecutionHostId
+} from '../../../../shared/execution-host'
 import { projectHostSetupProjectionFromRepos } from '../../../../shared/project-host-setup-projection'
 
 export type SettingsProject = {
@@ -74,4 +78,90 @@ export function resolveEffectiveProjectHost(
   }
   const readySetup = setups.find((setup) => setup.setupState === 'ready')
   return (readySetup ?? setups[0]).hostId
+}
+
+/** Maps every host's repoId to its project's representative repoId, so a
+ *  `{pane:'repo', repoId}` deep link resolves to the collapsed pane. */
+export function buildRepoIdToRepresentative(
+  projects: readonly SettingsProject[]
+): Map<string, string> {
+  const map = new Map<string, string>()
+  for (const settingsProject of projects) {
+    for (const setup of settingsProject.setups) {
+      if (setup.repoId.trim().length > 0) {
+        map.set(setup.repoId, settingsProject.representativeRepoId)
+      }
+    }
+  }
+  return map
+}
+
+/** Maps each host's repoId to its owning project + host, so a deep link can
+ *  select that host in the pane's "Available Hosts" switcher. */
+export function buildRepoIdToHostSelection(
+  projects: readonly SettingsProject[]
+): Map<string, { projectId: string; hostId: ExecutionHostId }> {
+  const map = new Map<string, { projectId: string; hostId: ExecutionHostId }>()
+  for (const settingsProject of projects) {
+    for (const setup of settingsProject.setups) {
+      if (setup.repoId.trim().length > 0 && !map.has(setup.repoId)) {
+        map.set(setup.repoId, { projectId: settingsProject.projectId, hostId: setup.hostId })
+      }
+    }
+  }
+  return map
+}
+
+/**
+ * The repo row a Settings deep link points at, from either an explicit repoId
+ * or a `repo-<id>-<subsection>` sectionId. repo ids can contain hyphens, so the
+ * sectionId is matched against known ids with the longest match winning.
+ */
+export function resolveSettingsTargetRepoId(
+  target: { repoId: string | null; sectionId?: string },
+  repoIds: Iterable<string>
+): string | null {
+  if (target.repoId) {
+    return target.repoId
+  }
+  const sectionId = target.sectionId
+  if (!sectionId || !sectionId.startsWith('repo-')) {
+    return null
+  }
+  let best: string | null = null
+  for (const repoId of repoIds) {
+    if (sectionId === `repo-${repoId}` || sectionId.startsWith(`repo-${repoId}-`)) {
+      if (best === null || repoId.length > best.length) {
+        best = repoId
+      }
+    }
+  }
+  return best
+}
+
+/**
+ * The repo row the project pane should render for the given host selection.
+ * Shared by the pane and the hooks-loading effect so they always agree on which
+ * host's repo (id + host) is mounted — critical in the same-id/self-pair case.
+ */
+export function getSettingsProjectHostRepo(
+  settingsProject: SettingsProject,
+  repos: readonly Repo[],
+  selectedHostId: ExecutionHostId | undefined
+): Repo | undefined {
+  const effectiveHostId = resolveEffectiveProjectHost(settingsProject.setups, selectedHostId)
+  if (!effectiveHostId) {
+    return undefined
+  }
+  const effectiveSetup =
+    settingsProject.setups.find((setup) => setup.hostId === effectiveHostId) ??
+    settingsProject.setups[0]
+  return (
+    repos.find(
+      (repo) =>
+        repo.id === effectiveSetup.repoId && getRepoExecutionHostId(repo) === effectiveHostId
+    ) ??
+    repos.find((repo) => repo.id === effectiveSetup.repoId) ??
+    repos.find((repo) => repo.id === settingsProject.representativeRepoId)
+  )
 }

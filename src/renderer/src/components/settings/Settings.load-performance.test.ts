@@ -1,9 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import {
-  deriveNeededRepoIds,
-  deriveNeededSectionIds,
-  getRuntimeTargetIdentity
-} from './settings-load-performance'
+import { deriveNeededSectionIds, getRuntimeTargetIdentity } from './settings-load-performance'
 
 describe('Settings load-performance helpers', () => {
   it('keeps only eager and active sections mounted for empty search on first paint', () => {
@@ -65,15 +61,6 @@ describe('Settings load-performance helpers', () => {
     })
 
     expect(needed.has('repo-a')).toBe(true)
-  })
-
-  it('scopes repo hook checks to needed repo sections only', () => {
-    const neededRepoIds = deriveNeededRepoIds(
-      [{ id: 'a' }, { id: 'b' }, { id: 'c' }],
-      new Set(['general', 'repo-b'])
-    )
-
-    expect(neededRepoIds).toEqual(['b'])
   })
 
   it('normalizes runtime target identity for cache invalidation keys', () => {

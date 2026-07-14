@@ -147,9 +147,10 @@ describe('RepositoryHostSetupsSection', () => {
     expect(container.textContent).toContain(LOCAL_HOST_LABEL)
   })
 
-  it('opens the selected host setup settings pane through the setup repo id', () => {
+  it('selects the host in place instead of navigating to a separate repo pane', () => {
     const openSettingsPage = vi.fn()
     const openSettingsTarget = vi.fn()
+    const setSettingsProjectHostSelection = vi.fn()
     const localRepo = makeRepo({
       id: 'local-repo',
       displayName: 'Orca',
@@ -181,7 +182,8 @@ describe('RepositoryHostSetupsSection', () => {
         })
       ],
       openSettingsPage,
-      openSettingsTarget
+      openSettingsTarget,
+      setSettingsProjectHostSelection
     })
 
     renderSection(localRepo)
@@ -196,8 +198,13 @@ describe('RepositoryHostSetupsSection', () => {
       openButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
-    expect(openSettingsPage).toHaveBeenCalledTimes(1)
-    expect(openSettingsTarget).toHaveBeenCalledWith({ pane: 'repo', repoId: 'remote-repo' })
+    // The single project pane switches host in place — no navigation.
+    expect(setSettingsProjectHostSelection).toHaveBeenCalledWith(
+      'github:stablyai/orca',
+      toSshExecutionHostId('openclaw 2')
+    )
+    expect(openSettingsPage).not.toHaveBeenCalled()
+    expect(openSettingsTarget).not.toHaveBeenCalled()
   })
 
   it('removes independent setup metadata instead of opening an empty repo target', async () => {
