@@ -2,7 +2,7 @@
 
 Date created: 2026-07-14<br>
 Last updated: 2026-07-14<br>
-Current phase: Milestone 3 / Work Package 2 target-native runtime assembly — exact-head runs 29351557922 and 29352510414 prove clean-build equality on Linux x64/arm64, macOS x64/arm64, and Windows x64, but both fail closed because Windows arm64 first differs at `conpty_console_list.node`; the active slice is a bounded PE diagnostic for that copied artifact before any producer correction; oldest-baseline, native-trust, cross-family remote, and measured-baseline gates remain open; no bundled-runtime path is enabled<br>
+Current phase: Milestone 3 / Work Package 2 target-native runtime assembly — exact-head runs 29351557922 and 29352510414 prove clean-build equality on Linux x64/arm64, macOS x64/arm64, and Windows x64, but both fail closed because Windows arm64 first differs at `conpty_console_list.node`; bounded PE diagnostic implementation `39ee3451b` is locally green and awaiting native evidence before any producer correction; oldest-baseline, native-trust, cross-family remote, and measured-baseline gates remain open; no bundled-runtime path is enabled<br>
 Primary design: [SSH relay GitHub Release plan](./2026-07-14-ssh-relay-github-release-plan.html)<br>
 Motivating issues: [#8450](https://github.com/stablyai/orca/issues/8450), [#1693](https://github.com/stablyai/orca/issues/1693)
 
@@ -112,7 +112,9 @@ same change as the work it records.
   only exact-head repeat run 29352510414 reproduces the same isolated arm64 drift while all five
   controls compare and upload under E-M3-REPRODUCIBILITY-WINDOWS-ARM64-REPEAT-CI-RED-001. Native
   Windows arm64 equality remains mandatory; oldest-baseline, native-trust, SSH, and musl cells
-  remain open.
+  remain open. E-M3-WINDOWS-PE-DIAGNOSTIC-LOCAL-001 proves the bounded diagnostic and fail-closed
+  workflow ordering locally at exact implementation commit `39ee3451b`; both native Windows cells
+  remain required before interpreting or correcting the producer.
 - Windows input correction: E-M3-WINDOWS-INPUT-GAP-001 proved the official Windows ZIP lacks headers
   and `node.lib`. Both artifacts now require the exact signed headers archive and tuple import
   library as explicit inputs. The schema, signed-checksum verifier, bounded ZIP/header extraction,
@@ -152,11 +154,10 @@ same change as the work it records.
   per-target opt-in selects bundled-preferred behavior, and implementing the setting does not
   authorize default-on rollout or legacy removal (E-M1-ROLLOUT-DECISION-001).
 - Legacy fallback removal: not authorized.
-- Next required action: finish the bounded Windows PE diagnostic that compares the two rejected
-  `conpty_console_list.node` outputs before cleanup and
-  reports hashes, sizes, differing byte ranges, and relevant PE headers without uploading either
-  failed binary. Prove the diagnostic contract locally and on both native Windows runners before
-  making any copied-artifact producer correction. Keep the strict comparator, x64 behavior,
+- Next required action: push exact implementation commit `39ee3451b` and run both native Windows
+  cells. Require x64 to remain exactly reproducible and arm64 to emit bounded hashes, sizes,
+  differing byte ranges, and relevant PE headers before failing with no upload. Make no
+  copied-artifact producer correction until that evidence is recorded. Keep the strict comparator,
   repository-wide node-pty patch, legacy/default path, and all other release gates unchanged.
 
 ## Non-Negotiable Invariants
@@ -644,7 +645,8 @@ headers only, with bounded reads/output and no failed-binary upload. Exact-head 
 29352510414 reproduces the same arm64-only drift while all five controls compare and upload under
 E-M3-REPRODUCIBILITY-WINDOWS-ARM64-REPEAT-CI-RED-001. No comparator weakening, post-build
 normalization, producer correction, repository-wide node-pty change, tuple enablement, or production
-consumer is authorized without the diagnostic evidence.
+consumer is authorized without the diagnostic evidence. Exact implementation commit `39ee3451b` is
+locally green under E-M3-WINDOWS-PE-DIAGNOSTIC-LOCAL-001; native Windows execution remains open.
 
 Each runtime must contain only the executable closure required by the relay.
 
@@ -1244,16 +1246,16 @@ Baseline measurements must be captured before product behavior changes.
 
 Update status and evidence as work begins. Do not combine these into one large behavior switch.
 
-| Work package              | Scope                                                                                      | Default behavior change     | Status                                                  | PR/evidence                                                                                  |
-| ------------------------- | ------------------------------------------------------------------------------------------ | --------------------------- | ------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
-| 0. #8450 legacy fix       | Coherent Node/npm selection and live repro                                                 | Fixes legacy selection only | Complete and CI-green in draft PR #8724                 | E-M0-UNIT-002, E-M0-LIVE-002, E-M0-STATIC-002, E-M0-PR-001, E-M0-CI-001                      |
-| 1. Contract and selectors | Manifest schema, identity, platform/libc selection, hostile inputs                         | None                        | Complete and CI-green in draft PR #8728                 | `b9d80a4cb`; E-M2-RED-001, E-M2-CONTRACT-001, E-M2-CI-001                                    |
-| 2. Runtime builds         | Per-tuple assembly, native smoke, SBOM/provenance/signing                                  | None                        | Draft PR #8741; Windows arm64 equality diagnosis active | `de541efd1`; E-M3-REPRODUCIBILITY-WINDOWS-ARM64-CI-RED-001, E-M3-CI-001, E-M3-WINDOWS-CI-001 |
-| 3. Release publication    | Prerequisite DAG, embedded manifest, draft upload/read-back gates                          | Asset-only                  | Not started                                             | —                                                                                            |
-| 4. Desktop resolver/cache | Verified download, extraction, cache, offline behavior                                     | None/forced mode only       | Not started                                             | —                                                                                            |
-| 5. Transfer/install       | Bounded transports, structured sentinel, bundled launch behind per-target Beta/forced mode | Per-target opt-in only      | Not started                                             | —                                                                                            |
-| 6. Fallback/diagnostics   | Abort-and-join state machine, mode isolation, reason codes, target-mode configuration/UI   | Per-target Beta only        | Not started                                             | —                                                                                            |
-| 7. Live gates/rollout     | Matrix, security, performance, release promotion                                           | Per-tuple staged            | Not started                                             | —                                                                                            |
+| Work package              | Scope                                                                                      | Default behavior change     | Status                                                 | PR/evidence                                                                  |
+| ------------------------- | ------------------------------------------------------------------------------------------ | --------------------------- | ------------------------------------------------------ | ---------------------------------------------------------------------------- |
+| 0. #8450 legacy fix       | Coherent Node/npm selection and live repro                                                 | Fixes legacy selection only | Complete and CI-green in draft PR #8724                | E-M0-UNIT-002, E-M0-LIVE-002, E-M0-STATIC-002, E-M0-PR-001, E-M0-CI-001      |
+| 1. Contract and selectors | Manifest schema, identity, platform/libc selection, hostile inputs                         | None                        | Complete and CI-green in draft PR #8728                | `b9d80a4cb`; E-M2-RED-001, E-M2-CONTRACT-001, E-M2-CI-001                    |
+| 2. Runtime builds         | Per-tuple assembly, native smoke, SBOM/provenance/signing                                  | None                        | Draft PR #8741; PE diagnostic awaiting native evidence | `39ee3451b`; E-M3-WINDOWS-PE-DIAGNOSTIC-LOCAL-001; arm64 repeat-red evidence |
+| 3. Release publication    | Prerequisite DAG, embedded manifest, draft upload/read-back gates                          | Asset-only                  | Not started                                            | —                                                                            |
+| 4. Desktop resolver/cache | Verified download, extraction, cache, offline behavior                                     | None/forced mode only       | Not started                                            | —                                                                            |
+| 5. Transfer/install       | Bounded transports, structured sentinel, bundled launch behind per-target Beta/forced mode | Per-target opt-in only      | Not started                                            | —                                                                            |
+| 6. Fallback/diagnostics   | Abort-and-join state machine, mode isolation, reason codes, target-mode configuration/UI   | Per-target Beta only        | Not started                                            | —                                                                            |
+| 7. Live gates/rollout     | Matrix, security, performance, release promotion                                           | Per-tuple staged            | Not started                                            | —                                                                            |
 
 Every PR must document:
 
@@ -4174,6 +4176,80 @@ or unexpected token`; the first logs did not identify a source location.
 - Follow-up: run the bounded diagnostic on both native Windows runners, require x64 to remain equal,
   and use only the rejected arm64 headers/ranges to choose or reject a copied-artifact correction.
 
+### E-M3-WINDOWS-PE-DIAGNOSTIC-LOCAL-001 — Bounded rejected-binary diagnostics
+
+- Date: 2026-07-14
+- Commit SHA / PR: exact implementation commit
+  `39ee3451b8cc38b5311a0cb1085ad48a1f302185`; stacked draft PR
+  [#8741](https://github.com/stablyai/orca/pull/8741), push/native execution pending
+- Runner: macOS 26.2 build 25C56, native Apple M4 arm64; Node v26.0.0 and pnpm 10.24.0. The
+  repository requires Node 24, so target-native Windows jobs remain authoritative.
+- Remote and transport: none; synthetic PE32+ arm64 fixtures and workflow source contracts only
+- Exact commands:
+
+  ```sh
+  node --check config/scripts/ssh-relay-runtime-windows-pe-diagnostic.mjs
+  node --check config/scripts/ssh-relay-runtime-windows-pe-diagnostic.test.mjs
+  pnpm exec vitest run --config config/vitest.config.ts \
+    config/scripts/ssh-relay-runtime-windows-pe-diagnostic.test.mjs \
+    config/scripts/ssh-relay-runtime-workflow.test.mjs
+  pnpm exec vitest run --config config/vitest.config.ts \
+    config/scripts/ssh-relay-node-release-verification.test.mjs \
+    config/scripts/ssh-relay-node-tar-inspection.test.mjs \
+    config/scripts/ssh-relay-node-pty-build.test.mjs \
+    config/scripts/ssh-relay-node-pty-windows-build-determinism.test.mjs \
+    config/scripts/ssh-relay-node-pty-windows-settlement.test.mjs \
+    config/scripts/ssh-relay-node-zip-inspection.test.mjs \
+    config/scripts/ssh-relay-runtime-artifact.test.mjs \
+    config/scripts/ssh-relay-runtime-build.test.mjs \
+    config/scripts/ssh-relay-runtime-pty-smoke.test.mjs \
+    config/scripts/ssh-relay-runtime-reproducibility.test.mjs \
+    config/scripts/ssh-relay-runtime-resource-diagnostics.test.mjs \
+    config/scripts/ssh-relay-runtime-windows-pe-diagnostic.test.mjs \
+    config/scripts/ssh-relay-runtime-windows-tree.test.mjs \
+    config/scripts/ssh-relay-runtime-workflow.test.mjs \
+    config/scripts/ssh-relay-runtime-zip.test.mjs
+  pnpm run typecheck
+  pnpm exec oxlint config/scripts/ssh-relay-runtime-windows-pe-diagnostic.mjs \
+    config/scripts/ssh-relay-runtime-windows-pe-diagnostic.test.mjs \
+    config/scripts/ssh-relay-runtime-workflow.test.mjs
+  pnpm run check:max-lines-ratchet
+  GOMAXPROCS=2 pnpm run lint
+  pnpm exec oxfmt --check .github/workflows/ssh-relay-runtime-artifacts.yml \
+    config/scripts/ssh-relay-runtime-windows-pe-diagnostic.mjs \
+    config/scripts/ssh-relay-runtime-windows-pe-diagnostic.test.mjs \
+    config/scripts/ssh-relay-runtime-workflow.test.mjs \
+    docs/reference/plans/2026-07-14-ssh-relay-github-release-implementation-checklist.md
+  git diff --check
+  ```
+
+- Result: PASS at the exact implementation commit. Both syntax checks exited zero; the purpose
+  command passed 5/5 tests across two suites; all 15 artifact suites passed 50/50 tests. Typecheck,
+  focused oxlint, the 355-entry max-lines ratchet, full repository
+  lint/reliability/localization, formatting, staged hooks, and diff checks exited zero. Full lint
+  emitted only pre-existing warnings outside this package.
+- Duration and resource metrics: syntax checks 50 ms and 40 ms; purpose suite 142 ms Vitest / 0.76s
+  wall; complete artifact suite 470 ms Vitest / 1.15s wall; typecheck 2.68s; focused oxlint 0.69s;
+  max-lines 1.58s; full lint 11.92s; formatting check 1.82s. The implementation rejects inputs over
+  64 MiB, reads in 64 KiB chunks, caps the header at 1 MiB, the section/debug tables at 96/32
+  entries, byte/header differences at 128 each, and the whole diagnostic at 60 seconds. Synthetic
+  peak RSS/open files were not instrumented.
+- Artifact/log/trace link: exact source commit; no binary artifact was created or uploaded
+- Oracle proved: valid PE32+ fixtures report whole-file sizes/SHA-256, coalesced file-offset ranges,
+  COFF/optional/data-directory/section/debug headers, and hashed—not printed—CodeView paths;
+  oversized, malformed, same-file, unknown-argument, and pre-aborted inputs fail boundedly. Workflow
+  contracts require diagnostic syntax/tests on Windows, invoke it only after the strict comparator
+  rejects the two retained `conpty_console_list.node` files, throw afterward, and leave evidence
+  copying unreachable, so rejected binaries are not uploaded. No max-lines bypass was added.
+- Does not prove: parsing the real x64/arm64 linker outputs, native Node 24 behavior, the actual
+  differing ranges/headers, x64 equality after the workflow change, a producer correction, arm64
+  equality, oldest baselines, native trust, SSH, publication, transfer, fallback, UI, or an enabled
+  tuple.
+- Checklist items satisfied: local bounded diagnostic and fail-closed workflow ordering only; no
+  native, tuple, or production checkbox.
+- Follow-up: push the exact implementation, require native x64 equality and arm64 diagnostic output
+  with no upload, then record the exact PE evidence before changing the producer.
+
 ## Accepted Gaps
 
 No product gap is accepted merely because it appears in this list. Each entry requires explicit
@@ -4231,11 +4307,11 @@ The project is not complete until every applicable item below is checked with ev
 
 ## Next Required Action
 
-Add a bounded Windows PE diagnostic that compares the two native arm64
-`conpty_console_list.node` outputs before cleanup, reports hashes, differing ranges, and relevant
-headers without uploading failed bytes, and proves x64 stays unchanged. Use that evidence to make
-the narrowest copied-artifact build correction, then rerun local gates and all six target-native
-jobs without weakening the comparator. Cross-family Layer B targets, the protected
+Push exact implementation commit `39ee3451b` and require native Windows x64 to remain exactly
+reproducible while arm64 emits bounded hashes, sizes, differing ranges, and relevant PE headers
+before failing with no upload. Use only that evidence to choose or reject the narrowest
+copied-artifact build correction, then rerun local gates and all six target-native jobs without
+weakening the comparator. Cross-family Layer B targets, the protected
 manifest-signing environment, oldest-baseline/native-trust cells, and the paired legacy performance
 baseline remain release/default-path blockers; no publication, desktop resolver, SSH transfer/
 install, per-target Beta, fallback, tuple enablement, or default behavior may be connected by this
