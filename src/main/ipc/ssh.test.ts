@@ -167,6 +167,7 @@ vi.mock('./pty', () => ({
   answerStartupTerminalColorQueriesForPty: vi.fn((_id: string, data: string) => data),
   getSshPtyProvider: vi.fn(),
   getPtyIdsForConnection: vi.fn().mockReturnValue([]),
+  hasPendingSshShutdown: vi.fn().mockReturnValue(false),
   isRendererPtyOutputPaused: vi.fn().mockReturnValue(false),
   shutdownPtyWithRetainedOwnership: shutdownPtyWithRetainedOwnershipMock
 }))
