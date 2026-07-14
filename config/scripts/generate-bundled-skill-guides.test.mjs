@@ -64,7 +64,7 @@ describe('bundled skill guide generator', () => {
   })
 
   it('keeps CLI guide examples safe across shells and Linux command names', async () => {
-    for (const name of ['orca-cli', 'computer-use']) {
+    for (const name of ['orca-cli', 'computer-use', 'orca-emulator', 'orca-emulator-android']) {
       const source = await readFile(path.join(projectDir, 'skill-guides', `${name}.md`), 'utf8')
 
       expect(source).toContain('ORCA_CLI_COMMAND')
