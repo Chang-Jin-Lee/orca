@@ -285,6 +285,7 @@ const MOBILE_RPC_METHOD_ALLOWLIST = new Set([
   'linear.updateIssue',
   'markdown.readTab',
   'markdown.saveTab',
+  'notifications.getMissedSince',
   'notifications.subscribe',
   'notifications.unsubscribe',
   'preflight.check',
