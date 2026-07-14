@@ -2,7 +2,6 @@ import { execFile } from 'node:child_process'
 
 export const DESCENDANT_KILL_GRACE_MS = 2_000
 export const DESCENDANT_SNAPSHOT_TIMEOUT_MS = 1_000
-export const PROCESS_TABLE_REUSE_MS = 50
 // Why: a full process table on a busy host can exceed execFile's 1MB default;
 // truncation would silently drop descendants from the snapshot.
 const PS_MAX_BUFFER_BYTES = 32 * 1024 * 1024
@@ -24,7 +23,13 @@ export type DescendantSnapshot = {
   capturedAtMs: number
 }
 
-export type ProcessTableReader = (timeoutMs?: number) => Promise<ProcessTableRow[]>
+export type ProcessTableCapture = {
+  rows: ProcessTableRow[]
+  /** Start boundary of the scan that produced rows, never a later consumer's time. */
+  capturedAtMs: number
+}
+
+export type ProcessTableReader = (timeoutMs?: number) => Promise<ProcessTableCapture>
 export type SignalSender = (pid: number, signal: NodeJS.Signals) => void
 
 export function parseProcessTable(psOutput: string): ProcessTableRow[] {
@@ -48,7 +53,10 @@ export function parseProcessTable(psOutput: string): ProcessTableRow[] {
 
 function readFreshProcessTable(
   timeoutMs = DESCENDANT_SNAPSHOT_TIMEOUT_MS
-): Promise<ProcessTableRow[]> {
+): Promise<ProcessTableCapture> {
+  // Why: identity safety must use the boundary before ps starts. Stamping the
+  // result later could make a capture-second PID look safe after a rollover.
+  const capturedAtMs = Date.now()
   return new Promise((resolve, reject) => {
     execFile(
       'ps',
@@ -63,49 +71,57 @@ function readFreshProcessTable(
           reject(error)
           return
         }
-        resolve(parseProcessTable(stdout))
+        resolve({ rows: parseProcessTable(stdout), capturedAtMs })
       }
     )
   })
 }
 
-/** Coalesces teardown bursts onto one process-table subprocess and briefly
- * reuses the completed table so sequential worktree cleanup stays O(1) scans. */
+/** Coalesces same-turn teardown bursts but never serves a completed or already
+ * started scan to a later request, because stale PIDs are unsafe to signal. */
 export function createProcessTableSnapshotReader(
-  readFresh: ProcessTableReader,
-  deps: { reuseMs?: number; now?: () => number } = {}
+  readFresh: ProcessTableReader
 ): ProcessTableReader {
-  const reuseMs = deps.reuseMs ?? PROCESS_TABLE_REUSE_MS
-  const now = deps.now ?? Date.now
-  let inFlight: Promise<ProcessTableRow[]> | null = null
-  let cached: { rows: ProcessTableRow[]; expiresAt: number } | null = null
+  let inFlight: Promise<ProcessTableCapture> | null = null
+  let queued: { promise: Promise<ProcessTableCapture>; started: boolean } | null = null
 
   return (timeoutMs) => {
-    if (cached && now() <= cached.expiresAt) {
-      return Promise.resolve(cached.rows)
-    }
-    if (inFlight) {
-      return inFlight
+    if (queued && !queued.started) {
+      return queued.promise
     }
 
-    const request = readFresh(timeoutMs).then((rows) => {
-      cached = { rows, expiresAt: now() + reuseMs }
-      return rows
-    })
-    inFlight = request
-    void request.then(
-      () => {
-        if (inFlight === request) {
-          inFlight = null
+    const prior = queued?.promise ?? inFlight
+    const entry: { promise: Promise<ProcessTableCapture>; started: boolean } = {
+      promise: Promise.resolve(undefined as never),
+      started: false
+    }
+    entry.promise = Promise.resolve().then(async () => {
+      if (prior) {
+        try {
+          await prior
+        } catch {
+          // The post-request scan below owns this caller's result.
         }
-      },
-      () => {
+      }
+      entry.started = true
+      const request = readFresh(timeoutMs)
+      inFlight = request
+      try {
+        return await request
+      } finally {
         if (inFlight === request) {
           inFlight = null
         }
       }
-    )
-    return request
+    })
+    queued = entry
+    const clearQueued = (): void => {
+      if (queued === entry) {
+        queued = null
+      }
+    }
+    void entry.promise.then(clearQueued, clearQueued)
+    return entry.promise
   }
 }
 
@@ -114,16 +130,16 @@ const readProcessTable = createProcessTableSnapshotReader(readFreshProcessTable)
 function readProcessTableBeforeDeadline(
   readTable: ProcessTableReader,
   timeoutMs: number
-): Promise<ProcessTableRow[] | null> {
+): Promise<ProcessTableCapture | null> {
   return new Promise((resolve) => {
     let settled = false
-    const finish = (rows: ProcessTableRow[] | null): void => {
+    const finish = (capture: ProcessTableCapture | null): void => {
       if (settled) {
         return
       }
       settled = true
       clearTimeout(timer)
-      resolve(rows)
+      resolve(capture)
     }
     const timer = setTimeout(() => finish(null), timeoutMs)
     timer.unref?.()
@@ -173,7 +189,6 @@ type SnapshotDeps = {
   readTable?: ProcessTableReader
   platform?: NodeJS.Platform
   timeoutMs?: number
-  now?: () => number
 }
 
 /**
@@ -195,12 +210,11 @@ export async function captureDescendantSnapshot(
   const timeoutMs = deps.timeoutMs ?? DESCENDANT_SNAPSHOT_TIMEOUT_MS
   // Why both layers: the deadline keeps injected/custom readers bounded while
   // the production execFile timeout actually kills a wedged ps subprocess.
-  const capturedAtMs = (deps.now ?? Date.now)()
-  const table = await readProcessTableBeforeDeadline(readTable, timeoutMs)
-  if (!table) {
+  const capture = await readProcessTableBeforeDeadline(readTable, timeoutMs)
+  if (!capture) {
     return null
   }
-  return collectDescendantRows(rootPid, table, capturedAtMs)
+  return collectDescendantRows(rootPid, capture.rows, capture.capturedAtMs)
 }
 
 /**
@@ -273,11 +287,11 @@ export function terminateDescendantSnapshot(
     void readProcessTableBeforeDeadline(
       readTable,
       deps.timeoutMs ?? DESCENDANT_SNAPSHOT_TIMEOUT_MS
-    ).then((table) => {
-      if (!table) {
+    ).then((capture) => {
+      if (!capture) {
         return
       }
-      const liveByPid = new Map(table.map((row) => [row.pid, row]))
+      const liveByPid = new Map(capture.rows.map((row) => [row.pid, row]))
       for (const row of snapshot.descendants) {
         const live = liveByPid.get(row.pid)
         if (

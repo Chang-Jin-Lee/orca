@@ -12,6 +12,7 @@ import {
   killWithDescendantSweep,
   parseProcessTable,
   terminateDescendantSnapshot,
+  type ProcessTableCapture,
   type ProcessTableRow
 } from './pty-descendant-termination'
 
@@ -32,6 +33,18 @@ function row(
   startedAt = 'Mon Jul 13 12:54:47 2026'
 ): ProcessTableRow {
   return { pid, ppid, pgid, startedAt }
+}
+
+function tableCapture(rows: ProcessTableRow[], capturedAtMs = CAPTURED_AT_MS): ProcessTableCapture {
+  return { rows, capturedAtMs }
+}
+
+function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((res) => {
+    resolve = res
+  })
+  return { promise, resolve }
 }
 
 function snapshot(
@@ -92,11 +105,10 @@ describe('captureDescendantSnapshot', () => {
   })
 
   it('resolves the descendant tree on POSIX', async () => {
-    const readTable = vi.fn().mockResolvedValue([row(10, 1, 10), row(20, 10, 20)])
+    const readTable = vi.fn().mockResolvedValue(tableCapture([row(10, 1, 10), row(20, 10, 20)]))
     const result = await captureDescendantSnapshot(10, {
       readTable,
-      platform: 'darwin',
-      now: () => CAPTURED_AT_MS
+      platform: 'darwin'
     })
     expect(result).toEqual(snapshot([row(20, 10, 20)]))
     expect(vi.getTimerCount()).toBe(0)
@@ -121,7 +133,7 @@ describe('captureDescendantSnapshot', () => {
   })
 
   it('degrades to null when ps hangs past the timeout instead of blocking teardown', async () => {
-    const readTable = vi.fn().mockReturnValue(new Promise<ProcessTableRow[]>(() => {}))
+    const readTable = vi.fn().mockReturnValue(new Promise<ProcessTableCapture>(() => {}))
     const pending = captureDescendantSnapshot(10, {
       readTable,
       platform: 'darwin',
@@ -134,8 +146,7 @@ describe('captureDescendantSnapshot', () => {
   it('gives the production ps subprocess a hard SIGKILL timeout', async () => {
     const result = await captureDescendantSnapshot(10, {
       platform: 'darwin',
-      timeoutMs: 321,
-      now: () => CAPTURED_AT_MS
+      timeoutMs: 321
     })
     expect(result).not.toBeNull()
     expect(execFileMock).toHaveBeenCalledWith(
@@ -144,6 +155,23 @@ describe('captureDescendantSnapshot', () => {
       expect.objectContaining({ timeout: 321, killSignal: 'SIGKILL' }),
       expect.any(Function)
     )
+  })
+
+  it('records the identity boundary before ps starts even when it crosses a second', async () => {
+    vi.setSystemTime(CAPTURED_AT_MS + 900)
+    execFileMock.mockImplementation((...args: unknown[]) => {
+      const callback = args.at(-1) as (error: Error | null, stdout: string) => void
+      vi.setSystemTime(CAPTURED_AT_MS + 1_100)
+      callback(
+        null,
+        ['10 1 10 Tue Jul 14 12:00:00 2026', '20 10 20 Tue Jul 14 12:00:00 2026'].join('\n')
+      )
+    })
+
+    const result = await captureDescendantSnapshot(10, { platform: 'darwin' })
+
+    expect(result?.capturedAtMs).toBe(CAPTURED_AT_MS + 900)
+    expect(result?.descendants).toEqual([row(20, 10, 20, 'Tue Jul 14 12:00:00 2026')])
   })
 })
 
@@ -159,7 +187,7 @@ describe('terminateDescendantSnapshot', () => {
     const sendSignal = vi.fn()
     terminateDescendantSnapshot(snapshot([row(20, 10, 20), row(30, 20, 30)]), {
       sendSignal,
-      readTable: vi.fn().mockResolvedValue([])
+      readTable: vi.fn().mockResolvedValue(tableCapture([]))
     })
     expect(sendSignal.mock.calls).toEqual([
       [20, 'SIGTERM'],
@@ -176,7 +204,9 @@ describe('terminateDescendantSnapshot', () => {
     // belongs to a different (recycled) process with a different start time.
     const readTable = vi
       .fn()
-      .mockResolvedValue([survivor, { ...recycled, startedAt: 'Tue Jul 14 09:00:00 2026' }])
+      .mockResolvedValue(
+        tableCapture([survivor, { ...recycled, startedAt: 'Tue Jul 14 09:00:00 2026' }])
+      )
     terminateDescendantSnapshot(snapshot([exited, survivor, recycled]), { sendSignal, readTable })
     sendSignal.mockClear()
     await vi.advanceTimersByTimeAsync(DESCENDANT_KILL_GRACE_MS)
@@ -200,12 +230,12 @@ describe('terminateDescendantSnapshot', () => {
     expect(sendSignal).not.toHaveBeenCalled()
   })
 
-  it('does not SIGKILL when second-resolution start identity is ambiguous', async () => {
+  it('uses the source scan boundary when a caller crosses into the next second', async () => {
     const sameSecond = row(20, 10, 20, 'Tue Jul 14 12:00:00 2026')
     const sendSignal = vi.fn()
-    terminateDescendantSnapshot(snapshot([sameSecond]), {
+    terminateDescendantSnapshot(snapshot([sameSecond], 10, CAPTURED_AT_MS + 900), {
       sendSignal,
-      readTable: vi.fn().mockResolvedValue([sameSecond])
+      readTable: vi.fn().mockResolvedValue(tableCapture([sameSecond], CAPTURED_AT_MS + 3_000))
     })
     sendSignal.mockClear()
     await vi.advanceTimersByTimeAsync(DESCENDANT_KILL_GRACE_MS)
@@ -216,7 +246,7 @@ describe('terminateDescendantSnapshot', () => {
     const sendSignal = vi.fn()
     terminateDescendantSnapshot(snapshot([row(20, 10, 20)]), {
       sendSignal,
-      readTable: vi.fn().mockReturnValue(new Promise<ProcessTableRow[]>(() => {}))
+      readTable: vi.fn().mockReturnValue(new Promise<ProcessTableCapture>(() => {}))
     })
     sendSignal.mockClear()
     await vi.advanceTimersByTimeAsync(DESCENDANT_KILL_GRACE_MS + DESCENDANT_SNAPSHOT_TIMEOUT_MS)
@@ -226,31 +256,51 @@ describe('terminateDescendantSnapshot', () => {
 })
 
 describe('createProcessTableSnapshotReader', () => {
-  it('coalesces concurrent and short sequential teardown scans', async () => {
-    let now = 1_000
-    const readFresh = vi.fn().mockResolvedValue([row(10, 1, 10)])
-    const readTable = createProcessTableSnapshotReader(readFresh, {
-      reuseMs: 50,
-      now: () => now
-    })
+  it('coalesces same-turn teardown requests onto one fresh scan', async () => {
+    const capture = tableCapture([row(10, 1, 10)])
+    const readFresh = vi.fn().mockResolvedValue(capture)
+    const readTable = createProcessTableSnapshotReader(readFresh)
 
-    await Promise.all(Array.from({ length: 20 }, () => readTable(1_000)))
-    await readTable(1_000)
+    const results = await Promise.all(Array.from({ length: 20 }, () => readTable(1_000)))
+    expect(results.every((result) => result === capture)).toBe(true)
     expect(readFresh).toHaveBeenCalledOnce()
 
-    now += 51
     await readTable(1_000)
     expect(readFresh).toHaveBeenCalledTimes(2)
   })
 
-  it('does not cache failed process-table reads', async () => {
+  it('queues a post-request scan when another scan has already started', async () => {
+    const firstGate = deferred<ProcessTableCapture>()
+    const secondGate = deferred<ProcessTableCapture>()
+    const readFresh = vi
+      .fn()
+      .mockReturnValueOnce(firstGate.promise)
+      .mockReturnValueOnce(secondGate.promise)
+    const readTable = createProcessTableSnapshotReader(readFresh)
+
+    const first = readTable()
+    await Promise.resolve()
+    expect(readFresh).toHaveBeenCalledOnce()
+
+    const laterA = readTable()
+    const laterB = readTable()
+    firstGate.resolve(tableCapture([row(10, 1, 10)], CAPTURED_AT_MS))
+    await first
+    await vi.waitFor(() => expect(readFresh).toHaveBeenCalledTimes(2))
+
+    const newer = tableCapture([row(20, 1, 20)], CAPTURED_AT_MS + 1_000)
+    secondGate.resolve(newer)
+    await expect(Promise.all([laterA, laterB])).resolves.toEqual([newer, newer])
+  })
+
+  it('retries after failed process-table reads', async () => {
     const readFresh = vi
       .fn()
       .mockRejectedValueOnce(new Error('ps failed'))
-      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce(tableCapture([]))
     const readTable = createProcessTableSnapshotReader(readFresh)
     await expect(readTable()).rejects.toThrow('ps failed')
-    await expect(readTable()).resolves.toEqual([])
+    await expect(readTable()).resolves.toEqual(tableCapture([]))
     expect(readFresh).toHaveBeenCalledTimes(2)
   })
 })
@@ -266,13 +316,12 @@ describe('killWithDescendantSweep', () => {
   it('signals descendants after snapshot resolution, then kills the root', async () => {
     const events: string[] = []
     const sendSignal = vi.fn(() => events.push('descendant-term'))
-    const readTable = vi.fn().mockResolvedValue([row(10, 1, 10), row(20, 10, 20)])
+    const readTable = vi.fn().mockResolvedValue(tableCapture([row(10, 1, 10), row(20, 10, 20)]))
     const killRoot = vi.fn(() => events.push('root-kill'))
     const pending = killWithDescendantSweep(10, killRoot, {
       readTable,
       sendSignal,
-      platform: 'darwin',
-      now: () => CAPTURED_AT_MS
+      platform: 'darwin'
     })
     expect(killRoot).not.toHaveBeenCalled()
     await vi.advanceTimersByTimeAsync(0)

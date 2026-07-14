@@ -6,8 +6,8 @@ import type { StartupCommandDelivery } from '../../shared/codex-startup-delivery
 import { buildStartupCommandSubmission } from '../../shared/startup-command-submission'
 import type { SessionInfo, TakePendingOutputResult, TerminalSnapshot } from './types'
 import { SessionNotFoundError } from './types'
-import { killWithDescendantSweep } from '../pty-descendant-termination'
 import type { CreateOrAttachOptions, CreateOrAttachResult } from './terminal-host-create-contract'
+import { TerminalImmediateKillCoordinator } from './terminal-immediate-kill'
 
 export type { CreateOrAttachOptions, CreateOrAttachResult } from './terminal-host-create-contract'
 
@@ -42,6 +42,7 @@ export type TerminalHostOptions = {
 
 export class TerminalHost {
   private sessions = new Map<string, Session>()
+  private immediateKills = new TerminalImmediateKillCoordinator()
   private killedTombstones = new Map<string, number>()
   private spawnSubprocess: TerminalHostOptions['spawnSubprocess']
   private onFinalCheckpoint: TerminalHostOptions['onFinalCheckpoint']
@@ -197,6 +198,10 @@ export class TerminalHost {
   }
 
   kill(sessionId: string, opts: { immediate?: boolean } = {}): void | Promise<void> {
+    const pending = opts.immediate ? this.immediateKills.get(sessionId) : undefined
+    if (pending) {
+      return pending
+    }
     const session = this.getAliveSession(sessionId)
     this.recordTombstone(sessionId)
     if (opts.immediate) {
@@ -207,16 +212,7 @@ export class TerminalHost {
         // funnels through Session.handleSubprocessExit -> onExit -> reapSession.
         this.reapSession(sessionId)
       }
-      if (!session.launchAgent) {
-        finish()
-        return
-      }
-      if (!session.beginTermination()) {
-        return
-      }
-      // Why: agent tool children live in detached process groups the shell's
-      // death never signals; the bounded snapshot defers teardown at most ~1s.
-      return killWithDescendantSweep(session.pid, finish)
+      return this.immediateKills.kill(sessionId, session, finish)
     }
     session.kill()
   }
