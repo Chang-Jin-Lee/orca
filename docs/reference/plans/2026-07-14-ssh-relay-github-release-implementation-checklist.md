@@ -58,8 +58,9 @@ same change as the work it records.
   [#8728](https://github.com/stablyai/orca/pull/8728) at implementation commit `b9d80a4cb`; no
   deploy/resolver call site is connected and no tuple is enabled.
 - Active package: Work Package 2 target-native runtime assembly, archive inspection, executable
-  smoke, SBOM, and provenance only. It may produce test artifacts but must not publish, resolve,
-  transfer, install, launch, or enable them.
+  smoke, SBOM, and provenance only at implementation commit `f2b387b21` in stacked draft PR
+  [#8741](https://github.com/stablyai/orca/pull/8741). It may produce test artifacts but must not
+  publish, resolve, transfer, install, launch, or enable them.
 - Active evidence gate: the immutable Node v24.18.0 contract, pinned release key, bounded verifier,
   and artifact-only CLI are locally green under E-M3-NODE-RED-001 and E-M3-NODE-PROVENANCE-001.
   E-M3-RUNTIME-LOCAL-001 additionally proves one unpublished Linux arm64 glibc assembly, exact-tree
@@ -1135,7 +1136,7 @@ Update status and evidence as work begins. Do not combine these into one large b
 | ------------------------- | ------------------------------------------------------------------------------------------ | --------------------------- | ---------------------------------------- | ----------------------------------------------------------------------- |
 | 0. #8450 legacy fix       | Coherent Node/npm selection and live repro                                                 | Fixes legacy selection only | Complete and CI-green in draft PR #8724  | E-M0-UNIT-002, E-M0-LIVE-002, E-M0-STATIC-002, E-M0-PR-001, E-M0-CI-001 |
 | 1. Contract and selectors | Manifest schema, identity, platform/libc selection, hostile inputs                         | None                        | Complete and CI-green in draft PR #8728  | `b9d80a4cb`; E-M2-RED-001, E-M2-CONTRACT-001, E-M2-CI-001               |
-| 2. Runtime builds         | Per-tuple assembly, native smoke, SBOM/provenance/signing                                  | None                        | In progress; one local POSIX tuple green | E-M3-NODE-RED-001, E-M3-NODE-PROVENANCE-001, E-M3-RUNTIME-LOCAL-001, E-M3-STATIC-001 |
+| 2. Runtime builds         | Per-tuple assembly, native smoke, SBOM/provenance/signing                                  | None                        | Draft PR #8741; native CI pending        | `f2b387b21`; E-M3-NODE-RED-001, E-M3-NODE-PROVENANCE-001, E-M3-RUNTIME-LOCAL-001, E-M3-STATIC-001 |
 | 3. Release publication    | Prerequisite DAG, embedded manifest, draft upload/read-back gates                          | Asset-only                  | Not started                              | —                                                                       |
 | 4. Desktop resolver/cache | Verified download, extraction, cache, offline behavior                                     | None/forced mode only       | Not started                              | —                                                                       |
 | 5. Transfer/install       | Bounded transports, structured sentinel, bundled launch behind per-target Beta/forced mode | Per-target opt-in only      | Not started                              | —                                                                       |
@@ -2217,7 +2218,8 @@ fragmentLinks=9`.
 ### E-M3-NODE-PROVENANCE-001 — Pinned Node metadata and archive verification
 
 - Date: 2026-07-14
-- Commit SHA / PR: `0c299fe189310b6dbd539f0f0f506b240524ba6a` plus uncommitted Work Package 2 implementation; no Work Package 2 PR yet
+- Commit SHA / PR: implementation commit `f2b387b21bbe6a3863ff1a492a1a03b65e0a0477` in stacked
+  draft PR [#8741](https://github.com/stablyai/orca/pull/8741); native PR CI pending
 - Runner: focused tests on macOS 26.2 arm64 with Node v26.0.0/pnpm 10.24.0; real proof in
   Docker Engine 29.2.1 on Linux/arm64 using `node:24-bookworm` resolved to
   `node@sha256:032e78d7e54e352129831743737e3a83171d9cc5b5896f411649c597ce0b11ea`,
@@ -2269,8 +2271,8 @@ fragmentLinks=9`.
 ### E-M3-RUNTIME-LOCAL-001 — First target-native Linux arm64 runtime artifact
 
 - Date: 2026-07-14
-- Commit SHA / PR: `0c299fe189310b6dbd539f0f0f506b240524ba6a` plus uncommitted Work
-  Package 2 implementation; no Work Package 2 PR yet
+- Commit SHA / PR: implementation commit `f2b387b21bbe6a3863ff1a492a1a03b65e0a0477` in stacked
+  draft PR [#8741](https://github.com/stablyai/orca/pull/8741); native PR CI pending
 - Runner: macOS 26.2 arm64 host with Docker Engine 29.2.1; native Linux/arm64 container
   `node@sha256:032e78d7e54e352129831743737e3a83171d9cc5b5896f411649c597ce0b11ea`
   (Debian bookworm, build Node v24.17.0), bundled Node v24.18.0 ABI 137, Python 3.11.2, GNU
@@ -2357,8 +2359,8 @@ fragmentLinks=9`.
 ### E-M3-STATIC-001 — Work Package 2 focused and repository static gates
 
 - Date: 2026-07-14
-- Commit SHA / PR: `0c299fe189310b6dbd539f0f0f506b240524ba6a` plus uncommitted Work
-  Package 2 implementation; no Work Package 2 PR yet
+- Commit SHA / PR: implementation commit `f2b387b21bbe6a3863ff1a492a1a03b65e0a0477` in stacked
+  draft PR [#8741](https://github.com/stablyai/orca/pull/8741); native PR CI pending
 - Runner: macOS 26.2 arm64; Node v26.0.0 and pnpm 10.24.0
 - Remote and transport: not applicable; local source/static verification only
 - Exact commands:
