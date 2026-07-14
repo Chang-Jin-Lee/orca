@@ -20,8 +20,9 @@ Approved design decisions are listed separately and are not presented as impleme
   x64/arm64.
 - Active work package: exact runtime closure is green on all six native runner families. The first
   metadata run failed closed before Windows build/upload because its linker-version probe was
-  silent; the bounded probe correction and reviewed Windows 19045/26100 build-floor correction are
-  in progress. Archive safety, oldest-baseline execution, and native trust remain open.
+  silent and direct inspection found versionless Linux strip records. The bounded probe and reviewed
+  Windows 19045/26100 build-floor corrections are locally green and await a fresh all-six native
+  proof. Archive safety, oldest-baseline execution, and native trust remain open.
 
 ## Locked rollout decisions
 

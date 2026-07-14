@@ -8,7 +8,7 @@ work; keep exact commands, runner identities, hashes, metrics, and residual gaps
 
 Date created: 2026-07-14<br>
 Last updated: 2026-07-14<br>
-Current phase: Milestone 3 / Work Package 2 SBOM/provenance closure — **In progress — 2026-07-14, Codex implementation owner**; exact-head run [29368482959](https://github.com/stablyai/orca/actions/runs/29368482959) proves the corrected metadata path on the completed POSIX cells but fails closed in both Windows contract-test cells before build or upload because direct no-argument `link.exe` invocation returns no selectable version line; the active correction requests bounded linker help explicitly and must pass both native Windows architectures plus clean-build metadata equality before any remaining SBOM/provenance/toolchain box is checked; the same evidence audit exposed that generated x64/arm64 Windows compatibility floors were both 20348 despite the reviewed 19045/26100 contract, so the plan now makes the single monotonic manifest floors explicit before correcting code and regenerating native identities; oldest-baseline, native-trust, cross-family remote, and measured-baseline gates remain open; production/default behavior and every tuple state remain unchanged; no bundled-runtime path is enabled<br>
+Current phase: Milestone 3 / Work Package 2 SBOM/provenance closure — **In progress — 2026-07-14, Codex implementation owner**; exact-head run [29368482959](https://github.com/stablyai/orca/actions/runs/29368482959) proves exact metadata/build equality and upload on all four POSIX cells but fails closed in both Windows contract-test cells before build or upload because direct no-argument `link.exe` invocation returns no selectable version line (E-M3-METADATA-CI-RED-001); artifact inspection also shows both Linux `strip` records contain a usage line rather than a version; exact implementation commit `e3f76d3ba` requests bounded linker help and GNU strip version output, encodes the reviewed single monotonic Windows build floors as x64 19045 and arm64 26100, and passes 20 files / 96 tests plus static gates under E-M3-METADATA-CORRECTION-LOCAL-001; the next exact-head run must pass all six native cells and direct metadata inspection before any remaining SBOM/provenance/toolchain box is checked; oldest-baseline, native-trust, cross-family remote, and measured-baseline gates remain open; production/default behavior and every tuple state remain unchanged; no bundled-runtime path is enabled<br>
 Primary design: [SSH relay GitHub Release plan](./2026-07-14-ssh-relay-github-release-plan.html)<br>
 Motivating issues: [#8450](https://github.com/stablyai/orca/issues/8450), [#1693](https://github.com/stablyai/orca/issues/1693)
 
@@ -175,12 +175,12 @@ same change as the work it records.
   per-target opt-in selects bundled-preferred behavior, and implementing the setting does not
   authorize default-on rollout or legacy removal (E-M1-ROLLOUT-DECISION-001).
 - Legacy fallback removal: not authorized.
-- Next required action: push exact metadata implementation commit `26bbd7b67` plus its evidence-
-  ledger head and rerun all six target-native cells. Require exact SPDX ownership, archive-scoped
-  document identity, commit-pinned builder identity, resolved runner identity, complete bounded tool
-  records with SHA-256, clean-build metadata equality, smoke, and upload before checking the remaining
-  Milestone 3 metadata/toolchain claims. Preserve the artifact-only boundary, legacy/default path,
-  and every other release gate.
+- Next required action: push exact correction commit `e3f76d3ba` plus its evidence-ledger head and
+  rerun all six target-native cells. Require exact SPDX ownership, archive-scoped document identity,
+  commit-pinned builder identity, resolved runner identity, complete bounded tool records with
+  SHA-256, clean-build metadata equality, smoke, upload, and regenerated Windows identities before
+  checking the remaining Milestone 3 metadata/toolchain claims. Preserve the artifact-only boundary,
+  legacy/default path, and every other release gate.
 
 ## Non-Negotiable Invariants
 
@@ -6193,6 +6193,108 @@ the bounded depth` before opening or parsing a candidate. Starting at the comple
   each uploaded SPDX/provenance document, and require complete bounded records and clean-build
   equality before closing the remaining Milestone 3 metadata/toolchain claims.
 
+### E-M3-METADATA-CI-RED-001 — Native metadata probes fail closed on Windows
+
+- Date: 2026-07-14
+- Commit SHA / PR: exact tested head `27e932c8cbc44f09d9b410d3aca519e7d1b8e9fe`;
+  stacked draft PR [#8741](https://github.com/stablyai/orca/pull/8741)
+- Runner: [GitHub Actions run 29368482959](https://github.com/stablyai/orca/actions/runs/29368482959),
+  final conclusion `failure` after 7m56s. Native job IDs: Linux x64 `87205814073`, Linux arm64
+  `87205814134`, macOS x64 `87205814075`, macOS arm64 `87205814110`, Windows x64 `87205814074`,
+  and Windows arm64 `87205814066`.
+- Remote and transport: none; target-native artifact-only build workflow
+- Exact evidence commands:
+
+  ```sh
+  gh run view 29368482959 --repo stablyai/orca --json status,conclusion,headSha,url,jobs
+  gh api repos/stablyai/orca/actions/jobs/87205814074/logs
+  gh api repos/stablyai/orca/actions/jobs/87205814066/logs
+  gh api repos/stablyai/orca/actions/runs/29368482959/artifacts
+  gh run download 29368482959 --repo stablyai/orca --dir /tmp/orca-8450-metadata-red-29368482959
+  # Parse every downloaded identity/SPDX/provenance document and hash every archive locally.
+  ```
+
+- Result: EXPECTED RED. Linux x64 completed in 2m58s, Linux arm64 in 3m24s, macOS arm64 in 4m08s,
+  and macOS x64 in 7m56s; each passed the 19-file/76-test native contract suite, built twice, smoked,
+  compared every runtime/archive/identity/SPDX/provenance byte exactly, and uploaded. Windows x64
+  failed in 1m32s and Windows arm64 in 4m09s at
+  `ssh-relay-runtime-toolchain.test.mjs` before input download, build, smoke, comparison, or upload:
+  line 217 could not select a linker version because direct no-argument `link.exe` invocation was
+  silent on both hosted MSVC environments. The four POSIX artifact IDs are Linux x64 `8325127644`,
+  Linux arm64 `8325138929`, macOS arm64 `8325153830`, and macOS x64 `8325244087`; no Windows
+  artifact exists for this run.
+- Downloaded-artifact audit: all four archive hashes match identity and provenance; every SPDX
+  namespace is scoped to the exact archive SHA-256; all 34 Linux and 35 macOS files have exactly one
+  package `CONTAINS` owner; each document has eight relay dependency relationships; builder URLs pin
+  exact commit `27e932c8c`; and runner labels, OS, architecture, hosted environment, image OS, and
+  image version are present and correct. POSIX content IDs remain `960546cd…` Linux x64,
+  `aa3aa8ae…` Linux arm64, `585ea603…` macOS x64, and `40ff5d20…` macOS arm64.
+- Additional defect exposed by direct payload inspection: both Linux provenance documents record
+  the first no-argument GNU `strip` usage line instead of a version. macOS records Xcode 16.4 and
+  has no equivalent defect. A green job alone would not have caught this semantic provenance gap.
+- Oracle proved: native metadata generation, equality, archive-scoped SPDX identity, package/file
+  ownership, dependency relationships, commit-pinned builder identity, and runner identity work on
+  all four POSIX cells; both Windows cells reject incomplete linker provenance before producing or
+  uploading bytes; direct artifact audit detects semantically wrong tool-version records.
+- Does not prove: any Windows metadata/build output, valid GNU strip version records, complete
+  all-six toolchain provenance, regenerated Windows compatibility identities, oldest baselines,
+  native trust/signing, SSH, publication, or an enabled tuple.
+- Checklist items satisfied: no new completion box; the compiler/toolchain item remains in progress.
+- Follow-up: explicitly request bounded linker help, request GNU `strip --version`, correct the
+  reviewed Windows 19045/26100 compatibility floors, and rerun every native cell from one exact head.
+
+### E-M3-METADATA-CORRECTION-LOCAL-001 — Native version probes and Windows build floors
+
+- Date: 2026-07-14
+- Commit SHA / PR: exact implementation commit
+  `e3f76d3ba70c860242b5300aa765fbf75ef21317`; stacked draft PR
+  [#8741](https://github.com/stablyai/orca/pull/8741)
+- Runner: local macOS 26.2 build 25C56, Darwin 25.2.0 arm64 on Apple Silicon; Node v26.0.0 and
+  pnpm 10.24.0 for pure contract tests
+- Remote and transport: none; artifact/selector-only local contract tests
+- Exact evidence commands:
+
+  ```sh
+  pnpm exec vitest run --config config/vitest.config.ts \
+    config/scripts/ssh-relay-*.test.mjs \
+    src/main/ssh/ssh-relay-artifact-selector.test.ts
+  pnpm run typecheck
+  pnpm run lint
+  pnpm run check:max-lines-ratchet
+  pnpm exec oxfmt --check \
+    .github/workflows/ssh-relay-runtime-artifacts.yml \
+    config/scripts/ssh-relay-runtime-toolchain.mjs \
+    config/scripts/ssh-relay-runtime-toolchain.test.mjs \
+    config/scripts/ssh-relay-runtime-tree.mjs \
+    config/scripts/ssh-relay-runtime-windows-tree.test.mjs \
+    config/scripts/ssh-relay-runtime-zip.test.mjs \
+    src/main/ssh/ssh-relay-artifact-selector.test.ts \
+    docs/reference/plans/2026-07-14-ssh-relay-github-release-plan.html \
+    docs/reference/plans/2026-07-14-ssh-relay-github-release-implementation-checklist.md \
+    docs/reference/plans/2026-07-14-ssh-relay-github-release-implementation-checklist-summary.md
+  git diff --check
+  ```
+
+- Result: PASS. Twenty test files passed 96 tests; typecheck, full lint and its
+  reliability/localization/line-budget sub-gates, max-lines ratchet, focused formatting, and diff
+  checks passed. The only full-lint diagnostics are pre-existing unrelated warnings. `link.exe` is
+  now invoked with `/?`, GNU strip with `--version`, and Apple strip remains tied to the selected
+  Xcode version. Generated Windows runtime identities now encode the reviewed monotonic build floors:
+  x64 `19045` and arm64 `26100`. Purpose-named selector tests reject x64 `19044` and arm64 `26099`
+  while accepting x64 `19045` and arm64 `26100`; both runtime-tree variants carry the same floors.
+- Oracle proved: the two native probe regressions have bounded explicit invocation contracts; the
+  artifact producer, ZIP fixture, and desktop selector tests agree with the reviewed Windows
+  compatibility decision; unknown/older Windows evidence still takes the classified legacy path.
+- Does not prove: either corrected probe on a native Windows/Linux runner, actual compiler/linker/
+  strip values in uploaded provenance, clean-build equality after Windows identity changes, oldest
+  Windows execution, native trust/signing, SSH, publication, or an enabled tuple. The Windows
+  compatibility change intentionally changes both Windows content IDs and requires fresh native
+  evidence.
+- Checklist items satisfied: local correction only; the compiler/toolchain, oldest-baseline, and
+  native-trust boxes remain unchecked.
+- Follow-up: push the exact implementation and ledger head, then require all six native jobs plus
+  direct inspection of every uploaded metadata document before closing the metadata/toolchain gate.
+
 ## Accepted Gaps
 
 No product gap is accepted merely because it appears in this list. Each entry requires explicit
@@ -6250,12 +6352,12 @@ The project is not complete until every applicable item below is checked with ev
 
 ## Next Required Action
 
-Finish the bounded Windows linker-version correction and the reviewed 19045/26100 Windows
-compatibility-floor correction, run the focused local gates, and rerun all six target-native cells.
-Require exact SPDX ownership, archive-scoped document identity, commit-pinned builder identity,
-resolved runner identity, complete bounded tool records with SHA-256, clean-build metadata equality,
-smoke, upload, and regenerated Windows content identities before checking the remaining Milestone 3
-metadata/toolchain claims. Then proceed to oldest-baseline and native-trust proof.
+Push exact correction commit `e3f76d3ba` plus this evidence-ledger head and rerun all six
+target-native cells. Require exact SPDX ownership, archive-scoped document identity, commit-pinned
+builder identity, resolved runner identity, complete bounded tool records with SHA-256, clean-build
+metadata equality, smoke, upload, and regenerated Windows content identities before checking the
+remaining Milestone 3 metadata/toolchain claims. Then proceed to oldest-baseline and native-trust
+proof.
 
 Cross-family Layer B targets, the protected manifest-signing environment, oldest-baseline/native-
 trust cells, and the paired legacy performance baseline remain release/default-path blockers. No
