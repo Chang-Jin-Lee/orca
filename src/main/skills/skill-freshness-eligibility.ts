@@ -1,12 +1,7 @@
-import type {
-  SkillFreshnessInstallation,
-  SkillInstallationTopology
+import {
+  SUPPORTED_GLOBAL_SKILL_TOPOLOGIES,
+  type SkillFreshnessInstallation
 } from '../../shared/skill-freshness'
-
-const SUPPORTED_GLOBAL_TOPOLOGIES = new Set<SkillInstallationTopology>([
-  'canonical-copy',
-  'provider-alias'
-])
 
 export function eligibleSkillUpdateNames(
   installations: readonly SkillFreshnessInstallation[]
@@ -24,7 +19,7 @@ export function eligibleSkillUpdateNames(
     const everyPlacementIsSafe = entries.every(
       (entry) =>
         (entry.status === 'current' || entry.status === 'outdated') &&
-        SUPPORTED_GLOBAL_TOPOLOGIES.has(entry.topology) &&
+        SUPPORTED_GLOBAL_SKILL_TOPOLOGIES.has(entry.topology) &&
         Boolean(entry.resolvedPath && entry.physicalIdentity)
     )
     if (hasOutdated && everyPlacementIsSafe) {

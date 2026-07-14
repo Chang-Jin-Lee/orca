@@ -5,7 +5,10 @@ import type {
   SkillFreshnessStatus,
   SkillInstallationTopology
 } from '../../../../shared/skill-freshness'
-import { buildTargetedSkillUpdateCommand } from '../../../../shared/skill-freshness'
+import {
+  buildTargetedSkillUpdateCommand,
+  SUPPORTED_GLOBAL_SKILL_TOPOLOGIES
+} from '../../../../shared/skill-freshness'
 import { useSkillFreshness } from '@/hooks/useSkillFreshness'
 import { notifyInstalledAgentSkillsChanged } from '@/hooks/useInstalledAgentSkills'
 import { translate } from '@/i18n/i18n'
@@ -68,14 +71,22 @@ function statusDescription(
         'Exactly matches the version bundled with this Orca build.'
       )
     case 'outdated':
-      return eligibleNames.has(installation.name)
+      if (eligibleNames.has(installation.name)) {
+        return translate(
+          'auto.components.skills.SkillFreshnessPanel.outdatedDescription',
+          'Exactly matches an older official Orca snapshot.'
+        )
+      }
+      // Why: the block can come from this row's own unsupported placement or from
+      // a sibling placement of the same name; blaming a phantom sibling misleads.
+      return SUPPORTED_GLOBAL_SKILL_TOPOLOGIES.has(installation.topology)
         ? translate(
-            'auto.components.skills.SkillFreshnessPanel.outdatedDescription',
-            'Exactly matches an older official Orca snapshot.'
-          )
-        : translate(
             'auto.components.skills.SkillFreshnessPanel.outdatedBlockedDescription',
             'An older official copy was found, but another placement of this name prevents a safe global update.'
+          )
+        : translate(
+            'auto.components.skills.SkillFreshnessPanel.outdatedUnsupportedPlacementDescription',
+            'An older official copy was found, but this placement cannot be updated safely in place.'
           )
     case 'newer-known':
       return translate(

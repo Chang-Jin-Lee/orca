@@ -56,6 +56,13 @@ export type SkillInstallationTopology =
   | 'repo-scope'
   | 'plugin-cache'
 
+// Why: eligibility and the explanation copy must agree on which placements the
+// validated npx rail can converge; a drifted copy would blame a phantom sibling.
+export const SUPPORTED_GLOBAL_SKILL_TOPOLOGIES: ReadonlySet<SkillInstallationTopology> = new Set([
+  'canonical-copy',
+  'provider-alias'
+])
+
 export type SkillFreshnessInstallation = {
   id: string
   name: string

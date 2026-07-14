@@ -71,4 +71,51 @@ describe('useSkillFreshness', () => {
     await act(async () => second.resolve(inventory(2)))
     expect(state?.inventory?.scannedAt).toBe(2)
   })
+
+  it('skips focus rescans inside the cooldown but honors install-change events', async () => {
+    const first = deferred<SkillFreshnessInventory>()
+    const second = deferred<SkillFreshnessInventory>()
+    const freshnessInventory = vi
+      .fn()
+      .mockReturnValueOnce(first.promise)
+      .mockReturnValueOnce(second.promise)
+    window.api = { skills: { freshnessInventory } } as never
+
+    await act(async () => root?.render(<Probe />))
+    await act(async () => first.resolve(inventory(1)))
+    expect(freshnessInventory).toHaveBeenCalledTimes(1)
+
+    await act(async () => window.dispatchEvent(new Event('focus')))
+    expect(freshnessInventory).toHaveBeenCalledTimes(1)
+
+    await act(async () => window.dispatchEvent(new Event('orca:installed-agent-skills-changed')))
+    await act(async () => second.resolve(inventory(2)))
+    expect(freshnessInventory).toHaveBeenCalledTimes(2)
+    expect(state?.inventory?.scannedAt).toBe(2)
+  })
+
+  it('coalesces multiple consumers into one rescan per invalidation event', async () => {
+    const first = deferred<SkillFreshnessInventory>()
+    const second = deferred<SkillFreshnessInventory>()
+    const freshnessInventory = vi
+      .fn()
+      .mockReturnValueOnce(first.promise)
+      .mockReturnValue(second.promise)
+    window.api = { skills: { freshnessInventory } } as never
+
+    await act(async () =>
+      root?.render(
+        <>
+          <Probe />
+          <Probe />
+        </>
+      )
+    )
+    await act(async () => first.resolve(inventory(1)))
+    expect(freshnessInventory).toHaveBeenCalledTimes(1)
+
+    await act(async () => window.dispatchEvent(new Event('orca:installed-agent-skills-changed')))
+    await act(async () => second.resolve(inventory(2)))
+    expect(freshnessInventory).toHaveBeenCalledTimes(2)
+  })
 })

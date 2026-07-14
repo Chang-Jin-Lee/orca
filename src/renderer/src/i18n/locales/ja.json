@@ -3618,6 +3618,7 @@
           "currentDescription": "この Orca ビルドに同梱されたバージョンと完全に一致します。",
           "outdatedDescription": "以前の公式 Orca スナップショットと完全に一致します。",
           "outdatedBlockedDescription": "以前の公式コピーが見つかりましたが、同名の別の配置があるため安全なグローバル更新はできません。",
+          "outdatedUnsupportedPlacementDescription": "以前の公式コピーが見つかりましたが、この配置はその場で安全に更新できません。",
           "newerKnownDescription": "この Orca ビルドより新しい既知のリビジョンと一致します。更新は提供されません。",
           "unrecognizedDescription": "編集済みか、別の提供元の可能性があります。Orca は更新しません。",
           "inaccessibleDescription": "Orca はこの配置を検査できませんでした。更新は提供されません。",

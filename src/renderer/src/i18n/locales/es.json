@@ -3618,6 +3618,7 @@
           "currentDescription": "Coincide exactamente con la versión incluida en esta compilación de Orca.",
           "outdatedDescription": "Coincide exactamente con una instantánea oficial anterior de Orca.",
           "outdatedBlockedDescription": "Se encontró una copia oficial anterior, pero otra ubicación con este nombre impide una actualización global segura.",
+          "outdatedUnsupportedPlacementDescription": "Se encontró una copia oficial anterior, pero esta ubicación no se puede actualizar de forma segura.",
           "newerKnownDescription": "Coincide con una revisión conocida más reciente que esta compilación de Orca. No se ofrece ninguna actualización.",
           "unrecognizedDescription": "Puede estar editada o proceder de otra fuente. Orca no la actualizará.",
           "inaccessibleDescription": "Orca no pudo inspeccionar esta ubicación. No se ofrece ninguna actualización.",

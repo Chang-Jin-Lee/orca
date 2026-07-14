@@ -30,9 +30,26 @@ function assertSupportedSchema(
   }
 }
 
-export async function loadSkillBundleArtifacts(
+const artifactsByResourceRoot = new Map<string, Promise<SkillBundleArtifacts>>()
+
+// Why: the artifacts ship with the binary and never change within a run, while
+// focus-triggered rescans would otherwise re-read and re-parse them every time.
+export function loadSkillBundleArtifacts(
   resourceRoot = app.isPackaged ? process.resourcesPath : resolve(process.cwd(), 'resources')
 ): Promise<SkillBundleArtifacts> {
+  const cached = artifactsByResourceRoot.get(resourceRoot)
+  if (cached) {
+    return cached
+  }
+  const loading = readSkillBundleArtifacts(resourceRoot)
+  artifactsByResourceRoot.set(resourceRoot, loading)
+  loading.catch(() => {
+    artifactsByResourceRoot.delete(resourceRoot)
+  })
+  return loading
+}
+
+async function readSkillBundleArtifacts(resourceRoot: string): Promise<SkillBundleArtifacts> {
   const bundleRoot = join(resourceRoot, 'skills')
   const [manifest, registry, releaseMapping] = await Promise.all([
     readFile(join(bundleRoot, 'current-manifest.json'), 'utf8').then(JSON.parse),

@@ -3618,6 +3618,7 @@
           "currentDescription": "Exactly matches the version bundled with this Orca build.",
           "outdatedDescription": "Exactly matches an older official Orca snapshot.",
           "outdatedBlockedDescription": "An older official copy was found, but another placement of this name prevents a safe global update.",
+          "outdatedUnsupportedPlacementDescription": "An older official copy was found, but this placement cannot be updated safely in place.",
           "newerKnownDescription": "Matches a known revision newer than this Orca build. No update is offered.",
           "unrecognizedDescription": "May be edited or from another source. Orca will not update it.",
           "inaccessibleDescription": "Orca could not inspect this placement. No update is offered.",

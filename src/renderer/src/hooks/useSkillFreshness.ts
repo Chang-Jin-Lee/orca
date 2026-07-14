@@ -3,10 +3,15 @@ import type { SkillFreshnessInventory } from '../../../shared/skill-freshness'
 import { useMountedRef } from './useMountedRef'
 
 const INSTALLED_SKILLS_CHANGED_EVENT = 'orca:installed-agent-skills-changed'
+// Why: window focus fires on every alt-tab, and each scan re-reads and re-hashes
+// every installed package; a just-completed scan stays authoritative briefly.
+const FOCUS_RESCAN_COOLDOWN_MS = 15_000
 let cachedInventory: SkillFreshnessInventory | null = null
 let pendingInventory: Promise<SkillFreshnessInventory> | null = null
 let invalidationRevision = 0
 let completedRevision = -1
+let lastCompletedScanAt = 0
+let sharedInvalidationPending = false
 
 async function loadInventory(force: boolean): Promise<SkillFreshnessInventory> {
   if (force) {
@@ -24,6 +29,7 @@ async function loadInventory(force: boolean): Promise<SkillFreshnessInventory> {
         .then((inventory) => {
           cachedInventory = inventory
           completedRevision = Math.max(completedRevision, requestRevision)
+          lastCompletedScanAt = Date.now()
           return inventory
         })
         .finally(() => {
@@ -77,15 +83,27 @@ export function useSkillFreshness(): SkillFreshnessState {
   }, [refresh])
 
   useEffect(() => {
-    const invalidate = (): void => {
+    const invalidate = (respectCooldown: boolean): void => {
+      if (respectCooldown && Date.now() - lastCompletedScanAt < FOCUS_RESCAN_COOLDOWN_MS) {
+        return
+      }
+      // Why: the nudge and the panel both listen for the same events; one forced
+      // rescan per event refreshes every consumer through the shared request.
+      const alreadyInvalidated = sharedInvalidationPending
+      sharedInvalidationPending = true
+      queueMicrotask(() => {
+        sharedInvalidationPending = false
+      })
       cachedInventory = null
-      void refresh(true)
+      void refresh(!alreadyInvalidated)
     }
-    window.addEventListener('focus', invalidate)
-    window.addEventListener(INSTALLED_SKILLS_CHANGED_EVENT, invalidate)
+    const onFocus = (): void => invalidate(true)
+    const onInstalledSkillsChanged = (): void => invalidate(false)
+    window.addEventListener('focus', onFocus)
+    window.addEventListener(INSTALLED_SKILLS_CHANGED_EVENT, onInstalledSkillsChanged)
     return () => {
-      window.removeEventListener('focus', invalidate)
-      window.removeEventListener(INSTALLED_SKILLS_CHANGED_EVENT, invalidate)
+      window.removeEventListener('focus', onFocus)
+      window.removeEventListener(INSTALLED_SKILLS_CHANGED_EVENT, onInstalledSkillsChanged)
     }
   }, [refresh])
 
@@ -98,5 +116,7 @@ export const _skillFreshnessCacheForTests = {
     pendingInventory = null
     invalidationRevision = 0
     completedRevision = -1
+    lastCompletedScanAt = 0
+    sharedInvalidationPending = false
   }
 }

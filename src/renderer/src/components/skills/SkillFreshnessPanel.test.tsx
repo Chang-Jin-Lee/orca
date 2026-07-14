@@ -191,4 +191,18 @@ describe('SkillFreshnessPanel', () => {
     expect(rendered.textContent).toContain('Repository scope')
     expect(rendered.textContent).not.toContain('Review update command')
   })
+
+  it('explains a self-blocked outdated placement without blaming a sibling', async () => {
+    mocks.inventory = {
+      schemaVersion: 1,
+      installations: [placement('orca-cli', { topology: 'read-only' })],
+      eligibleUpdateNames: [],
+      scannedAt: 1
+    }
+    const rendered = await renderPanel()
+
+    expect(rendered.textContent).toContain('this placement cannot be updated safely in place')
+    expect(rendered.textContent).not.toContain('another placement of this name')
+    expect(rendered.textContent).toContain('Read only')
+  })
 })
