@@ -8,7 +8,7 @@ work; keep exact commands, runner identities, hashes, metrics, and residual gaps
 
 Date created: 2026-07-14<br>
 Last updated: 2026-07-14<br>
-Current phase: Milestone 3 / Work Package 2 SBOM/provenance closure — **In progress — 2026-07-14, Codex implementation owner**; exact-head run [29372156145](https://github.com/stablyai/orca/actions/runs/29372156145) and direct payload audit keep Linux x64/arm64 and macOS x64/arm64 green but both Windows cells fail closed before build/upload because their resolved linker paths do not match the assumed MSVC toolset layout (E-M3-METADATA-CI-RED-006); exact implementation commit `d1eb45d61` retains that strict parser and exact linker SHA-256 while adding only a 512-byte bounded path-tail diagnostic, and passes 20 files / 99 tests plus typecheck, full lint, formatting, max-lines, and diff gates (E-M3-WINDOWS-LINKER-PATH-DIAGNOSTIC-LOCAL-001); the next native run must expose both real path shapes before any parser correction, and the eventual exact head must pass all six cells plus direct artifact inspection before any remaining SBOM/provenance/toolchain box is checked; oldest-baseline, native-trust, cross-family remote, and measured-baseline gates remain open; production/default behavior and every tuple state remain unchanged; no bundled-runtime path is enabled<br>
+Current phase: Milestone 3 / Work Package 2 SBOM/provenance closure — **In progress — 2026-07-14, Codex implementation owner**; exact-head run [29372816457](https://github.com/stablyai/orca/actions/runs/29372816457) and direct payload audit keep Linux x64/arm64 and macOS x64/arm64 green while both Windows cells independently prove Git for Windows' `C:\Program Files\Git\usr\bin\link.exe` shadows the configured MSVC linker and fail closed before input download/build/upload (E-M3-METADATA-CI-RED-007); exact implementation commit `5f0c1417d` selects exactly one strict canonical MSVC candidate from all resolved linker paths, rejects zero/ambiguous matches, retains the exact selected-binary SHA-256, and passes 20 files / 100 tests plus typecheck, full lint, formatting, max-lines, and diff gates (E-M3-WINDOWS-LINKER-SELECTION-LOCAL-001); the correction requires an exact-head all-six native run and direct inspection of all six artifacts before any remaining SBOM/provenance/toolchain box is checked; oldest-baseline, native-trust, cross-family remote, and measured-baseline gates remain open; production/default behavior and every tuple state remain unchanged; no bundled-runtime path is enabled<br>
 Primary design: [SSH relay GitHub Release plan](./2026-07-14-ssh-relay-github-release-plan.html)<br>
 Motivating issues: [#8450](https://github.com/stablyai/orca/issues/8450), [#1693](https://github.com/stablyai/orca/issues/1693)
 
@@ -175,12 +175,11 @@ same change as the work it records.
   per-target opt-in selects bundled-preferred behavior, and implementing the setting does not
   authorize default-on rollout or legacy removal (E-M1-ROLLOUT-DECISION-001).
 - Legacy fallback removal: not authorized.
-- Next required action: push bounded linker-path diagnostic commit `d1eb45d61` plus its evidence
-  ledger head and rerun all six target-native cells. Inspect the bounded x64 and arm64 path tails,
-  then make only the parser correction supported by those native paths. The corrected exact head
-  must retain the exact linker SHA-256 and pass all metadata, smoke, equality, upload, and direct
-  payload audits before the all-six provenance item can close. Preserve the artifact-only boundary,
-  legacy/default path, and every other release gate.
+- Next required action: push unique canonical MSVC linker-selection commit `5f0c1417d` plus its
+  evidence ledger head and rerun all six target-native cells. Require one strict MSVC match despite
+  the Git-for-Windows PATH collision, the exact selected-linker SHA-256, and all metadata, smoke,
+  equality, upload, and direct payload audits before the all-six provenance item can close. Preserve
+  the artifact-only boundary, legacy/default path, and every other release gate.
 
 ## Non-Negotiable Invariants
 
@@ -6831,6 +6830,101 @@ bounded version line: <empty>`. The PE lookup returned successfully but the `Fil
 - Follow-up: push this exact commit and ledger head, inspect both bounded native path tails, and make
   only the parser correction supported by that evidence.
 
+### E-M3-METADATA-CI-RED-007 — Git for Windows shadows the configured MSVC linker
+
+- Date: 2026-07-14
+- Commit SHA / PR: exact tested head `92f9b76101d4214c07291f6d9befa647fbc0dd86`;
+  stacked draft PR [#8741](https://github.com/stablyai/orca/pull/8741)
+- Runner: [GitHub Actions run 29372816457](https://github.com/stablyai/orca/actions/runs/29372816457),
+  final conclusion `failure` after 8m11s. Native job IDs and wall durations: Linux x64
+  `87219773628` / 2m44s, Linux arm64 `87219773618` / 3m33s, macOS x64 `87219773620` /
+  8m06s, macOS arm64 `87219773629` / 2m59s, Windows x64 `87219773636` / 1m18s, and
+  Windows arm64 `87219773684` / 5m10s.
+- Remote and transport: none; target-native artifact-only build workflow
+- Exact evidence commands:
+
+  ```sh
+  gh run view 29372816457 --repo stablyai/orca \
+    --json status,conclusion,headSha,createdAt,updatedAt,url,jobs
+  gh api repos/stablyai/orca/actions/runs/29372816457/artifacts
+  gh api repos/stablyai/orca/actions/jobs/87219773636/logs
+  gh api repos/stablyai/orca/actions/jobs/87219773684/logs
+  gh run download 29372816457 --repo stablyai/orca \
+    --dir /tmp/orca-8450-metadata-red-29372816457
+  # Repeat the exact fail-closed jq/shasum audit in E-M3-METADATA-CI-RED-003 with:
+  # evidence=/tmp/orca-8450-metadata-red-29372816457
+  # commit=92f9b76101d4214c07291f6d9befa647fbc0dd86
+  # run_id=29372816457
+  ```
+
+- Result: EXPECTED RED. All four POSIX cells passed contracts, two clean native builds,
+  archive/tree inspection, bundled runtime smoke, byte-for-byte comparison, and upload. Windows x64
+  and arm64 each passed 18 contract files before the live toolchain test rejected
+  `C:\Program Files\Git\usr\bin\link.exe` as non-MSVC. Both stopped before input download, build,
+  smoke, comparison, or upload, so no Windows artifact exists.
+- Downloaded-artifact audit:
+
+  | Tuple             | Artifact ID  | Archive SHA-256                                                    | Content ID prefix | Files |
+  | ----------------- | ------------ | ------------------------------------------------------------------ | ----------------- | ----- |
+  | linux-x64-glibc   | `8326768093` | `c312a404515db43b7219ec7c0f5ff8c33a1424a32b3cf42754820a1599afcec0` | `960546cd…`       | 34    |
+  | linux-arm64-glibc | `8326787062` | `5e31f1377be855fdddba08dab19af92360236fc9c4a08a3c6320162aa4dca4a0` | `aa3aa8ae…`       | 34    |
+  | darwin-x64        | `8326884270` | `a3cacc1aaf16c659218987972a39ff367584da456d167906b13e293874297777` | `585ea603…`       | 35    |
+  | darwin-arm64      | `8326773209` | `612e7328700bef7886df5caaef92c22cbbc38ad872ca40b17f0758b28e75bd92` | `40ff5d20…`       | 35    |
+
+  All archive/subject hashes, archive-scoped SPDX namespaces, one-owner-per-file counts, eight
+  dependency relationships, prohibited-content assertions, exact commit/run identities, runner
+  labels/images/architectures, and bounded tool version/hash records passed.
+
+- Oracle proved: appending Git's signature-tool directory through `GITHUB_PATH` shadows `link.exe`
+  identically on x64 and arm64; the first PATH match is not the configured compiler toolchain; both
+  jobs fail closed before consuming release inputs; four independent POSIX controls remain complete.
+- Does not prove: that `where.exe` exposes exactly one later canonical MSVC candidate, a Windows
+  artifact/metadata record, oldest baselines, native trust/signing, SSH, publication, or an enabled
+  tuple.
+- Checklist items satisfied: no new completion box; the all-six SBOM/provenance/toolchain item
+  remains in progress.
+- Follow-up: select exactly one canonical MSVC linker from all resolved candidates, retain its exact
+  SHA-256, reject zero/ambiguous matches, and rerun all six native cells.
+
+### E-M3-WINDOWS-LINKER-SELECTION-LOCAL-001 — Unique canonical MSVC candidate
+
+- Date: 2026-07-14
+- Commit SHA / PR: exact implementation commit
+  `5f0c1417d5e28a0c01f1914c41d129814237e28e`; stacked draft PR
+  [#8741](https://github.com/stablyai/orca/pull/8741)
+- Runner: local macOS 26.2 build 25C56, Darwin 25.2.0 arm64 on Apple Silicon; Node v26.0.0 and
+  pnpm 10.24.0 for pure path/provenance tests
+- Remote and transport: none; artifact-only local contracts
+- Exact evidence commands:
+
+  ```sh
+  pnpm exec vitest run --config config/vitest.config.ts \
+    config/scripts/ssh-relay-*.test.mjs \
+    src/main/ssh/ssh-relay-artifact-selector.test.ts
+  pnpm run typecheck
+  pnpm run lint
+  pnpm run check:max-lines-ratchet
+  pnpm exec oxfmt --check \
+    config/scripts/ssh-relay-runtime-toolchain.mjs \
+    config/scripts/ssh-relay-runtime-toolchain.test.mjs
+  git diff --check
+  ```
+
+- Result: PASS. Twenty focused test files passed 100 tests. Typecheck passed all three TypeScript
+  projects. Full lint passed with only existing unrelated warnings; the independent max-lines,
+  focused formatting, and diff checks passed.
+- Oracle proved: a non-MSVC Git `link.exe` may precede either canonical x64 or arm64 MSVC path;
+  selection accepts exactly one case-insensitively deduplicated strict MSVC match, rejects zero or
+  multiple matches, and bounds rejection diagnostics. The strict absolute `MSVC/<version>/bin/...`
+  grammar and exact SHA-256 of the selected linker remain required. The corrected test also proves
+  the long-path fixtures actually interpolate and exercise the 512-byte bounds.
+- Does not prove: the exact native candidate list, a Windows build/smoke/equality/upload, regenerated
+  Windows content IDs, oldest Windows execution, native trust, SSH, publication, or an enabled tuple.
+- Checklist items satisfied: local correction only; the all-six compiler/toolchain item remains
+  unchecked.
+- Follow-up: push this exact commit and ledger head, then require all six native jobs and direct
+  inspection of every uploaded artifact before closing any metadata/provenance claim.
+
 ## Accepted Gaps
 
 No product gap is accepted merely because it appears in this list. Each entry requires explicit
@@ -6888,14 +6982,13 @@ The project is not complete until every applicable item below is checked with ev
 
 ## Next Required Action
 
-Push bounded linker-path diagnostic commit `d1eb45d61` plus this evidence-ledger head and rerun all
-six target-native cells. Inspect the bounded x64 and arm64 path tails, then make only the parser
-correction supported by those native paths. Require the corrected exact head to retain the exact
-linker SHA-256 and pass exact SPDX ownership, archive-scoped document identity, commit-pinned builder
-identity, resolved runner identity, complete bounded tool records, clean-build metadata equality,
-smoke, upload, regenerated Windows content identities, and direct artifact inspection before
-checking the remaining Milestone 3 metadata/toolchain claims. Then proceed to oldest-baseline and
-native-trust proof.
+Push unique canonical MSVC linker-selection commit `5f0c1417d` plus this evidence-ledger head and
+rerun all six target-native cells. Require exactly one strict MSVC candidate despite the
+Git-for-Windows PATH collision, retain the exact selected-linker SHA-256, and pass exact SPDX
+ownership, archive-scoped document identity, commit-pinned builder identity, resolved runner
+identity, complete bounded tool records, clean-build metadata equality, smoke, upload, regenerated
+Windows content identities, and direct artifact inspection before checking the remaining Milestone
+3 metadata/toolchain claims. Then proceed to oldest-baseline and native-trust proof.
 
 Cross-family Layer B targets, the protected manifest-signing environment, oldest-baseline/native-
 trust cells, and the paired legacy performance baseline remain release/default-path blockers. No
