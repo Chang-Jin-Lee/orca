@@ -71,6 +71,7 @@ import { getShortcutsPaneSearchEntries } from '@/components/settings/shortcuts-s
 import { getStatsPaneSearchEntries } from '@/components/stats/stats-search'
 import { getExperimentalPaneSearchEntries } from '@/components/settings/experimental-search'
 import { getRepositoryPaneSearchEntries } from '@/components/settings/repository-search'
+import { buildSettingsProjectList } from '@/components/settings/settings-project-list'
 import { isWebClientLocation } from '@/lib/web-client-location'
 import {
   getWindowsTerminalCapabilityOwnerKey,
@@ -537,16 +538,25 @@ export function buildSettingsNavigationMetadata({
       searchEntries: getExperimentalPaneSearchEntries(),
       group: 'experimental'
     },
-    ...repos.map((repo) => ({
-      id: `repo-${repo.id}`,
-      title: repo.displayName,
-      description: `${getRepoKindLabel(repo)} • ${repo.path}`,
-      icon: SlidersHorizontal,
-      searchEntries: getRepositoryPaneSearchEntries(repo, {
-        windowsRuntimeSupported: isWindowsTerminalHost
-      }),
-      group: 'repositories'
-    }))
+    // Why: one nav row per project, not per repo row — a project set up on
+    // multiple hosts (local + a Remote Orca Server, or two clones) collapses to
+    // a single entry. Derived from repos alone so this list matches the panes.
+    ...buildSettingsProjectList(repos).map(({ project, representativeRepoId, setups }) => {
+      const representativeRepo =
+        repos.find((entry) => entry.id === representativeRepoId) ?? repos[0]
+      const hostSummary =
+        setups.length > 1 ? `${setups.length} hosts` : (setups[0]?.path ?? representativeRepo.path)
+      return {
+        id: `repo-${representativeRepoId}`,
+        title: project.displayName,
+        description: `${getRepoKindLabel(project)} • ${hostSummary}`,
+        icon: SlidersHorizontal,
+        searchEntries: getRepositoryPaneSearchEntries(representativeRepo, {
+          windowsRuntimeSupported: isWindowsTerminalHost
+        }),
+        group: 'repositories'
+      }
+    })
   ]
 }
 

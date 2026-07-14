@@ -104,6 +104,7 @@ import {
 } from './settings-load-performance'
 import { translate } from '@/i18n/i18n'
 import { getProjectHostSetupProjectionFromState } from '../../store/selectors'
+import { buildSettingsProjectList, resolveEffectiveProjectHost } from './settings-project-list'
 
 const DevToolsPane = import.meta.env.DEV
   ? lazy(() => import('./DevToolsPane').then((module) => ({ default: module.DevToolsPane })))
@@ -157,9 +158,16 @@ const SETTINGS_NAV_GROUP_BY_ID = new Map<string, SettingsNavGroupDefinition>(
 const SHORTCUTS_ESCAPE_CONFIRM_TOAST_ID = 'shortcuts-escape-confirm'
 const SHORTCUTS_ESCAPE_CONFIRM_WINDOW_MS = 2200
 
-function getSettingsSectionId(pane: SettingsNavTarget, repoId: string | null): string {
+function getSettingsSectionId(
+  pane: SettingsNavTarget,
+  repoId: string | null,
+  repoIdToRepresentative: Map<string, string>
+): string {
   if (pane === 'repo' && repoId) {
-    return `repo-${repoId}`
+    // Why: a `{pane:'repo', repoId}` target can name any host's repo row, but
+    // Settings now renders one collapsed pane per project — resolve to that
+    // project's representative section so the deep link lands.
+    return `repo-${repoIdToRepresentative.get(repoId) ?? repoId}`
   }
   return pane
 }
@@ -288,6 +296,21 @@ function Settings(): React.JSX.Element {
   const setSettingsSearchQuery = useAppStore((s) => s.setSettingsSearchQuery)
   const modelStates = useAppStore((s) => s.modelStates)
   const refreshModelStates = useAppStore((s) => s.refreshModelStates)
+
+  // Why: collapse repo rows into one entry per project (derived from repos so it
+  // matches the nav metadata exactly) — the source of truth for the pane list.
+  const settingsProjectList = useMemo(() => buildSettingsProjectList(repos), [repos])
+  const repoIdToRepresentative = useMemo(() => {
+    const map = new Map<string, string>()
+    for (const settingsProject of settingsProjectList) {
+      for (const setup of settingsProject.setups) {
+        if (setup.repoId.trim().length > 0) {
+          map.set(setup.repoId, settingsProject.representativeRepoId)
+        }
+      }
+    }
+    return map
+  }, [settingsProjectList])
 
   const [repoHooksMap, setRepoHooksMap] = useState<
     Record<string, { hasHooks: boolean; hooks: OrcaHooks | null; mayNeedUpdate: boolean }>
@@ -615,7 +638,8 @@ function Settings(): React.JSX.Element {
 
     const paneSectionId = getSettingsSectionId(
       settingsNavigationTarget.pane as SettingsNavTarget,
-      settingsNavigationTarget.repoId
+      settingsNavigationTarget.repoId,
+      repoIdToRepresentative
     )
     pendingNavSectionRef.current = paneSectionId
     pendingScrollTargetRef.current = settingsNavigationTarget.sectionId ?? paneSectionId
@@ -640,7 +664,7 @@ function Settings(): React.JSX.Element {
     // scroll effect runs even when the visible section set is otherwise stable.
     setPendingNavRequestTick((tick) => tick + 1)
     clearSettingsTarget()
-  }, [clearSettingsTarget, settings, settingsNavigationTarget])
+  }, [clearSettingsTarget, repoIdToRepresentative, settings, settingsNavigationTarget])
 
   // Why: only recompute scrollback mode when the row value actually changes,
   // not on every unrelated settings mutation.
@@ -1646,19 +1670,36 @@ function Settings(): React.JSX.Element {
                   ) : null}
                 </SettingsSection>
 
-                {repos.map((repo) => {
-                  const repoSectionId = `repo-${repo.id}`
+                {settingsProjectList.map((settingsProject) => {
+                  const repoSectionId = `repo-${settingsProject.representativeRepoId}`
+                  // Why: render the project's effective host row so the pane
+                  // defaults to the user's own machine (local) when present.
+                  const effectiveHostId = resolveEffectiveProjectHost(
+                    settingsProject.setups,
+                    undefined
+                  )
+                  const repo =
+                    repos.find(
+                      (entry) =>
+                        entry.id === settingsProject.representativeRepoId &&
+                        getRepoExecutionHostId(entry) === effectiveHostId
+                    ) ??
+                    repos.find((entry) => getRepoExecutionHostId(entry) === effectiveHostId) ??
+                    repos.find((entry) => entry.id === settingsProject.representativeRepoId)
+                  if (!repo) {
+                    return null
+                  }
                   const repoHooksState = repoHooksMap[repo.id]
-                  const project = projectByRepoId.get(repo.id) ?? null
+                  const project = projectByRepoId.get(repo.id) ?? settingsProject.project
 
                   return (
                     <SettingsSection
-                      key={repo.id}
+                      key={repoSectionId}
                       id={repoSectionId}
                       title={translate(
                         'auto.components.settings.Settings.3bf149e873',
                         'Project Settings > {{value0}}',
-                        { value0: repo.displayName }
+                        { value0: project.displayName }
                       )}
                       description={repo.path}
                       searchEntries={getSectionSearchEntries(repoSectionId)}
