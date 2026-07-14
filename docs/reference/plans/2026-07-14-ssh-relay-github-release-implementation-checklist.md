@@ -2,7 +2,7 @@
 
 Date created: 2026-07-14<br>
 Last updated: 2026-07-14<br>
-Current phase: Milestone 3 / Work Package 2 target-native runtime assembly — require exact-head native Windows x64 and arm64 proof for the locally green, fail-closed runtime-artifact-only ConPTY worker settlement correction; reproducibility, oldest-baseline, native-trust, cross-family remote, and measured-baseline gates remain open; no bundled-runtime path is enabled<br>
+Current phase: Milestone 3 / Work Package 2 target-native runtime assembly — add and prove a same-head, same-runner two-clean-build identity oracle now that all six glibc/macOS/Windows target-native artifact and executable cells are green; oldest-baseline, native-trust, cross-family remote, and measured-baseline gates remain open; no bundled-runtime path is enabled<br>
 Primary design: [SSH relay GitHub Release plan](./2026-07-14-ssh-relay-github-release-plan.html)<br>
 Motivating issues: [#8450](https://github.com/stablyai/orca/issues/8450), [#1693](https://github.com/stablyai/orca/issues/1693)
 
@@ -73,9 +73,12 @@ same change as the work it records.
   (E-M3-WINDOWS-RESOURCE-DIAGNOSTIC-CI-RED-001). The active slice is an exact-source, fail-closed
   correction applied only to the copied node-pty Windows JavaScript inside runtime artifact
   staging; the repository-wide node-pty patch and legacy/default desktop path must remain unchanged.
-  That local contract is green at `c04b4f630` under E-M3-WINDOWS-CONPTY-WORKER-LOCAL-001; exact-head
-  native Windows proof remains mandatory. This package may produce test artifacts but must not
-  publish, resolve, transfer, install, launch, or enable them.
+  That local contract is green at `c04b4f630` under E-M3-WINDOWS-CONPTY-WORKER-LOCAL-001. Exact-head
+  run [29345126283](https://github.com/stablyai/orca/actions/runs/29345126283) then passed all six
+  native jobs; both Windows architectures shed the `MessagePort` within the two-second observation
+  window, exited normally, and uploaded unpublished evidence (E-M3-WINDOWS-CI-001). This package
+  may produce test artifacts but must not publish, resolve, transfer, install, launch, or enable
+  them.
 - Active evidence gate: the immutable Node v24.18.0 contract, pinned release key, bounded verifier,
   and artifact-only CLI are locally green under E-M3-NODE-RED-001 and E-M3-NODE-PROVENANCE-001.
   E-M3-RUNTIME-LOCAL-001 additionally proves one unpublished Linux arm64 glibc assembly, exact-tree
@@ -94,8 +97,8 @@ same change as the work it records.
 - Windows PTY-closure correction: E-M3-WINDOWS-CONPTY-GAP-001 proved the candidate omitted the
   `conpty.dll` and `OpenConsole.exe` files required by Orca's production `useConptyDll: true` path
   and therefore exercised a weaker system-ConPTY smoke. E-M3-WINDOWS-LOCAL-002 proves the corrected
-  local tree-closure and smoke configuration contracts; native execution remains open and no
-  Windows executable cell is complete.
+  local tree-closure and smoke configuration contracts. E-M3-WINDOWS-CI-001 proves the corrected
+  native x64/arm64 closure executes and settles; oldest-baseline and native-trust cells remain open.
 - Windows native progression: E-M3-WINDOWS-CI-RED-002 captured and corrected NTFS fixture modes,
   Windows shebang parsing, authenticated-key checkout bytes, and POSIX-only mode assertions. At the
   corrected exact head, E-M3-WINDOWS-CI-RED-003 proves 20 passing and one intentionally skipped test
@@ -107,7 +110,9 @@ same change as the work it records.
   and E-M3-WINDOWS-SMOKE-SETTLEMENT-CI-RED-002 then proved functional PTY/watcher smoke still did not
   settle after public listener and terminal cleanup. E-M3-WINDOWS-RESOURCE-DIAGNOSTIC-CI-RED-001
   identifies the persistent native resource as one `MessagePort` on both x64 and arm64 after a
-  two-second drain window. No Windows executable cell is claimed.
+  two-second drain window. E-M3-WINDOWS-CI-001 proves the artifact-only correction removes that
+  resource before normal exit on both architectures and retains the uploaded bytes. No oldest-
+  baseline, native-trust, SSH, reproducibility, or enabled-tuple claim is made.
 - Production behavior: unchanged; Orca embeds relay JavaScript and installs `node-pty` plus
   `@parcel/watcher` with remote npm.
 - New runtime assets published: none.
@@ -120,12 +125,11 @@ same change as the work it records.
 - Rollout control: existing per-SSH-target configuration; legacy is the default and the bundled
   runtime is an explicit per-target Beta opt-in under E-M1-ROLLOUT-DECISION-001.
 - Legacy fallback removal: not authorized.
-- Next required action: push the locally green copied-node-pty settlement correction and rerun both
-  exact-head native Windows jobs. Require normal child exit, no persistent `MessagePort` after
-  observation, and unpublished artifact upload before claiming either executable cell. A
-  same-head/same-runner clean-rebuild identity oracle remains a separate next gate. Keep
-  cross-family remote infrastructure, signing/trust, and measured legacy baseline gates open; do
-  not introduce publication, resolver, transfer, rollout, tuple enablement, or default behavior.
+- Next required action: add a same-head/same-runner two-clean-build identity comparison that fails
+  closed on any tree, archive, SBOM, provenance, or identity drift, then run it for every target-
+  native candidate. Keep oldest-baseline, cross-family remote infrastructure, signing/trust, and
+  measured legacy baseline gates open; do not introduce publication, resolver, transfer, rollout,
+  tuple enablement, or default behavior.
 
 ## Non-Negotiable Invariants
 
@@ -591,12 +595,10 @@ archive inspection, bundled-Node/native-module/PTY/watcher smoke, SBOM, and prov
 behind purpose-named scripts and CI artifacts. No release publication, desktop resolver, SSH
 transfer, install, fallback, rollout setting, or tuple enablement belongs in this package.
 
-**Active sub-gate — 2026-07-14, Codex implementation owner:** implementation commit `c04b4f630`
-starts the ConPTY worker's bounded drain only in the copied Windows artifact source and rejects
-missing, duplicated, or drifted source. Local contract and repository gates are green; require
-normal child exit and unpublished artifact upload on exact-head native Windows x64 and arm64 while
-preserving the repository-wide node-pty patch, legacy/default desktop path, 45-second parent bound,
-and prohibition on `process.exit()`.
+**Active sub-gate — 2026-07-14, Codex implementation owner:** exact-head run 29345126283 proves all
+six target-native artifact/executable jobs, including normal Windows x64/arm64 settlement and
+unpublished upload. Add a bounded same-head/same-runner two-clean-build comparison without changing
+artifact consumers, publication, the repository-wide node-pty patch, or the legacy/default path.
 
 Each runtime must contain only the executable closure required by the relay.
 
@@ -614,10 +616,11 @@ Each runtime must contain only the executable closure required by the relay.
 - [ ] Build Orca’s patched `node-pty@1.1.0` against the exact bundled Node runtime.
 - [ ] Assert Orca-required patched exports/diagnostics exist; do not silently use an upstream
       prebuild that omits the patch.
-- [ ] For Windows, copy the tuple-architecture `conpty.dll` and `OpenConsole.exe` from the pinned
+- [x] For Windows, copy the tuple-architecture `conpty.dll` and `OpenConsole.exe` from the pinned
       node-pty source into `build/Release/conpty`, hash them into the runtime identity as native
       runtime files, and prove PTY spawn/resize/exit with `useConptyDll: true`. Do not substitute a
-      system-ConPTY smoke for the production path. (E-M3-WINDOWS-CONPTY-GAP-001)
+      system-ConPTY smoke for the production path. (E-M3-WINDOWS-CONPTY-GAP-001,
+      E-M3-WINDOWS-CI-001)
 - [ ] Include exactly one compatible `@parcel/watcher@2.5.6` native optional package.
 - [ ] Include relay JavaScript, watcher child, required runtime JavaScript closure, licenses, SBOM,
       provenance, and runtime metadata.
@@ -631,8 +634,9 @@ Each runtime must contain only the executable closure required by the relay.
 - [ ] Sign native code according to the platform decisions in Milestone 1.
 - [ ] Verify platform-native signatures/policy on target-native runners after signing and before
       aggregation; attest the exact verified bytes for the signed manifest.
-- [x] Run local POSIX archive inspection and target-runtime smoke before any upload; Windows remains
-      open until its separate builder/verifier exists. (E-M3-RUNTIME-LOCAL-001)
+- [x] Run target-native archive inspection and target-runtime smoke before upload for every current
+      glibc/macOS/Windows candidate. (E-M3-RUNTIME-LOCAL-001, E-M3-CI-001,
+      E-M3-WINDOWS-CI-001)
 
 ### Per-tuple build and executable proof
 
@@ -644,8 +648,8 @@ Each runtime must contain only the executable closure required by the relay.
 | linux-arm64-musl  | [ ]              | [ ]          | [ ]                        | [ ]            | [ ]             | [ ]          | —                                   |
 | darwin-x64        | [x]              | [x]          | [x]                        | [x]            | [ ]             | [ ]          | E-M3-CI-001                         |
 | darwin-arm64      | [x]              | [x]          | [x]                        | [x]            | [ ]             | [ ]          | E-M3-CI-001                         |
-| win32-x64         | [ ]              | [ ]          | [ ]                        | [ ]            | [ ]             | [ ]          | —                                   |
-| win32-arm64       | [ ]              | [ ]          | [ ]                        | [ ]            | [ ]             | [ ]          | —                                   |
+| win32-x64         | [x]              | [x]          | [x]                        | [x]            | [ ]             | [ ]          | E-M3-WINDOWS-CI-001                 |
+| win32-arm64       | [x]              | [x]          | [x]                        | [x]            | [ ]             | [ ]          | E-M3-WINDOWS-CI-001                 |
 
 Rules:
 
@@ -1194,16 +1198,16 @@ Baseline measurements must be captured before product behavior changes.
 
 Update status and evidence as work begins. Do not combine these into one large behavior switch.
 
-| Work package              | Scope                                                                                      | Default behavior change     | Status                                       | PR/evidence                                                                                                                         |
-| ------------------------- | ------------------------------------------------------------------------------------------ | --------------------------- | -------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| 0. #8450 legacy fix       | Coherent Node/npm selection and live repro                                                 | Fixes legacy selection only | Complete and CI-green in draft PR #8724      | E-M0-UNIT-002, E-M0-LIVE-002, E-M0-STATIC-002, E-M0-PR-001, E-M0-CI-001                                                             |
-| 1. Contract and selectors | Manifest schema, identity, platform/libc selection, hostile inputs                         | None                        | Complete and CI-green in draft PR #8728      | `b9d80a4cb`; E-M2-RED-001, E-M2-CONTRACT-001, E-M2-CI-001                                                                           |
-| 2. Runtime builds         | Per-tuple assembly, native smoke, SBOM/provenance/signing                                  | None                        | Draft PR #8741; native settlement CI pending | `c04b4f630`; E-M3-NODE-RED-001, E-M3-NODE-PROVENANCE-001, E-M3-RUNTIME-LOCAL-001, E-M3-CI-001, E-M3-WINDOWS-CONPTY-WORKER-LOCAL-001 |
-| 3. Release publication    | Prerequisite DAG, embedded manifest, draft upload/read-back gates                          | Asset-only                  | Not started                                  | —                                                                                                                                   |
-| 4. Desktop resolver/cache | Verified download, extraction, cache, offline behavior                                     | None/forced mode only       | Not started                                  | —                                                                                                                                   |
-| 5. Transfer/install       | Bounded transports, structured sentinel, bundled launch behind per-target Beta/forced mode | Per-target opt-in only      | Not started                                  | —                                                                                                                                   |
-| 6. Fallback/diagnostics   | Abort-and-join state machine, mode isolation, reason codes, target-mode configuration/UI   | Per-target Beta only        | Not started                                  | —                                                                                                                                   |
-| 7. Live gates/rollout     | Matrix, security, performance, release promotion                                           | Per-tuple staged            | Not started                                  | —                                                                                                                                   |
+| Work package              | Scope                                                                                      | Default behavior change     | Status                                  | PR/evidence                                                                                     |
+| ------------------------- | ------------------------------------------------------------------------------------------ | --------------------------- | --------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| 0. #8450 legacy fix       | Coherent Node/npm selection and live repro                                                 | Fixes legacy selection only | Complete and CI-green in draft PR #8724 | E-M0-UNIT-002, E-M0-LIVE-002, E-M0-STATIC-002, E-M0-PR-001, E-M0-CI-001                         |
+| 1. Contract and selectors | Manifest schema, identity, platform/libc selection, hostile inputs                         | None                        | Complete and CI-green in draft PR #8728 | `b9d80a4cb`; E-M2-RED-001, E-M2-CONTRACT-001, E-M2-CI-001                                       |
+| 2. Runtime builds         | Per-tuple assembly, native smoke, SBOM/provenance/signing                                  | None                        | Draft PR #8741; reproducibility active  | `d9a556b9c`; E-M3-NODE-PROVENANCE-001, E-M3-RUNTIME-LOCAL-001, E-M3-CI-001, E-M3-WINDOWS-CI-001 |
+| 3. Release publication    | Prerequisite DAG, embedded manifest, draft upload/read-back gates                          | Asset-only                  | Not started                             | —                                                                                               |
+| 4. Desktop resolver/cache | Verified download, extraction, cache, offline behavior                                     | None/forced mode only       | Not started                             | —                                                                                               |
+| 5. Transfer/install       | Bounded transports, structured sentinel, bundled launch behind per-target Beta/forced mode | Per-target opt-in only      | Not started                             | —                                                                                               |
+| 6. Fallback/diagnostics   | Abort-and-join state machine, mode isolation, reason codes, target-mode configuration/UI   | Per-target Beta only        | Not started                             | —                                                                                               |
+| 7. Live gates/rollout     | Matrix, security, performance, release promotion                                           | Per-tuple staged            | Not started                             | —                                                                                               |
 
 Every PR must document:
 
@@ -3230,6 +3234,84 @@ or unexpected token`; the first logs did not identify a source location.
 - Follow-up: push the exact head and require both target-native Windows jobs to exit normally, show
   no persistent `MessagePort` after the observation window, and upload unpublished evidence.
 
+### E-M3-WINDOWS-CI-001 — Native Windows artifacts execute, settle, and upload
+
+- Date: 2026-07-14
+- Commit SHA / PR: exact workflow head `d9a556b9c8b3d3a639d4fc93a8ba25926089d20f`, containing
+  implementation commit `c04b4f630`; draft PR
+  [#8741](https://github.com/stablyai/orca/pull/8741)
+- Run: GitHub Actions
+  [29345126283](https://github.com/stablyai/orca/actions/runs/29345126283), completed success with all
+  six target-native jobs green
+- Windows runners and jobs: x64 job
+  [87126693074](https://github.com/stablyai/orca/actions/runs/29345126283/job/87126693074),
+  `windows-2022` image `20260706.237.1`, Windows Server 2022 build 20348, native X64, Node v24.18.0;
+  arm64 job
+  [87126693105](https://github.com/stablyai/orca/actions/runs/29345126283/job/87126693105),
+  `windows-11-arm64` image `20260706.102.1`, Windows build 26200, native ARM64, Node v24.18.0
+- Remote and transport: no SSH remote; target-native artifact build, bundled-runtime execution, and
+  GitHub Actions unpublished artifact upload
+- Exact commands:
+
+  ```sh
+  gh run watch 29345126283 --repo stablyai/orca --interval 10 --exit-status
+  gh api 'repos/stablyai/orca/actions/runs/29345126283/jobs?per_page=100' \
+    --jq '.jobs[] | [.id,.name,.status,.conclusion,.started_at,.completed_at,.head_sha,.html_url] | @tsv'
+  gh api repos/stablyai/orca/actions/jobs/87126693074/logs | \
+    rg -n -C 12 'resourceSettlement|contentId|archive|durationMs|rssBytes|Artifact .* has been successfully uploaded'
+  gh api repos/stablyai/orca/actions/jobs/87126693105/logs | \
+    rg -n -C 12 'resourceSettlement|contentId|archive|durationMs|rssBytes|Artifact .* has been successfully uploaded'
+  gh api 'repos/stablyai/orca/actions/runs/29345126283/artifacts?per_page=100' \
+    --jq '.artifacts[] | [.id,.name,.size_in_bytes,.expired,.created_at,.archive_download_url] | @tsv'
+  gh api repos/stablyai/orca/actions/artifacts/8315822805/zip > <temporary-x64-actions.zip>
+  gh api repos/stablyai/orca/actions/artifacts/8315904862/zip > <temporary-arm64-actions.zip>
+  shasum -a 256 <temporary-x64-actions.zip> <temporary-arm64-actions.zip>
+  unzip -l <temporary-x64-actions.zip>
+  unzip -p <temporary-x64-actions.zip> '*identity.json' | jq
+  unzip -l <temporary-arm64-actions.zip>
+  unzip -p <temporary-arm64-actions.zip> '*identity.json' | jq
+  ```
+
+- Result: PASS. Both Windows jobs passed 32/32 artifact contract tests, exact signed Node input
+  verification, offline target-native compilation, exact archive/tree inspection, bundled Node
+  v24.18.0, production-DLL ConPTY input/101×37 resize/exit 23, watcher lifecycle, normal child exit,
+  and unpublished upload. Immediately after smoke, each child reported three `PipeWrap` resources,
+  one `MessagePort`, and the diagnostic's own `Timeout`; after the two-second observation only the
+  two parent stdio `PipeWrap` resources remained. No `MessagePort` or timer survived, and neither
+  45-second parent timeout fired.
+- X64 metrics and bytes: build 135,657.3557 ms; full verification 6,495.1387 ms; smoke 5,353.5073 ms
+  with 54,075,392-byte RSS. The 42-file ZIP was 37,212,121 bytes, expanded to 97,248,569 bytes, had
+  content ID `sha256:32efa708b1fbefb05a11b0de6703551e5680d64c8015bb956095db3b50292c92`, and archive
+  SHA-256 `sha256:2ec9db55b5c417ea7ed9ab6cf5a960be4b9c305e68c68f8123a11dab0e3119a4`.
+  Uploaded artifact
+  [8315822805](https://github.com/stablyai/orca/actions/runs/29345126283/artifacts/8315822805) was
+  37,075,355 bytes and downloaded with SHA-256
+  `d98d1c935514667ea5c48a160ef54b9674a93f995ca24df2c19759735c62eefb`; total job duration was
+  4m06s.
+- Arm64 metrics and bytes: build 190,135.9561 ms; full verification 7,908.8115 ms; smoke 5,874.805 ms
+  with 51,843,072-byte RSS. The 42-file ZIP was 33,261,582 bytes, expanded to 86,189,895 bytes, had
+  content ID `sha256:e1d5eab84a7b1eb38d55acb9f87d852569995e22c47c02d202f29eb293467944`, and archive
+  SHA-256 `sha256:577285df23333a3de89489dec52027afd76aeb9ef23f74ffb6d5706e06a75ae8`.
+  Uploaded artifact
+  [8315904862](https://github.com/stablyai/orca/actions/runs/29345126283/artifacts/8315904862) was
+  33,137,908 bytes and downloaded with SHA-256
+  `77b78cb33117c8c8b4f5d639dada063651f7d303a815a097bfa36d9e651a2419`; total job duration was
+  7m09s.
+- POSIX control: Linux x64/arm64 and macOS x64/arm64 passed the same exact-head contract, build,
+  verification, smoke, and unpublished upload steps. All six run artifacts exist with seven-day
+  retention; no release asset was published.
+- Oracle proved: the copied-source correction terminates the node-pty ConPTY worker on both native
+  Windows architectures without masking the process with `process.exit()`, while preserving full
+  PTY/watcher behavior and the four POSIX controls. The exact uploaded evidence contains the runtime
+  ZIP, identity, SPDX SBOM, and provenance files.
+- Does not prove: same-runner clean-rebuild identity, oldest baselines, Authenticode/native trust,
+  SSH/SFTP/system-SSH transfer, relay RPC behavior, cancellation, publication, or any enabled tuple.
+- Checklist items satisfied: Milestone 3 Windows `conpty.dll`/`OpenConsole.exe` production-path item;
+  Windows x64 and arm64 build/provenance, bundled Node, real PTY, and watcher cells; target-native
+  pre-upload inspection/smoke command.
+- Follow-up: add and execute the separately gated same-head/same-runner two-clean-build identity
+  oracle before oldest-baseline or trust work.
+
 ### E-M3-RUNTIME-LOCAL-001 — First target-native Linux arm64 runtime artifact
 
 - Date: 2026-07-14
@@ -3465,18 +3547,18 @@ or unexpected token`; the first logs did not identify a source location.
 No product gap is accepted merely because it appears in this list. Each entry requires explicit
 owner and promotion condition.
 
-| Gap                                        | Current behavior                                                        | Risk                                            | Owner                                                   | Promotion/removal condition                                                    | Status       |
-| ------------------------------------------ | ----------------------------------------------------------------------- | ----------------------------------------------- | ------------------------------------------------------- | ------------------------------------------------------------------------------ | ------------ |
-| Bundled runtime only partially implemented | Four unpublished POSIX native artifact proofs; no production consumer   | #8450/#1693 environment failures remain         | Codex implementation owner                              | Complete Work Packages 2–7 plus Milestones 3–14                                | Open         |
-| No bundled tuple enabled                   | Every target's default and effective mode remains legacy                | No bundled support claim can be made            | Codex implementation owner                              | Complete target-native build/trust and both required live-evidence layers      | Open         |
-| Windows runtime smoke incomplete           | Native smokes work; one ConPTY-worker-class `MessagePort` remains       | No prompt settlement or retained artifact proof | Codex implementation owner                              | Artifact-only settlement, then clean exit/upload, reproducibility/trust gates  | Open         |
-| Native clean-rebuild identity unproved     | One successful artifact per corrected-head hosted runner                | Toolchain drift may change native content IDs   | Codex implementation owner                              | Same-head, same-runner clean builds match or a reviewed reproducibility policy | Open         |
-| Cross-family Layer B remotes unavailable   | GitHub native runner labels exist; no approved reachable target pool    | Client/remote integration gaps may escape       | Repository release administrator + implementation owner | Approve provider/snapshots/credentials/egress/teardown/cost owner              | BLOCKED      |
-| Musl has no accepted official Node binary  | Musl is deliberately legacy-only                                        | Unofficial binary would break provenance trust  | Codex implementation owner                              | Orca-owned target-native source build, signing, provenance, and live gates     | ACCEPTED GAP |
-| Native arm64 live matrices incomplete      | Hosted Linux/Windows arm64 labels exist; full SSH/runtime cells do not  | Cross-build or unit tests may hide native bugs  | Codex implementation owner                              | Full native archive, trust, SFTP/system-SSH, RPC, and baseline evidence        | Open         |
-| Legacy performance baseline unmeasured     | Numeric budgets exist; paired cold/warm measurements do not             | Regression thresholds lack a measured baseline  | Codex implementation owner                              | Purpose-built paired harness with ten samples on pinned runner classes         | Open         |
-| Manifest signing environment unprovisioned | Ed25519/key-rotation policy exists; no protected runtime signing secret | Runtime assets cannot be safely published       | Repository release administrator                        | Protected environment, reviewers, two test keys, rehearsals, and access audit  | BLOCKED      |
-| Bootstrap primitives lack full live proof  | POSIX/Windows contracts exist; bounded SSH implementations do not       | Hidden dependency or transfer corruption        | Codex implementation owner                              | Purpose-named full-size SFTP/POSIX/Windows system-SSH live suites              | Open         |
+| Gap                                        | Current behavior                                                        | Risk                                           | Owner                                                   | Promotion/removal condition                                                    | Status       |
+| ------------------------------------------ | ----------------------------------------------------------------------- | ---------------------------------------------- | ------------------------------------------------------- | ------------------------------------------------------------------------------ | ------------ |
+| Bundled runtime only partially implemented | Six unpublished native artifact proofs; no production consumer          | #8450/#1693 environment failures remain        | Codex implementation owner                              | Complete Work Packages 2–7 plus Milestones 3–14                                | Open         |
+| No bundled tuple enabled                   | Every target's default and effective mode remains legacy                | No bundled support claim can be made           | Codex implementation owner                              | Complete target-native build/trust and both required live-evidence layers      | Open         |
+| Windows runtime smoke incomplete           | Native x64/arm64 smoke settles and uploads exact evidence               | Historical blocker is closed                   | Codex implementation owner                              | Met by E-M3-WINDOWS-CI-001                                                     | CLOSED       |
+| Native clean-rebuild identity unproved     | One successful artifact per corrected-head hosted runner                | Toolchain drift may change native content IDs  | Codex implementation owner                              | Same-head, same-runner clean builds match or a reviewed reproducibility policy | Open         |
+| Cross-family Layer B remotes unavailable   | GitHub native runner labels exist; no approved reachable target pool    | Client/remote integration gaps may escape      | Repository release administrator + implementation owner | Approve provider/snapshots/credentials/egress/teardown/cost owner              | BLOCKED      |
+| Musl has no accepted official Node binary  | Musl is deliberately legacy-only                                        | Unofficial binary would break provenance trust | Codex implementation owner                              | Orca-owned target-native source build, signing, provenance, and live gates     | ACCEPTED GAP |
+| Native arm64 live matrices incomplete      | Hosted Linux/Windows arm64 labels exist; full SSH/runtime cells do not  | Cross-build or unit tests may hide native bugs | Codex implementation owner                              | Full native archive, trust, SFTP/system-SSH, RPC, and baseline evidence        | Open         |
+| Legacy performance baseline unmeasured     | Numeric budgets exist; paired cold/warm measurements do not             | Regression thresholds lack a measured baseline | Codex implementation owner                              | Purpose-built paired harness with ten samples on pinned runner classes         | Open         |
+| Manifest signing environment unprovisioned | Ed25519/key-rotation policy exists; no protected runtime signing secret | Runtime assets cannot be safely published      | Repository release administrator                        | Protected environment, reviewers, two test keys, rehearsals, and access audit  | BLOCKED      |
+| Bootstrap primitives lack full live proof  | POSIX/Windows contracts exist; bounded SSH implementations do not       | Hidden dependency or transfer corruption       | Codex implementation owner                              | Purpose-named full-size SFTP/POSIX/Windows system-SSH live suites              | Open         |
 
 ## Final Definition of Done
 
