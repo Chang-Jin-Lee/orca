@@ -42,9 +42,10 @@ async function readVerifiedFile(filePath, maximumBytes, expectedSha256, label) {
   return Buffer.concat(chunks, bytes)
 }
 
-async function defaultCommandRunner(command, args) {
+async function defaultCommandRunner(command, args, { cwd } = {}) {
   try {
     const result = await execFileAsync(command, args, {
+      cwd,
       encoding: 'utf8',
       maxBuffer: MAX_COMMAND_OUTPUT_BYTES,
       timeout: COMMAND_TIMEOUT_MS,
@@ -104,7 +105,6 @@ export async function verifySshRelayNodeSignature(
   const directory = await mkdtemp(join(tmpdir(), 'orca-node-signature-'))
   try {
     const armoredKeyPath = join(directory, 'release-key.asc')
-    const keyringPath = join(directory, 'release-key.gpg')
     const verifiedChecksumPath = join(directory, release.checksumDocument.name)
     const verifiedSignaturePath = join(directory, release.signature.name)
     await Promise.all([
@@ -113,28 +113,32 @@ export async function verifySshRelayNodeSignature(
       writeFile(verifiedSignaturePath, signatureBytes, { mode: 0o600 })
     ])
 
-    const dearmor = await commandRunner('gpg', [
-      '--batch',
-      '--yes',
-      '--dearmor',
-      '--output',
-      keyringPath,
-      armoredKeyPath
-    ])
+    // Git for Windows GPG treats drive-letter keyring paths as resource URLs.
+    // Relative names stay inside the exclusive verified-copy directory on every platform.
+    const commandOptions = { cwd: directory }
+    const dearmor = await commandRunner(
+      'gpg',
+      ['--batch', '--yes', '--dearmor', '--output', './release-key.gpg', './release-key.asc'],
+      commandOptions
+    )
     if (dearmor.exitCode !== 0) {
       throw new Error(
         `gpgv key preparation failed: ${dearmor.stderr || 'gpg exited unsuccessfully'}`
       )
     }
 
-    const verified = await commandRunner('gpgv', [
-      '--status-fd',
-      '1',
-      '--keyring',
-      keyringPath,
-      verifiedSignaturePath,
-      verifiedChecksumPath
-    ])
+    const verified = await commandRunner(
+      'gpgv',
+      [
+        '--status-fd',
+        '1',
+        '--keyring',
+        './release-key.gpg',
+        `./${release.signature.name}`,
+        `./${release.checksumDocument.name}`
+      ],
+      commandOptions
+    )
     if (verified.exitCode !== 0) {
       throw new Error(
         `gpgv rejected the Node checksum signature: ${verified.stderr || 'unknown error'}`

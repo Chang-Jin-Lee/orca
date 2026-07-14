@@ -242,6 +242,66 @@ describe('SSH relay Node release verification', () => {
     ).rejects.toThrow(/pinned Node release signer fingerprint/i)
   })
 
+  it('keeps GPG verified-copy paths relative to the exclusive working directory', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'orca-node-signature-path-test-'))
+    temporaryDirectories.push(directory)
+    const keyPath = join(directory, 'release-key.asc')
+    const checksumPath = join(directory, 'SHASUMS256.txt')
+    const signaturePath = join(directory, 'SHASUMS256.txt.sig')
+    await writeFile(keyPath, 'key')
+    await writeFile(checksumPath, 'checksums')
+    await writeFile(signaturePath, 'signature')
+    const release = contract({
+      checksumDocument: { ...contract().checksumDocument, sha256: digest('checksums') },
+      signature: {
+        ...contract().signature,
+        sha256: digest('signature'),
+        key: { ...contract().signature.key, path: keyPath, sha256: digest('key') }
+      }
+    })
+    const calls = []
+    const commandRunner = async (command, args, options) => {
+      calls.push({ command, args, options })
+      return {
+        exitCode: 0,
+        stdout:
+          command === 'gpgv'
+            ? `[GNUPG:] VALIDSIG ${release.signature.signerFingerprint} signed fixture\n`
+            : '',
+        stderr: ''
+      }
+    }
+
+    await verifySshRelayNodeSignature(release, { checksumPath, signaturePath, commandRunner })
+
+    expect(calls.map(({ command, args }) => ({ command, args }))).toEqual([
+      {
+        command: 'gpg',
+        args: [
+          '--batch',
+          '--yes',
+          '--dearmor',
+          '--output',
+          './release-key.gpg',
+          './release-key.asc'
+        ]
+      },
+      {
+        command: 'gpgv',
+        args: [
+          '--status-fd',
+          '1',
+          '--keyring',
+          './release-key.gpg',
+          './SHASUMS256.txt.sig',
+          './SHASUMS256.txt'
+        ]
+      }
+    ])
+    expect(calls[0].options.cwd).toMatch(/orca-node-signature-/)
+    expect(calls[1].options.cwd).toBe(calls[0].options.cwd)
+  })
+
   it('verifies a Windows archive, headers, and import library through the CLI API', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'orca-node-cli-test-'))
     temporaryDirectories.push(directory)

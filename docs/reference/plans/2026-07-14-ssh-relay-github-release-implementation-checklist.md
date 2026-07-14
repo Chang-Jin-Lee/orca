@@ -2,7 +2,7 @@
 
 Date created: 2026-07-14<br>
 Last updated: 2026-07-14<br>
-Current phase: Milestone 3 / Work Package 2 target-native runtime assembly — four POSIX native-runner artifact builds are CI-green; Windows runtime/ZIP, reproducibility, oldest-baseline, native-trust, cross-family remote, and measured-baseline gates remain open; no bundled-runtime path is enabled<br>
+Current phase: Milestone 3 / Work Package 2 target-native runtime assembly — four POSIX native-runner artifact builds are CI-green; Windows contract tests are native-runner green but signature-tool path portability, runtime/ZIP, reproducibility, oldest-baseline, native-trust, cross-family remote, and measured-baseline gates remain open; no bundled-runtime path is enabled<br>
 Primary design: [SSH relay GitHub Release plan](./2026-07-14-ssh-relay-github-release-plan.html)<br>
 Motivating issues: [#8450](https://github.com/stablyai/orca/issues/8450), [#1693](https://github.com/stablyai/orca/issues/1693)
 
@@ -58,10 +58,12 @@ same change as the work it records.
   [#8728](https://github.com/stablyai/orca/pull/8728) at implementation commit `b9d80a4cb`; no
   deploy/resolver call site is connected and no tuple is enabled.
 - Active package: Work Package 2 target-native runtime assembly, archive inspection, executable
-  smoke, SBOM, and provenance only. The Windows x64/arm64 artifact candidate is implemented at exact
-  head `922edb6ff28199b394f508731fd18a635bec49a0` in stacked draft PR
-  [#8741](https://github.com/stablyai/orca/pull/8741) and awaits exact-head native CI. It may produce
-  test artifacts but must not publish, resolve, transfer, install, launch, or enable them.
+  smoke, SBOM, and provenance only. The Windows x64/arm64 artifact candidate and portability
+  corrections are at exact head `b387ac48cda70b60a5a148c03ce740f9afedf9cb` in stacked draft PR
+  [#8741](https://github.com/stablyai/orca/pull/8741). Both native architectures pass all seven
+  contract suites, then fail closed before extraction/build because Git for Windows `gpgv` rejects
+  an absolute drive-letter keyring path (E-M3-WINDOWS-CI-RED-003). It may produce test artifacts but
+  must not publish, resolve, transfer, install, launch, or enable them.
 - Active evidence gate: the immutable Node v24.18.0 contract, pinned release key, bounded verifier,
   and artifact-only CLI are locally green under E-M3-NODE-RED-001 and E-M3-NODE-PROVENANCE-001.
   E-M3-RUNTIME-LOCAL-001 additionally proves one unpublished Linux arm64 glibc assembly, exact-tree
@@ -82,10 +84,11 @@ same change as the work it records.
   and therefore exercised a weaker system-ConPTY smoke. E-M3-WINDOWS-LOCAL-002 proves the corrected
   local tree-closure and smoke configuration contracts; native execution remains open and no
   Windows executable cell is complete.
-- First Windows native run: E-M3-WINDOWS-CI-RED-002 failed before download/build on both Windows
-  architectures. One failure is a confirmed NTFS fixture-mode assumption; two import-time
-  `SyntaxError` failures remain unexplained until the corrected exact-head rerun. No Windows
-  executable evidence is claimed from the run.
+- Windows native progression: E-M3-WINDOWS-CI-RED-002 captured and corrected NTFS fixture modes,
+  Windows shebang parsing, authenticated-key checkout bytes, and POSIX-only mode assertions. At the
+  corrected exact head, E-M3-WINDOWS-CI-RED-003 proves 20 passing and one intentionally skipped test
+  on each native architecture, exact input download, and a common fail-closed Git-for-Windows
+  `gpgv` drive-letter keyring incompatibility. No Windows executable evidence is claimed.
 - Production behavior: unchanged; Orca embeds relay JavaScript and installs `node-pty` plus
   `@parcel/watcher` with remote npm.
 - New runtime assets published: none.
@@ -98,9 +101,9 @@ same change as the work it records.
 - Rollout control: existing per-SSH-target configuration; legacy is the default and the bundled
   runtime is an explicit per-target Beta opt-in under E-M1-ROLLOUT-DECISION-001.
 - Legacy fallback removal: not authorized.
-- Next required action: finish the final local audit of the bounded Windows runtime/ZIP builder and
-  verifier, correct the Windows-only test failures from E-M3-WINDOWS-CI-RED-002, and collect exact
-  Windows x64/arm64 plus POSIX regression evidence from the corrected draft-PR head. A
+- Next required action: pass only cwd-relative verified-copy paths to `gpg`/`gpgv`, add a
+  discriminating command-boundary regression test, and collect exact Windows x64/arm64 plus POSIX
+  regression evidence from the corrected draft-PR head. A
   same-head/same-runner clean-rebuild identity oracle for native build reproducibility remains a
   separate open gate. Keep cross-family remote infrastructure, signing/trust, and measured legacy
   baseline gates open; do not introduce publication, resolver, transfer, rollout, tuple enablement,
@@ -2587,6 +2590,122 @@ or unexpected token`; the first logs did not identify a source location.
 - Follow-up: mark the pinned armored key `-text` so checkout preserves its authenticated bytes,
   keep the filesystem-mode mutation assertion POSIX-only, and rerun both native architectures.
   Continue to block input download/build until all seven suites pass.
+
+### E-M3-WINDOWS-CI-RED-003 — Native Windows input verification exposed GPG path incompatibility
+
+- Date: 2026-07-14
+- Commit SHA / PR: exact workflow head `b387ac48cda70b60a5a148c03ce740f9afedf9cb`; draft PR
+  [#8741](https://github.com/stablyai/orca/pull/8741)
+- Run: [SSH Relay Runtime Artifacts 29339998273](https://github.com/stablyai/orca/actions/runs/29339998273)
+- Native jobs:
+  - x64 job `87109014067`: requested `windows-2022`; resolved `win22` image
+    `20260706.237.1`, GitHub-hosted X64, Windows Server 2022 Datacenter build 20348, Node v24.18.0;
+    failed after 1m21s.
+  - arm64 job `87109014073`: requested `windows-11-arm`; resolved `win11-arm64` image
+    `20260706.102.1`, GitHub-hosted ARM64, Windows 10 Enterprise build 26200, Node v24.18.0; failed
+    after approximately 3m.
+- Remote and transport: none. Each job downloaded exact HTTPS inputs from
+  `nodejs.org/dist/v24.18.0`; neither reached archive extraction, native compilation, smoke, ZIP
+  creation, or artifact upload.
+- Exact commands:
+
+  ```sh
+  gh run view 29339998273 --repo stablyai/orca \
+    --json databaseId,headSha,status,conclusion,url,createdAt,updatedAt,jobs
+  gh api repos/stablyai/orca/actions/jobs/87109014067/logs | \
+    rg -n -C 12 "SSH relay runtime build failed|gpgv rejected|invalid key resource|Process completed with exit code"
+  gh api repos/stablyai/orca/actions/jobs/87109014073/logs | \
+    rg -n -C 12 "SSH relay runtime build failed|gpgv rejected|invalid key resource|Process completed with exit code"
+  ```
+
+- Result: FAIL as a discriminating signed-input gate on both architectures. All seven focused suites
+  collected on each runner; 20 tests passed and one POSIX-only test skipped as designed in 1.17s on
+  x64 and 1.47s on arm64. Exact Node inputs downloaded successfully. Git for Windows `gpgv` then
+  rejected the exclusive verified-copy keyring path before signature acceptance:
+  `invalid key resource URL 'C:\\...\\release-key.gpg'`. GnuPG interprets the drive-letter colon
+  as a resource-URL scheme at this option boundary. Both runners failed closed with `No public key`;
+  no unverified archive was extracted or executed.
+- Oracle proved: the preceding fixture, shebang, checkout-byte, and filesystem-mode corrections are
+  green on both native Windows architectures; exact release inputs are downloadable; the production
+  signature gate executes and prevents unverified bytes from progressing. The identical x64/arm64
+  failure isolates command-path representation rather than architecture-specific cryptography.
+- Does not prove: successful Windows signature verification, archive/header/import-library
+  extraction, offline `node-gyp`, native compilation, bundled Node/ConPTY/watcher execution, ZIP
+  output or determinism, native trust/signing, oldest baseline, SSH, or any enabled tuple.
+- Checklist items satisfied: Windows contract-test portability and fail-closed signed-input behavior
+  only. No Windows build, executable, archive, or artifact cell is checked.
+- Follow-up: run both GPG commands in the exclusive verified-copy directory with cwd-relative paths,
+  assert the command boundary never receives an absolute drive-letter path, and rerun both native
+  architectures before any broader Windows correction.
+
+### E-M3-WINDOWS-GPG-PATH-RED-001 — Relative verified-copy command boundary red gate
+
+- Date: 2026-07-14
+- Commit SHA / PR: uncommitted purpose-named regression test on exact head
+  `b387ac48cda70b60a5a148c03ce740f9afedf9cb`; draft PR
+  [#8741](https://github.com/stablyai/orca/pull/8741)
+- Runner: macOS 26.2 arm64; Node v26.0.0 and pnpm 10.24.0
+- Remote and transport: none; mocked child-process command boundary only
+- Exact command:
+  `pnpm exec vitest run --config config/vitest.config.ts config/scripts/ssh-relay-node-release-verification.test.mjs`
+- Result: expected FAIL; one new test failed and seven existing tests passed in 163 ms. The failure
+  diff showed absolute temporary paths passed to both `gpg --output` and `gpgv --keyring`, while the
+  required oracle expected cwd-relative verified-copy names and a common exclusive working directory.
+- Oracle proved: the regression test discriminates the exact command representation rejected by Git
+  for Windows in E-M3-WINDOWS-CI-RED-003 without weakening signature/fingerprint validation.
+- Does not prove: real GPG execution, Windows compatibility, successful signature verification,
+  archive extraction/build/smoke, or any tuple support.
+- Checklist items satisfied: red half of the Windows GPG path-portability correction only.
+- Follow-up: add cwd support to the bounded command runner, pass only explicit relative verified-copy
+  names, rerun this focused suite, and require native x64/arm64 CI before claiming the correction.
+
+### E-M3-WINDOWS-GPG-PATH-LOCAL-001 — Relative verified-copy command boundary correction
+
+- Date: 2026-07-14
+- Commit SHA / PR: uncommitted correction on exact base
+  `b387ac48cda70b60a5a148c03ce740f9afedf9cb`; draft PR
+  [#8741](https://github.com/stablyai/orca/pull/8741)
+- Runner: macOS 26.2 arm64; Node v26.0.0 and pnpm 10.24.0. The repository requires Node 24, so
+  exact-head draft-PR CI remains authoritative.
+- Remote and transport: none; mocked GPG command-boundary regression plus local contract/static
+  checks
+- Exact commands:
+
+  ```sh
+  pnpm exec vitest run --config config/vitest.config.ts \
+    config/scripts/ssh-relay-node-release-verification.test.mjs
+  pnpm exec vitest run --config config/vitest.config.ts \
+    config/scripts/ssh-relay-node-release-verification.test.mjs \
+    config/scripts/ssh-relay-node-tar-inspection.test.mjs \
+    config/scripts/ssh-relay-node-zip-inspection.test.mjs \
+    config/scripts/ssh-relay-runtime-artifact.test.mjs \
+    config/scripts/ssh-relay-runtime-windows-tree.test.mjs \
+    config/scripts/ssh-relay-runtime-zip.test.mjs \
+    config/scripts/ssh-relay-runtime-workflow.test.mjs
+  pnpm run typecheck
+  pnpm exec oxlint
+  pnpm run check:max-lines-ratchet
+  GOMAXPROCS=2 pnpm run lint
+  pnpm exec oxfmt --check \
+    docs/reference/plans/2026-07-14-ssh-relay-github-release-implementation-checklist.md \
+    docs/reference/plans/2026-07-14-ssh-relay-github-release-plan.html
+  git diff --check
+  ```
+
+- Result: PASS. The focused signature suite passed 8/8 tests in 151 ms; all seven artifact suites
+  passed 22/22 tests in 313 ms. Typecheck, full oxlint, max-lines ratchet, full
+  lint/reliability/localization gates, plan formatting, and diff whitespace passed. Oxlint reported
+  only existing warnings outside this package; full lint used `GOMAXPROCS=2` for the previously
+  recorded external Go linter stability constraint.
+- Oracle proved: both GPG invocations share the exclusive verified-copy directory as their cwd and
+  receive only explicit `./` paths for the key, keyring, checksum, and signature; existing hash,
+  command-failure, and exact-fingerprint tests remain green.
+- Does not prove: real GPG execution, Git for Windows compatibility, Node 24 support, Windows native
+  build/smoke, archive output, or any tuple support.
+- Checklist items satisfied: local green half of the path-portability correction only. Native CI is
+  still mandatory before the E-M3-WINDOWS-CI-RED-003 failure is considered corrected.
+- Follow-up: run the exact correction on Windows x64/arm64 and all four POSIX artifact jobs, then
+  record any next discriminating native boundary without broadening this work package.
 
 ### E-M3-RUNTIME-LOCAL-001 — First target-native Linux arm64 runtime artifact
 
