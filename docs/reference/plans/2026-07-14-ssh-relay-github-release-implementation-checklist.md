@@ -2,7 +2,7 @@
 
 Date created: 2026-07-14<br>
 Last updated: 2026-07-14<br>
-Current phase: Milestone 3 / Work Package 2 target-native runtime assembly — add and prove a same-head, same-runner two-clean-build identity oracle now that all six glibc/macOS/Windows target-native artifact and executable cells are green; oldest-baseline, native-trust, cross-family remote, and measured-baseline gates remain open; no bundled-runtime path is enabled<br>
+Current phase: Milestone 3 / Work Package 2 target-native runtime assembly — the bounded same-head, same-runner two-clean-build identity oracle is locally green and awaits exact-head execution on all six glibc/macOS/Windows native runners; oldest-baseline, native-trust, cross-family remote, and measured-baseline gates remain open; no bundled-runtime path is enabled<br>
 Primary design: [SSH relay GitHub Release plan](./2026-07-14-ssh-relay-github-release-plan.html)<br>
 Motivating issues: [#8450](https://github.com/stablyai/orca/issues/8450), [#1693](https://github.com/stablyai/orca/issues/1693)
 
@@ -87,8 +87,10 @@ same change as the work it records.
   diff gates. The first exact-head native run exposed a macOS `/var` versus `/private/var` watcher
   oracle mismatch under E-M3-CI-RED-001. The corrected exact-head run passed target-native build,
   archive/tree verification, bundled Node, patched PTY, and watcher smoke for Linux x64/arm64 and
-  macOS x64/arm64 under E-M3-CI-001. Same-runner clean-rebuild identity, oldest-baseline,
-  native-trust, SSH, Windows, and musl cells remain open.
+  macOS x64/arm64 under E-M3-CI-001. A bounded comparator now rejects incomplete outputs and any
+  runtime-tree, archive, identity, SPDX, provenance, type, mode, size, or digest drift after two
+  independently verified clean builds; its focused contract is locally green, but exact-head native
+  execution remains pending. Oldest-baseline, native-trust, SSH, and musl cells remain open.
 - Windows input correction: E-M3-WINDOWS-INPUT-GAP-001 proved the official Windows ZIP lacks headers
   and `node.lib`. Both artifacts now require the exact signed headers archive and tuple import
   library as explicit inputs. The schema, signed-checksum verifier, bounded ZIP/header extraction,
@@ -125,11 +127,12 @@ same change as the work it records.
 - Rollout control: existing per-SSH-target configuration; legacy is the default and the bundled
   runtime is an explicit per-target Beta opt-in under E-M1-ROLLOUT-DECISION-001.
 - Legacy fallback removal: not authorized.
-- Next required action: add a same-head/same-runner two-clean-build identity comparison that fails
-  closed on any tree, archive, SBOM, provenance, or identity drift, then run it for every target-
-  native candidate. Keep oldest-baseline, cross-family remote infrastructure, signing/trust, and
-  measured legacy baseline gates open; do not introduce publication, resolver, transfer, rollout,
-  tuple enablement, or default behavior.
+- Next required action: finish the exact implementation-commit local gates, push the bounded
+  two-clean-build comparator/workflow package to draft PR #8741, and require every target-native job
+  to compare complete runtime-tree, archive, identity, SPDX, and provenance outputs before upload.
+  Record every native drift instead of weakening the oracle. Keep oldest-baseline, cross-family
+  remote infrastructure, signing/trust, and measured legacy baseline gates open; do not introduce
+  publication, resolver, transfer, rollout, tuple enablement, or default behavior.
 
 ## Non-Negotiable Invariants
 
@@ -597,8 +600,11 @@ transfer, install, fallback, rollout setting, or tuple enablement belongs in thi
 
 **Active sub-gate — 2026-07-14, Codex implementation owner:** exact-head run 29345126283 proves all
 six target-native artifact/executable jobs, including normal Windows x64/arm64 settlement and
-unpublished upload. Add a bounded same-head/same-runner two-clean-build comparison without changing
-artifact consumers, publication, the repository-wide node-pty patch, or the legacy/default path.
+unpublished upload. The locally green bounded comparator now requires two independently verified
+clean outputs and exact type/mode/size/SHA-256 equality for the runtime tree, archive, identity,
+SPDX, and provenance before uploading only the first output. Exact-head native execution remains
+open; artifact consumers, publication, the repository-wide node-pty patch, and the legacy/default
+path remain unchanged.
 
 Each runtime must contain only the executable closure required by the relay.
 
@@ -1258,6 +1264,7 @@ focused commands as their scripts/tests are introduced.
 - [x] `pnpm exec vitest run --config config/vitest.config.ts config/scripts/ssh-relay-runtime-pty-smoke.test.mjs` (E-M3-WINDOWS-SMOKE-SETTLEMENT-LOCAL-RED-001, E-M3-WINDOWS-SMOKE-SETTLEMENT-LOCAL-001; native evidence remains pending)
 - [x] `pnpm exec vitest run --config config/vitest.config.ts config/scripts/ssh-relay-runtime-resource-diagnostics.test.mjs` (E-M3-WINDOWS-RESOURCE-DIAGNOSTIC-LOCAL-001; native classification pending)
 - [x] `pnpm exec vitest run --config config/vitest.config.ts config/scripts/ssh-relay-node-pty-windows-settlement.test.mjs` (E-M3-WINDOWS-CONPTY-WORKER-LOCAL-RED-001, E-M3-WINDOWS-CONPTY-WORKER-LOCAL-001; native settlement pending)
+- [ ] `pnpm exec vitest run --config config/vitest.config.ts config/scripts/ssh-relay-runtime-reproducibility.test.mjs config/scripts/ssh-relay-runtime-workflow.test.mjs` (locally green on the uncommitted implementation tree; rerun on the exact implementation commit before checking)
 - [x] `node config/scripts/verify-ssh-relay-node-release-inputs.mjs --inputs-directory <verified-windows-input-directory> --archive win32-x64` (E-M3-WINDOWS-INPUT-001; signed real Node ZIP, headers, and import library; no Windows execution)
 - [x] `node config/scripts/build-ssh-relay-runtime.mjs --tuple linux-arm64-glibc --inputs-directory <verified-input-directory> --output-directory <exclusive-output> --source-date-epoch <epoch> --git-commit <full-sha>` (E-M3-RUNTIME-LOCAL-001; local native Linux arm64 only)
 - [x] `node config/scripts/verify-ssh-relay-runtime.mjs --runtime-directory <runtime-tree> --identity <identity.json> --archive <runtime.tar.xz>` (E-M3-RUNTIME-LOCAL-001; local native Linux arm64 only)
@@ -3599,10 +3606,12 @@ The project is not complete until every applicable item below is checked with ev
 
 ## Next Required Action
 
-Commit and push the bounded post-smoke resource diagnostic, then capture both native Windows
-resource snapshots through the existing parent timeout without making another cleanup change. Use
-that evidence to isolate the owning subsystem before requiring exact-head normal exit and artifact
-upload. The separate clean-build identity gate, cross-family Layer B target pool, protected
-manifest-signing environment, and paired legacy performance baseline remain release/default-path
-blockers; no publication, desktop resolver, SSH transfer/install, per-target Beta, fallback, tuple
-enablement, or default behavior may be connected by this package.
+Complete the exact implementation-commit local gates, push the bounded two-clean-build
+reproducibility package to draft PR #8741, and run all six target-native jobs. Each job must build,
+verify, and smoke two exclusive outputs, compare every runtime-tree/archive/identity/SPDX/provenance
+entry, and upload only after equality. Record exact differing paths and fields for every native red
+result and correct the producer without weakening the oracle. Cross-family Layer B targets, the
+protected manifest-signing environment, oldest-baseline/native-trust cells, and the paired legacy
+performance baseline remain release/default-path blockers; no publication, desktop resolver, SSH
+transfer/install, per-target Beta, fallback, tuple enablement, or default behavior may be connected
+by this package.

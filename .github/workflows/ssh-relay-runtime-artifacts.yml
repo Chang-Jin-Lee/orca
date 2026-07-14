@@ -110,6 +110,7 @@ jobs:
             config/scripts/ssh-relay-node-zip-inspection.test.mjs \
             config/scripts/ssh-relay-runtime-artifact.test.mjs \
             config/scripts/ssh-relay-runtime-pty-smoke.test.mjs \
+            config/scripts/ssh-relay-runtime-reproducibility.test.mjs \
             config/scripts/ssh-relay-runtime-resource-diagnostics.test.mjs \
             config/scripts/ssh-relay-runtime-windows-tree.test.mjs \
             config/scripts/ssh-relay-runtime-zip.test.mjs \
@@ -129,34 +130,44 @@ jobs:
           done
           printf 'NODE_INPUTS=%s\n' "$inputs" >> "$GITHUB_ENV"
 
-      - name: Build, inspect, and smoke exact runtime
+      - name: Build twice, inspect, smoke, and compare exact runtime
         shell: bash
         run: |
           set -euo pipefail
-          output="$RUNNER_TEMP/ssh-relay-runtime/${{ matrix.tuple }}"
-          mkdir -p "$(dirname "$output")"
+          output_root="$RUNNER_TEMP/ssh-relay-runtime/${{ matrix.tuple }}"
+          mkdir -p "$output_root"
+          first_output="$output_root/first"
+          second_output="$output_root/second"
           source_commit=$(git rev-parse HEAD)
           source_date_epoch=$(git show -s --format=%ct "$source_commit")
-          /usr/bin/time -p node config/scripts/build-ssh-relay-runtime.mjs \
+          for output in "$first_output" "$second_output"; do
+            printf 'clean_build_output=%s\n' "$output"
+            /usr/bin/time -p node config/scripts/build-ssh-relay-runtime.mjs \
+              --tuple '${{ matrix.tuple }}' \
+              --inputs-directory "$NODE_INPUTS" \
+              --output-directory "$output" \
+              --source-date-epoch "$source_date_epoch" \
+              --git-commit "$source_commit"
+            identity="$output/orca-ssh-relay-runtime-${{ matrix.tuple }}.identity.json"
+            archive=$(find "$output" -maxdepth 1 -name '*.tar.xz' -print -quit)
+            test -n "$archive"
+            /usr/bin/time -p node config/scripts/verify-ssh-relay-runtime.mjs \
+              --runtime-directory "$output/runtime" \
+              --identity "$identity" \
+              --archive "$archive"
+            if find "$output/runtime" -type f \( -name npm -o -name npx -o -name corepack -o -name '*.map' \) -print -quit | grep -q .; then
+              echo 'Runtime contains a prohibited package manager or source map.' >&2
+              exit 1
+            fi
+            parcel_packages=$(find "$output/runtime/node_modules/@parcel" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')
+            test "$parcel_packages" = 2
+          done
+          node config/scripts/ssh-relay-runtime-reproducibility.mjs \
             --tuple '${{ matrix.tuple }}' \
-            --inputs-directory "$NODE_INPUTS" \
-            --output-directory "$output" \
-            --source-date-epoch "$source_date_epoch" \
-            --git-commit "$source_commit"
-          identity="$output/orca-ssh-relay-runtime-${{ matrix.tuple }}.identity.json"
-          archive=$(find "$output" -maxdepth 1 -name '*.tar.xz' -print -quit)
-          /usr/bin/time -p node config/scripts/verify-ssh-relay-runtime.mjs \
-            --runtime-directory "$output/runtime" \
-            --identity "$identity" \
-            --archive "$archive"
-          if find "$output/runtime" -type f \( -name npm -o -name npx -o -name corepack -o -name '*.map' \) -print -quit | grep -q .; then
-            echo 'Runtime contains a prohibited package manager or source map.' >&2
-            exit 1
-          fi
-          parcel_packages=$(find "$output/runtime/node_modules/@parcel" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')
-          test "$parcel_packages" = 2
+            --first-output-directory "$first_output" \
+            --second-output-directory "$second_output"
           mkdir -p "$GITHUB_WORKSPACE/runtime-evidence/${{ matrix.tuple }}"
-          cp "$output"/*.tar.xz "$output"/*.spdx.json "$output"/*.provenance.json "$output"/*.identity.json \
+          cp "$first_output"/*.tar.xz "$first_output"/*.spdx.json "$first_output"/*.provenance.json "$first_output"/*.identity.json \
             "$GITHUB_WORKSPACE/runtime-evidence/${{ matrix.tuple }}/"
 
       - name: Upload unpublished artifact evidence
@@ -254,6 +265,7 @@ jobs:
             config/scripts/ssh-relay-node-zip-inspection.test.mjs `
             config/scripts/ssh-relay-runtime-artifact.test.mjs `
             config/scripts/ssh-relay-runtime-pty-smoke.test.mjs `
+            config/scripts/ssh-relay-runtime-reproducibility.test.mjs `
             config/scripts/ssh-relay-runtime-resource-diagnostics.test.mjs `
             config/scripts/ssh-relay-runtime-windows-tree.test.mjs `
             config/scripts/ssh-relay-runtime-zip.test.mjs `
@@ -284,41 +296,52 @@ jobs:
           }
           "NODE_INPUTS=$inputs" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
-      - name: Build, inspect, and smoke exact runtime
+      - name: Build twice, inspect, smoke, and compare exact runtime
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $output = Join-Path $env:RUNNER_TEMP 'ssh-relay-runtime/${{ matrix.tuple }}'
-          New-Item -ItemType Directory -Path (Split-Path -Parent $output) -Force | Out-Null
+          $outputRoot = Join-Path $env:RUNNER_TEMP 'ssh-relay-runtime/${{ matrix.tuple }}'
+          New-Item -ItemType Directory -Path $outputRoot -Force | Out-Null
+          $firstOutput = Join-Path $outputRoot 'first'
+          $secondOutput = Join-Path $outputRoot 'second'
           $sourceCommit = git rev-parse HEAD
           $sourceDateEpoch = git show -s --format=%ct $sourceCommit
-          node config/scripts/build-ssh-relay-runtime.mjs `
-            --tuple '${{ matrix.tuple }}' `
-            --inputs-directory $env:NODE_INPUTS `
-            --output-directory $output `
-            --source-date-epoch $sourceDateEpoch `
-            --git-commit $sourceCommit
-          if ($LASTEXITCODE -ne 0) { throw 'runtime build failed' }
-          $identity = Join-Path $output 'orca-ssh-relay-runtime-${{ matrix.tuple }}.identity.json'
-          $archive = Get-ChildItem -LiteralPath $output -Filter '*.zip' -File | Select-Object -First 1
-          if (-not $archive) { throw 'runtime ZIP is missing' }
-          node config/scripts/verify-ssh-relay-runtime.mjs `
-            --runtime-directory (Join-Path $output 'runtime') `
-            --identity $identity `
-            --archive $archive.FullName
-          if ($LASTEXITCODE -ne 0) { throw 'runtime verification failed' }
-          $prohibited = Get-ChildItem -LiteralPath (Join-Path $output 'runtime') -Recurse -File |
-            Where-Object { $_.Name -in @('npm', 'npm.cmd', 'npx', 'npx.cmd', 'corepack', 'corepack.cmd') -or $_.Name.EndsWith('.map') } |
-            Select-Object -First 1
-          if ($prohibited) { throw "Runtime contains a prohibited file: $($prohibited.FullName)" }
-          $parcelRoot = Join-Path $output 'runtime/node_modules/@parcel'
-          if (@(Get-ChildItem -LiteralPath $parcelRoot -Directory).Count -ne 2) {
-            throw 'Runtime must contain exactly the watcher wrapper and one native package'
+          foreach ($output in @($firstOutput, $secondOutput)) {
+            "clean_build_output=$output"
+            node config/scripts/build-ssh-relay-runtime.mjs `
+              --tuple '${{ matrix.tuple }}' `
+              --inputs-directory $env:NODE_INPUTS `
+              --output-directory $output `
+              --source-date-epoch $sourceDateEpoch `
+              --git-commit $sourceCommit
+            if ($LASTEXITCODE -ne 0) { throw 'runtime build failed' }
+            $identity = Join-Path $output 'orca-ssh-relay-runtime-${{ matrix.tuple }}.identity.json'
+            $archive = Get-ChildItem -LiteralPath $output -Filter '*.zip' -File | Select-Object -First 1
+            if (-not $archive) { throw 'runtime ZIP is missing' }
+            node config/scripts/verify-ssh-relay-runtime.mjs `
+              --runtime-directory (Join-Path $output 'runtime') `
+              --identity $identity `
+              --archive $archive.FullName
+            if ($LASTEXITCODE -ne 0) { throw 'runtime verification failed' }
+            $prohibited = Get-ChildItem -LiteralPath (Join-Path $output 'runtime') -Recurse -File |
+              Where-Object { $_.Name -in @('npm', 'npm.cmd', 'npx', 'npx.cmd', 'corepack', 'corepack.cmd') -or $_.Name.EndsWith('.map') } |
+              Select-Object -First 1
+            if ($prohibited) { throw "Runtime contains a prohibited file: $($prohibited.FullName)" }
+            $parcelRoot = Join-Path $output 'runtime/node_modules/@parcel'
+            if (@(Get-ChildItem -LiteralPath $parcelRoot -Directory).Count -ne 2) {
+              throw 'Runtime must contain exactly the watcher wrapper and one native package'
+            }
           }
+          node config/scripts/ssh-relay-runtime-reproducibility.mjs `
+            --tuple '${{ matrix.tuple }}' `
+            --first-output-directory $firstOutput `
+            --second-output-directory $secondOutput
+          if ($LASTEXITCODE -ne 0) { throw 'runtime reproducibility verification failed' }
           $evidence = Join-Path $env:GITHUB_WORKSPACE 'runtime-evidence/${{ matrix.tuple }}'
           New-Item -ItemType Directory -Path $evidence -Force | Out-Null
-          Copy-Item -LiteralPath $archive.FullName -Destination $evidence
-          Get-ChildItem -LiteralPath $output -File |
+          $firstArchive = Get-ChildItem -LiteralPath $firstOutput -Filter '*.zip' -File | Select-Object -First 1
+          Copy-Item -LiteralPath $firstArchive.FullName -Destination $evidence
+          Get-ChildItem -LiteralPath $firstOutput -File |
             Where-Object { $_.Name -match '\.(?:spdx|provenance|identity)\.json$' } |
             Copy-Item -Destination $evidence
 

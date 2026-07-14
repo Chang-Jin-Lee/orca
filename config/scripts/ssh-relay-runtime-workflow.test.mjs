@@ -35,12 +35,13 @@ describe('SSH relay runtime artifact workflow', () => {
     }
   })
 
-  it('uploads only archive and metadata evidence after executable verification', async () => {
+  it('uploads only the first output after two clean builds verify and compare', async () => {
     const source = await readFile(workflowUrl, 'utf8')
     const workflow = parse(source)
     const steps = workflow.jobs['build-posix-runtime'].steps
+    const windowsSteps = workflow.jobs['build-windows-runtime'].steps
     const buildIndex = steps.findIndex(
-      (step) => step.name === 'Build, inspect, and smoke exact runtime'
+      (step) => step.name === 'Build twice, inspect, smoke, and compare exact runtime'
     )
     const uploadIndex = steps.findIndex(
       (step) => step.name === 'Upload unpublished artifact evidence'
@@ -52,12 +53,16 @@ describe('SSH relay runtime artifact workflow', () => {
     expect(source).toContain('ssh-relay-runtime-workflow.test.mjs')
     expect(source).toContain('pnpm install --frozen-lockfile --ignore-scripts')
     expect(source).toContain('--connect-timeout 20 --max-time 300 --retry 2')
-    expect(source).toContain('mkdir -p "$(dirname "$output")"')
+    expect(source).toContain('mkdir -p "$output_root"')
     expect(source).toContain('source_commit=$(git rev-parse HEAD)')
     expect(source).toContain('--git-commit "$source_commit"')
     expect(source).not.toContain('--git-commit "$GITHUB_SHA"')
-    expect(source).toContain('cp "$output"/*.tar.xz')
-    expect(source).toContain("Get-ChildItem -LiteralPath $output -Filter '*.zip'")
+    expect(source).toContain('for output in "$first_output" "$second_output"')
+    expect(source).toContain('foreach ($output in @($firstOutput, $secondOutput))')
+    expect(source).toContain('ssh-relay-runtime-reproducibility.mjs')
+    expect(source).toContain('ssh-relay-runtime-reproducibility.test.mjs')
+    expect(source).toContain('cp "$first_output"/*.tar.xz')
+    expect(source).toContain("Get-ChildItem -LiteralPath $firstOutput -Filter '*.zip'")
     expect(source).toContain('ssh-relay-node-zip-inspection.test.mjs')
     expect(source).toContain('ssh-relay-runtime-pty-smoke.test.mjs')
     expect(source).toContain('ssh-relay-runtime-resource-diagnostics.test.mjs')
@@ -65,6 +70,17 @@ describe('SSH relay runtime artifact workflow', () => {
     expect(source).toContain('node-v24.18.0-headers.tar.gz')
     expect(source).toContain('node_library: win-x64/node.lib')
     expect(source).toContain("@('gpg.exe', 'gpgv.exe')")
+    for (const jobSteps of [steps, windowsSteps]) {
+      const run = jobSteps.find(
+        (step) => step.name === 'Build twice, inspect, smoke, and compare exact runtime'
+      ).run
+      expect(run.indexOf('ssh-relay-runtime-reproducibility.mjs')).toBeGreaterThan(
+        run.indexOf('verify-ssh-relay-runtime.mjs')
+      )
+      expect(run.indexOf('runtime-evidence/${{ matrix.tuple }}')).toBeGreaterThan(
+        run.indexOf('ssh-relay-runtime-reproducibility.mjs')
+      )
+    }
     expect(steps[uploadIndex].with.path).toBe('runtime-evidence/${{ matrix.tuple }}/')
     expect(source).not.toMatch(/releases\/|gh release|contents:\s*write/i)
   })
