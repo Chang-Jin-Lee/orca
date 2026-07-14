@@ -104,4 +104,52 @@ describe('Windows firewall remote-address scope', () => {
       )
     ).toBe(true)
   })
+
+  it('accepts dotted-netmask CIDR with a contiguous mask and rejects a holey one', () => {
+    expect(
+      hasSufficientWindowsFirewallRemoteScope(
+        [rule(['192.168.0.0/255.255.255.0'])],
+        '192.168.0.108',
+        24
+      )
+    ).toBe(true)
+    expect(
+      hasSufficientWindowsFirewallRemoteScope(
+        [rule(['192.168.0.0/255.0.255.0'])],
+        '192.168.0.108',
+        24
+      )
+    ).toBe(false)
+  })
+
+  it('treats a single-host (/32) interface as coverable only by Any/LocalSubnet keywords', () => {
+    // A /32 subnet is just the desktop itself, so an explicit range cannot prove
+    // the phone (a different host) is allowed — only the keywords can.
+    expect(hasSufficientWindowsFirewallRemoteScope([rule(['Any'])], '100.64.1.20', 32)).toBe(true)
+    expect(hasSufficientWindowsFirewallRemoteScope([rule(['LocalSubnet'])], '100.64.1.20', 32)).toBe(
+      true
+    )
+    expect(
+      hasSufficientWindowsFirewallRemoteScope([rule(['100.64.0.0/10'])], '100.64.1.20', 32)
+    ).toBe(false)
+  })
+
+  it('fails address-family keywords closed when the interface family is unknown', () => {
+    expect(hasSufficientWindowsFirewallRemoteScope([rule(['Any'])], undefined, undefined)).toBe(true)
+    expect(hasSufficientWindowsFirewallRemoteScope([rule(['Any4'])], undefined, undefined)).toBe(
+      false
+    )
+    expect(hasSufficientWindowsFirewallRemoteScope([rule(['Any6'])], undefined, undefined)).toBe(
+      false
+    )
+  })
+
+  it.each([['Intranet'], ['DNS'], ['DHCP'], ['DefaultGateway'], ['PlayToDevice']])(
+    'fails the policy-defined %s keyword closed rather than assuming subnet coverage',
+    (scope) => {
+      expect(hasSufficientWindowsFirewallRemoteScope([rule([scope])], '192.168.0.108', 24)).toBe(
+        false
+      )
+    }
+  )
 })

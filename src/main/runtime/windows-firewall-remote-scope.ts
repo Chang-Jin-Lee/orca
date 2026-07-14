@@ -47,14 +47,17 @@ function addressScopeIsSufficient(scope: string, localSubnet: IpRange | null): b
     normalized === 'localsubnet4' ||
     normalized === 'localsubnet6'
   ) {
+    // Why: these keywords cover a single family, so they need the selected
+    // interface's family; an unknown family (null subnet) fails closed.
     return localSubnet?.version === (normalized.endsWith('4') ? 4 : 6)
   }
   if (!localSubnet) {
     return false
   }
 
-  // Why: without a phone IP, an explicit rule is only known to work when it
-  // covers every possible peer on the selected local subnet.
+  // Why: without a phone IP we can only prove coverage when the rule spans the
+  // whole selected subnet; a single-host subnet (/32, /128 VPN/Tailscale) is just
+  // the desktop, so start !== end blocks a desktop-only rule from a false-allow.
   const explicitRange = parseIpRange(scope)
   return (
     localSubnet.start !== localSubnet.end &&
@@ -69,19 +72,36 @@ function parseSubnet(address: unknown, prefixLength: unknown): IpRange | null {
     return null
   }
   const parsed = parseIpAddress(address)
-  if (
-    !parsed ||
-    !Number.isInteger(prefixLength) ||
-    prefixLength < 0 ||
-    prefixLength > parsed.bits
-  ) {
+  return parsed ? subnetFromParsed(parsed, prefixLength) : null
+}
+
+function subnetFromParsed(parsed: ParsedIpAddress, prefixLength: number): IpRange | null {
+  if (!Number.isInteger(prefixLength) || prefixLength < 0 || prefixLength > parsed.bits) {
     return null
   }
-
   const hostBits = BigInt(parsed.bits - prefixLength)
   const hostMask = hostBits === 0n ? 0n : (1n << hostBits) - 1n
   const start = parsed.value & ~hostMask
   return { version: parsed.version, start, end: start | hostMask }
+}
+
+// Why: Windows also accepts dotted-netmask CIDR (192.168.0.0/255.255.255.0);
+// convert a contiguous mask to a prefix length and fail closed on holey masks.
+function maskPrefixLength(maskText: string, version: IpVersion): number | null {
+  const mask = parseIpAddress(maskText)
+  if (!mask || mask.version !== version) {
+    return null
+  }
+  const fullMask = (1n << BigInt(mask.bits)) - 1n
+  const hostPart = ~mask.value & fullMask
+  if ((hostPart & (hostPart + 1n)) !== 0n) {
+    return null
+  }
+  let hostBits = 0
+  for (let remaining = hostPart; remaining > 0n; remaining >>= 1n) {
+    hostBits += 1
+  }
+  return mask.bits - hostBits
 }
 
 function parseIpRange(scope: string): IpRange | null {
@@ -105,11 +125,14 @@ function parseIpRange(scope: string): IpRange | null {
       return null
     }
     const address = parseIpAddress(trimmed.slice(0, slashIndex))
-    const prefixText = trimmed.slice(slashIndex + 1)
-    if (!address || !/^\d+$/.test(prefixText)) {
+    if (!address) {
       return null
     }
-    return parseSubnet(trimmed.slice(0, slashIndex), Number(prefixText))
+    const suffix = trimmed.slice(slashIndex + 1)
+    const prefixLength = /^\d+$/.test(suffix)
+      ? Number(suffix)
+      : maskPrefixLength(suffix, address.version)
+    return prefixLength === null ? null : subnetFromParsed(address, prefixLength)
   }
 
   const address = parseIpAddress(trimmed)
