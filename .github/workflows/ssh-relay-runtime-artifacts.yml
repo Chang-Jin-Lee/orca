@@ -189,8 +189,9 @@ jobs:
           if [[ '${{ matrix.tuple }}' == linux-* ]]; then
             # Why: package installation is isolated earlier; native compilation itself has no egress.
             docker run --rm --network none --read-only --cap-drop all \
+              --user "$(id -u):$(id -g)" \
               --security-opt no-new-privileges --pids-limit 512 --memory 6g --cpus 4 \
-              --tmpfs /tmp:rw,nosuid,size=1g \
+              --tmpfs /tmp:rw,nosuid,size=1g,mode=1777 \
               --mount "type=bind,src=$GITHUB_WORKSPACE,dst=$GITHUB_WORKSPACE" \
               --mount "type=bind,src=$RUNNER_TEMP,dst=$RUNNER_TEMP" \
               --workdir "$GITHUB_WORKSPACE" \

@@ -166,7 +166,9 @@ describe('SSH relay runtime artifact workflow', () => {
     expect(prepare.run).toContain('config/ssh-relay-runtime-linux-builder.Containerfile')
     expect(build.run).toContain("if [[ '${{ matrix.tuple }}' == linux-* ]]")
     expect(build.run).toContain('--network none --read-only --cap-drop all')
+    expect(build.run).toContain('--user "$(id -u):$(id -g)"')
     expect(build.run).toContain('--security-opt no-new-privileges')
+    expect(build.run).toContain('--tmpfs /tmp:rw,nosuid,size=1g,mode=1777')
     expect(build.run).toContain('ssh-relay-runtime-linux-build-evidence.mjs')
     expect(build.run.indexOf('--network none')).toBeLessThan(
       build.run.indexOf('ssh-relay-runtime-linux-build-evidence.mjs')
