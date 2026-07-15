@@ -24,8 +24,9 @@ RED. The purpose-named missing-contract RED is recorded under
 [29448792600](https://github.com/stablyai/orca/actions/runs/29448792600) passes all six primary native
 jobs but exposes a fresh-parent staging defect in both Linux oldest-userland supplements:
 strict extraction calls `realpath` before preparing the non-existent parent
-(`E-M5-PORTABLE-ARCHIVE-CI-RED-001`). Correct and prove only that exclusive-staging precondition,
-then replace the all-six Node 24 evidence. Desktop consumers, SSH transfer/install, mode wiring,
+(`E-M5-PORTABLE-ARCHIVE-CI-RED-001`). Commit `af181dcc7` corrects and locally proves only that
+exclusive-staging precondition under `E-M5-PORTABLE-ARCHIVE-PARENT-LOCAL-001`; replacement all-six
+Node 24 evidence is the current gate. Desktop consumers, SSH transfer/install, mode wiring,
 tuple enablement, publication, production keys/environment/seed, and merge to `main` remain
 disconnected.
 
