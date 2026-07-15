@@ -10,18 +10,17 @@ A checked box means the work has evidence in the detailed ledger. Design approva
 complete a box.
 
 Active checkpoint: **Milestone 5 / Work Package 4 offline artifact selection —
-in progress, 2026-07-15, Codex implementation owner.** Exact-head run
-[29440806947](https://github.com/stablyai/orca/actions/runs/29440806947) at `8c925c249` passes the
-10-test draft-release composition contract and full runtime construction/execution on all six
-target-native Node 24 jobs under `E-M4-DRAFT-RELEASE-COMPOSITION-CI-001`. PR Checks and Golden E2E
-are green; the artifact workflow is red only for the retained Windows ARM build-26200-versus-26100
-floor mismatch after successful runtime smoke. A real draft release write/read-back remains blocked
-because it is not PR-contained and the production signer/environment are unprovisioned; the safe
-default is no write. Next, begin the purpose-named offline tuple/content/immutable-URL selector RED
-without download, cache, desktop consumer, or mode wiring. Production keys/environment/seed,
-publication, desktop/default consumers, SSH transfer/install, tuple enablement, and merge to `main`
-remain disconnected. Current pushed branch head is `8c925c249`; the implementation owner is authorized to drive
-commits, pushes, CI, and PR-contained rehearsals end to end without merging.
+local GREEN; exact-head native CI pending, 2026-07-15, Codex implementation owner.** The selector
+now accepts only a signature-verified recursively immutable manifest and returns its exact offline
+tuple, content ID, archive metadata, and tag-qualified direct URL. Focused 27-test, adjacent 91-test,
+broad 307-test, typecheck, lint, formatting, and scope gates pass under
+`E-M5-OFFLINE-SELECTION-LOCAL-RED-001` and `E-M5-OFFLINE-SELECTION-LOCAL-001`. Next, commit and push
+this isolated package with the pending Milestone 4 evidence checkpoint, then require all six native
+Node 24 jobs, PR Checks, and Golden E2E at one exact head. Download, cache, desktop consumers, SSH
+transfer/install, mode wiring, tuple enablement, publication, production keys/environment/seed, and
+merge to `main` remain disconnected. Current pushed branch head is `8c925c249`; the implementation
+owner is authorized to drive commits, pushes, CI, and PR-contained rehearsals end to end without
+merging.
 
 ## Safety status
 
@@ -296,6 +295,9 @@ commits, pushes, CI, and PR-contained rehearsals end to end without merging.
 ### WP4 — Desktop resolver and verified cache
 
 - [ ] Select tuples offline from the embedded manifest and resolve immutable direct asset URLs.
+      The verified immutable selection and URL boundary is locally green under
+      `E-M5-OFFLINE-SELECTION-LOCAL-001`; exact-head all-six native CI and the actual packaged
+      embedded-manifest loader remain open.
 - [ ] Stream bounded downloads; verify signature, size, archive hash, and extracted tree.
 - [ ] Add exclusive staging, atomic publication, quarantine, locking, and the 2 GiB cache policy.
 - [ ] Prove verified cached bytes can be transferred while the client is offline.

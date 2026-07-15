@@ -8,7 +8,7 @@ work; keep exact commands, runner identities, hashes, metrics, and residual gaps
 
 Date created: 2026-07-14<br>
 Last updated: 2026-07-15<br>
-Current phase: Milestone 5 / Work Package 4 offline artifact selection — **In progress — 2026-07-15, Codex implementation owner**. Milestone 4 disconnected upload/recovery/materialization/execution composition is closed locally and on all six exact-head native Node 24 jobs under E-M4-DRAFT-RELEASE-COMPOSITION-LOCAL-RED-001, E-M4-DRAFT-RELEASE-COMPOSITION-LOCAL-001, and E-M4-DRAFT-RELEASE-COMPOSITION-CI-001. A real draft release write/read-back is not PR-contained and remains blocked by the unprovisioned production signer/environment; safe default is no write. Begin only offline tuple/content/immutable-URL selection contracts; do not add download, cache, desktop consumer, SSH transfer, tuple enablement, mode wiring, or default behavior.<br>
+Current phase: Milestone 5 / Work Package 4 offline artifact selection — **Local GREEN; exact-head native CI pending — 2026-07-15, Codex implementation owner**. The signature-verified immutable-manifest boundary and exact offline tuple/content/archive/URL result pass local focused, adjacent, broad, static, and scope gates under E-M5-OFFLINE-SELECTION-LOCAL-RED-001 and E-M5-OFFLINE-SELECTION-LOCAL-001. No networking, cache, desktop consumer, SSH transfer, tuple enablement, mode wiring, or default behavior is connected. Commit and push the isolated package with the pending Milestone 4 evidence checkpoint, then require all-six exact-head native Node 24 CI before starting download/cache work.<br>
 Session checkpoint: **In progress — 2026-07-15, Codex implementation owner** — exact pushed head `8c925c24990ac93f6d2dd8de2081a50a74f30d97` passes the 10-test draft-release composition suite and full runtime construction/execution on all six target-native jobs in run 29440806947 under E-M4-DRAFT-RELEASE-COMPOSITION-CI-001. PR Checks 29440804969 and both Golden E2E jobs in 29440804978 are green. Both Linux supplements and Windows x64 floor pass. Windows arm64 floor smoke passes in 6,178.8338ms with 49,881,088-byte RSS; the floor gate then correctly rejects hosted build 26200 versus required 26100. The user authorizes end-to-end commits, pushes, draft-PR updates, CI runs/reruns, and PR-contained rehearsals, but not merging to `main`. There is no real release write, publication caller, desktop consumer, SSH transfer/install, tuple enablement, or production/default behavior change. No accepted production key, protected environment/seed, native-signing trust proof, publication path, or tuple enablement is connected. Legacy remains the production default.<br>
 Primary design: [SSH relay GitHub Release plan](./2026-07-14-ssh-relay-github-release-plan.html)<br>
 Motivating issues: [#8450](https://github.com/stablyai/orca/issues/8450), [#1693](https://github.com/stablyai/orca/issues/1693)
@@ -1035,9 +1035,13 @@ Suggested concrete modules:
 - [ ] Prefer `getconf GNU_LIBC_VERSION` when present; parse only output following Orca’s marker.
 - [ ] Detect musl through marked `ldd --version` output and known loader paths without treating
       arbitrary startup text as evidence.
-- [ ] Validate required libc/libstdc++/kernel/OS versions against manifest constraints.
-- [ ] Treat absent, ambiguous, conflicting, or unparseable results as unknown and choose proven
+- [x] Validate required libc/libstdc++/kernel/OS versions against manifest constraints.
+      E-M5-OFFLINE-SELECTION-LOCAL-001 validates Linux kernel/glibc/libstdc++/GLIBCXX, macOS, and
+      Windows build/OpenSSH/PowerShell/.NET exact minima from a signature-verified manifest.
+- [x] Treat absent, ambiguous, conflicting, or unparseable results as unknown and choose proven
       legacy behavior in `auto` mode.
+      E-M5-OFFLINE-SELECTION-LOCAL-001 pins classified unavailable results without connecting a
+      consumer or changing the legacy default.
 - [ ] Cover GNU coreutils, BusyBox, Alpine, containers, old glibc, Rosetta, Windows, macOS, startup
       noise, missing commands, localization, cancellation, and `MaxSessions=1`.
 
@@ -1046,8 +1050,12 @@ Suggested concrete modules:
 - [ ] Load the embedded manifest for official builds and verify its signature before trusting fields.
 - [ ] Verify the manifest-authenticated target-native attestation and exact byte hashes portably; do
       not assume a macOS client can run Authenticode tooling or a Windows client can run `codesign`.
-- [ ] Resolve the expected tuple and content ID while fully offline.
-- [ ] Construct the exact `/releases/download/<tag>/<asset>` URL without an API lookup.
+- [x] Resolve the expected tuple and content ID while fully offline.
+      E-M5-OFFLINE-SELECTION-LOCAL-001 accepts only the branded immutable result of accepted-key
+      signature verification and returns its exact tuple/content/archive identity.
+- [x] Construct the exact `/releases/download/<tag>/<asset>` URL without an API lookup.
+      E-M5-OFFLINE-SELECTION-LOCAL-001 derives the tag-qualified direct URL from authenticated
+      fields and proves that no `latest` lookup is present.
 - [ ] Reject redirects that violate the approved GitHub release-asset origin policy.
 - [ ] Ensure authorization, cookies, proxy credentials, and custom headers do not leak across redirect
       origins.
@@ -11904,6 +11912,72 @@ config/vitest.config.ts config/scripts/ssh-relay-runtime-draft-release-verificat
 - Follow-up: checkpoint this evidence. A real release write is not PR-contained and remains blocked;
   retain no-write as the safe default and begin the independent Milestone 5 offline selector RED.
 
+### E-M5-OFFLINE-SELECTION-LOCAL-RED-001 — Verified offline selection boundary was incomplete
+
+- Date: 2026-07-15
+- Owner: Codex implementation owner
+- Source: uncommitted RED atop local evidence commit `2097a40dd`; exact pushed base
+  `8c925c24990ac93f6d2dd8de2081a50a74f30d97`; draft PR #8741. Local runner is macOS 26.2 build
+  25C56 arm64, Node v26.0.0, and pnpm 10.24.0. No network request or external write occurred.
+- Command: `/usr/bin/time -l pnpm exec vitest run src/main/ssh/ssh-relay-artifact-selector.test.ts
+  src/main/ssh/ssh-relay-manifest-signature.test.ts` — expected FAIL, 2 files / 26 tests, 7 failed
+  and 19 passed in 430ms Vitest / 1.31s wall, maximum RSS 136,265,728 bytes, zero swaps.
+- Contract failures: a compatible selection returned only tuple ID/tuple and omitted the exact
+  content ID, release tag, authenticated archive metadata, and direct release URL. A verified
+  manifest remained mutable after signature acceptance. Requiring verification also rejected five
+  old Windows/macOS selector shortcuts because they did not represent schema-consistent native
+  closures; these were test-fixture defects, not product compatibility failures.
+- Contract pinned by the RED: accept only the signature verifier's branded result; make that parsed
+  result recursively immutable; select an exact tuple/content/archive from authenticated fields;
+  construct only the exact tag-qualified GitHub release URL; retain classified unavailable results
+  for unknown/incompatible evidence. Use complete internally consistent signed Windows and macOS
+  fixtures rather than bypassing the schema.
+- Does not prove: implementation, GREEN, production keys, embedded desktop loading, networking,
+  redirect policy, download/cache/extraction, SSH behavior, live hosts, performance, or any enabled
+  tuple.
+
+### E-M5-OFFLINE-SELECTION-LOCAL-001 — Verified immutable offline selection passes locally
+
+- Date: 2026-07-15
+- Owner: Codex implementation owner
+- Source: uncommitted implementation atop local evidence commit `2097a40dd`; exact pushed base
+  `8c925c24990ac93f6d2dd8de2081a50a74f30d97`; draft PR #8741. Local runner is macOS 26.2 build
+  25C56 arm64, Node v26.0.0, and pnpm 10.24.0. All accepted keys and manifests are deterministic
+  test fixtures; no GitHub request or external write occurs.
+- Focused command: `/usr/bin/time -l pnpm exec vitest run --config config/vitest.config.ts
+  --maxWorkers=1 src/main/ssh/ssh-relay-artifact-selector.test.ts
+  src/main/ssh/ssh-relay-manifest-signature.test.ts` — PASS, 2 files / 27 tests in 1.42s Vitest /
+  3.04s wall; maximum RSS 131,923,968 bytes and zero swaps.
+- Adjacent command: `/usr/bin/time -l pnpm exec vitest run --config config/vitest.config.ts
+  --maxWorkers=1` with artifact schema, signature, release asset, selector, runtime identity, manifest
+  aggregate, aggregate command, and signing-handoff suites — PASS, 8 files / 91 tests in 3.60s
+  Vitest / 4.47s wall; maximum RSS 189,333,504 bytes and zero swaps.
+- Broad command: `/usr/bin/time -l sh -c "rg --files config/scripts | rg
+  '/ssh-relay.*[.]test[.]mjs$' | xargs pnpm exec vitest run --config config/vitest.config.ts
+  --maxWorkers=1"` — PASS, 56 files / 307 tests in 16.83s Vitest / 17.93s wall; maximum RSS
+  189,857,792 bytes and zero swaps.
+- Static gates: `/usr/bin/time -l pnpm typecheck` passes in 2.46s wall with 1,252,245,504-byte
+  maximum RSS. `/usr/bin/time -l pnpm lint` passes in 26.98s wall with 2,021,146,624-byte maximum
+  RSS; all 41 reliability gates and the 355-entry max-lines ratchet pass with the existing 26
+  unrelated warnings. Focused `oxfmt --check`, localization checks, `git diff --check`, and protected
+  resolver/required-asset zero-diff checks pass.
+- Oracle proved: only `verifySshRelayArtifactManifest` can construct the branded selector input;
+  accepted-key signature verification returns a recursively frozen parsed manifest. Selection uses
+  authenticated build tag, exact tuple/content ID, archive size/hash/count identity, and constructs
+  `https://github.com/stablyai/orca/releases/download/<tag>/<archive>` without `latest`, API, or
+  freshness input. Exact Linux, Windows, and macOS minima plus classified unknown/incompatible/
+  translated/ambiguous behavior remain pinned. Complete schema-valid signed native fixtures replace
+  the old selector-only shortcuts.
+- Consumer-disconnection oracle: no embedded-manifest loader, accepted production key, Electron
+  networking, redirect, download/cache/extraction, desktop consumer, SSH transfer/install, mode,
+  tuple enablement, or default behavior is added. Legacy remains the only production behavior.
+- Does not prove: Node 24/native-runner portability, real production manifest keys or packaged
+  embedding, direct-URL network behavior, proxy/certificate/redirect safety, download/cache, live
+  SSH hosts, performance against legacy, or any enabled tuple.
+- Follow-up: commit and push this isolated package together with evidence commit `2097a40dd`, then
+  require focused and adjacent contracts on all six exact-head native Node 24 jobs plus normal PR
+  checks before starting the disconnected download boundary.
+
 ## Accepted Gaps
 
 No product gap is accepted merely because it appears in this list. Each entry requires explicit
@@ -11962,18 +12036,18 @@ The project is not complete until every applicable item below is checked with ev
 
 ## Next Required Action
 
-Begin a purpose-named Milestone 5 offline artifact-selection RED. It must accept only an already-
-verified immutable embedded manifest, map the existing detected relay OS/architecture plus explicit
-libc classification to one exact tuple/content ID, and construct the exact immutable
-`/releases/download/<tag>/<asset>` URL without an API/latest/freshness lookup. Unknown, ambiguous,
-unsupported, musl, or inconsistent inputs must return a classified unavailable result suitable for
-the still-disconnected legacy path; manifest/identity drift must fail closed. Do not add signature
-key policy, networking, redirect handling, download/cache, desktop call sites, SSH transfer/install,
-mode wiring, tuple enablement, or default behavior in this package. Keep `ORCA_RELAY_PATH`, existing
-desktop required-assets behavior, and detached-signature byte encoding unchanged.
-Keep Windows arm64 build 26100, macOS 13.5, Linux kernel 4.18, release-cut, desktop builds,
-publication, and every tuple separately gated. Do not merge to `main`; retain every
-production/default gate.
+Commit and push the isolated Milestone 5 offline-selection package together with local evidence
+commit `2097a40dd`. Require the focused selector/signature contract and adjacent manifest consumers
+to pass on Linux x64/arm64, macOS x64/arm64, and Windows x64/arm64 at the exact pushed head, plus
+normal PR Checks and Golden E2E. Record job IDs, runner images, timings, results, and the separately
+gated Windows arm64 floor outcome before closing the package.
+
+Only after that evidence is complete, begin a purpose-named disconnected download-boundary RED for
+bounded streaming, cancellation, archive hash/size, approved GitHub redirect origins, and credential/
+header stripping. Do not add a desktop call site, cache publication, extraction, SSH transfer/install,
+mode wiring, tuple enablement, or default behavior. Keep `ORCA_RELAY_PATH`, existing desktop required-
+assets behavior, detached-signature byte encoding, Windows arm64 build 26100, macOS 13.5, Linux
+kernel 4.18, release-cut, desktop builds, publication, and every tuple separately gated.
 
 Cross-family Layer B targets, the protected manifest-signing environment, oldest-baseline/native-
 trust cells, and the paired legacy performance baseline remain release/default-path blockers. No
