@@ -8,7 +8,7 @@ type AgentTeardownOperation = {
 
 /** Owns agent teardown by session id until descendant capture and root
  * signalling finish, even when the root exits and its Session is reaped. */
-export class TerminalAgentTeardown {
+export class TerminalSessionTeardown {
   private operations = new Map<string, AgentTeardownOperation>()
 
   constructor(
@@ -28,11 +28,22 @@ export class TerminalAgentTeardown {
     return pending?.promise
   }
 
-  forceImmediate(sessionId: string, session: Session): void {
-    this.finishImmediate(sessionId, session)
+  killSession(sessionId: string, session: Session, immediate: boolean): void | Promise<void> {
+    if (session.launchAgent) {
+      return this.killAgentSession(sessionId, session, immediate)
+    }
+    if (immediate) {
+      this.finishImmediate(sessionId, session)
+    } else {
+      session.kill()
+    }
   }
 
-  kill(sessionId: string, session: Session, immediate: boolean): void | Promise<void> {
+  private killAgentSession(
+    sessionId: string,
+    session: Session,
+    immediate: boolean
+  ): void | Promise<void> {
     const pending = this.operations.get(sessionId)
     if (pending) {
       // Why: an immediate caller is a stronger teardown request and must not

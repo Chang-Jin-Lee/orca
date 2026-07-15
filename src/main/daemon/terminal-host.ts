@@ -11,7 +11,7 @@ import {
   type TerminalSnapshot
 } from './types'
 import type { CreateOrAttachOptions, CreateOrAttachResult } from './terminal-host-create-contract'
-import { TerminalAgentTeardown } from './terminal-agent-teardown'
+import { TerminalSessionTeardown } from './terminal-session-teardown'
 
 export type { CreateOrAttachOptions, CreateOrAttachResult } from './terminal-host-create-contract'
 
@@ -46,7 +46,7 @@ export type TerminalHostOptions = {
 
 export class TerminalHost {
   private sessions = new Map<string, Session>()
-  private agentTeardowns = new TerminalAgentTeardown(this.sessions, (id) => this.reapSession(id))
+  private sessionTeardown = new TerminalSessionTeardown(this.sessions, (id) => this.reapSession(id))
   private killedTombstones = new Map<string, number>()
   private spawnSubprocess: TerminalHostOptions['spawnSubprocess']
   private onFinalCheckpoint: TerminalHostOptions['onFinalCheckpoint']
@@ -70,7 +70,7 @@ export class TerminalHost {
     // Why: async descendant capture must finish before anyone can attach or
     // dispose/recreate this id. Disposing here would kill the root before the
     // snapshot and reattaching would hand out a doomed session.
-    if (this.agentTeardowns.get(opts.sessionId) || existing?.isTerminating) {
+    if (this.sessionTeardown.get(opts.sessionId) || existing?.isTerminating) {
       throw new SessionNotFoundError(opts.sessionId)
     }
 
@@ -202,20 +202,13 @@ export class TerminalHost {
   }
 
   kill(sessionId: string, opts: { immediate?: boolean } = {}): void | Promise<void> {
-    const pending = this.agentTeardowns.get(sessionId)
+    const pending = this.sessionTeardown.get(sessionId)
     if (pending) {
-      return opts.immediate ? this.agentTeardowns.requestImmediate(sessionId) : pending
+      return opts.immediate ? this.sessionTeardown.requestImmediate(sessionId) : pending
     }
     const session = this.getAliveSession(sessionId)
     this.recordTombstone(sessionId)
-    if (session.launchAgent) {
-      return this.agentTeardowns.kill(sessionId, session, opts.immediate === true)
-    }
-    if (opts.immediate) {
-      this.agentTeardowns.forceImmediate(sessionId, session)
-      return
-    }
-    session.kill()
+    return this.sessionTeardown.killSession(sessionId, session, opts.immediate === true)
   }
 
   // Why: dispose a dead session's headless emulator and drop it from the map so
