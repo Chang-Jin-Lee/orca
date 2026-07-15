@@ -214,9 +214,6 @@ try {
   if (shape === 'symlink' && !targetProviderStat.isSymbolicLink()) {
     throw new Error(`${targetName} provider alias was replaced with an independent copy`)
   }
-  if (shape === 'copy' && targetProviderStat.isSymbolicLink()) {
-    throw new Error(`${targetName} independent provider copy was replaced with an alias`)
-  }
   if (shape === 'symlink' && targetProviderAfter !== currentSkill(targetName).packageDigest) {
     throw new Error(`${targetName} provider alias did not converge with the canonical update`)
   }
@@ -228,11 +225,14 @@ try {
     throw new Error('Independent provider copy changed to an unexpected package identity')
   }
   if (shape === 'copy') {
-    // Why: 1.5.17 copy convergence differs between otherwise equivalent
-    // environments. Record either honest outcome while eligibility stays poisoned.
-    console.log(
-      `[skill-update-roundtrip] independent copy ${targetProviderAfter === targetProviderBefore ? 'remained historical' : 'converged'}`
-    )
+    // Why: hosted 1.5.17 replaces copies with aliases while equivalent local runs
+    // retain the copy. Both prove this input topology must remain ineligible.
+    const outcome = targetProviderStat.isSymbolicLink()
+      ? 'converged to an alias'
+      : targetProviderAfter === targetProviderBefore
+        ? 'remained a historical copy'
+        : 'converged as a copy'
+    console.log(`[skill-update-roundtrip] independent copy ${outcome}`)
   }
   if ((await packageDigestAt(controlCanonical)) !== controlBefore) {
     throw new Error('Targeted update changed the non-targeted control skill')
