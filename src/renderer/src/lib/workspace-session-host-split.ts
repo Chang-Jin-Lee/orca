@@ -69,7 +69,10 @@ const FIELD_OWNERSHIP = {
   remoteSessionIdsByTabId: 'tabKeyed',
   browserPagesByWorkspace: 'browserWorkspaceKeyed',
   markdownFrontmatterVisible: 'fileKeyed',
-  sleepingAgentSessionsByPaneKey: 'sleepingAgentKeyed'
+  sleepingAgentSessionsByPaneKey: 'sleepingAgentKeyed',
+  // Session-level capability stamp — not worktree/tab keyed. Stays in the local
+  // blob; main re-stamps each host session on write (#5356).
+  agentSessionCaptureVersion: 'global'
 } as const satisfies Record<keyof WorkspaceSessionState, FieldOwnership>
 
 // Why: a new WorkspaceSessionState field must be classified above or the split
