@@ -9,7 +9,7 @@ work; keep exact commands, runner identities, hashes, metrics, and residual gaps
 Date created: 2026-07-14<br>
 Last updated: 2026-07-14<br>
 Current phase: Milestone 3 / Work Package 2 oldest-supported-baseline and native-trust proof — **In progress — 2026-07-14, Codex implementation owner**; exact-head run [29373507297](https://github.com/stablyai/orca/actions/runs/29373507297) passes all six target-native build, smoke, exact clean-build equality, upload, SBOM, license, provenance, runner/toolchain, and prohibited-content cells, and direct inspection of every downloaded payload passes exact archive/subject hashes, archive-scoped SPDX identity, one-owner-per-file, dependency, commit/run/builder/runner, tool-version/hash, and closure assertions (E-M3-METADATA-CI-001); Windows x64/arm64 record strict `MSVC 14.44.35207` identities and distinct exact linker SHA-256 values despite the Git-for-Windows PATH collision; the all-six metadata/provenance gate is closed, while oldest-baseline execution, native signing/trust, cross-family remotes, and measured legacy baselines remain open; production/default behavior and every tuple state remain unchanged; no bundled-runtime path is enabled and no artifact is published<br>
-Session checkpoint: **In progress — 2026-07-14, Codex implementation owner** — artifact-only implementation commit `0cb3f7510` packages the correction after E-M3-LINUX-BASELINE-LOCAL-GREEN-001 proved the Linux x64 builder through two complete offline Rocky 8 builds, exact output equality, archive/tree verification, bundled PTY/watcher smoke, and the glibc 2.28/libstdc++ 6.0.25 userland verifier; this local Docker Desktop x64-emulation cell is supplemental only, so exact-head native GitHub x64/arm64 repetitions, exact kernel 4.18, macOS 13.5, and native-trust cells remain open; no tuple is enabled or published.<br>
+Session checkpoint: **In progress — 2026-07-14, Codex implementation owner** — exact-head run [29378160419](https://github.com/stablyai/orca/actions/runs/29378160419) prepares the digest-pinned Linux builders on both native GitHub architectures, but both Linux jobs fail because the root container cannot create exclusive output through the runner-owned temporary-directory bind mount (E-M3-LINUX-RUNNER-MOUNT-PERMISSION-CI-RED-001); the bounded correction runs the offline container as the runner UID/GID with an explicit mode-1777 tmpfs while preserving every isolation/resource bound and passes a complete local two-build/equality/archive/tree/PTY/watcher proof (E-M3-LINUX-RUNNER-MOUNT-PERMISSION-LOCAL-GREEN-001); the same run proves Windows x64 on its declared floor, while native Windows arm64 artifacts and smoke pass but hosted build 26200 cannot prove required build 26100 (E-M3-WINDOWS-ARM64-BASELINE-CI-RED-001); no tuple is enabled or published.<br>
 Primary design: [SSH relay GitHub Release plan](./2026-07-14-ssh-relay-github-release-plan.html)<br>
 Motivating issues: [#8450](https://github.com/stablyai/orca/issues/8450), [#1693](https://github.com/stablyai/orca/issues/1693)
 
@@ -7321,6 +7321,100 @@ resolve one bounded libstdc++ ABI library`; inspection found its filename parser
 - Follow-up: commit this evidence, push both commits, and audit the replacement exact-head run from
   the beginning.
 
+### E-M3-LINUX-RUNNER-MOUNT-PERMISSION-CI-RED-001 — Root container cannot stage into runner temp
+
+- Date: 2026-07-14 (job timestamps 2026-07-15 UTC)
+- Owner: Codex implementation owner
+- Source/run: exact draft-PR head `24153775b2327001e581c341301dfc41bb9cb61f`, Actions run
+  [29378160419](https://github.com/stablyai/orca/actions/runs/29378160419), Linux arm64 job
+  [87235847644](https://github.com/stablyai/orca/actions/runs/29378160419/job/87235847644). Linux x64 job
+  [87235847575](https://github.com/stablyai/orca/actions/runs/29378160419/job/87235847575) fails with
+  the same exception in the first second of the same build step.
+- Runner/environment: GitHub-hosted native `ubuntu-24.04` x64 and `ubuntu-24.04-arm`; requested runner
+  and architecture were recorded by the workflow. Digest-pinned Rocky arm64 base
+  `sha256:3c2d0ce12bf79fc5ff05e43b1000e30ff062dc89405525f3307cbff71661f1a0`; produced builder image
+  `sha256:6384da2f38157d93856beb31f6ba45dffeec8e7cc139cd4468cdf5df2fa5619c`. Digest-pinned Rocky x64
+  base `sha256:2d05a9266523bbf24f33ebc3a9832e4d5fd74b973c220f2204ca802286aa275d`; produced builder image
+  `sha256:4adbb55dff700b55b8cf1c20e4be6099869e3bd43236688bf462116b92da40dc`.
+- Command: the workflow's offline `docker run --rm --network none --read-only --cap-drop all ...`
+  invocation of `ssh-relay-runtime-linux-build-evidence.mjs`, with the workspace and
+  `/home/runner/work/_temp` bind-mounted at identical container paths.
+- Result: expected RED. Builder preparation passed after 3 minutes 25 seconds. The evidence driver
+  then failed immediately with `EACCES: permission denied, mkdir
+'/home/runner/work/_temp/ssh-relay-runtime'`; no build, archive, smoke, comparison, upload, or
+  dependent baseline job ran. The container defaulted to root while the hosted runner bind mount did
+  not grant root write access under this isolation configuration.
+- Plan correction: run the offline build container as `$(id -u):$(id -g)` and make `/tmp` an explicit
+  mode-1777 tmpfs. Retain read-only root, no network, dropped capabilities, no-new-privileges, and the
+  existing process/memory/CPU bounds. Do not broaden permissions on `RUNNER_TEMP` or leave root-owned
+  host output.
+- Does not prove: the correction, any Linux runtime bytes from this run, Linux userland/kernel
+  baselines, native trust, SSH behavior, or an enabled tuple.
+- Follow-up: add a workflow contract for UID/GID and tmpfs mode, validate the exact invocation
+  locally, then repeat both native Linux cells and audit their downloaded artifacts.
+
+### E-M3-LINUX-RUNNER-MOUNT-PERMISSION-LOCAL-GREEN-001 — Non-root build preserves the full gate
+
+- Date: 2026-07-14
+- Owner: Codex implementation owner
+- Source: implementation commit `05b3a4b18` (`build(ssh): preserve Linux runner ownership`), based
+  on `24153775b2327001e581c341301dfc41bb9cb61f`; runtime-building scripts are unchanged from the base.
+- Runner/environment: local macOS arm64 Docker Desktop running the existing amd64 Rocky 8 builder
+  `sha256:9c32993d7a91557657593ae8258568a71f9832b0ce7c8824a1229b939ef49968` under emulation. This is
+  supplemental permission/functional evidence, not a qualifying native architecture cell.
+- Commands: the purpose-named workflow suite, plus a clean disposable workspace invocation of
+  `ssh-relay-runtime-linux-build-evidence.mjs` using `--network none --read-only --cap-drop all`,
+  `--user "$(id -u):$(id -g)"`, `--security-opt no-new-privileges`, the existing process/memory/CPU
+  bounds, and `--tmpfs /tmp:rw,nosuid,size=1g,mode=1777`. A separate bounded mount probe recorded the
+  runtime UID/GID, tmpfs mode, and host ownership of created output.
+- Static commands: `pnpm exec vitest run --config config/vitest.config.ts
+config/scripts/ssh-relay-*.test.mjs`; `pnpm run typecheck`; `pnpm run lint`; `pnpm run
+check:max-lines-ratchet`; focused `pnpm exec oxfmt --check` over the five changed files; and `git
+diff --check`.
+- Result: PASS. Workflow contract 5/5. The probe observed UID 501, GID 20, `/tmp` mode 1777, and output
+  owned by local user `jinwoohong:wheel`. The complete driver passed in 4 minutes 47.48 seconds with
+  694,172 KiB peak RSS. Both builds produced content ID
+  `fc63ca342a5990f460ec6d72262a8542173dab20ce03c9b9cfb755b1c6057e6d`, identical 29,270,716-byte
+  archive SHA-256 `94b2d5c1e28835aab05fc84578298199c300d7d5d0cd4e76057a3f44451356c3`, 49 archive entries,
+  34 files, and 124,846,430 expanded bytes.
+- Runtime result: both bundled-Node checks reported v24.18.0/modules ABI 137; both PTY checks resized
+  to 101x37 and exited 23; both watcher checks observed the required five create/update/delete events.
+  First/second build durations were 138,118.53/130,370.80 ms; verification durations were
+  6,235.84/5,041.08 ms; smoke durations were 431.46/348.38 ms at 58,347,520/58,040,320 RSS bytes.
+- Static result: PASS. The expanded artifact suite passed 22 files/101 tests. Typecheck, full lint,
+  reliability metadata, max-lines (355 grandfathered suppressions and no new bypass), bundled-skill,
+  localization catalog/coverage, focused formatting, and `git diff --check` passed. Lint emitted only
+  the existing unrelated repository warnings. Local Node v26.0.0 emitted the expected engine warning;
+  draft-PR jobs install exact Node 24.18.0.
+- Does not prove: native x64 or arm64 hosted-runner behavior, exact Linux kernel 4.18, SSH
+  transfer/install, native trust, release aggregation, or an enabled tuple.
+- Follow-up: run the exact correction on both native GitHub labels and audit every resulting artifact
+  and supplemental userland job before closing either cell.
+
+### E-M3-WINDOWS-ARM64-BASELINE-CI-RED-001 — Hosted build 26200 cannot prove build 26100
+
+- Date: 2026-07-14 (job timestamps 2026-07-15 UTC)
+- Owner: Codex implementation owner
+- Source/run: exact draft-PR head `24153775b2327001e581c341301dfc41bb9cb61f`, Actions run
+  [29378160419](https://github.com/stablyai/orca/actions/runs/29378160419), Windows arm64 artifact job
+  [87235847556](https://github.com/stablyai/orca/actions/runs/29378160419/job/87235847556), and baseline
+  job [87237242684](https://github.com/stablyai/orca/actions/runs/29378160419/job/87237242684). Windows x64
+  baseline control [87237242686](https://github.com/stablyai/orca/actions/runs/29378160419/job/87237242686)
+  passed.
+- Runner/environment: GitHub-hosted native `windows-11-arm`. The baseline evaluator observed native
+  arm64 Windows `10.0.26200`; the declared oldest arm64 contract is exactly Windows 11 24H2 build 26100. Downloaded artifact ID `8328797474`, 33,084,426 bytes, Actions transport digest
+  `2453ddd8eefd9b371be296bebe0bcec15fdbaa245dca3a89b1eb2c668450cd23`.
+- Result: expected RED for oldest-floor qualification. The native artifact built twice, verified,
+  compared, uploaded, downloaded, re-verified, and completed bundled Node/PTY/watcher smoke; smoke
+  settled to only the parent stdio pipes after the two-second observation window and used 48,525,312
+  RSS bytes. The baseline evaluator returned platform and architecture true, `osBuild: false`, and
+  `qualified: false`, so the job correctly failed closed rather than presenting a newer hosted image
+  as proof of build 26100. Windows x64 passed the analogous declared-floor job.
+- Does not prove: Windows arm64 build 26100 compatibility, native signature/trust, SSH behavior, or an
+  enabled tuple. A successful artifact/smoke run on build 26200 is deliberately insufficient.
+- Follow-up: provision or select a native arm64 build-26100 snapshot/runner before closing this cell;
+  keep the tuple disabled and do not weaken the exact oldest-floor oracle.
+
 ## Accepted Gaps
 
 No product gap is accepted merely because it appears in this list. Each entry requires explicit
@@ -7378,12 +7472,12 @@ The project is not complete until every applicable item below is checked with ev
 
 ## Next Required Action
 
-Implement purpose-named oldest-supported-baseline verification and artifact-only workflow cells.
-Use GitHub-hosted native runners only where their OS/architecture actually satisfies a declared
-floor; add static glibc/libstdc++/kernel eligibility oracles where execution on a newer runner is
-insufficient, and do not claim an unavailable macOS/Windows floor from a newer hosted image. Record
-the exact container image digest when a baseline container supplements native execution. Then prove
-target-native signing/trust before connecting any artifact consumer or enabling any tuple.
+Correct the native Linux runner bind-mount boundary without weakening isolation: execute the offline
+builder as the runner UID/GID, use an explicit mode-1777 tmpfs, and retain the read-only root,
+no-network, capability, privilege, process, memory, and CPU restrictions. Prove that correction on
+both native GitHub architectures, then run and audit the supplemental oldest-userland cells. Keep the
+exact kernel 4.18, unavailable macOS/Windows floor, and target-native signing/trust cells open before
+connecting any artifact consumer or enabling any tuple.
 
 Cross-family Layer B targets, the protected manifest-signing environment, oldest-baseline/native-
 trust cells, and the paired legacy performance baseline remain release/default-path blockers. No

@@ -1157,6 +1157,14 @@
               complete native-module smoke and ABI inspection remain mandatory proof.
             </p>
             <p>
+              The offline Linux build container runs as the native GitHub runner's numeric user and
+              group so exclusive staging written through bind mounts remains runner-owned on both
+              hosted architectures. Its writable <code>/tmp</code> is an explicitly mode-1777 tmpfs;
+              the root filesystem remains read-only and the existing no-network, capability-drop,
+              no-new-privileges, process, memory, and CPU bounds remain mandatory. This avoids both
+              root-owned host output and broad permission changes to runner temporary directories.
+            </p>
+            <p>
               Windows target-native native-module builds use three immutable inputs authenticated by
               that same signed checksum document: the tuple's official Node ZIP, the exact-version
               <code>headers.tar.gz</code>, and the tuple's <code>win-*/node.lib</code>. The Windows

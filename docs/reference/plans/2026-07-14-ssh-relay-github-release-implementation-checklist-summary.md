@@ -21,22 +21,18 @@ complete a box.
 ## Active work
 
 - [ ] **WP2 — Prove oldest supported baselines and native trust.**
-  - Session checkpoint: a local x64 Rocky 8 build now passes two complete offline builds, exact
-    equality, archive/tree verification, PTY/watcher smoke, and the glibc 2.28/libstdc++ 6.0.25
-    userland verifier. This is supplemental local emulation evidence, not a qualifying native cell.
-  - Local focused tests pass 100/100; typecheck, lint, max-lines, formatting, and diff checks pass.
-  - Artifact-only implementation commit: `0cb3f7510` (`build(ssh): prove Linux runtime floor`).
-  - Exact-head CI run `29377854121` stopped in the Windows x64 contract test because Git supplied
-    CRLF Containerfile text to an LF-only assertion. Portability correction `53082dd1f` passes 5/5
-    focused and 101/101 aggregate tests; no Windows x64 artifact was built in the red job.
-  - All six target-native artifact, smoke, equality, SBOM, license, provenance, toolchain, and
-    prohibited-content cells pass in
-    [run 29373507297](https://github.com/stablyai/orca/actions/runs/29373507297); every downloaded
-    payload passed direct audit.
-  - No tuple is enabled: the artifacts still need execution on each declared oldest OS/libc/kernel
-    baseline and target-native signing/trust proof.
-  - Next gate: run the corrected builder on native GitHub x64/arm64 runners. Kernel 4.18, macOS
-    13.5, and native signing/trust remain explicit open cells.
+  - Proven: all-six artifact metadata gate; local Rocky 8 x64 two-build equality, smoke, and glibc
+    2.28/libstdc++ 6.0.25 execution; Windows checkout-newline contract.
+  - Active red: exact-head run
+    [29378160419](https://github.com/stablyai/orca/actions/runs/29378160419) prepares both native Linux
+    builders, but both builds cannot create exclusive output through the runner-temp bind mount.
+  - Active correction locally passes two complete offline x64 builds, exact equality, archive/tree
+    verification, and bundled Node/PTY/watcher smoke as the host UID/GID with a mode-1777 tmpfs.
+  - Next proof: both native Linux builds, supplemental userland jobs, and direct artifact audit.
+  - Windows x64 passes its declared oldest-floor job. The hosted arm64 runner is build 26200, not the
+    required build 26100, so its otherwise successful artifact/runtime smoke does not close that cell.
+  - Still open: Windows arm64 build 26100, kernel 4.18, macOS 13.5, native signing/trust, and every SSH
+    transfer/runtime cell.
 
 ## Work packages, in required order
 
