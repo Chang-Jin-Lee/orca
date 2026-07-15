@@ -127,6 +127,10 @@ jobs:
           node --check config/scripts/ssh-relay-runtime-toolchain.test.mjs
           node --check config/scripts/ssh-relay-runtime-native-signing-plan.mjs
           node --check config/scripts/ssh-relay-runtime-native-signing-plan.test.mjs
+          node --check config/scripts/ssh-relay-runtime-native-signing-selection.mjs
+          node --check config/scripts/ssh-relay-runtime-native-signing-selection.test.mjs
+          node --check config/scripts/ssh-relay-runtime-native-signing-payload.mjs
+          node --check config/scripts/ssh-relay-runtime-native-signing-payload.test.mjs
           pnpm exec vitest run --config config/vitest.config.ts \
             config/scripts/ssh-relay-node-release-verification.test.mjs \
             config/scripts/ssh-relay-node-tar-inspection.test.mjs \
@@ -140,6 +144,8 @@ jobs:
             config/scripts/ssh-relay-runtime-build.test.mjs \
             config/scripts/ssh-relay-runtime-linux-build-evidence.test.mjs \
             config/scripts/ssh-relay-runtime-native-signing-plan.test.mjs \
+            config/scripts/ssh-relay-runtime-native-signing-selection.test.mjs \
+            config/scripts/ssh-relay-runtime-native-signing-payload.test.mjs \
             config/scripts/ssh-relay-runtime-closure.test.mjs \
             config/scripts/ssh-relay-runtime-pty-smoke.test.mjs \
             config/scripts/ssh-relay-runtime-reproducibility.test.mjs \
@@ -386,6 +392,14 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'runtime native signing plan script syntax check failed' }
           node --check config/scripts/ssh-relay-runtime-native-signing-plan.test.mjs
           if ($LASTEXITCODE -ne 0) { throw 'runtime native signing plan test syntax check failed' }
+          node --check config/scripts/ssh-relay-runtime-native-signing-selection.mjs
+          if ($LASTEXITCODE -ne 0) { throw 'runtime native signing selection script syntax check failed' }
+          node --check config/scripts/ssh-relay-runtime-native-signing-selection.test.mjs
+          if ($LASTEXITCODE -ne 0) { throw 'runtime native signing selection test syntax check failed' }
+          node --check config/scripts/ssh-relay-runtime-native-signing-payload.mjs
+          if ($LASTEXITCODE -ne 0) { throw 'runtime native signing payload script syntax check failed' }
+          node --check config/scripts/ssh-relay-runtime-native-signing-payload.test.mjs
+          if ($LASTEXITCODE -ne 0) { throw 'runtime native signing payload test syntax check failed' }
           pnpm exec vitest run --config config/vitest.config.ts `
             config/scripts/ssh-relay-node-release-verification.test.mjs `
             config/scripts/ssh-relay-node-tar-inspection.test.mjs `
@@ -399,6 +413,8 @@ jobs:
             config/scripts/ssh-relay-runtime-build.test.mjs `
             config/scripts/ssh-relay-runtime-linux-build-evidence.test.mjs `
             config/scripts/ssh-relay-runtime-native-signing-plan.test.mjs `
+            config/scripts/ssh-relay-runtime-native-signing-selection.test.mjs `
+            config/scripts/ssh-relay-runtime-native-signing-payload.test.mjs `
             config/scripts/ssh-relay-runtime-closure.test.mjs `
             config/scripts/ssh-relay-runtime-pty-smoke.test.mjs `
             config/scripts/ssh-relay-runtime-reproducibility.test.mjs `
