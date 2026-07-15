@@ -1503,7 +1503,7 @@
       "id": "startup-upgrade.persisted-session-corpus",
       "title": "Current Orca preserves or recovers old production persisted sessions",
       "maturity": "experimental",
-      "protection": "none",
+      "protection": "partial",
       "owner": "startup-persistence",
       "layer": "upgrade-fixture",
       "surfaces": [
@@ -1523,9 +1523,13 @@
         "ssh",
         "wsl"
       ],
-      "coveredPlatforms": [],
-      "coveredProviders": [],
-      "coverageNotes": "Registered gap only; no executable coverage is wired yet.",
+      "coveredPlatforms": [
+        "macos"
+      ],
+      "coveredProviders": [
+        "local"
+      ],
+      "coverageNotes": "A real Electron two-launch journey now creates a valid local repo/worktree catalog, replaces only its session payload with the pre-#5232 shape, and proves the one-time notice plus tab preservation. The session payload is reconstructed from the affected schema rather than copied byte-for-byte from a production 1.4.65 profile; Linux, Windows, daemon-death, SSH, and WSL upgrade fixtures remain gaps.",
       "motivatingLinks": [
         "https://github.com/stablyai/orca/issues/5356",
         "https://github.com/stablyai/orca/pull/5234",
@@ -1533,33 +1537,59 @@
       ],
       "invariant": "Startup and restore fixes must preserve or explicitly recover sessions from the last affected production persisted-state schema, not only from state written by current code.",
       "oracle": "Boot current Orca against immutable copied user-data fixtures from affected versions and reject blank replacement panes, duplicate resume tabs, silent session loss, or works-only-after-current-write behavior.",
-      "commands": [],
-      "testFiles": [],
-      "assertionRefs": [],
-      "evidenceRuns": [],
+      "commands": [
+        "pnpm run test:e2e -- tests/e2e/agent-session-upgrade-loss-5356.spec.ts --workers=1"
+      ],
+      "testFiles": [
+        "tests/e2e/agent-session-upgrade-loss-5356.spec.ts"
+      ],
+      "assertionRefs": [
+        {
+          "file": "tests/e2e/agent-session-upgrade-loss-5356.spec.ts",
+          "assertions": [
+            "a pre-#5232 agent tab in a valid workspace renders alongside exactly one non-destructive upgrade notice",
+            "the migration notice is absent after the upgraded session is written and launched again",
+            "the fixture edits the active profile data file rather than the obsolete pre-profile root file"
+          ]
+        }
+      ],
+      "evidenceRuns": [
+        {
+          "date": "2026-07-15",
+          "runner": "local",
+          "platform": "macos",
+          "command": "pnpm run test:e2e -- tests/e2e/agent-session-upgrade-loss-5356.spec.ts --workers=1",
+          "result": "passed",
+          "durationSeconds": 33,
+          "summary": "One real Electron test passed: 6.8 seconds of test time across setup, affected upgrade, and second launch; the full cross-platform gate command took 33.00 seconds including a fresh E2E build."
+        }
+      ],
       "runtimeBudget": {
         "p95Seconds": 120,
         "scope": "focused Electron upgrade fixture"
       },
       "flakeHistory": {
-        "status": "not-started",
-        "evidence": "Fixture corpus not implemented."
+        "status": "unknown",
+        "evidence": "One local macOS pass of the new deterministic journey; CI soak and other required platforms have not been collected."
       },
       "redGreenEvidence": {
-        "status": "missing",
-        "evidence": "Needs immutable pre-fix persisted-state fixture."
+        "status": "partial",
+        "evidence": "The notice assertion fails against the pre-fix behavior because no warning is rendered. During review, the strengthened tab-preservation assertion also failed against the original made-up-worktree fixture, proving that fixture could pass the notice check after hydration had already discarded the tab; the valid-catalog fixture passes. An immutable production-profile artifact is still missing."
       },
       "performanceBudget": {
         "required": true,
-        "evidence": "Startup fixture must record startup latency and avoid adding blocking migration scans."
+        "evidence": "Detection performs one bounded pass over the already-loaded tab and capture-record maps, adds no startup await, polling, provider call, subprocess, or recurring subscription, and patches the global marker directly so first-upgrade startup does not build the repo/worktree host-ownership index. The Electron journey removed an unconditional 3-second sleep and completed its three launches in 6.8 seconds of test time; per-launch product startup timing is still uncollected."
       },
       "promotionCriteria": [
         "Land immutable old-version fixture with documented source version.",
-        "Run second restart after current code writes upgraded state.",
-        "Record startup timing and failure artifact."
+        "Record per-launch startup timing and failure artifacts on the immutable fixture.",
+        "Run the upgrade journey on Linux and Windows and add provider-specific daemon, SSH, and WSL fixtures."
       ],
       "knownGaps": [
-        "No fixture corpus or command yet."
+        "The current fixture reconstructs the affected workspace-session fields inside a current profile/catalog; it is not an immutable byte-for-byte 1.4.65 production profile.",
+        "Only local macOS Electron has run; Linux, Windows, daemon-death, SSH, WSL, and remote-runtime upgrade paths are not live-tested.",
+        "The provider session id was never persisted by the affected build, so the gate proves explicit notification and tab preservation rather than recovery of the unrecoverable process context.",
+        "The journey records overall harness time but not a dedicated per-launch startup-latency metric."
       ],
       "demotionRule": "Cannot promote without old production fixture provenance."
     },
