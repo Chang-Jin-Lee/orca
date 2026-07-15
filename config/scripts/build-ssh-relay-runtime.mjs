@@ -6,6 +6,7 @@ import { promisify } from 'node:util'
 import { buildPatchedSshRelayNodePty } from './ssh-relay-node-pty-build.mjs'
 import { extractVerifiedSshRelayNodeBuildInputs } from './ssh-relay-node-tar-inspection.mjs'
 import { extractVerifiedSshRelayNodeZipBuildInputs } from './ssh-relay-node-zip-inspection.mjs'
+import { applySshRelayLinuxNodeGypCompilerFloor } from './ssh-relay-linux-node-gyp-compiler.mjs'
 import {
   createSshRelayRuntimeArchive,
   inspectSshRelayRuntimeArchive
@@ -192,6 +193,10 @@ export async function buildSshRelayRuntime(options) {
     if (bundledVersion !== `v${release.nodeVersion}`) {
       throw new Error(`Bundled Node version mismatch: ${bundledVersion}`)
     }
+    await applySshRelayLinuxNodeGypCompilerFloor({
+      nodeRoot: extracted.extractedRoot,
+      tuple: options.tuple
+    })
     const nodePty = await buildPatchedSshRelayNodePty({
       projectRoot,
       nodePath: extracted.nodePath,

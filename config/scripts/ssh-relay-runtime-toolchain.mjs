@@ -55,6 +55,14 @@ export function selectSshRelayRuntimeToolVersion({ stdout = '', stderr = '' }, p
   return version
 }
 
+export function sshRelayRuntimePythonCommand(platform, env = process.env) {
+  return platform === 'linux' && env.NODE_GYP_FORCE_PYTHON
+    ? env.NODE_GYP_FORCE_PYTHON
+    : platform === 'win32'
+      ? 'python.exe'
+      : 'python3'
+}
+
 async function locateExecutable(command, { windowsMsvcLinker = false, xcrun = false } = {}) {
   if (isAbsolute(command)) {
     return realpath(command)
@@ -303,7 +311,10 @@ export async function collectSshRelayRuntimeToolchain(nodePath) {
       xcrun: process.platform === 'darwin'
     }),
     buildSystem: await executableRecord({ command: 'make', args: ['--version'] }),
-    python: await executableRecord({ command: 'python3', args: ['--version'] }),
+    python: await executableRecord({
+      command: sshRelayRuntimePythonCommand(process.platform),
+      args: ['--version']
+    }),
     archive: await executableRecord({ command: 'xz', args: ['--version'] }),
     strip: await executableRecord({
       command: 'strip',

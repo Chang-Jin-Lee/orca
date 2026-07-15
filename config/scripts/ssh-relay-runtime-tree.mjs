@@ -9,6 +9,7 @@ import {
   sshRelayRuntimeWatcherPackage,
   verifySshRelayRuntimeClosure
 } from './ssh-relay-runtime-closure.mjs'
+import { sshRelayRuntimeCompatibility } from './ssh-relay-runtime-compatibility.mjs'
 
 const require = createRequire(import.meta.url)
 const MAX_FILES = 5_000
@@ -18,45 +19,6 @@ const MAX_PATH_BYTES = 240
 const MAX_PATH_DEPTH = 32
 const PORTABLE_PATH = /^[A-Za-z0-9._@+/-]+$/
 const WINDOWS_DEVICE_NAME = /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i
-
-const COMPATIBILITY = Object.freeze({
-  'linux-x64-glibc': {
-    kind: 'linux',
-    minimumKernelVersion: '4.18',
-    libc: {
-      family: 'glibc',
-      minimumVersion: '2.28',
-      minimumLibstdcxxVersion: '6.0.25',
-      minimumGlibcxxVersion: '3.4.25'
-    }
-  },
-  'linux-arm64-glibc': {
-    kind: 'linux',
-    minimumKernelVersion: '4.18',
-    libc: {
-      family: 'glibc',
-      minimumVersion: '2.28',
-      minimumLibstdcxxVersion: '6.0.25',
-      minimumGlibcxxVersion: '3.4.25'
-    }
-  },
-  'darwin-x64': { kind: 'darwin', minimumVersion: '13.5' },
-  'darwin-arm64': { kind: 'darwin', minimumVersion: '13.5' },
-  'win32-x64': {
-    kind: 'win32',
-    minimumBuild: 19045,
-    minimumOpenSshVersion: '8.1p1',
-    minimumPowerShellVersion: '5.1',
-    minimumDotNetFrameworkRelease: 528040
-  },
-  'win32-arm64': {
-    kind: 'win32',
-    minimumBuild: 26100,
-    minimumOpenSshVersion: '8.1p1',
-    minimumPowerShellVersion: '5.1',
-    minimumDotNetFrameworkRelease: 528040
-  }
-})
 
 function packageDirectory(name) {
   return dirname(require.resolve(`${name}/package.json`))
@@ -304,7 +266,7 @@ export async function assembleSshRelayRuntimeTree({
   runtimeRoot,
   nodeVersion
 }) {
-  const compatibility = COMPATIBILITY[tuple]
+  const compatibility = sshRelayRuntimeCompatibility[tuple]
   if (!compatibility) {
     throw new Error(`Runtime tree assembly is not implemented for ${tuple}`)
   }

@@ -7,6 +7,7 @@ import {
   selectSshRelayRuntimeWindowsMsvcLinker,
   sshRelayRuntimeBuilderIdentity,
   sshRelayRuntimeRunnerIdentity,
+  sshRelayRuntimePythonCommand,
   sshRelayRuntimeStripVersionProbe,
   sshRelayRuntimeWindowsMsvcToolsetVersion
 } from './ssh-relay-runtime-toolchain.mjs'
@@ -148,6 +149,16 @@ describe('SSH relay runtime build provenance', () => {
       versionCommand: 'xcodebuild',
       versionArgs: ['-version']
     })
+  })
+
+  it('records the exact Python forced into Linux node-gyp', () => {
+    expect(
+      sshRelayRuntimePythonCommand('linux', {
+        NODE_GYP_FORCE_PYTHON: '/usr/bin/python3.9'
+      })
+    ).toBe('/usr/bin/python3.9')
+    expect(sshRelayRuntimePythonCommand('darwin', {})).toBe('python3')
+    expect(sshRelayRuntimePythonCommand('win32', {})).toBe('python.exe')
   })
 
   it('records bounded native tool versions and SHA-256 executable or code digests', async () => {

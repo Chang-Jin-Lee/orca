@@ -7,6 +7,7 @@ const workflowUrl = new URL(
   '../../.github/workflows/ssh-relay-runtime-artifacts.yml',
   import.meta.url
 )
+const linuxBuilderUrl = new URL('../ssh-relay-runtime-linux-builder.Containerfile', import.meta.url)
 
 describe('SSH relay runtime artifact workflow', () => {
   it('uses exact native runner labels and SHA-pinned actions without publication authority', async () => {
@@ -19,6 +20,12 @@ describe('SSH relay runtime artifact workflow', () => {
       ['ubuntu-24.04-arm', 'linux-arm64-glibc'],
       ['macos-15-intel', 'darwin-x64'],
       ['macos-15', 'darwin-arm64']
+    ])
+    expect(
+      posixJob.strategy.matrix.include.slice(0, 2).map((entry) => entry.container_image)
+    ).toEqual([
+      'docker.io/library/rockylinux@sha256:2d05a9266523bbf24f33ebc3a9832e4d5fd74b973c220f2204ca802286aa275d',
+      'docker.io/library/rockylinux@sha256:3c2d0ce12bf79fc5ff05e43b1000e30ff062dc89405525f3307cbff71661f1a0'
     ])
     expect(windowsJob.strategy.matrix.include.map((entry) => [entry.runner, entry.tuple])).toEqual([
       ['windows-2022', 'win32-x64'],
@@ -85,7 +92,7 @@ describe('SSH relay runtime artifact workflow', () => {
     expect(source.match(/ssh-relay-node-pty-build\.test\.mjs/g)).toHaveLength(2)
     expect(source.match(/ssh-relay-node-pty-windows-build-determinism\.test\.mjs/g)).toHaveLength(2)
     expect(source.match(/ssh-relay-runtime-build\.test\.mjs/g)).toHaveLength(4)
-    expect(source.match(/--work-directory/g)).toHaveLength(2)
+    expect(source.match(/--work-directory/g)).toHaveLength(3)
     expect(source).toContain('work_directory="$RUNNER_TEMP/orca-ssh-relay-runtime-build-work"')
     expect(source).toContain(
       "$workDirectory = Join-Path $env:RUNNER_TEMP 'orca-ssh-relay-runtime-build-work'"
@@ -108,7 +115,7 @@ describe('SSH relay runtime artifact workflow', () => {
       expect(run.indexOf('ssh-relay-runtime-reproducibility.mjs')).toBeGreaterThan(
         run.indexOf('verify-ssh-relay-runtime.mjs')
       )
-      expect(run.indexOf('runtime-evidence/${{ matrix.tuple }}')).toBeGreaterThan(
+      expect(run.lastIndexOf('runtime-evidence/${{ matrix.tuple }}')).toBeGreaterThan(
         run.indexOf('ssh-relay-runtime-reproducibility.mjs')
       )
     }
@@ -128,6 +135,103 @@ describe('SSH relay runtime artifact workflow', () => {
       windowsRun.indexOf("throw 'runtime reproducibility verification failed'")
     )
     expect(steps[uploadIndex].with.path).toBe('runtime-evidence/${{ matrix.tuple }}/')
+    expect(source).not.toMatch(/releases\/|gh release|contents:\s*write/i)
+  })
+
+  it('builds Linux native modules in the pinned oldest userland with an offline build phase', async () => {
+    const source = await readFile(workflowUrl, 'utf8')
+    const workflow = parse(source)
+    const job = workflow.jobs['build-posix-runtime']
+    const prepare = job.steps.find(
+      (step) => step.name === 'Prepare digest-pinned Linux floor builder'
+    )
+    const build = job.steps.find(
+      (step) => step.name === 'Build twice, inspect, smoke, and compare exact runtime'
+    )
+    const containerfile = await readFile(linuxBuilderUrl, 'utf8')
+
+    expect(prepare.if).toBe("runner.os == 'Linux'")
+    expect(prepare.run).toContain('docker pull "$image"')
+    expect(prepare.run).toContain('--pull=false')
+    expect(prepare.run).toContain('config/ssh-relay-runtime-linux-builder.Containerfile')
+    expect(build.run).toContain("if [[ '${{ matrix.tuple }}' == linux-* ]]")
+    expect(build.run).toContain('--network none --read-only --cap-drop all')
+    expect(build.run).toContain('--security-opt no-new-privileges')
+    expect(build.run).toContain('ssh-relay-runtime-linux-build-evidence.mjs')
+    expect(build.run.indexOf('--network none')).toBeLessThan(
+      build.run.indexOf('ssh-relay-runtime-linux-build-evidence.mjs')
+    )
+    expect(containerfile).toContain('ARG BASE_IMAGE=scratch\nFROM ${BASE_IMAGE}')
+    expect(containerfile).toContain("getconf GNU_LIBC_VERSION)\" = 'glibc 2.28'")
+    expect(containerfile).toContain('libstdc++.so.6.0.25')
+    expect(containerfile).toContain('dnf module enable -y -q nodejs:20')
+    expect(containerfile).toContain('Number(process.versions.node.split')
+    expect(containerfile).toContain('python39')
+    expect(containerfile).toContain('NODE_GYP_FORCE_PYTHON=/usr/bin/python3.9')
+    expect(containerfile).toContain('      which \\\n')
+    expect(source).not.toMatch(/releases\/|gh release|contents:\s*write/i)
+  })
+
+  it('separates qualifying Windows floors from supplemental Linux userland evidence', async () => {
+    const source = await readFile(workflowUrl, 'utf8')
+    const workflow = parse(source)
+    const linuxJob = workflow.jobs['verify-linux-runtime-baseline-userland']
+    const windowsJob = workflow.jobs['verify-windows-runtime-baseline']
+
+    expect(linuxJob.needs).toBe('build-posix-runtime')
+    expect(windowsJob.needs).toBe('build-windows-runtime')
+    expect(linuxJob.strategy.matrix.include).toEqual([
+      {
+        runner: 'ubuntu-24.04',
+        tuple: 'linux-x64-glibc',
+        container_image:
+          'docker.io/library/rockylinux@sha256:2d05a9266523bbf24f33ebc3a9832e4d5fd74b973c220f2204ca802286aa275d'
+      },
+      {
+        runner: 'ubuntu-24.04-arm',
+        tuple: 'linux-arm64-glibc',
+        container_image:
+          'docker.io/library/rockylinux@sha256:3c2d0ce12bf79fc5ff05e43b1000e30ff062dc89405525f3307cbff71661f1a0'
+      }
+    ])
+    expect(windowsJob.strategy.matrix.include).toEqual([
+      { runner: 'windows-2022', tuple: 'win32-x64' },
+      { runner: 'windows-11-arm', tuple: 'win32-arm64' }
+    ])
+    for (const job of [linuxJob, windowsJob]) {
+      expect(job.env.ORCA_RUNTIME_REQUESTED_RUNNER).toBe('${{ matrix.runner }}')
+      expect(job['timeout-minutes']).toBe(15)
+      expect(job.steps[0].with.ref).toBe('${{ github.event.pull_request.head.sha || github.sha }}')
+      for (const step of job.steps.filter((candidate) => candidate.uses)) {
+        expect(step.uses).toMatch(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+@[0-9a-f]{40}$/)
+      }
+    }
+
+    const linuxRun = linuxJob.steps.find(
+      (step) => step.name === 'Prove oldest Linux userland and retain the kernel gap'
+    ).run
+    expect(linuxRun).toContain('--scope linux-userland')
+    expect(linuxRun).toContain('--network none')
+    expect(linuxRun).toContain('--read-only --cap-drop all')
+    expect(linuxRun).toContain('--security-opt no-new-privileges')
+    expect(linuxRun).toContain('ssh-relay-runtime-smoke-child.cjs')
+    expect(linuxRun).not.toContain('--scope full')
+
+    const linuxVerification = linuxJob.steps.find(
+      (step) => step.name === 'Verify bytes before supplemental baseline execution'
+    ).run
+    expect(linuxVerification).toContain('${#identities[@]} != 1')
+    expect(linuxVerification).toContain('${#archives[@]} != 1')
+
+    const windowsRun = windowsJob.steps.find(
+      (step) => step.name === 'Verify bytes and execute on the declared Windows floor'
+    ).run
+    expect(windowsRun.indexOf('verify-ssh-relay-runtime.mjs')).toBeLessThan(
+      windowsRun.indexOf('ssh-relay-runtime-baseline.mjs')
+    )
+    expect(windowsRun).toContain('--scope full')
+    expect(windowsRun).toContain('$identities.Count -ne 1')
+    expect(windowsRun).toContain('$archives.Count -ne 1')
     expect(source).not.toMatch(/releases\/|gh release|contents:\s*write/i)
   })
 })
