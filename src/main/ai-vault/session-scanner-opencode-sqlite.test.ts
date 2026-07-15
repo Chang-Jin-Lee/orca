@@ -220,6 +220,35 @@ describe('listOpenCodeSqliteSessions', () => {
     expect(candidates[1].file.path).toBe(buildOpenCodeSqliteCandidatePath(path, 'ses_old'))
   })
 
+  it('discovers sessions when unrelated message and event content is malformed', async () => {
+    const { db, path } = createTempDb()
+    applyOpenCodeSchema(db)
+    db.exec(`CREATE TABLE event (id TEXT PRIMARY KEY, data TEXT NOT NULL)`)
+    insertSession(db, {
+      id: 'ses_clean',
+      timeCreated: 1_777_634_000_000,
+      timeUpdated: 1_777_634_001_000
+    })
+    db.prepare(
+      `INSERT INTO message (id, session_id, time_created, time_updated, data)
+       VALUES ('msg_malformed', 'ses_clean', 1777634000500, 1777634000500, ?)`
+    ).run('malformed message JSON')
+    db.prepare(`INSERT INTO event (id, data) VALUES ('event_1', ?)`).run('malformed event content')
+    db.close()
+
+    const issues: AiVaultScanIssue[] = []
+    const candidates = await listOpenCodeSqliteSessions({
+      dbPaths: [path],
+      limit: 10,
+      issues
+    })
+
+    expect(issues).toEqual([])
+    expect(candidates.map((candidate) => candidate.file.path)).toEqual([
+      buildOpenCodeSqliteCandidatePath(path, 'ses_clean')
+    ])
+  })
+
   it('dedups matching session ids across databases and keeps the newest row', async () => {
     const { db: oldDb, path: oldPath } = createTempDb()
     applyOpenCodeSchema(oldDb)

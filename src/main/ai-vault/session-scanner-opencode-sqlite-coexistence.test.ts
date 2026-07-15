@@ -5,6 +5,12 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { scanAiVaultSessions } from './session-scanner'
 import Database from '../sqlite/sync-database'
+import {
+  createSessionParseStats,
+  parseAgentSessionFileCached,
+  resetSessionParseCacheForTests
+} from './session-scanner-parse-cache'
+import { listOpenCodeSqliteSessions } from './session-scanner-opencode-sqlite-discovery'
 
 let tempRoots: string[] = []
 let tempDbDirs: string[] = []
@@ -16,6 +22,7 @@ afterEach(async () => {
   }
   tempRoots = []
   tempDbDirs = []
+  resetSessionParseCacheForTests()
 })
 
 function isolatedScanRoots(root: string) {
@@ -212,5 +219,30 @@ describe('scanAiVaultSessions — OpenCode SQLite + legacy file coexistence', ()
     expect(legacyEntry!.resumeCommand).toBe(
       "cd '/tmp/sqlite' && opencode --session 'legacy-session'"
     )
+  })
+
+  it('preserves the SQLite candidate cache key across repeated discovery', async () => {
+    const { db, path: dbPath } = createTempOpenCodeDb()
+    applyOpenCodeSchema(db)
+    db.prepare(
+      `INSERT INTO session (id, project_id, slug, directory, title, version,
+         time_created, time_updated, model, agent, cost,
+         tokens_input, tokens_output, tokens_reasoning, tokens_cache_read, tokens_cache_write)
+       VALUES ('cache-session', 'proj-1', 'slug', '/tmp/cache', 'Cache session', '1.0.0',
+         1777634002000, 1777634003000, NULL, 'build', 0, 0, 0, 0, 0, 0)`
+    ).run()
+    db.close()
+
+    const first = await listOpenCodeSqliteSessions({ dbPaths: [dbPath], limit: 10, issues: [] })
+    const second = await listOpenCodeSqliteSessions({ dbPaths: [dbPath], limit: 10, issues: [] })
+    expect(second[0].file.path).toBe(first[0].file.path)
+    expect(second[0].file.mtimeMs).toBe(first[0].file.mtimeMs)
+
+    const stats = createSessionParseStats()
+    const firstSession = await parseAgentSessionFileCached(first[0], 'darwin', stats)
+    const secondSession = await parseAgentSessionFileCached(second[0], 'darwin', stats)
+    expect(secondSession).toEqual(firstSession)
+    expect(stats.fullParses).toBe(1)
+    expect(stats.reused).toBe(1)
   })
 })
