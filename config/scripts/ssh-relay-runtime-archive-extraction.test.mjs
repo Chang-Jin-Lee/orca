@@ -88,7 +88,10 @@ afterEach(async () => {
 
 describe('SSH relay runtime archive extraction', () => {
   it('reconstructs exact POSIX and Windows runtime trees into exclusive directories', async () => {
-    for (const tupleId of ['darwin-arm64', 'win32-x64']) {
+    // Why: NTFS cannot materialize the executable modes needed to construct a POSIX tar fixture.
+    const tuples =
+      process.platform === 'win32' ? [`win32-${process.arch}`] : ['darwin-arm64', 'win32-x64']
+    for (const tupleId of tuples) {
       const value = await fixture(tupleId)
       const outputDirectory = join(value.root, 'reconstructed')
       const result = await extractSshRelayRuntimeArchive({
@@ -106,7 +109,8 @@ describe('SSH relay runtime archive extraction', () => {
   })
 
   it('rejects modified archives and existing outputs without retaining partial trees', async () => {
-    const modified = await fixture('darwin-x64')
+    const modifiedTuple = process.platform === 'win32' ? `win32-${process.arch}` : 'darwin-x64'
+    const modified = await fixture(modifiedTuple)
     await writeFile(modified.archive.path, 'not the authenticated archive')
     const rejectedOutput = join(modified.root, 'rejected')
     await expect(
