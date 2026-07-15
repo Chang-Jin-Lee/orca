@@ -171,6 +171,38 @@ export function readClaudeBackgroundAgentTasks(hookPayload: Record<string, unkno
   return { present: true, tasks, truncated }
 }
 
+/** Whether a Stop/SubagentStop payload's `background_tasks` still lists a
+ *  running Monitor. Monitors (Claude's `Monitor` tool) are non-agent
+ *  background tasks — they never enter the subagent roster — but a running
+ *  monitor means the lead's turn is not truly done: Claude wakes the lead when
+ *  the monitor fires. Callers use this to keep the pane 'working' so the
+ *  sidebar keeps spinning while a monitor watches, mirroring the existing
+ *  subagent gate. Matched on the `monitor` type prefix (covers the ws/mcp
+ *  monitor variants) so a single string tweak adapts if the wire type shifts;
+ *  deliberately excludes shells/workflows/crons — only monitors gate here. */
+export function claudeBackgroundTasksHaveRunningMonitor(
+  hookPayload: Record<string, unknown>
+): boolean {
+  const raw = hookPayload['background_tasks']
+  if (!Array.isArray(raw)) {
+    return false
+  }
+  for (const item of raw) {
+    if (typeof item !== 'object' || item === null) {
+      continue
+    }
+    const obj = item as Record<string, unknown>
+    if (
+      typeof obj.type === 'string' &&
+      obj.type.startsWith('monitor') &&
+      obj.status === 'running'
+    ) {
+      return true
+    }
+  }
+  return false
+}
+
 /** Fold a lead Stop's `background_tasks` into the lifecycle-tracked roster.
  *
  *  The list is authoritative for non-teammate children: a running one-shot is

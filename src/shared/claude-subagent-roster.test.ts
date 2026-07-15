@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { AGENT_STATUS_MAX_SUBAGENTS } from './agent-status-types'
 import {
+  claudeBackgroundTasksHaveRunningMonitor,
   claudeRosterHasWorkingSubagent,
   claudeRosterToSnapshots,
   claudeTeammateIdMatchesName,
@@ -184,6 +185,40 @@ describe('claude-subagent-roster', () => {
   it('reports background_tasks as absent when missing or malformed', () => {
     expect(readClaudeBackgroundAgentTasks({}).present).toBe(false)
     expect(readClaudeBackgroundAgentTasks({ background_tasks: 'nope' }).present).toBe(false)
+  })
+
+  it('detects a running Monitor background task (incl. ws/mcp variants)', () => {
+    expect(
+      claudeBackgroundTasksHaveRunningMonitor({
+        background_tasks: [{ id: 'm1', type: 'monitor', status: 'running' }]
+      })
+    ).toBe(true)
+    // Why: match on the `monitor` prefix so ws/mcp monitor variants gate too.
+    expect(
+      claudeBackgroundTasksHaveRunningMonitor({
+        background_tasks: [{ id: 'm2', type: 'monitor_ws', status: 'running' }]
+      })
+    ).toBe(true)
+  })
+
+  it('ignores finished monitors and non-monitor running tasks', () => {
+    // Why: a monitor that has stopped no longer holds the pane working.
+    expect(
+      claudeBackgroundTasksHaveRunningMonitor({
+        background_tasks: [{ id: 'm1', type: 'monitor', status: 'completed' }]
+      })
+    ).toBe(false)
+    // Why: only monitors gate here — running shells/workflows/subagents do not.
+    expect(
+      claudeBackgroundTasksHaveRunningMonitor({
+        background_tasks: [
+          { id: 's1', type: 'shell', status: 'running' },
+          { id: 'a1', type: 'subagent', status: 'running' }
+        ]
+      })
+    ).toBe(false)
+    expect(claudeBackgroundTasksHaveRunningMonitor({})).toBe(false)
+    expect(claudeBackgroundTasksHaveRunningMonitor({ background_tasks: 'nope' })).toBe(false)
   })
 
   it('marks a background task inventory truncated after the snapshot cap', () => {

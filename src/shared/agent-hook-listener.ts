@@ -35,6 +35,7 @@ import {
   type ParsedAgentStatusPayload
 } from './agent-status-types'
 import {
+  claudeBackgroundTasksHaveRunningMonitor,
   claudeRosterHasWorkingSubagent,
   claudeRosterToSnapshots,
   claudeTeammateIdMatchesName,
@@ -114,6 +115,13 @@ export type HookListenerState = {
    *  persists here because a gated 'working' emit clamps the flag away, and
    *  the eventual done (when the last child drains) must still carry it. */
   claudeLeadStateByPaneKey: Map<string, ClaudeLeadTurnState>
+  /** Whether a Claude pane still has a running Monitor background task. Set
+   *  from any present `background_tasks` list (Stop/SubagentStop). A running
+   *  monitor keeps the pane 'working' via the same gate that holds it working
+   *  while a subagent runs — the lead resumes when the monitor fires, so the
+   *  turn is not truly done. Survives turn boundaries like the roster; the
+   *  next present list without the monitor clears it. */
+  claudeRunningMonitorByPaneKey: Map<string, boolean>
 }
 
 export type ClaudeLeadTurnState = {
@@ -141,7 +149,8 @@ export function createHookListenerState(): HookListenerState {
     antigravityCompletedTranscriptByPaneKey: new Map(),
     ampCompletedCacheKeys: new Set(),
     claudeSubagentRosterByPaneKey: new Map(),
-    claudeLeadStateByPaneKey: new Map()
+    claudeLeadStateByPaneKey: new Map(),
+    claudeRunningMonitorByPaneKey: new Map()
   }
 }
 
@@ -153,6 +162,7 @@ export function clearPaneCacheState(state: HookListenerState, paneKey: string): 
   deletePaneScopedSetEntry(state.ampCompletedCacheKeys, paneKey)
   state.claudeSubagentRosterByPaneKey.delete(paneKey)
   state.claudeLeadStateByPaneKey.delete(paneKey)
+  state.claudeRunningMonitorByPaneKey.delete(paneKey)
 }
 
 function clearPaneTurnCacheState(state: HookListenerState, paneKey: string): void {
@@ -192,6 +202,7 @@ export function clearAllListenerCaches(state: HookListenerState): void {
   state.warnedEnvs.clear()
   state.claudeSubagentRosterByPaneKey.clear()
   state.claudeLeadStateByPaneKey.clear()
+  state.claudeRunningMonitorByPaneKey.clear()
 }
 
 /** Emit warn-once diagnostics for cross-build (`version`) and dev-vs-prod
@@ -2378,6 +2389,28 @@ function getOrCreateClaudeSubagentRoster(
   return roster
 }
 
+/** Record whether a present `background_tasks` list still has a running
+ *  Monitor. Only call when the field is present (Stop/SubagentStop): an event
+ *  without the field must not clear a monitor tracked by an earlier turn, just
+ *  as the roster is retained across such events. */
+function updateClaudeRunningMonitorFromPayload(
+  state: HookListenerState,
+  paneKey: string,
+  hookPayload: Record<string, unknown>
+): void {
+  state.claudeRunningMonitorByPaneKey.set(
+    paneKey,
+    claudeBackgroundTasksHaveRunningMonitor(hookPayload)
+  )
+}
+
+/** Whether the pane's last present `background_tasks` list had a running
+ *  Monitor — a background task that keeps the lead's turn alive (Claude wakes
+ *  it when the monitor fires), so the pane stays 'working' rather than done. */
+function claudePaneHasRunningMonitor(state: HookListenerState, paneKey: string): boolean {
+  return state.claudeRunningMonitorByPaneKey.get(paneKey) === true
+}
+
 /** SubagentStart/SubagentStop/TeammateIdle don't map to a pane state by
  *  themselves; they update the roster and re-emit the lead's last known state
  *  with the fresh child list so the sidebar reflects spawn/finish immediately
@@ -2416,6 +2449,9 @@ function normalizeClaudeSubagentLifecycleEvent(
       // agent listed id-exact as a subagent task is a workflow/named one-shot
       // (teammate lifecycle ids never appear there), not a resumable teammate.
       const stopTasks = readClaudeBackgroundAgentTasks(hookPayload)
+      if (stopTasks.present) {
+        updateClaudeRunningMonitorFromPayload(state, paneKey, hookPayload)
+      }
       finishClaudeSubagent(roster, agentId, {
         listedAsSubagentTask:
           stopTasks.present && stopTasks.tasks.some((task) => !task.teammate && task.id === agentId)
@@ -2504,7 +2540,10 @@ function buildClaudeChildDrivenStatusPayload(
   const roster = state.claudeSubagentRosterByPaneKey.get(paneKey)
   return buildClaudeStatusPayload(state, eventName, '', paneKey, hookPayload, {
     stateName:
-      leadState === 'done' && claudeRosterHasWorkingSubagent(roster) ? 'working' : leadState,
+      leadState === 'done' &&
+      (claudeRosterHasWorkingSubagent(roster) || claudePaneHasRunningMonitor(state, paneKey))
+        ? 'working'
+        : leadState,
     updateToolSnapshot: false,
     interrupted: lead?.interrupted
   })
@@ -2590,7 +2629,8 @@ function normalizeClaudeEvent(
     const roster = state.claudeSubagentRosterByPaneKey.get(paneKey)
     return buildClaudeStatusPayload(state, eventName, promptText, paneKey, hookPayload, {
       stateName:
-        restored.state === 'done' && claudeRosterHasWorkingSubagent(roster)
+        restored.state === 'done' &&
+        (claudeRosterHasWorkingSubagent(roster) || claudePaneHasRunningMonitor(state, paneKey))
           ? 'working'
           : restored.state,
       updateToolSnapshot: true,
@@ -2618,6 +2658,7 @@ function normalizeClaudeEvent(
     // builds without the field keep the incrementally tracked roster.
     const backgroundTasks = readClaudeBackgroundAgentTasks(hookPayload)
     if (backgroundTasks.present) {
+      updateClaudeRunningMonitorFromPayload(state, paneKey, hookPayload)
       foldClaudeBackgroundTasksIntoRoster(
         getOrCreateClaudeSubagentRoster(state, paneKey),
         backgroundTasks.tasks,
@@ -2650,12 +2691,17 @@ function normalizeClaudeEvent(
   })
 
   // Why: the lead ending its turn is not "done" while spawned subagents or
-  // teammates are still running — that reads as a finished ✅ in the sidebar
-  // while a background review loop is mid-flight. Claude wakes the lead when
-  // a child finishes, so a later Stop with an empty roster resolves to done.
+  // teammates are still running, or while a Monitor background task is still
+  // watching — that reads as a finished ✅ in the sidebar while a background
+  // review loop or monitor is mid-flight. Claude wakes the lead when a child
+  // finishes or a monitor fires, so a later Stop whose background_tasks no
+  // longer list the child/monitor resolves to done.
   const roster = state.claudeSubagentRosterByPaneKey.get(paneKey)
   const effectiveState =
-    stateName === 'done' && claudeRosterHasWorkingSubagent(roster) ? 'working' : stateName
+    stateName === 'done' &&
+    (claudeRosterHasWorkingSubagent(roster) || claudePaneHasRunningMonitor(state, paneKey))
+      ? 'working'
+      : stateName
 
   return buildClaudeStatusPayload(state, eventName, promptText, paneKey, hookPayload, {
     stateName: effectiveState,
