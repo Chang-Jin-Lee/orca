@@ -13,6 +13,7 @@ import {
   CODEX_TRUST_GRANT_TRANSIENT_RETRY_INTERVAL_MS,
   getCodexTrustGrantDiagnostics,
   grantManagedCodexHookTrust,
+  setCodexTrustGrantTelemetry,
   type CodexManagedTrustGrantPlan
 } from './codex-hook-trust-grant'
 import { readCodexTrustGrantLedgerHome } from './codex-trust-grant-ledger'
@@ -39,6 +40,7 @@ beforeEach(() => {
 afterEach(() => {
   vi.useRealTimers()
   _internals.setGrantSessionRunnerSync(null)
+  setCodexTrustGrantTelemetry(() => {})
   codexAppServerCapabilityCache.clear()
   if (previousUserDataPath === undefined) {
     delete process.env.ORCA_USER_DATA_PATH
@@ -216,6 +218,33 @@ describe('grantManagedCodexHookTrust', () => {
     })
     expect(codexAppServerCapabilityCache.shouldTry('native')).toBe(true)
     expect(getCodexTrustGrantDiagnostics()).toMatchObject({ verifyFailed: 1 })
+  })
+
+  it('rejects duplicate granted keys instead of treating another key as covered', () => {
+    const entries = [managedEntry('session_start'), managedEntry('stop')]
+    const duplicated = grantedSessionResult([entries[0]!, entries[0]!])
+    _internals.setGrantSessionRunnerSync(() => duplicated)
+
+    expect(grantManagedCodexHookTrust(buildPlan(entries))).toMatchObject({
+      lane: 'fallback',
+      reason: 'verify-failed'
+    })
+    expect(readCodexTrustGrantLedgerHome(runtimeHomeDir)).toBeNull()
+  })
+
+  it('keeps grant and fallback outcomes stable when telemetry throws', () => {
+    const entries = [managedEntry('session_start')]
+    setCodexTrustGrantTelemetry(() => {
+      throw new Error('telemetry unavailable')
+    })
+    _internals.setGrantSessionRunnerSync(() => grantedSessionResult(entries))
+
+    expect(grantManagedCodexHookTrust(buildPlan(entries))).toMatchObject({ lane: 'rpc' })
+    process.env.ORCA_DISABLE_CODEX_TRUST_RPC = '1'
+    expect(grantManagedCodexHookTrust(buildPlan(entries))).toMatchObject({
+      lane: 'fallback',
+      reason: 'disabled'
+    })
   })
 
   it('restores exact config bytes before fallback after a mutating RPC error', () => {

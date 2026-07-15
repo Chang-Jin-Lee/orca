@@ -22,7 +22,8 @@ const GRANT_ENTRY_TIMEOUT_MARGIN_MS = 5_000
 const GRANT_ENTRY_MAX_BUFFER_BYTES = 16 * 1024 * 1024
 
 export function resolveCodexGrantEntryPath(
-  pathExists: (candidate: string) => boolean = existsSync
+  pathExists: (candidate: string) => boolean = existsSync,
+  moduleDir = __dirname
 ): string | null {
   // Why: resolved from __dirname (not electron's app paths) so this module
   // stays loadable in plain-node CLI entries — the build guard rejects any
@@ -30,9 +31,9 @@ export function resolveCodexGrantEntryPath(
   // out/main or out/main/chunks, so the entry is one or two levels up.
   // ELECTRON_RUN_AS_NODE bypasses asar integration, so packaged builds must
   // run the copy under app.asar.unpacked (out/main/codex/** is asarUnpacked).
-  const baseDirs = [__dirname, join(__dirname, '..')].map((dir) =>
-    dir.includes('app.asar') ? dir.replace('app.asar', 'app.asar.unpacked') : dir
-  )
+  const toUnpackedDir = (dir: string): string =>
+    dir.replace(/([\\/])app\.asar(?=([\\/]|$))/, '$1app.asar.unpacked')
+  const baseDirs = [moduleDir, join(moduleDir, '..')].map(toUnpackedDir)
   for (const baseDir of baseDirs) {
     const candidate = join(baseDir, 'codex', GRANT_ENTRY_FILE_NAME)
     if (pathExists(candidate)) {
@@ -45,6 +46,8 @@ export function resolveCodexGrantEntryPath(
 export type RunGrantSessionSyncOptions = {
   entryPath?: string
   nodeCommand?: string
+  /** Test-only override; production keeps enough margin for child cleanup. */
+  timeoutMarginMs?: number
 }
 
 /**
@@ -67,12 +70,20 @@ export function runCodexHookTrustGrantSessionSync(
   const spawned = spawnSync(options.nodeCommand ?? process.execPath, [entryPath], {
     input: JSON.stringify(request),
     encoding: 'utf8',
-    timeout: request.invocation.timeoutMs + GRANT_ENTRY_TIMEOUT_MARGIN_MS,
+    timeout:
+      request.invocation.timeoutMs + (options.timeoutMarginMs ?? GRANT_ENTRY_TIMEOUT_MARGIN_MS),
     killSignal: 'SIGKILL',
     maxBuffer: GRANT_ENTRY_MAX_BUFFER_BYTES,
     windowsHide: true,
     env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' }
   })
+  if ((spawned.error as NodeJS.ErrnoException | undefined)?.code === 'ETIMEDOUT') {
+    // Why: spawnSync reports its own deadline through error.code before the
+    // signal field; preserve the typed timeout so cooldown diagnostics work.
+    throw new CodexAppServerTimeoutError(
+      `codex trust-grant entry exceeded ${request.invocation.timeoutMs}ms session deadline`
+    )
+  }
   if (spawned.error) {
     throw spawned.error
   }

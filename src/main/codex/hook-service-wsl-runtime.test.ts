@@ -9,6 +9,7 @@ import {
   computeTrustKey,
   computeTrustedHash,
   normalizeHookTrustKeyForLookup,
+  parseTrustKey,
   readHookTrustEntries,
   upsertHookTrustEntries,
   type CodexTrustEntry
@@ -515,5 +516,62 @@ describe('Codex WSL runtime hook install app-server grant lane', () => {
       enabled: true,
       trustedHash: computeTrustedHash(managedTrustEntry)
     })
+  })
+
+  it('uses the previous ledger to remove stale Codex hashes after a canonical path change', () => {
+    const basePlan = createTestPlan()
+    writeFileSync(basePlan.configPath, '{"hooks":{}}\n', 'utf-8')
+    writeFileSync(basePlan.tomlPath, '', 'utf-8')
+    const runner = vi.fn((request: CodexHookTrustGrantRequest) => {
+      const entries = request.expectedTrustKeys.map((key) => {
+        const parsed = parseTrustKey(key)!
+        return {
+          sourcePath: parsed.sourcePath,
+          eventLabel: parsed.eventLabel,
+          groupIndex: parsed.groupIndex,
+          handlerIndex: parsed.handlerIndex,
+          command: request.managedCommand,
+          trustedHash: `sha256:codex-verbatim-${parsed.eventLabel}`
+        }
+      })
+      upsertHookTrustEntries(basePlan.tomlPath, entries)
+      return {
+        outcome: 'granted' as const,
+        wroteTrust: true,
+        entries: request.expectedTrustKeys.map((key) => ({
+          key,
+          normalizedKey: normalizeHookTrustKeyForLookup(key),
+          trustedHash: `sha256:codex-verbatim-${parseTrustKey(key)!.eventLabel}`
+        }))
+      }
+    })
+    trustGrantInternals.setGrantSessionRunnerSync(runner)
+
+    const oldPlan = {
+      ...basePlan,
+      commandScriptPath: '/old/home/.orca/agent-hooks/codex-hook.sh',
+      trustConfigPath: '/old/home/hooks.json',
+      linuxRuntimeHome: '/old/home'
+    }
+    expect(_internals.installManagedHooksIntoWslRuntime(oldPlan).state).toBe('installed')
+    const oldKey = computeTrustKey(
+      getManagedTrustEntry(oldPlan, expectedManagedCommand(oldPlan.commandScriptPath))
+    )
+
+    const newPlan = {
+      ...basePlan,
+      commandScriptPath: '/new/home/.orca/agent-hooks/codex-hook.sh',
+      trustConfigPath: '/new/home/hooks.json',
+      linuxRuntimeHome: '/new/home'
+    }
+    expect(_internals.installManagedHooksIntoWslRuntime(newPlan).state).toBe('installed')
+    const newKey = computeTrustKey(
+      getManagedTrustEntry(newPlan, expectedManagedCommand(newPlan.commandScriptPath))
+    )
+    const trustEntries = readHookTrustEntries(basePlan.tomlPath)
+
+    expect(runner).toHaveBeenCalledTimes(2)
+    expect(trustEntries.has(oldKey)).toBe(false)
+    expect(trustEntries.get(newKey)?.trustedHash).toBe('sha256:codex-verbatim-user_prompt_submit')
   })
 })

@@ -9,7 +9,10 @@ import {
   runCodexHookTrustGrantSession,
   type CodexHookTrustGrantRequest
 } from './codex-app-server-client'
-import { runCodexHookTrustGrantSessionSync } from './codex-app-server-grant-bridge'
+import {
+  resolveCodexGrantEntryPath,
+  runCodexHookTrustGrantSessionSync
+} from './codex-app-server-grant-bridge'
 
 // Stub codex app-server speaking the same JSONL protocol: initialize →
 // initialized → hooks/list → config/batchWrite → hooks/list. Scenario-driven
@@ -330,5 +333,49 @@ describe('runCodexHookTrustGrantSessionSync', () => {
     expect(() => runCodexHookTrustGrantSessionSync(baseRequest, { entryPath })).toThrow(
       /produced no result \(exit 7\)/
     )
+  })
+
+  it('classifies the spawnSync deadline as a typed timeout', () => {
+    const entryPath = writeEntryFixture(`setInterval(() => {}, 1000)`)
+    const request = {
+      ...baseRequest,
+      invocation: { ...baseRequest.invocation, timeoutMs: 20 }
+    }
+    expect(() =>
+      runCodexHookTrustGrantSessionSync(request, { entryPath, timeoutMarginMs: 20 })
+    ).toThrow(CodexAppServerTimeoutError)
+  })
+})
+
+describe('resolveCodexGrantEntryPath', () => {
+  const entryName = 'codex-app-server-grant-entry.js'
+
+  it('finds the sibling entry from emitted main and chunk directories', () => {
+    const mainDir = join('/opt', 'orca', 'out', 'main')
+    expect(
+      resolveCodexGrantEntryPath(
+        (candidate) => candidate === join(mainDir, 'codex', entryName),
+        mainDir
+      )
+    ).toBe(join(mainDir, 'codex', entryName))
+
+    const chunkDir = join(mainDir, 'chunks')
+    expect(
+      resolveCodexGrantEntryPath(
+        (candidate) => candidate === join(mainDir, 'codex', entryName),
+        chunkDir
+      )
+    ).toBe(join(mainDir, 'codex', entryName))
+  })
+
+  it('redirects app.asar to unpacked without double-unpacking an existing path', () => {
+    const resourcesDir = join('/Applications', 'Orca.app', 'Contents', 'Resources')
+    const expected = join(resourcesDir, 'app.asar.unpacked', 'out', 'main', 'codex', entryName)
+    for (const archiveDir of ['app.asar', 'app.asar.unpacked']) {
+      const moduleDir = join(resourcesDir, archiveDir, 'out', 'main', 'chunks')
+      expect(resolveCodexGrantEntryPath((candidate) => candidate === expected, moduleDir)).toBe(
+        expected
+      )
+    }
   })
 })
