@@ -6,6 +6,7 @@ type RegisteredPaneManager = {
   fitAllPanes?: () => void
   refreshAllPanes?: () => void
   getRenderingDiagnostics?: () => PaneRenderingDiagnostics[]
+  getPanes?: () => { id: number; terminal: unknown }[]
 }
 
 const liveManagers = new Set<RegisteredPaneManager>()
@@ -81,6 +82,33 @@ export function getAllPaneRenderingDiagnostics(): PaneRenderingDiagnostics[] {
     }
   }
   return all
+}
+
+/**
+ * Iterates every live pane for the render-desync sentinel. Registry-indexed
+ * keys are stable per manager instance within a session, which is all the
+ * sentinel's persistence tracking needs.
+ */
+export function forEachLivePaneForDesyncSentinel(
+  visit: (paneKey: string, pane: { id: number; terminal: unknown }) => void
+): void {
+  let managerIndex = 0
+  for (const manager of liveManagers) {
+    managerIndex++
+    let panes: { id: number; terminal: unknown }[] = []
+    try {
+      panes = manager.getPanes?.() ?? []
+    } catch {
+      continue
+    }
+    for (const pane of panes) {
+      try {
+        visit(`m${managerIndex}:p${pane.id}`, pane)
+      } catch {
+        // Why: one pane's failure must not stop sentinel coverage of the rest.
+      }
+    }
+  }
 }
 
 export function refitAndRefreshAllTerminalPanes(): void {
