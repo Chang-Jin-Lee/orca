@@ -42,8 +42,12 @@ splits lock, immutable publication/quarantine, and in-use eviction into separate
 are locally green under `E-M5-ARTIFACT-CACHE-LOCK-LOCAL-001`, including a real second process,
 heartbeat, cancellation, stale-dead reclaim, and live/ambiguous/displaced-owner safety. Artifact,
 relay, release, typecheck, full lint, max-lines, and workflow gates pass. Both native job families
-require the suite under `E-M5-ARTIFACT-CACHE-LOCK-CI-WIRING-LOCAL-001`; next is exact-head all-six
-Node 24 execution. Desktop consumers, cache publication/quarantine/eviction, SSH transfer/install,
+require the suite under `E-M5-ARTIFACT-CACHE-LOCK-CI-WIRING-LOCAL-001`. Exact-head Windows x64 then
+found the open-heartbeat-handle directory-rename incompatibility under
+`E-M5-ARTIFACT-CACHE-LOCK-CI-WINDOWS-RED-001`; Windows arm64 also found equivalent zlib truncation
+wording outside the extraction test oracle under `E-M5-ARTIFACT-EXTRACTION-CI-WINDOWS-ARM64-RED-001`.
+The ownership-preserving release order and equivalent-error assertion are locally green under
+`E-M5-WINDOWS-NATIVE-GATE-CORRECTIONS-LOCAL-001`; a fresh all-six Node 24 run is now required. Desktop consumers, cache publication/quarantine/eviction, SSH transfer/install,
 mode wiring, tuple enablement, publication, production keys/environment/seed, and merge to `main`
 remain disconnected.
 

@@ -8,8 +8,8 @@ work; keep exact commands, runner identities, hashes, metrics, and residual gaps
 
 Date created: 2026-07-14<br>
 Last updated: 2026-07-15<br>
-Current phase: Milestone 5 / Work Package 4 desktop cache boundary — **In progress — 2026-07-15, Codex implementation owner: disconnected cross-process content-lock native gate**. E-M5-ARTIFACT-CACHE-LOCK-LOCAL-001 closes ten local contracts plus broad/static gates; E-M5-ARTIFACT-CACHE-LOCK-CI-WIRING-LOCAL-001 requires the suite on both native job families. Checkpoint and push, then require exact-head Node 24 execution on all six clients before cache-entry publication work. Do not add cache publication/quarantine/eviction, a desktop caller, SSH transfer/install, tuple enablement, mode wiring, release publication, or default behavior.<br>
-Session checkpoint: **In progress — 2026-07-15, Codex implementation owner** — the disconnected content lock uses a fully populated pending directory followed by atomic rename, a nonce-bound heartbeat through the original owner file handle, conservative same-host PID liveness, stale-dead-owner tombstoning, bounded/cancellable wait, directory-inode plus token ownership assertion, and owner-only release. Ten focused tests include a real second Node process; artifact, relay, release, typecheck, full lint, max-lines, workflow, and diff gates pass. The final direct-child harness stays inside the unchanged 30s test bound even while unrelated worktrees heavily saturate the host; broad elapsed times are recorded as contention-affected, not performance baselines. The suite is wired into both native Node 24 job families but exact-head all-six execution remains required. The user authorizes commits, pushes, draft-PR updates, CI runs/reruns, PR-contained rehearsals, and PR-contained release writes where checklist gates require them, but not merging to `main`. There is no release publication, cache entry, cache consumer, SSH transfer/install, tuple enablement, or production/default behavior change. Legacy remains the production default.<br>
+Current phase: Milestone 5 / Work Package 4 desktop cache boundary — **In progress — 2026-07-15, Codex implementation owner: checkpoint and fresh all-six Windows-native correction proof**. E-M5-WINDOWS-NATIVE-GATE-CORRECTIONS-LOCAL-001 closes the narrow local release-order and equivalent truncation-oracle corrections exposed by run `29458719333`. Checkpoint and push the exact tree, then require all six primary Node 24 jobs plus companion PR Checks and Golden E2E to pass before beginning immutable cache-entry publication/quarantine. Do not add a desktop caller, SSH transfer/install, tuple enablement, mode wiring, release publication, or default behavior.<br>
+Session checkpoint: **In progress — 2026-07-15, Codex implementation owner** — resumed with user authority for end-to-end PR-contained implementation, commits, pushes, CI, rehearsals, and release writes, with merging to `main` explicitly prohibited. The worktree was clean and exactly matched pushed head `869603a3e86933cc9985f9e4d240e615146d86d8` at session start. Both Windows jobs then reproduced the open-handle `EPERM`; Windows arm64 also exposed equivalent zlib truncation wording outside the assertion oracle. The corrected local tree passes 31 focused lock/extraction tests, 95 artifact tests with one environment skip, all 279 release-runtime tests, typecheck, full lint, formatting, max-lines, and diff gates. Cache publication remains gated; there is no release publication, cache entry, cache consumer, SSH transfer/install, tuple enablement, or production/default behavior change. Legacy remains the production default.<br>
 Primary design: [SSH relay GitHub Release plan](./2026-07-14-ssh-relay-github-release-plan.html)<br>
 Motivating issues: [#8450](https://github.com/stablyai/orca/issues/8450), [#1693](https://github.com/stablyai/orca/issues/1693)
 
@@ -13081,6 +13081,98 @@ sort`; targeted `rg -n` over `cache|extract|atomic|quarantine`; and complete rea
 - Does not prove: actual runner execution, cache publication, SSH, or an enabled tuple.
 - Follow-up: checkpoint and push, then require exact-head all-six native jobs plus PR Checks and
   Golden E2E before beginning immutable cache-entry publication/quarantine.
+
+### E-M5-ARTIFACT-CACHE-LOCK-CI-WINDOWS-RED-001 — Open heartbeat handle blocks Windows release rename
+
+- Date: 2026-07-15
+- Owner: Codex implementation owner
+- Source: exact pushed head `869603a3e86933cc9985f9e4d240e615146d86d8`; SSH Relay Runtime
+  Artifacts run [29458719333](https://github.com/stablyai/orca/actions/runs/29458719333), Windows x64
+  job [87497521527](https://github.com/stablyai/orca/actions/runs/29458719333/job/87497521527), GitHub
+  Actions runner `GitHub Actions 1000056419`, label `windows-2022`; and Windows arm64 job
+  [87497521511](https://github.com/stablyai/orca/actions/runs/29458719333/job/87497521511), runner
+  `GitHub Actions 1000056418`, label `windows-11-arm`.
+- Exact log command:
+  `gh api repos/stablyai/orca/actions/jobs/87497521527/logs 2>&1 | tail -240`.
+- Result: required CI RED in `Run runtime artifact contract tests`; one failed lock file / six failed
+  lock tests while 64 other files passed, with 414 passed / 13 skipped tests overall in 16.66s.
+  Five owner-release cases fail with `EPERM` renaming the lock directory to its release tombstone;
+  the displacement fixture fails with the same `EPERM`. The open `owner.json` heartbeat handle keeps
+  the containing directory non-renamable on Windows. The later `ENOENT` is waiter/test cleanup fallout
+  after release throws, not a separate acquisition defect.
+- Safety decision: retain heartbeat writes through the original owner handle while the lease is
+  active. On release, stop and settle heartbeat work, assert directory identity plus nonce, close the
+  owned handle, then atomically rename to a release tombstone. A close-before-final-assert change is
+  forbidden; a rename retry that guesses through ownership changes is forbidden. Replace the fixture's
+  live-directory rename with portable nonce displacement so Windows proves successor preservation
+  without depending on a filesystem operation it explicitly rejects while the handle is live.
+- Does not prove: corrected Windows behavior, Windows arm64, the other five native jobs, cache
+  publication/quarantine/eviction, packaged Electron, SSH, or an enabled tuple.
+- Follow-up: implement the narrow release-order/fixture correction, run focused and broad local gates,
+  push, and require a fresh exact-head all-six native run before cache-entry publication begins.
+
+### E-M5-ARTIFACT-EXTRACTION-CI-WINDOWS-ARM64-RED-001 — Equivalent zlib truncation wording rejected by oracle
+
+- Date: 2026-07-15
+- Owner: Codex implementation owner
+- Source: exact pushed head `869603a3e86933cc9985f9e4d240e615146d86d8`; SSH Relay Runtime
+  Artifacts run [29458719333](https://github.com/stablyai/orca/actions/runs/29458719333), Windows arm64
+  job [87497521511](https://github.com/stablyai/orca/actions/runs/29458719333/job/87497521511), runner
+  `GitHub Actions 1000056418`, label `windows-11-arm`.
+- Exact log command:
+  `gh api repos/stablyai/orca/actions/jobs/87497521511/logs 2>&1 | sed -n '1320,1360p'`.
+- Result: archive mutation is rejected, but the test fails because Windows arm64 zlib returns
+  `unexpected end of file`; the assertion allowed semantically identical `unexpected EOF` but not
+  that spelling. This is an assertion portability defect, not accepted extraction or an integrity
+  fallback. The same contract step reports two failed files / 63 passed files before lock-test
+  fallout is separated.
+- Safety decision: accept only the equivalent explicit truncation phrase in the hostile-mutation
+  assertion. Do not alter extraction, cleanup, archive/tree verification, fallback classification,
+  or fail-closed behavior.
+- Follow-up: run the focused extraction and artifact globs locally, then require fresh Windows arm64
+  and all-six native execution on the corrected head.
+
+### E-M5-WINDOWS-NATIVE-GATE-CORRECTIONS-LOCAL-001 — Narrow lock release and truncation-oracle corrections pass locally
+
+- Date: 2026-07-15
+- Owner: Codex implementation owner
+- Source: uncommitted correction atop exact pushed head
+  `869603a3e86933cc9985f9e4d240e615146d86d8`, following
+  E-M5-ARTIFACT-CACHE-LOCK-CI-WINDOWS-RED-001 and
+  E-M5-ARTIFACT-EXTRACTION-CI-WINDOWS-ARM64-RED-001.
+- Lock correction: release stops and settles heartbeat work, final-checks directory identity and
+  nonce through the still-open owner handle, closes that handle, atomically renames the lock to its
+  unselectable tombstone, then removes the tombstone. Active heartbeats still write only through the
+  originally opened handle. The displacement contract now replaces only the nonce-bearing owner
+  record, which is portable while Windows keeps the directory non-renamable, and still proves
+  `assertOwned()` failure plus successor preservation on release.
+- Extraction-oracle correction: the hostile archive mutation assertion adds only zlib's explicit
+  equivalent `unexpected end of file` spelling alongside `unexpected EOF`; production extraction,
+  cleanup, verification, and fallback classification are unchanged.
+- Exact commands/results:
+  - `pnpm exec oxfmt --check src/main/ssh/ssh-relay-artifact-cache-lock-lease.ts
+    src/main/ssh/ssh-relay-artifact-cache-lock.test.ts
+    src/main/ssh/ssh-relay-artifact-extraction.test.ts`: pass;
+  - `/usr/bin/time -l pnpm exec vitest run --config config/vitest.config.ts --maxWorkers=1
+    src/main/ssh/ssh-relay-artifact-cache-lock.test.ts
+    src/main/ssh/ssh-relay-artifact-extraction.test.ts`: two passed files / 31 passed tests in 2.88s
+    Vitest / 8.25s wall, 156,925,952-byte maximum RSS, zero swaps;
+  - `/usr/bin/time -l pnpm exec vitest run --config config/vitest.config.ts --maxWorkers=1
+    src/main/ssh/ssh-relay-artifact-*.test.ts`: five passed files / one environment-skipped file,
+    95 passed / one skipped tests in 23.52s Vitest / 26.47s wall, 143,228,928-byte maximum RSS,
+    zero swaps;
+  - `/usr/bin/time -l pnpm exec vitest run --config config/vitest.config.ts --maxWorkers=1
+    config/scripts/ssh-relay-runtime-*.test.mjs`: 50 passed files / 279 passed tests in 105.46s
+    Vitest / 109.78s wall, 193,576,960-byte maximum RSS, zero swaps;
+  - `pnpm typecheck`; `pnpm lint`; `pnpm run check:max-lines-ratchet`; `git diff --check`: pass. Full
+    lint retains only existing unrelated warnings.
+- Consumer/diff oracle: the preserved Milestone 0 resolver pair and release-required-assets pair have
+  zero diff. No cache publication/quarantine/eviction, desktop caller, SSH path, setting, mode, tuple,
+  release write, or default behavior is added.
+- Does not prove: Windows semantics, any native client, cache publication, packaged Electron, SSH, or
+  an enabled tuple. Fresh exact-head all-six native execution remains mandatory.
+- Follow-up: checkpoint/push, require all six primary native jobs plus PR Checks and Golden E2E, and
+  record exact runner/job evidence before opening the immutable cache-entry publication package.
 
 ## Accepted Gaps
 

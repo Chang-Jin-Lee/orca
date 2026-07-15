@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process'
-import { mkdir, mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { hostname, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -273,14 +273,20 @@ describe('SSH relay artifact cache content lock', () => {
   it('does not publish or delete through a lock whose nonce ownership was displaced', async () => {
     const root = await cacheRoot()
     const owner = await acquireSshRelayArtifactCacheLock({ cacheRoot: root, contentId })
-    const displacedPath = `${owner.lockPath}.displaced`
-    await rename(owner.lockPath, displacedPath)
-    await writeManualLock({
-      root,
-      pid: process.pid,
-      heartbeatAtMs: Date.now(),
-      token: successorOwnerToken
-    })
+    const now = Date.now()
+    // Windows forbids renaming a directory with the live heartbeat handle; nonce replacement is portable.
+    await writeFile(
+      join(owner.lockPath, 'owner.json'),
+      `${JSON.stringify({
+        schemaVersion: 1,
+        contentId,
+        token: successorOwnerToken,
+        hostname: hostname(),
+        pid: process.pid,
+        acquiredAtMs: now,
+        heartbeatAtMs: now
+      })}\n`
+    )
 
     await expect(owner.assertOwned()).rejects.toThrow(/ownership/i)
     await owner.release()

@@ -116,17 +116,11 @@ class SshRelayArtifactCacheLockLease {
       return
     }
 
+    // Windows cannot rename a directory containing an open file; ownership is final-checked first.
+    await this.ownerHandle.close()
     const tombstone = `${this.lockPath}.released-${this.token}`
-    let renamed = false
-    try {
-      await rename(this.lockPath, tombstone)
-      renamed = true
-    } finally {
-      await this.ownerHandle.close()
-    }
-    if (renamed) {
-      await rm(tombstone, { recursive: true, force: true })
-    }
+    await rename(this.lockPath, tombstone)
+    await rm(tombstone, { recursive: true, force: true })
   }
 }
 

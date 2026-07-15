@@ -495,7 +495,9 @@ describe('SSH relay artifact extraction', () => {
         archivePath: value.archivePath,
         outputDirectory
       })
-    ).rejects.toThrow(/archive|central directory|changed|invalid|unexpected EOF|zip/i)
+    ).rejects.toThrow(
+      /archive|central directory|changed|invalid|unexpected (?:EOF|end of file)|zip/i
+    )
 
     await waitForPath(outputDirectory)
     await writeFile(value.archivePath, Buffer.alloc(value.artifact.archive.size, 0x62))
