@@ -108,7 +108,8 @@ complete a box.
 - [ ] **In progress — 2026-07-15, Codex implementation owner:** correct the Windows runtime
       compatibility discriminator from `win32` to the manifest-contract `windows`, prove both Windows
       tuples and full regressions, then resume disconnected canonical manifest/signing handoff. Local
-      proof passes under `E-M4-WINDOWS-MANIFEST-PARITY-LOCAL-001`; exact-head native CI is next.
+      proof passes at `707a9da23` under `E-M4-WINDOWS-MANIFEST-PARITY-LOCAL-001`; exact-head native CI
+      is next.
 - [ ] Add target-native runtime jobs as desktop release prerequisites.
 - [ ] Add native signing jobs; hash only the returned signed bytes.
 - [ ] Add a fail-closed aggregate and immutable manifest-signing job.
