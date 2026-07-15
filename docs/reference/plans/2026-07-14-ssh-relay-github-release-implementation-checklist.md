@@ -7296,6 +7296,31 @@ resolve one bounded libstdc++ ABI library`; inspection found its filename parser
 - Follow-up: commit this evidence update, push both reviewable commits, and audit every draft-PR job
   and downloaded artifact before closing any runner-backed cell.
 
+### E-M3-WORKFLOW-WINDOWS-CRLF-CI-RED-001 — Containerfile contract was newline-sensitive
+
+- Date: 2026-07-14
+- Owner: Codex implementation owner
+- Source/run: exact draft-PR head `3973e68d772008a20c2664ad90708f6d0e00b403`, Actions run
+  [29377854121](https://github.com/stablyai/orca/actions/runs/29377854121), Windows x64 job
+  [87234935616](https://github.com/stablyai/orca/actions/runs/29377854121/job/87234935616).
+- Runner/environment: GitHub-hosted `windows-2022` x64; exact image/tool identities remain in the
+  job log. The failure occurred in the purpose-named runtime artifact contract-test step before Node
+  inputs, native compilation, verification, or upload.
+- Command: the workflow's exact Node 24.18.0 PowerShell contract suite, including
+  `config/scripts/ssh-relay-runtime-workflow.test.mjs`.
+- Result: expected RED. Git's Windows checkout supplied the Containerfile with CRLF line endings;
+  the test compared `ARG BASE_IMAGE=scratch\nFROM ${BASE_IMAGE}` literally and failed at line 164.
+  No Windows x64 candidate was built or uploaded. Linux contract cells passed the same assertion
+  with LF, proving the implementation text was present but the oracle was not checkout-portable.
+- Correction: normalize CRLF to LF only within the test's in-memory Containerfile text before
+  asserting exact content. Commit `53082dd1f` adds the explicit CRLF fixture; the purpose-named
+  workflow suite passes 5/5 and the expanded artifact suite passes 22 files/101 tests. Production
+  workflow/Containerfile bytes and runtime behavior remain unchanged.
+- Does not prove: the corrected Windows contract, any candidate from this job, the complete run,
+  baseline execution, signing/trust, SSH behavior, or an enabled tuple.
+- Follow-up: commit this evidence, push both commits, and audit the replacement exact-head run from
+  the beginning.
+
 ## Accepted Gaps
 
 No product gap is accepted merely because it appears in this list. Each entry requires explicit

@@ -26,6 +26,9 @@ complete a box.
     userland verifier. This is supplemental local emulation evidence, not a qualifying native cell.
   - Local focused tests pass 100/100; typecheck, lint, max-lines, formatting, and diff checks pass.
   - Artifact-only implementation commit: `0cb3f7510` (`build(ssh): prove Linux runtime floor`).
+  - Exact-head CI run `29377854121` stopped in the Windows x64 contract test because Git supplied
+    CRLF Containerfile text to an LF-only assertion. Portability correction `53082dd1f` passes 5/5
+    focused and 101/101 aggregate tests; no Windows x64 artifact was built in the red job.
   - All six target-native artifact, smoke, equality, SBOM, license, provenance, toolchain, and
     prohibited-content cells pass in
     [run 29373507297](https://github.com/stablyai/orca/actions/runs/29373507297); every downloaded
