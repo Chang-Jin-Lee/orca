@@ -25,6 +25,7 @@ import {
   TERMINAL_OUTPUT_BACKLOG_MIN_CAP_CHARS,
   terminalOutputBacklogCapChars
 } from '../../../../shared/terminal-scrollback-policy'
+import { createPaneTerminalOutputFrameGate } from './pane-terminal-output-frame-gate'
 
 type TerminalOutputTarget = ForegroundTerminalOutputTarget
 
@@ -85,6 +86,7 @@ type QueueEntry = {
   onBackgroundBacklogDropped?: () => void
   backgroundBacklogDropped: boolean
   highPriority: boolean
+  foregroundFrameWait: boolean
   foregroundHold: boolean
   foregroundHoldSafetyDelayMs: number
   foregroundCoalesce: boolean
@@ -158,6 +160,7 @@ let drainImmediatePending = false
 let drainImmediateGeneration = 0
 let useMessageChannelDrain = typeof MessageChannel !== 'undefined' && !isVitestEnv()
 let drainChannel: MessageChannel | null = null
+const foregroundFrameGate = createPaneTerminalOutputFrameGate(drainFrameDeferredForegroundOutput)
 
 function isVitestEnv(): boolean {
   // Why: vitest fake timers cannot advance MessageChannel macrotasks; the
@@ -182,6 +185,15 @@ function getDrainChannel(): MessageChannel {
 function cancelImmediateDrain(): void {
   drainImmediateGeneration++
   drainImmediatePending = false
+}
+
+function cancelScheduledDrain(): void {
+  if (drainTimer !== null) {
+    clearTimeout(drainTimer)
+    drainTimer = null
+    drainTimerDelayMs = null
+  }
+  cancelImmediateDrain()
 }
 
 export function setUseMessageChannelDrainForTesting(value: boolean | null): void {
@@ -347,6 +359,7 @@ function createQueueEntry(
     onBackgroundBacklogDropped: options.onBackgroundBacklogDropped,
     backgroundBacklogDropped: false,
     highPriority: true,
+    foregroundFrameWait: false,
     foregroundHold: false,
     foregroundHoldSafetyDelayMs: FOREGROUND_HOLD_SAFETY_DELAY_MS,
     foregroundCoalesce: false,
@@ -409,7 +422,46 @@ function scheduleForegroundCoalesceRelease(
 }
 
 function isEntryDrainable(entry: QueueEntry): boolean {
-  return !entry.foregroundHold && !entry.foregroundCoalesce
+  return !entry.foregroundFrameWait && !entry.foregroundHold && !entry.foregroundCoalesce
+}
+
+function hasForegroundFrameWait(): boolean {
+  for (const entry of queuedByTerminal.values()) {
+    if (entry.foregroundFrameWait) {
+      return true
+    }
+  }
+  return false
+}
+
+function releaseForegroundFrameWait(entry: QueueEntry): void {
+  if (!entry.foregroundFrameWait) {
+    return
+  }
+  entry.foregroundFrameWait = false
+  if (!hasForegroundFrameWait()) {
+    foregroundFrameGate.cancel()
+  }
+}
+
+function scheduleForegroundFrameDrain(entry: QueueEntry): void {
+  entry.foregroundFrameWait = true
+  if (debugEnabled && !foregroundFrameGate.isPending()) {
+    debugState.scheduledDrainCount++
+  }
+  foregroundFrameGate.schedule()
+}
+
+function drainFrameDeferredForegroundOutput(): void {
+  for (const entry of queuedByTerminal.values()) {
+    entry.foregroundFrameWait = false
+  }
+  // Why: the frame is the drain opportunity; avoid posting a second renderer
+  // task while preserving the existing cooperative continuation for backlogs.
+  cancelScheduledDrain()
+  if (queuedByTerminal.size > 0 && hasDrainableBacklog()) {
+    drainQueuedOutput()
+  }
 }
 
 function findCursorPositionSequenceEnd(
@@ -1091,6 +1143,7 @@ export function writeTerminalOutput(
   if (options.foreground) {
     const entry = queuedByTerminal.get(terminal)
     if (entry?.highPriority || options.coalesceForeground || options.holdForeground) {
+      const wasWaitingForForegroundFrame = entry?.foregroundFrameWait === true
       const queued = entry ?? createQueueEntry(terminal, options)
       queued.onBackgroundBacklogDropped = options.onBackgroundBacklogDropped
       queued.highPriority = true
@@ -1117,6 +1170,7 @@ export function writeTerminalOutput(
         return
       }
       if (options.holdForeground) {
+        releaseForegroundFrameWait(queued)
         // Why: synchronized-output start/body chunks contain transient cursor
         // moves. Holding them prevents Chromium from rasterizing those states.
         if (options.latencySensitive === true) {
@@ -1136,6 +1190,7 @@ export function writeTerminalOutput(
         return
       }
       if (options.coalesceForeground || queued.foregroundCoalesce) {
+        releaseForegroundFrameWait(queued)
         queued.foregroundHold = false
         clearForegroundHoldSafety(queued)
         const shouldShortenCoalesceForLatencySensitiveForeground = options.latencySensitive === true
@@ -1166,6 +1221,17 @@ export function writeTerminalOutput(
       queued.foregroundHold = false
       clearForegroundCoalesce(queued)
       clearForegroundHoldSafety(queued)
+      if (options.latencySensitive === false) {
+        scheduleForegroundFrameDrain(queued)
+        return
+      }
+      releaseForegroundFrameWait(queued)
+      if (wasWaitingForForegroundFrame) {
+        // Why: a query or input echo cannot overtake passive bytes that were
+        // already waiting for paint; flush the ordered prefix and suffix now.
+        flushTerminalOutput(terminal)
+        return
+      }
       scheduleDrain(0)
       return
     }
@@ -1221,9 +1287,9 @@ export function writeTerminalOutput(
         replaceBacklogWithWarning(queued, FOREGROUND_BACKLOG_WARNING)
       }
       // Why: visible command floods are throughput work, not keystroke echo.
-      // Queue them behind a zero-delay drain so one IPC callback cannot pin
-      // the renderer in xterm.write while input and paint are waiting.
-      scheduleDrain(0)
+      // Wait for the next paint opportunity so tiny passive deliveries share
+      // one xterm write; large backlogs keep the existing fast continuation.
+      scheduleForegroundFrameDrain(queued)
       return
     }
     flushTerminalOutput(terminal)
@@ -1295,6 +1361,7 @@ export function flushTerminalOutput(
   if (!entry) {
     return
   }
+  releaseForegroundFrameWait(entry)
   queuedByTerminal.delete(terminal)
   if (!isEntryDrainable(entry)) {
     queuedByTerminal.set(terminal, entry)
@@ -1439,6 +1506,9 @@ export function discardTerminalOutput(terminal: TerminalOutputTarget): void {
   }
   discardInFlightTerminalOutputAckCredits(terminal)
   queuedByTerminal.delete(terminal)
+  if (!hasForegroundFrameWait()) {
+    foregroundFrameGate.cancel()
+  }
   discardForegroundRenderSettle(terminal)
   // Why: a legitimately disposed pane must not leave a pending stall watch to
   // probe the dead terminal later and report a false wedge.
