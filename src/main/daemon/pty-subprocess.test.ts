@@ -329,6 +329,11 @@ describe('createPtySubprocess', () => {
     expect(PREVIOUS_DAEMON_PROTOCOL_VERSIONS).toContain(21)
   })
 
+  it('uses a new daemon protocol for daemon-local Codex env ownership', () => {
+    expect(PROTOCOL_VERSION).toBeGreaterThan(22)
+    expect(PREVIOUS_DAEMON_PROTOCOL_VERSIONS).toContain(22)
+  })
+
   it('resolves a missing Unix default before spawning node-pty', () => {
     const proc = mockPtyProcess()
     spawnMock.mockReturnValue(proc)
@@ -1869,6 +1874,74 @@ describe('createPtySubprocess', () => {
 
     const lastCall = spawnMock.mock.calls.at(-1)!
     expect(lastCall[2].env.CODEX_HOME).toBeUndefined()
+  })
+
+  it('deletes daemon-owned Codex overlay pairs when the private marker is requested', () => {
+    const proc = mockPtyProcess()
+    spawnMock.mockReturnValue(proc)
+    const previousCodexHome = process.env.CODEX_HOME
+    const previousOrcaCodexHome = process.env.ORCA_CODEX_HOME
+    process.env.CODEX_HOME = '/daemon/managed/codex-home'
+    process.env.ORCA_CODEX_HOME = '/daemon/managed/codex-home'
+
+    try {
+      createPtySubprocess({
+        sessionId: 'test',
+        cols: 80,
+        rows: 24,
+        env: { SHELL: '/bin/bash' },
+        envToDelete: ['ORCA_CODEX_HOME']
+      })
+    } finally {
+      if (previousCodexHome === undefined) {
+        delete process.env.CODEX_HOME
+      } else {
+        process.env.CODEX_HOME = previousCodexHome
+      }
+      if (previousOrcaCodexHome === undefined) {
+        delete process.env.ORCA_CODEX_HOME
+      } else {
+        process.env.ORCA_CODEX_HOME = previousOrcaCodexHome
+      }
+    }
+
+    const env = spawnMock.mock.calls.at(-1)![2].env
+    expect(env.CODEX_HOME).toBeUndefined()
+    expect(env.ORCA_CODEX_HOME).toBeUndefined()
+  })
+
+  it('preserves a daemon-owned custom Codex home while deleting a stale private marker', () => {
+    const proc = mockPtyProcess()
+    spawnMock.mockReturnValue(proc)
+    const previousCodexHome = process.env.CODEX_HOME
+    const previousOrcaCodexHome = process.env.ORCA_CODEX_HOME
+    process.env.CODEX_HOME = '/daemon/user/codex-home'
+    process.env.ORCA_CODEX_HOME = '/daemon/stale/managed-home'
+
+    try {
+      createPtySubprocess({
+        sessionId: 'test',
+        cols: 80,
+        rows: 24,
+        env: { SHELL: '/bin/bash' },
+        envToDelete: ['ORCA_CODEX_HOME']
+      })
+    } finally {
+      if (previousCodexHome === undefined) {
+        delete process.env.CODEX_HOME
+      } else {
+        process.env.CODEX_HOME = previousCodexHome
+      }
+      if (previousOrcaCodexHome === undefined) {
+        delete process.env.ORCA_CODEX_HOME
+      } else {
+        process.env.ORCA_CODEX_HOME = previousOrcaCodexHome
+      }
+    }
+
+    const env = spawnMock.mock.calls.at(-1)![2].env
+    expect(env.CODEX_HOME).toBe('/daemon/user/codex-home')
+    expect(env.ORCA_CODEX_HOME).toBeUndefined()
   })
 
   it('honors explicit terminal env overrides after deleting requested defaults', () => {

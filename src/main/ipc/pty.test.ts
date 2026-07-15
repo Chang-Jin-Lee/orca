@@ -749,7 +749,10 @@ describe('registerPtyHandlers', () => {
   async function spawnAndGetEnv(
     argsEnv?: Record<string, string>,
     processEnvOverrides?: Record<string, string | undefined>,
-    getSelectedCodexHomePath?: () => string | null,
+    getSelectedCodexHomePath?: (
+      target?: { runtime?: 'host' | 'wsl'; wslDistro?: string | null },
+      launchEnv?: NodeJS.ProcessEnv
+    ) => string | null,
     getSettings?: () => {
       enableGitHubAttribution?: boolean
       agentStatusHooksEnabled?: boolean
@@ -1398,6 +1401,28 @@ describe('registerPtyHandlers', () => {
       expect(env.ORCA_CODEX_HOME).toBeUndefined()
     })
 
+    it('lets the resolver keep a per-spawn custom CODEX_HOME on the managed lane', async () => {
+      const customHome = '/home/me/.config/codex'
+      let resolvedCodexHome: string | undefined
+      const resolveHome = vi.fn((_target: unknown, launchEnv?: NodeJS.ProcessEnv) => {
+        resolvedCodexHome = launchEnv?.CODEX_HOME
+        return launchEnv?.CODEX_HOME === customHome ? TEST_CODEX_HOME : null
+      })
+
+      const env = await spawnAndGetEnv(
+        { CODEX_HOME: customHome },
+        { CODEX_HOME: undefined, ORCA_CODEX_HOME: undefined },
+        resolveHome,
+        () => ({ codexSystemDefaultRealHomeEnabled: true }) as never
+      )
+
+      expect(resolveHome).toHaveBeenCalledTimes(1)
+      expect(resolveHome.mock.calls[0]?.[0]).toEqual({ runtime: 'host' })
+      expect(resolvedCodexHome).toBe(customHome)
+      expect(env.CODEX_HOME).toBe(TEST_CODEX_HOME)
+      expect(env.ORCA_CODEX_HOME).toBe(TEST_CODEX_HOME)
+    })
+
     it('injects explicit proxy settings into local PTY env', async () => {
       const env = await spawnAndGetEnv(undefined, undefined, undefined, () => ({
         httpProxyUrl: 'http://proxy.example:8080',
@@ -1759,9 +1784,9 @@ describe('registerPtyHandlers', () => {
         )
         expect(spawnOptions.env.CODEX_HOME).toBeUndefined()
         expect(spawnOptions.env.ORCA_CODEX_HOME).toBeUndefined()
-        expect(spawnOptions.envToDelete).toEqual(
-          expect.arrayContaining(['CODEX_HOME', 'ORCA_CODEX_HOME'])
-        )
+        expect(spawnOptions.envToDelete).toEqual(expect.arrayContaining(['ORCA_CODEX_HOME']))
+        // The daemon compares its own merged values before deleting CODEX_HOME.
+        expect(spawnOptions.envToDelete).not.toContain('CODEX_HOME')
       })
 
       it('preserves a daemon-inherited user CODEX_HOME for real-home routing', async () => {

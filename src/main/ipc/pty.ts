@@ -647,16 +647,14 @@ const CODEX_HOME_ENV_KEYS = ['CODEX_HOME', 'ORCA_CODEX_HOME'] as const
 // the marker so a shell-ready wrapper cannot restore the managed home. A
 // user-set CODEX_HOME with no Orca marker is preserved untouched (see #8606).
 function stripInheritedOrcaCodexHomeOverride(baseEnv: Record<string, string>): void {
-  for (const key of getInheritedOrcaCodexHomeEnvKeysToDelete(baseEnv)) {
+  for (const key of getLocalOrcaCodexHomeEnvKeysToDelete(baseEnv)) {
     delete baseEnv[key]
   }
 }
 
-// Why: the daemon spawns the PTY from its own inherited environment and honors
-// only spawnOptions.envToDelete, so mutating the sparse env object is not enough
-// to strip an Orca-owned CODEX_HOME the daemon already carries. Return the exact
-// keys to delete, preserving a user-owned CODEX_HOME.
-function getInheritedOrcaCodexHomeEnvKeysToDelete(env: Record<string, string>): string[] {
+// Why: in-process spawns share main's inherited environment, so equality with
+// the private marker is authoritative here. Persistent daemons compare locally.
+function getLocalOrcaCodexHomeEnvKeysToDelete(env: Record<string, string>): string[] {
   const inheritedOrcaOverride = env.ORCA_CODEX_HOME ?? process.env.ORCA_CODEX_HOME
   const inheritedCodexHome = env.CODEX_HOME ?? process.env.CODEX_HOME
   const keysToDelete = ['ORCA_CODEX_HOME']
@@ -666,7 +664,10 @@ function getInheritedOrcaCodexHomeEnvKeysToDelete(env: Record<string, string>): 
   return keysToDelete
 }
 
-type GetSelectedCodexHomePath = (target?: CodexAccountSelectionTarget) => string | null
+type GetSelectedCodexHomePath = (
+  target?: CodexAccountSelectionTarget,
+  launchEnv?: NodeJS.ProcessEnv
+) => string | null
 type PrepareClaudeAuth = (
   target?: ClaudeAccountSelectionTarget
 ) => Promise<ClaudeRuntimeAuthPreparation>
@@ -1604,7 +1605,7 @@ export function registerPtyHandlers(
             : { runtime: 'host' }
         const selectedCodexHomePath = getCompatibleSelectedCodexHomePath(
           codexSelectionTarget,
-          getSelectedCodexHomePath?.(codexSelectionTarget) ?? null
+          getSelectedCodexHomePath?.(codexSelectionTarget, baseEnv) ?? null
         )
         const skipCodexHomeEnv = ctx?.isWsl === true && !selectedCodexHomePath
         const env = buildPtyHostEnv(id, baseEnv, {
@@ -3086,7 +3087,7 @@ export function registerPtyHandlers(
       const selectedCodexHomePath = isDaemonHostSpawn
         ? getCompatibleSelectedCodexHomePath(
             codexSelectionTarget,
-            getSelectedCodexHomePath?.(codexSelectionTarget) ?? null
+            getSelectedCodexHomePath?.(codexSelectionTarget, env) ?? null
           )
         : null
       const skipCodexHomeEnv =
@@ -3144,12 +3145,11 @@ export function registerPtyHandlers(
           CODEX_HOME_ENV_KEYS
         )
       } else if (stripInheritedOrcaCodexHome) {
-        // Why: the daemon inherits its own CODEX_HOME; strip the Orca-owned
-        // override there too, preserving a user-set CODEX_HOME.
-        spawnOptions.envToDelete = mergePtyEnvDeletions(
-          spawnOptions.envToDelete,
-          getInheritedOrcaCodexHomeEnvKeysToDelete(env ?? {})
-        )
+        // Why: the daemon owns a persistent inherited environment that may
+        // differ from main. ORCA_CODEX_HOME asks it to compare/delete the pair.
+        spawnOptions.envToDelete = mergePtyEnvDeletions(spawnOptions.envToDelete, [
+          'ORCA_CODEX_HOME'
+        ])
       }
       deleteRequestedEnvKeys(env, spawnOptions.envToDelete)
       promoteAgentTeamsShimPath(env, requestedAgentTeamsPath)
@@ -3969,7 +3969,7 @@ export function registerPtyHandlers(
       const selectedCodexHomePath = isDaemonHostSpawn
         ? getCompatibleSelectedCodexHomePath(
             codexSelectionTarget,
-            getSelectedCodexHomePath?.(codexSelectionTarget) ?? null
+            getSelectedCodexHomePath?.(codexSelectionTarget, baseEnv) ?? null
           )
         : null
       const skipCodexHomeEnv =
@@ -4055,9 +4055,9 @@ export function registerPtyHandlers(
           ),
           skipCodexHomeEnv ? CODEX_HOME_ENV_KEYS : []
         ),
-        // Why: real-home routing strips the Orca-owned override the daemon
-        // inherits, while preserving a user-set CODEX_HOME.
-        stripInheritedOrcaCodexHome ? getInheritedOrcaCodexHomeEnvKeysToDelete(spawnEnv ?? {}) : []
+        // Why: the persistent daemon compares its own merged CODEX_HOME pair;
+        // main cannot safely decide ownership for a process it may not parent.
+        stripInheritedOrcaCodexHome ? ['ORCA_CODEX_HOME'] : []
       )
       deleteRequestedEnvKeys(spawnEnv, combinedEnvToDelete)
       promoteAgentTeamsShimPath(spawnEnv, requestedAgentTeamsPath)

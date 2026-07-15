@@ -737,8 +737,14 @@ function startTerminalRuntimeStartupServices(): Promise<void> {
   return firstWindowStartupServicesReady
 }
 
-function prepareCodexRuntimeHomeForLaunch(target?: CodexAccountSelectionTarget): string | null {
-  if (target?.runtime !== 'wsl' && codexRuntimeHome!.isHostSystemDefaultRealHomeSelected()) {
+function prepareCodexRuntimeHomeForLaunch(
+  target?: CodexAccountSelectionTarget,
+  launchEnv?: NodeJS.ProcessEnv
+): string | null {
+  if (
+    target?.runtime !== 'wsl' &&
+    codexRuntimeHome!.isHostSystemDefaultRealHomeSelected(launchEnv)
+  ) {
     // Why (flag ON, system default): the hook entry must exist — appended last
     // and trusted by codex's own app-server grant — in the real ~/.codex before
     // the pane spawns. An incapable grant flips the lane gate so the launch
@@ -748,8 +754,8 @@ function prepareCodexRuntimeHomeForLaunch(target?: CodexAccountSelectionTarget):
       userDataPath: app.getPath('userData')
     })
   }
-  const runtimeHomePath = codexRuntimeHome!.prepareForCodexLaunch(target)
-  if (runtimeHomePath === null && codexRuntimeHome!.isHostSystemDefaultRealHome()) {
+  const runtimeHomePath = codexRuntimeHome!.prepareForCodexLaunch(target, launchEnv)
+  if (runtimeHomePath === null && target?.runtime !== 'wsl') {
     // Why: Codex runs on the user's real ~/.codex; the managed-home hook
     // install below would target a home Codex never reads on this lane.
     return null
@@ -1000,7 +1006,7 @@ function openMainWindow(): BrowserWindow {
     keybindings,
     {
       getAdditionalAiVaultCodexHomePaths: () =>
-        codexRuntimeHome ? [codexRuntimeHome.getHostRuntimeHomePath()] : [],
+        codexRuntimeHome ? codexRuntimeHome.getHostCodexHomePathsForSessionDiscovery() : [],
       onBeforeRelaunch: async () => {
         isQuitting = true
         desktopRelayService?.fenceAndCloseNow()
@@ -1882,7 +1888,7 @@ app.whenReady().then(async () => {
     // aiVault.listSessions RPC includes managed-Codex sessions on remote/SSH
     // hosts; the window-only registerCoreHandlers path never runs under serve.
     getAdditionalAiVaultCodexHomePaths: () =>
-      codexRuntimeHome ? [codexRuntimeHome.getHostRuntimeHomePath()] : [],
+      codexRuntimeHome ? codexRuntimeHome.getHostCodexHomePathsForSessionDiscovery() : [],
     buildAgentHookPtyEnv: () =>
       isAgentStatusHooksEnabled(store?.getSettings()) ? agentHookServer.buildPtyEnv() : {}
   })
@@ -2020,15 +2026,13 @@ app.whenReady().then(async () => {
     }
   }
   if (codexRuntimeHome.isHostSystemDefaultRealHomeSelected()) {
-    // Why: host-connect seam — install (or sweep, when opted out) the trusted
-    // real-home status hook before the first pane can spawn, so the very first
-    // launch already knows whether this host's grant lane is usable.
+    // Why: establish the lane before background rate-limit polling starts, so
+    // an incapable grant host never polls a home its PTYs will not use.
     ensureRealHomeCodexHookState({
       hooksEnabled: isAgentStatusHooksEnabled(store.getSettings()),
       userDataPath: app.getPath('userData')
     })
   }
-
   app.on('child-process-gone', (_event, details) => {
     recordProcessGoneCrash('child', details.type, details.reason, details.exitCode ?? null, {
       name: details.name,

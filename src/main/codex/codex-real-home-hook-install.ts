@@ -120,16 +120,13 @@ function installRealHomeCodexHook(userDataPath: string): RealHomeCodexHookLane {
   const managedEntries: CodexTrustEntry[] = []
   for (const eventName of material.events) {
     const current = Array.isArray(nextHooks[eventName]) ? nextHooks[eventName] : []
-    const cleaned = removeManagedCommands(current, isManagedCommand)
-    // Why: append LAST. Codex trust keys are positional
-    // (source:event:group:handler); prepending would shift every user entry
-    // and invalidate the user's own hook trust records.
-    nextHooks[eventName] = [...cleaned, { hooks: [buildManagedCommandHook(material.command)] }]
+    const reconciled = reconcileManagedHookDefinition(current, isManagedCommand, material.command)
+    nextHooks[eventName] = reconciled.definitions
     managedEntries.push({
       sourcePath: hooksJsonPath,
       eventLabel: material.eventLabel[eventName],
-      groupIndex: cleaned.length,
-      handlerIndex: 0,
+      groupIndex: reconciled.groupIndex,
+      handlerIndex: reconciled.handlerIndex,
       command: material.command,
       timeoutSec: MANAGED_HOOK_TIMEOUT_SECONDS
     })
@@ -175,6 +172,46 @@ function installRealHomeCodexHook(userDataPath: string): RealHomeCodexHookLane {
     `[codex-real-home-hooks] trust grant unavailable (${grant.reason}); entry rolled back, managed lane kept`
   )
   return 'unavailable'
+}
+
+function reconcileManagedHookDefinition(
+  current: HookDefinition[],
+  isManagedCommand: (command: string | undefined) => boolean,
+  command: string
+): { definitions: HookDefinition[]; groupIndex: number; handlerIndex: number } {
+  const directCommandKeys = ['command', 'bash', 'powershell'] as const
+  const hasManagedDirectCommand = current.some((definition) =>
+    directCommandKeys.some((key) => isManagedCommand(definition[key]))
+  )
+  const nestedLocations = current.flatMap((definition, groupIndex) =>
+    Array.isArray(definition.hooks)
+      ? definition.hooks.flatMap((hook, handlerIndex) =>
+          isManagedCommand(hook.command) ? [{ groupIndex, handlerIndex }] : []
+        )
+      : []
+  )
+  if (!hasManagedDirectCommand && nestedLocations.length === 1) {
+    const { groupIndex, handlerIndex } = nestedLocations[0]!
+    const definition = current[groupIndex]!
+    const hasDirectCommand = directCommandKeys.some((key) => typeof definition[key] === 'string')
+    if (definition.matcher === undefined && !hasDirectCommand) {
+      const definitions = [...current]
+      // Why: users can append groups or handlers after Orca's first install.
+      // Reusing the exact slot preserves all later positional trust keys.
+      const hooks = [...definition.hooks!]
+      hooks[handlerIndex] = buildManagedCommandHook(command)
+      definitions[groupIndex] = { ...definition, hooks }
+      return { definitions, groupIndex, handlerIndex }
+    }
+  }
+
+  const cleaned = removeManagedCommands(current, isManagedCommand)
+  // Why: first install appends LAST so no existing user trust position shifts.
+  return {
+    definitions: [...cleaned, { hooks: [buildManagedCommandHook(command)] }],
+    groupIndex: cleaned.length,
+    handlerIndex: 0
+  }
 }
 
 function getInstallRetryAfterMs(reason: CodexTrustGrantFallbackReason): number {

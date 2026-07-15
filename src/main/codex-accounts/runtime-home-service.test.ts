@@ -988,6 +988,7 @@ describe('CodexRuntimeHomeService', () => {
 
     expect(service.prepareForCodexLaunch()).toBe(getRuntimeCodexHomePath())
     expect(service.prepareForRateLimitFetch()).toBe(getRuntimeCodexHomePath())
+    expect(service.getHostCodexHomePathsForSessionDiscovery()).toEqual([getRuntimeCodexHomePath()])
     expect(existsSync(getRuntimeCodexHomePath())).toBe(true)
   })
 
@@ -998,6 +999,23 @@ describe('CodexRuntimeHomeService', () => {
 
     expect(service.isHostSystemDefaultRealHome()).toBe(true)
     expect(service.prepareForCodexLaunch()).toBeNull()
+    expect(service.getHostCodexHomePathsForSessionDiscovery()).toEqual([
+      getRuntimeCodexHomePath(),
+      getSystemCodexHomePath()
+    ])
+    const perSpawnCustomHome = join(testState.fakeHomeDir, 'per-spawn-custom-codex-home')
+    expect(service.isHostSystemDefaultRealHome({ CODEX_HOME: perSpawnCustomHome })).toBe(false)
+    expect(service.prepareForCodexLaunch(undefined, { CODEX_HOME: perSpawnCustomHome })).toBe(
+      getRuntimeCodexHomePath()
+    )
+    writeFileSync(
+      join(testState.fakeHomeDir, '.zshrc'),
+      'export CODEX_HOME="$HOME/shell-custom-codex-home"\n',
+      'utf-8'
+    )
+    const shellLaunchEnv = { HOME: testState.fakeHomeDir, SHELL: '/bin/zsh' }
+    expect(service.isHostSystemDefaultRealHome(shellLaunchEnv)).toBe(false)
+    expect(service.prepareForCodexLaunch(undefined, shellLaunchEnv)).toBe(getRuntimeCodexHomePath())
     const previousCodexHome = process.env.CODEX_HOME
     const previousOrcaCodexHome = process.env.ORCA_CODEX_HOME
     process.env.CODEX_HOME = getRuntimeCodexHomePath()

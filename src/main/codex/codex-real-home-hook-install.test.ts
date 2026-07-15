@@ -194,6 +194,49 @@ describe('ensureRealHomeCodexHookState (install)', () => {
     expect(lane).toBe('installed')
     expect(readFileSync(getRealHooksJsonPath(), 'utf-8')).toBe(firstRaw)
   })
+
+  it('keeps later user hook trust positions stable when reconciling an existing install', () => {
+    grantSucceeds()
+    const userBefore = { hooks: [{ type: 'command', command: 'before.sh' }] }
+    writeFileSync(
+      getRealHooksJsonPath(),
+      `${JSON.stringify({ hooks: { Stop: [userBefore] } }, null, 2)}\n`,
+      'utf-8'
+    )
+    ensureRealHomeCodexHookState({ hooksEnabled: true, userDataPath: userDataDir })
+    const installed = readRealHooksJson()
+    const userAfter = { hooks: [{ type: 'command', command: 'after.sh' }] }
+    installed.hooks!.Stop!.push(userAfter)
+    writeFileSync(getRealHooksJsonPath(), `${JSON.stringify(installed, null, 2)}\n`, 'utf-8')
+
+    expect(ensureRealHomeCodexHookState({ hooksEnabled: true, userDataPath: userDataDir })).toBe(
+      'installed'
+    )
+
+    const reconciled = readRealHooksJson().hooks?.Stop
+    expect(reconciled?.[0]).toEqual(userBefore)
+    expect(reconciled?.[2]).toEqual(userAfter)
+    const plan = grantMock.mock.calls.at(-1)![0] as CodexManagedTrustGrantPlan
+    expect(plan.managedEntries.find((entry) => entry.eventLabel === 'stop')?.groupIndex).toBe(1)
+  })
+
+  it("keeps later user handler trust positions stable inside Orca's hook group", () => {
+    grantSucceeds()
+    ensureRealHomeCodexHookState({ hooksEnabled: true, userDataPath: userDataDir })
+    const installed = readRealHooksJson()
+    const userAfter = { type: 'command', command: 'after.sh' }
+    installed.hooks!.Stop![0]!.hooks!.push(userAfter)
+    writeFileSync(getRealHooksJsonPath(), `${JSON.stringify(installed, null, 2)}\n`, 'utf-8')
+
+    expect(ensureRealHomeCodexHookState({ hooksEnabled: true, userDataPath: userDataDir })).toBe(
+      'installed'
+    )
+
+    expect(readRealHooksJson().hooks?.Stop?.[0]?.hooks?.[1]).toEqual(userAfter)
+    const plan = grantMock.mock.calls.at(-1)![0] as CodexManagedTrustGrantPlan
+    const stopEntry = plan.managedEntries.find((entry) => entry.eventLabel === 'stop')
+    expect(stopEntry).toMatchObject({ groupIndex: 0, handlerIndex: 0 })
+  })
 })
 
 describe('ensureRealHomeCodexHookState (opt-out sweep)', () => {
