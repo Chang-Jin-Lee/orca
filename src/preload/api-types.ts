@@ -3180,6 +3180,7 @@ export type PreloadApi = {
           supported: true
           port: number
           ruleAllowed: boolean
+          blockingRuleDetected: boolean
           privateFirewallEnabled: boolean
           networkCategory: 'private' | 'public' | 'domain' | 'unknown'
           inspectionAvailable: boolean
