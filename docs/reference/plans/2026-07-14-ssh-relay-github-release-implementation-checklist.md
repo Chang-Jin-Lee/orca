@@ -8,7 +8,7 @@ work; keep exact commands, runner identities, hashes, metrics, and residual gaps
 
 Date created: 2026-07-14<br>
 Last updated: 2026-07-15<br>
-Current phase: Milestone 5 / Work Package 4 offline artifact selection — **Local GREEN; exact-head native CI pending — 2026-07-15, Codex implementation owner**. The signature-verified immutable-manifest boundary and exact offline tuple/content/archive/URL result pass local focused, adjacent, broad, static, and scope gates under E-M5-OFFLINE-SELECTION-LOCAL-RED-001 and E-M5-OFFLINE-SELECTION-LOCAL-001. No networking, cache, desktop consumer, SSH transfer, tuple enablement, mode wiring, or default behavior is connected. Commit and push the isolated package with the pending Milestone 4 evidence checkpoint, then require all-six exact-head native Node 24 CI before starting download/cache work.<br>
+Current phase: Milestone 5 / Work Package 4 offline artifact selection — **Native CI wiring correction locally GREEN; replacement exact-head CI pending — 2026-07-15, Codex implementation owner**. The selector implementation is pushed at `5ae2a505c`, but audit E-M5-OFFLINE-SELECTION-CI-WIRING-RED-001 proved the native workflow did not invoke its portable source suites. E-M5-OFFLINE-SELECTION-CI-WIRING-LOCAL-001 now pins all five artifact/manifest/selector suites in both POSIX and Windows job families. Commit and push the correction, then require replacement all-six exact-head Node 24 evidence; runs already started for `5ae2a505c` are intermediate only. No networking, cache, desktop consumer, SSH transfer, tuple enablement, mode wiring, or default behavior is connected.<br>
 Session checkpoint: **In progress — 2026-07-15, Codex implementation owner** — exact pushed head `8c925c24990ac93f6d2dd8de2081a50a74f30d97` passes the 10-test draft-release composition suite and full runtime construction/execution on all six target-native jobs in run 29440806947 under E-M4-DRAFT-RELEASE-COMPOSITION-CI-001. PR Checks 29440804969 and both Golden E2E jobs in 29440804978 are green. Both Linux supplements and Windows x64 floor pass. Windows arm64 floor smoke passes in 6,178.8338ms with 49,881,088-byte RSS; the floor gate then correctly rejects hosted build 26200 versus required 26100. The user authorizes end-to-end commits, pushes, draft-PR updates, CI runs/reruns, and PR-contained rehearsals, but not merging to `main`. There is no real release write, publication caller, desktop consumer, SSH transfer/install, tuple enablement, or production/default behavior change. No accepted production key, protected environment/seed, native-signing trust proof, publication path, or tuple enablement is connected. Legacy remains the production default.<br>
 Primary design: [SSH relay GitHub Release plan](./2026-07-14-ssh-relay-github-release-plan.html)<br>
 Motivating issues: [#8450](https://github.com/stablyai/orca/issues/8450), [#1693](https://github.com/stablyai/orca/issues/1693)
@@ -11978,6 +11978,49 @@ config/vitest.config.ts config/scripts/ssh-relay-runtime-draft-release-verificat
   require focused and adjacent contracts on all six exact-head native Node 24 jobs plus normal PR
   checks before starting the disconnected download boundary.
 
+### E-M5-OFFLINE-SELECTION-CI-WIRING-RED-001 — Native jobs omitted desktop selection contracts
+
+- Date: 2026-07-15
+- Owner: Codex implementation owner
+- Source: workflow audit immediately after pushed selector head
+  `5ae2a505cbb0d9744ebd4232cfc131747fdead54`; draft PR #8741. Runs 29443022601,
+  29443022528, and 29443022549 had started but cannot close the selector package because the native
+  artifact workflow lacked its purpose-named source suites.
+- Audit signal: `rg -n "artifact-selector|manifest-signature|artifact-schema|release-asset|vitest.*src/main/ssh"
+  .github/workflows config/scripts` returned no selector/source-suite invocation from
+  `.github/workflows/ssh-relay-runtime-artifacts.yml`.
+- Purpose-named RED command after adding only the workflow assertion:
+  `/usr/bin/time -l pnpm exec vitest run --config config/vitest.config.ts --maxWorkers=1
+  config/scripts/ssh-relay-runtime-workflow.test.mjs` — expected FAIL, 1 failed / 6 passed of 7 in
+  473ms Vitest / 2.07s wall, maximum RSS 131,694,592 bytes, zero swaps. The workflow contained zero
+  occurrences where two job-family invocations were required.
+- Contract pinned by the RED: artifact schema, signature, release asset, selector, and runtime
+  identity source suites must be explicit inputs to both the POSIX and Windows native test steps.
+  Green workflow status without these invocations is not selector portability evidence.
+- Does not prove: corrected wiring, execution on any native runner, product behavior, or any tuple.
+
+### E-M5-OFFLINE-SELECTION-CI-WIRING-LOCAL-001 — Both native job families invoke source suites
+
+- Date: 2026-07-15
+- Owner: Codex implementation owner
+- Source: uncommitted workflow correction atop pushed head
+  `5ae2a505cbb0d9744ebd4232cfc131747fdead54`; draft PR #8741.
+- Command: `/usr/bin/time -l pnpm exec vitest run --config config/vitest.config.ts --maxWorkers=1`
+  with the workflow test plus artifact schema, signature, release asset, selector, and runtime
+  identity suites — PASS, 6 files / 81 tests in 3.97s Vitest / 6.00s wall; maximum RSS 132,087,808
+  bytes and zero swaps. Focused YAML/test `oxfmt --check` and `git diff --check` pass.
+- Oracle proved: the workflow source names all five portable source suites exactly once in the
+  four-runner POSIX job family and exactly once in the two-runner Windows job family. The YAML parses,
+  runner labels remain unchanged, and the existing credential/publication prohibitions remain
+  covered by the same workflow suite.
+- Consumer-disconnection oracle: this changes test execution only. It adds no credential, release
+  write, desktop consumer, network/download/cache path, SSH behavior, tuple enablement, or default
+  behavior.
+- Does not prove: actual Linux/macOS/Windows x64/arm64 execution. The `5ae2a505c` runs are
+  intermediate only; replacement exact-head CI after this correction is mandatory.
+- Follow-up: commit and push the workflow/test/evidence correction, then collect replacement all-six
+  native Node 24 jobs plus PR Checks and Golden E2E.
+
 ## Accepted Gaps
 
 No product gap is accepted merely because it appears in this list. Each entry requires explicit
@@ -12036,11 +12079,11 @@ The project is not complete until every applicable item below is checked with ev
 
 ## Next Required Action
 
-Commit and push the isolated Milestone 5 offline-selection package together with local evidence
-commit `2097a40dd`. Require the focused selector/signature contract and adjacent manifest consumers
-to pass on Linux x64/arm64, macOS x64/arm64, and Windows x64/arm64 at the exact pushed head, plus
-normal PR Checks and Golden E2E. Record job IDs, runner images, timings, results, and the separately
-gated Windows arm64 floor outcome before closing the package.
+Commit and push the native CI wiring correction and its evidence checkpoint. Require the five
+portable artifact/manifest/selector suites to pass inside the Linux x64/arm64, macOS x64/arm64, and
+Windows x64/arm64 artifact jobs at the replacement exact head, plus normal PR Checks and Golden E2E.
+Runs for `5ae2a505c` are intermediate only. Record replacement job IDs, runner images, timings,
+results, and the separately gated Windows arm64 floor outcome before closing the package.
 
 Only after that evidence is complete, begin a purpose-named disconnected download-boundary RED for
 bounded streaming, cancellation, archive hash/size, approved GitHub redirect origins, and credential/

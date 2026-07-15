@@ -10,17 +10,17 @@ A checked box means the work has evidence in the detailed ledger. Design approva
 complete a box.
 
 Active checkpoint: **Milestone 5 / Work Package 4 offline artifact selection —
-local GREEN; exact-head native CI pending, 2026-07-15, Codex implementation owner.** The selector
-now accepts only a signature-verified recursively immutable manifest and returns its exact offline
-tuple, content ID, archive metadata, and tag-qualified direct URL. Focused 27-test, adjacent 91-test,
-broad 307-test, typecheck, lint, formatting, and scope gates pass under
-`E-M5-OFFLINE-SELECTION-LOCAL-RED-001` and `E-M5-OFFLINE-SELECTION-LOCAL-001`. Next, commit and push
-this isolated package with the pending Milestone 4 evidence checkpoint, then require all six native
-Node 24 jobs, PR Checks, and Golden E2E at one exact head. Download, cache, desktop consumers, SSH
-transfer/install, mode wiring, tuple enablement, publication, production keys/environment/seed, and
-merge to `main` remain disconnected. Current pushed branch head is `8c925c249`; the implementation
-owner is authorized to drive commits, pushes, CI, and PR-contained rehearsals end to end without
-merging.
+native CI wiring correction locally GREEN; replacement exact-head CI pending, 2026-07-15, Codex
+implementation owner.** The verified immutable selector is pushed at `5ae2a505c`, but a post-push
+audit proved the native artifact jobs did not invoke its portable source suites. The workflow now
+pins artifact schema, signature, release asset, selector, and runtime identity tests in both POSIX
+and Windows job families under `E-M5-OFFLINE-SELECTION-CI-WIRING-RED-001` and
+`E-M5-OFFLINE-SELECTION-CI-WIRING-LOCAL-001`. Runs started for `5ae2a505c` are intermediate only.
+Next, push this test-wiring correction and require replacement all-six native Node 24 jobs, PR
+Checks, and Golden E2E at one exact head. Download, cache, desktop consumers, SSH transfer/install,
+mode wiring, tuple enablement, publication, production keys/environment/seed, and merge to `main`
+remain disconnected. The implementation owner is authorized to drive commits, pushes, CI, and
+PR-contained rehearsals end to end without merging.
 
 ## Safety status
 
@@ -296,8 +296,10 @@ merging.
 
 - [ ] Select tuples offline from the embedded manifest and resolve immutable direct asset URLs.
       The verified immutable selection and URL boundary is locally green under
-      `E-M5-OFFLINE-SELECTION-LOCAL-001`; exact-head all-six native CI and the actual packaged
-      embedded-manifest loader remain open.
+      `E-M5-OFFLINE-SELECTION-LOCAL-001`. The first post-push audit found that native jobs omitted
+      these source suites; both job families are now locally pinned under
+      `E-M5-OFFLINE-SELECTION-CI-WIRING-LOCAL-001`. Replacement exact-head all-six native CI and the
+      actual packaged embedded-manifest loader remain open.
 - [ ] Stream bounded downloads; verify signature, size, archive hash, and extracted tree.
 - [ ] Add exclusive staging, atomic publication, quarantine, locking, and the 2 GiB cache policy.
 - [ ] Prove verified cached bytes can be transferred while the client is offline.
