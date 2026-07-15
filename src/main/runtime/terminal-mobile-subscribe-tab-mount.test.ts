@@ -1,14 +1,4 @@
-/**
- * Mobile blank-terminal regression (STA-1840 / #8597): a mobile terminal.subscribe
- * to a tab the desktop never mounted this session (cold-activation deferral,
- * cold-park, or a workspace the desktop isn't showing) has no attached PTY, so
- * the runtime has no headless emulator and the snapshot is empty → the terminal
- * renders blank. The runtime now asks the renderer to background-mount that tab
- * (terminal:requestTabMount) so the PTY attaches and streams. These tests pin
- * the request's gating: it fires for a known handle whether or not the handle
- * carries a ptyId (both blank paths), skips pty-form/unknown handles, and
- * degrades safely when there is no window.
- */
+/** STA-1840 regression: known blank-terminal handles request a bounded renderer mount. */
 import { describe, expect, it, vi } from 'vitest'
 import { OrcaRuntimeService } from './orca-runtime'
 
@@ -83,10 +73,7 @@ describe('requestRendererTerminalTabMount', () => {
   })
 
   it('requests a mount by ptyId for a synthetic pty-form handle (never-mounted workspace)', () => {
-    // Why: a workspace the renderer never mounted has no renderer-graph leaf, so
-    // its terminals surface via `pty:<ptyId>` handles with no real UI tabId. The
-    // mount must still fire — carried by the ptyId — or the never-mounted tab
-    // stays blank (STA-1840 regression the first fix attempt missed).
+    // Why: never-mounted workspaces expose only synthetic pty handles to mobile.
     const { runtime, send } = seedRuntime([
       { handle: 'h1', worktreeId: 'wt-1', tabId: 'pty:wt-1@@abc', ptyId: 'wt-1@@abc' }
     ])

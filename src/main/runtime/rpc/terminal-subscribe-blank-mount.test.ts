@@ -1,11 +1,4 @@
-/**
- * STA-1840: a mobile terminal.subscribe to a tab the desktop never mounted this
- * session resolves a ptyId (from the persisted layout graph) but the runtime
- * has no headless emulator for it, so the snapshot is empty and the terminal
- * renders blank. The subscribe now asks the renderer to background-mount the tab
- * when the snapshot comes back empty. These tests pin that the mount request
- * fires on an empty snapshot and stays quiet when the snapshot has content.
- */
+/** STA-1840 regression: missing mobile terminal models request an exact renderer tab mount. */
 import { describe, expect, it, vi } from 'vitest'
 import { RpcDispatcher } from './dispatcher'
 import type { RpcRequest } from './core'
@@ -18,6 +11,7 @@ function stubRuntime(overrides: Partial<OrcaRuntimeService> = {}): OrcaRuntimeSe
     getRuntimeId: () => 'test-runtime',
     registerRemoteTerminalViewSubscriber: () => () => {},
     requestRendererTerminalTabMount: () => {},
+    hasHeadlessTerminalState: () => true,
     ...overrides
   } as OrcaRuntimeService
 }
@@ -30,22 +24,21 @@ const makeRequest = (method: string, params?: unknown): RpcRequest => ({
 })
 
 describe('terminal.subscribe blank-tab background mount', () => {
-  it('requests a renderer tab mount when a mobile subscribe resolves a ptyId but the snapshot is empty', async () => {
-    // Why: STA-1840 blank path — the handle resolves a ptyId but the desktop
-    // never mounted the tab this session, so there is no headless emulator and
-    // serialize is empty. The subscribe must ask the renderer to background-mount
-    // the tab so the PTY attaches and the live stream fills it.
+  it('requests a renderer tab mount when a mobile subscribe has no headless model', async () => {
+    // Why: stale preview text must not hide the missing live model/attachment.
     const cleanups = new Map<string, () => void>()
     const requestRendererTerminalTabMount = vi.fn()
     const runtime = stubRuntime({
       resolveLeafForHandle: vi.fn().mockReturnValue({ ptyId: 'pty-1' }),
       requestRendererTerminalTabMount,
+      hasHeadlessTerminalState: vi.fn().mockReturnValue(false),
       handleMobileSubscribe: vi.fn().mockResolvedValue(true),
       handleMobileUnsubscribe: vi.fn(),
       subscribeToTerminalData: vi.fn().mockReturnValue(vi.fn()),
-      // Empty snapshot: no headless emulator for a never-attached PTY.
-      readTerminal: vi.fn().mockResolvedValue({ tail: [], truncated: false }),
-      serializeTerminalBuffer: vi.fn().mockResolvedValue(null),
+      readTerminal: vi.fn().mockResolvedValue({ tail: ['stale preview'], truncated: false }),
+      serializeTerminalBuffer: vi
+        .fn()
+        .mockResolvedValue({ data: 'stale snapshot', cols: 80, rows: 24, seq: 4 }),
       getTerminalSize: vi.fn().mockReturnValue({ cols: 80, rows: 24 }),
       getMobileDisplayMode: vi.fn().mockReturnValue('auto'),
       getLayout: vi.fn().mockReturnValue({ seq: 1 }),
@@ -85,7 +78,7 @@ describe('terminal.subscribe blank-tab background mount', () => {
     await dispatchPromise
   })
 
-  it('does not request a renderer tab mount when the mobile snapshot has content', async () => {
+  it('does not request a renderer tab mount when an attached terminal is legitimately blank', async () => {
     const cleanups = new Map<string, () => void>()
     const requestRendererTerminalTabMount = vi.fn()
     const runtime = stubRuntime({
@@ -95,9 +88,7 @@ describe('terminal.subscribe blank-tab background mount', () => {
       handleMobileUnsubscribe: vi.fn(),
       subscribeToTerminalData: vi.fn().mockReturnValue(vi.fn()),
       readTerminal: vi.fn().mockResolvedValue({ tail: [], truncated: false }),
-      serializeTerminalBuffer: vi
-        .fn()
-        .mockResolvedValue({ data: 'live content', cols: 80, rows: 24, seq: 4 }),
+      serializeTerminalBuffer: vi.fn().mockResolvedValue(null),
       getTerminalSize: vi.fn().mockReturnValue({ cols: 80, rows: 24 }),
       getMobileDisplayMode: vi.fn().mockReturnValue('auto'),
       getLayout: vi.fn().mockReturnValue({ seq: 1 }),

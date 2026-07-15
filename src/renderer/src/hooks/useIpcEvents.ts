@@ -14,7 +14,7 @@ import { createBackgroundSleepingAgentWakeDispatcher } from '@/lib/wake-sleeping
 import { OPEN_WORKSPACE_BOARD_EVENT } from '@/components/sidebar/useWorkspaceBoardPanel'
 import { SPLIT_TERMINAL_PANE_EVENT, CLOSE_TERMINAL_PANE_EVENT } from '@/constants/terminal'
 import { requestBackgroundTerminalWorktreeMount } from '@/components/terminal/background-terminal-worktree-mount'
-import { resolveTerminalTabIdForPtyId } from '@/lib/terminal-tab-for-pty-id'
+import { planMobileTerminalTabMount } from '@/lib/mobile-terminal-tab-mount'
 import type { SplitTerminalPaneDetail, CloseTerminalPaneDetail } from '@/constants/terminal'
 import { getVisibleWorktreeIds } from '@/components/sidebar/visible-worktrees'
 import { activateTabNumberShortcut } from '@/lib/tab-number-shortcuts'
@@ -1667,26 +1667,23 @@ export function useIpcEvents(): void {
       )
     )
 
-    // Why: a mobile subscribe against a terminal this renderer never mounted
-    // this session (cold-activation deferral / cold-park / a workspace the
-    // desktop isn't showing) has no attached PTY, so its snapshot is empty and
-    // the mobile terminal is blank. Background-mount that tab so the PTY attaches
-    // and streams (STA-1840). Idempotent for already-mounted tabs.
+    // Why: background-mounting a mobile-subscribed tab attaches a PTY that this
+    // renderer never mounted, without navigating the desktop (STA-1840).
     unsubs.push(
       window.api.ui.onRequestTerminalTabMount(({ worktreeId, tabId, ptyId }) => {
         if (!worktreeId) {
           return
         }
-        // Why: a never-mounted workspace has no renderer-graph leaf, so the
-        // runtime only knows the ptyId (synthetic pty:<ptyId> handle) — resolve
-        // the owning UI tab from the persisted tab model. Fall back to a
-        // whole-worktree mount so the terminal still attaches if we can't.
-        const resolvedTabId =
-          tabId ??
-          (ptyId ? resolveTerminalTabIdForPtyId(useAppStore.getState(), worktreeId, ptyId) : null)
-        requestBackgroundTerminalWorktreeMount(
-          resolvedTabId ? { worktreeId, tabIds: [resolvedTabId] } : { worktreeId }
-        )
+        // Why: synthetic pty handles need persisted-tab resolution, but a miss
+        // must not mount every saved terminal in a large hidden worktree.
+        const mount = planMobileTerminalTabMount(useAppStore.getState(), {
+          worktreeId,
+          ...(tabId ? { tabId } : {}),
+          ...(ptyId ? { ptyId } : {})
+        })
+        if (mount) {
+          requestBackgroundTerminalWorktreeMount(mount)
+        }
       })
     )
 

@@ -17,8 +17,6 @@ function stubRuntime(overrides: Partial<OrcaRuntimeService> = {}): OrcaRuntimeSe
     // Why: subscribe streams register as remote view subscribers for Phase-5
     // query-authority suppression (terminal-query-authority.md).
     registerRemoteTerminalViewSubscriber: () => () => {},
-    // Why: a no-PTY / empty-snapshot mobile subscribe asks the renderer to
-    // background-mount the tab (STA-1840). No-op by default.
     requestRendererTerminalTabMount: () => {},
     ...overrides
   } as OrcaRuntimeService

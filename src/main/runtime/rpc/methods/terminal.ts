@@ -2356,17 +2356,17 @@ export const TERMINAL_METHODS: RpcAnyMethod[] = [
       let leaf = runtime.resolveLeafForHandle(params.terminal)
       const isMobile = params.client?.type === 'mobile'
       const useBinaryStream = params.capabilities?.terminalBinaryStream === 1 && Boolean(sendBinary)
+      let rendererMountRequested = false
 
       // Why: the left pane's PTY spawns asynchronously after the tab is created.
       // Mobile clients that subscribe before the PTY is ready would get a bare
       // scrollback+end with no live stream or phone-fit. Wait for the PTY so
       // the subscribe can proceed normally.
       if (!leaf?.ptyId && isMobile) {
-        // Why: a tab the desktop never mounted this session (cold-activation
-        // deferral / cold-park / a workspace the desktop isn't showing) has no
-        // leaf in the runtime graph, so no PTY is attached to wait for. Ask the
-        // renderer to background-mount it so one attaches (#8597, STA-1840).
+        // Why: a never-mounted tab has no graph leaf to await; mounting the
+        // exact tab lets its PTY attach without activating the worktree.
         runtime.requestRendererTerminalTabMount(params.terminal)
+        rendererMountRequested = true
         try {
           const ptyId = await runtime.waitForLeafPtyId(params.terminal, 10_000, signal)
           leaf = { ptyId }
@@ -2777,14 +2777,13 @@ export const TERMINAL_METHODS: RpcAnyMethod[] = [
         if (closed) {
           return
         }
-        // Why: the handle resolved a ptyId (from the persisted layout graph) but
-        // the runtime has no headless emulator for it — the desktop never mounted
-        // this tab this session, so nothing ever attached the PTY to feed one.
-        // The initial snapshot is therefore empty and the mobile terminal renders
-        // blank (STA-1840). Ask the renderer to background-mount the tab; that
-        // attaches the PTY and the live data stream (already subscribed above)
-        // then delivers the output. Idempotent for already-mounted tabs.
-        if (isMobile && !serialized?.data && read.tail.length === 0) {
+        // Why: missing model state—not snapshot text—is the signal that this
+        // PTY may never have attached; avoid remounting legitimate blank panes.
+        if (
+          isMobile &&
+          !rendererMountRequested &&
+          runtime.hasHeadlessTerminalState?.(ptyId) === false
+        ) {
           runtime.requestRendererTerminalTabMount(params.terminal)
         }
         let initialOutputOverflowed = false
