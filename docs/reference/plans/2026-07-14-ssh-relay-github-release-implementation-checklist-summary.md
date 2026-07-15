@@ -9,17 +9,16 @@ keeps commands, hashes, runner identities, timings, and failure details.
 A checked box means the work has evidence in the detailed ledger. Design approval alone does not
 complete a box.
 
-Active checkpoint: **Milestone 4 / Work Package 3 disconnected authenticated draft read-back
-materialization —
+Active checkpoint: **Milestone 4 / Work Package 3 disconnected downloaded-archive execution —
 in progress, 2026-07-15, Codex implementation owner.** Exact-head run
-[29433808457](https://github.com/stablyai/orca/actions/runs/29433808457) at `5460563ff` passes all six
-target-native artifact jobs and the required-asset gate's 13-test suite on every Node 24 runner under
-`E-M4-RELEASE-ASSETS-CI-001`. PR Checks and Golden E2E are green; the artifact workflow is red only
-for the retained Windows ARM build-26200-versus-26100 floor mismatch after successful runtime smoke.
-Exclusive one-pass local materialization is now locally green under
-`E-M4-DRAFT-READBACK-MATERIALIZATION-LOCAL-001`; exact-head proof on all six native Node 24 jobs is
-next. Production keys/environment/seed, publication, desktop/default consumers, tuple enablement,
-and merge to `main` remain disconnected. Current pushed branch head is `16edb7e75`; the
+[29435837082](https://github.com/stablyai/orca/actions/runs/29435837082) at `0fbbac118` passes all six
+target-native artifact jobs and the 4-test materialization suite on every Node 24 runner under
+`E-M4-DRAFT-READBACK-MATERIALIZATION-CI-001`. PR Checks and Golden E2E are green; the artifact
+workflow is red only for the retained Windows ARM build-26200-versus-26100 floor mismatch after
+successful runtime smoke. Next, bind exact materialized paths to the existing exclusive extraction
+and bundled Node/native PTY/watcher execution boundary. Production keys/environment/seed,
+publication, desktop/default consumers, SSH transfer/install, tuple enablement, and merge to `main`
+remain disconnected. Current pushed branch head is `0fbbac118`; the
 implementation owner is authorized to drive commits, pushes, CI, and PR-contained rehearsals end to
 end without merging.
 
@@ -277,8 +276,9 @@ end without merging.
       so this item remains open. The purpose-named transactional materialization RED is recorded
       under `E-M4-DRAFT-READBACK-MATERIALIZATION-LOCAL-RED-001`; one-pass persistence, exclusive
       temporary/final naming, cancellation/failure cleanup, and exact returned paths pass locally
-      under `E-M4-DRAFT-READBACK-MATERIALIZATION-LOCAL-001`. Exact-head all-six Node 24 proof and
-      downloaded archive execution are still required.
+      under `E-M4-DRAFT-READBACK-MATERIALIZATION-LOCAL-001`. Exact-head all-six Node 24 proof is
+      closed under `E-M4-DRAFT-READBACK-MATERIALIZATION-CI-001`; downloaded archive execution and a
+      real release write/read-back are still required.
 - [ ] Test timeouts, retries, approval denial, signing failure, partial output, and draft recovery.
 
 ### WP4 — Desktop resolver and verified cache
