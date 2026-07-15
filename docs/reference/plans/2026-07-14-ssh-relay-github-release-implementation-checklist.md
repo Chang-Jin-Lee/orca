@@ -9,7 +9,7 @@ work; keep exact commands, runner identities, hashes, metrics, and residual gaps
 Date created: 2026-07-14<br>
 Last updated: 2026-07-14<br>
 Current phase: Milestone 3 / Work Package 2 oldest-supported-baseline and native-trust proof — **In progress — 2026-07-14, Codex implementation owner**; exact-head run [29373507297](https://github.com/stablyai/orca/actions/runs/29373507297) passes all six target-native build, smoke, exact clean-build equality, upload, SBOM, license, provenance, runner/toolchain, and prohibited-content cells, and direct inspection of every downloaded payload passes exact archive/subject hashes, archive-scoped SPDX identity, one-owner-per-file, dependency, commit/run/builder/runner, tool-version/hash, and closure assertions (E-M3-METADATA-CI-001); Windows x64/arm64 record strict `MSVC 14.44.35207` identities and distinct exact linker SHA-256 values despite the Git-for-Windows PATH collision; the all-six metadata/provenance gate is closed, while oldest-baseline execution, native signing/trust, cross-family remotes, and measured legacy baselines remain open; production/default behavior and every tuple state remain unchanged; no bundled-runtime path is enabled and no artifact is published<br>
-Session checkpoint: **In progress — 2026-07-14, Codex implementation owner** — implementation commit `9bdae7f5b` defines the locally green credential-free native-signing plan contract, but exact-head run [29380684866](https://github.com/stablyai/orca/actions/runs/29380684866) exposed that the native workflow's explicit command omitted its new 6-test suite (E-M3-NATIVE-SIGNING-PLAN-CI-RED-001). Correction commit `9c0357235` explicitly syntax-checks and executes it in both native job families and passes local static gates under E-M3-NATIVE-SIGNING-PLAN-WORKFLOW-LOCAL-001; a replacement exact head remains required. Every credentialed native-signing/trust cell is open and no tuple is enabled or published.<br>
+Session checkpoint: **In progress — 2026-07-14, Codex implementation owner** — implementation commit `9bdae7f5b` and native-CI correction `9c0357235` now pass the full local and replacement exact-head gate under E-M3-NATIVE-SIGNING-PLAN-CI-001: all six native jobs syntax-check and execute the 6-test plan suite, all six artifact builds pass, PR Checks and Golden E2E pass, and only the unchanged Windows arm64 build-26100 floor rejects hosted build 26200. Credentialed native signing, returned-byte verification, and target trust remain open; no tuple is enabled or published.<br>
 Primary design: [SSH relay GitHub Release plan](./2026-07-14-ssh-relay-github-release-plan.html)<br>
 Motivating issues: [#8450](https://github.com/stablyai/orca/issues/8450), [#1693](https://github.com/stablyai/orca/issues/1693)
 
@@ -671,7 +671,9 @@ tuple. The local contract and all-six actual-identity proof pass under
 E-M3-NATIVE-SIGNING-PLAN-LOCAL-001. E-M3-NATIVE-SIGNING-PLAN-CI-RED-001 proves the first exact-head
 workflow omitted the new suite despite otherwise healthy builds; explicitly wiring it into both
 native job families is implemented at `9c0357235` and locally green under
-E-M3-NATIVE-SIGNING-PLAN-WORKFLOW-LOCAL-001; passing a replacement exact head is the active gate.
+E-M3-NATIVE-SIGNING-PLAN-WORKFLOW-LOCAL-001. Replacement exact-head proof passes under
+E-M3-NATIVE-SIGNING-PLAN-CI-001; the next safe package is credential-free exact signing-stage and
+returned-byte verification, without credentials or publication.
 
 **Baseline correction — 2026-07-14, Codex implementation owner:**
 E-M3-LINUX-BASELINE-LOCAL-RED-001 proves the existing Linux x64 candidate cannot load its patched
@@ -7717,6 +7719,54 @@ diff --check`.
   returned signed bytes, release aggregation, SSH behavior, or an enabled tuple.
 - Follow-up: push the correction plus this evidence separately and require the replacement exact-head
   POSIX and Windows logs to contain the 6-test suite before accepting CI proof.
+
+### E-M3-NATIVE-SIGNING-PLAN-CI-001 — Replacement exact head executes the suite on all six native jobs
+
+- Date: 2026-07-14 (run timestamps 2026-07-15 UTC)
+- Owner: Codex implementation owner
+- Source/run: exact draft-PR head `0f589ea299e9363a3988a9bc92b721f23c1ce1f4`, containing plan
+  implementation `9bdae7f5bd7d5df838ab8c59af9346fc2282443c` and CI correction
+  `9c0357235867cb2ff1ab8cbeed4901e6f013cf1d`; Actions run
+  [29381495240](https://github.com/stablyai/orca/actions/runs/29381495240).
+- Commands:
+
+  ```sh
+  gh run view 29381495240 --repo stablyai/orca \
+    --json headSha,status,conclusion,createdAt,updatedAt,url,jobs
+  gh run view 29381495240 --repo stablyai/orca --job 87245905347 --log | \
+    rg 'native-signing-plan|Test Files|Tests|Duration'
+  gh run view 29381495240 --repo stablyai/orca --job 87245905412 --log | \
+    rg 'native-signing-plan|Test Files|Tests|Duration'
+  gh run view 29381494930 --repo stablyai/orca \
+    --json headSha,status,conclusion,createdAt,updatedAt,url,jobs
+  gh run view 29381494940 --repo stablyai/orca \
+    --json headSha,status,conclusion,createdAt,updatedAt,url,jobs
+  ```
+
+- Contract result: PASS on all six native jobs. Job-step metadata reports the purpose-named contract
+  step successful for Linux x64/arm64, macOS x64/arm64, and Windows x64/arm64. The macOS arm64 log
+  directly records both syntax checks, the named suite passing 6/6 in 29 ms, and the aggregate
+  22 files/103 tests in 6.11 seconds. The Windows x64 log records both syntax checks, the suite
+  passing 6/6 in 37 ms, and 23 files/104 passed plus 3 platform skips out of 107 in 5.63 seconds.
+- Build/regression controls: all six native artifact jobs passed. Linux x64/arm64 took 3m50s/8m53s;
+  macOS x64/arm64 took 7m26s/3m36s; Windows x64/arm64 took 4m49s/8m33s. Both Linux oldest-userland
+  supplements passed in 43s/54s, and Windows x64 passed exact build 20348 in 1m25s.
+- Expected aggregate status: the artifact workflow concludes failure only because the Windows arm64
+  floor job again rejects hosted build 26200 against required build 26100 in 3m23s. This preserves
+  E-M3-WINDOWS-ARM64-BASELINE-CI-RED-001 and is not a signing-plan regression.
+- Other exact-head controls: PR Checks
+  [29381494930](https://github.com/stablyai/orca/actions/runs/29381494930) passed in 14m16s. Golden E2E
+  [29381494940](https://github.com/stablyai/orca/actions/runs/29381494940) passed Linux/macOS in
+  4m35s/5m56s.
+- Oracle proved: the credential-free plan contract parses and executes under exact Node 24.18.0 in
+  both shell families on every native runner, while all existing artifact, smoke, equality,
+  userland, packaging, and E2E controls retain their prior outcomes.
+- Does not prove: Apple/SignPath credentials, signing requests, approval behavior, returned signed
+  bytes, final post-signing hashes, Gatekeeper/quarantine/notarized-app provenance,
+  Authenticode/Defender/WDAC policy, exact missing oldest snapshots, release aggregation, SSH
+  transfer/install, packaged desktop use, fallback/performance, or an enabled tuple.
+- Follow-up: keep every tuple disabled; implement a credential-free exact signing-stage/returned-byte
+  contract that consumes the proven plan before any protected Apple or SignPath job is connected.
 
 ## Accepted Gaps
 
