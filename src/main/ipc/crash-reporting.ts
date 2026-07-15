@@ -329,15 +329,22 @@ const COALESCED_RENDERER_ERROR_BREADCRUMB_NAMES = new Set([
   'renderer_unhandled_rejection'
 ])
 const RENDERER_ERROR_BREADCRUMB_COALESCE_MS = 30_000
-const RENDERER_ERROR_BREADCRUMB_KEY_MAX_LENGTH = 120
 
 function rendererErrorBreadcrumbCoalesceKey(
   name: string,
   data: CrashReportBreadcrumbData | undefined
-): string {
-  const message = data?.message ?? data?.reasonMessage
-  const messageText = typeof message === 'string' ? message : ''
-  return `${name}:${messageText}`.slice(0, RENDERER_ERROR_BREADCRUMB_KEY_MAX_LENGTH)
+): string | undefined {
+  const primaryMessage = name === 'renderer_error' ? data?.message : data?.reasonMessage
+  const fallbackMessage = name === 'renderer_error' ? data?.errorMessage : undefined
+  const message =
+    typeof primaryMessage === 'string' && primaryMessage.length > 0
+      ? primaryMessage
+      : typeof fallbackMessage === 'string' && fallbackMessage.length > 0
+        ? fallbackMessage
+        : undefined
+  // Why: message-less failures have no stable identity, so grouping them could
+  // erase unrelated crash evidence. Sanitization already caps messages at 240 chars.
+  return message ? `${name}:${message}` : undefined
 }
 
 export function registerCrashReportingHandlers(store: CrashReportStore): void {
@@ -368,10 +375,16 @@ export function registerCrashReportingHandlers(store: CrashReportStore): void {
       }
       const data = sanitizeRendererBreadcrumbData(args.data)
       if (COALESCED_RENDERER_ERROR_BREADCRUMB_NAMES.has(args.name)) {
+        const coalesceKey = rendererErrorBreadcrumbCoalesceKey(args.name, data)
+        if (!coalesceKey) {
+          recordCrashBreadcrumb(args.name, data)
+          recordRendererBreadcrumbTrace(args.name, data)
+          return
+        }
         const coalesceResult = recordCoalescedCrashBreadcrumb({
           name: args.name,
           data,
-          coalesceKey: rendererErrorBreadcrumbCoalesceKey(args.name, data),
+          coalesceKey,
           minIntervalMs: RENDERER_ERROR_BREADCRUMB_COALESCE_MS
         })
         // Why: tracing every suppressed duplicate would preserve the same

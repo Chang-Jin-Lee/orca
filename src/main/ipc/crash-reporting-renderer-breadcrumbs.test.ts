@@ -136,6 +136,46 @@ describe('renderer breadcrumb IPC routing', () => {
     expect(recordCrashBreadcrumbMock).not.toHaveBeenCalled()
   })
 
+  it('keeps the full sanitized message in the coalesce key', () => {
+    const message = `${'same-prefix-'.repeat(12)}distinct-tail`
+
+    emitRendererBreadcrumb({ name: 'renderer_error', data: { message } })
+
+    expect(recordCoalescedCrashBreadcrumbMock).toHaveBeenCalledWith({
+      name: 'renderer_error',
+      data: { message },
+      coalesceKey: `renderer_error:${message}`,
+      minIntervalMs: 30_000
+    })
+  })
+
+  it('records message-less errors without coalescing unrelated failures', () => {
+    emitRendererBreadcrumb({
+      name: 'renderer_unhandled_rejection',
+      data: { reasonType: 'Object' }
+    })
+
+    expect(recordCrashBreadcrumbMock).toHaveBeenCalledWith('renderer_unhandled_rejection', {
+      reasonType: 'Object'
+    })
+    expect(recordCoalescedCrashBreadcrumbMock).not.toHaveBeenCalled()
+    expect(startSpanMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('uses the Error object message when an error event has no message', () => {
+    emitRendererBreadcrumb({
+      name: 'renderer_error',
+      data: { message: '', errorMessage: 'fallback failure' }
+    })
+
+    expect(recordCoalescedCrashBreadcrumbMock).toHaveBeenCalledWith({
+      name: 'renderer_error',
+      data: { message: '', errorMessage: 'fallback failure' },
+      coalesceKey: 'renderer_error:fallback failure',
+      minIntervalMs: 30_000
+    })
+  })
+
   it('does not emit durable trace spans for errors suppressed by coalescing', () => {
     recordCoalescedCrashBreadcrumbMock
       .mockReturnValueOnce({ suppressedSinceLast: 0 })
