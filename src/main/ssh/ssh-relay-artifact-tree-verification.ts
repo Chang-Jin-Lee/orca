@@ -1,6 +1,5 @@
 import { createHash } from 'node:crypto'
-import { createReadStream } from 'node:fs'
-import { lstat, readdir } from 'node:fs/promises'
+import { lstat, open, readdir } from 'node:fs/promises'
 import { join, relative, sep } from 'node:path'
 
 import type { SshRelaySelectedArtifact } from './ssh-relay-artifact-selector'
@@ -18,12 +17,39 @@ async function hashFile(
 ): Promise<string> {
   const digest = createHash('sha256')
   let size = 0
-  for await (const chunk of createReadStream(path, { highWaterMark: chunkBytes, signal })) {
-    size += chunk.length
-    if (size > expectedSize) {
-      throw new Error('SSH relay extracted tree file exceeds its signed size')
+  const handle = await open(path, 'r')
+  try {
+    const before = await handle.stat({ bigint: true })
+    if (!before.isFile() || before.size !== BigInt(expectedSize)) {
+      throw new Error('SSH relay extracted tree file changed before hashing')
     }
-    digest.update(chunk)
+    const buffer = Buffer.allocUnsafe(Math.min(chunkBytes, Math.max(expectedSize, 1)))
+    while (size < expectedSize) {
+      signal.throwIfAborted()
+      const { bytesRead } = await handle.read(
+        buffer,
+        0,
+        Math.min(buffer.length, expectedSize - size),
+        size
+      )
+      if (bytesRead === 0) {
+        break
+      }
+      size += bytesRead
+      digest.update(buffer.subarray(0, bytesRead))
+    }
+    const after = await handle.stat({ bigint: true })
+    if (
+      before.dev !== after.dev ||
+      before.ino !== after.ino ||
+      before.size !== after.size ||
+      before.mtimeNs !== after.mtimeNs ||
+      before.ctimeNs !== after.ctimeNs
+    ) {
+      throw new Error('SSH relay extracted tree file changed while hashing')
+    }
+  } finally {
+    await handle.close()
   }
   if (size !== expectedSize) {
     throw new Error('SSH relay extracted tree file size disagrees with its signed size')

@@ -1,9 +1,8 @@
-import { createHash } from 'node:crypto'
 import { createReadStream } from 'node:fs'
 import { pipeline } from 'node:stream/promises'
 import { createBrotliDecompress } from 'node:zlib'
 
-import { extract, Parser, ReadEntry } from 'tar'
+import { extract, ReadEntry } from 'tar'
 
 import type { SshRelaySelectedArtifact } from './ssh-relay-artifact-selector'
 
@@ -50,47 +49,6 @@ async function decompressTar(
     destination,
     { signal }
   )
-}
-
-export async function inspectSshRelayTarBrotli({
-  archivePath,
-  tuple,
-  signal,
-  chunkBytes
-}: {
-  archivePath: string
-  tuple: SelectedTuple
-  signal: AbortSignal
-  chunkBytes: number
-}): Promise<void> {
-  const expected = new Map(tuple.entries.map((entry) => [entry.path, entry]))
-  const seen = new Set<string>()
-  const parser = new Parser({ strict: true })
-  parser.on('entry', (entry: ReadEntry) => {
-    try {
-      const declared = assertTarEntry(entry, expected, seen)
-      if (declared.type === 'directory') {
-        entry.resume()
-        return
-      }
-      const digest = createHash('sha256')
-      entry.on('data', (chunk: Buffer) => digest.update(chunk))
-      entry.once('error', (error) => parser.abort(error))
-      entry.once('end', () => {
-        const actual = `sha256:${digest.digest('hex')}`
-        if (actual !== declared.sha256) {
-          parser.abort(new Error(`SSH relay TAR file integrity mismatch: ${entry.path}`))
-        }
-      })
-    } catch (error) {
-      parser.abort(error instanceof Error ? error : new Error(String(error)))
-    }
-  })
-  await decompressTar(archivePath, parser, signal, chunkBytes)
-  const missing = tuple.entries.find((entry) => !seen.has(entry.path))
-  if (missing) {
-    throw new Error(`SSH relay TAR is missing a declared entry: ${missing.path}`)
-  }
 }
 
 export async function extractSshRelayTarBrotli({

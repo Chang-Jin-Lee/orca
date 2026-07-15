@@ -9,8 +9,8 @@ keeps commands, hashes, runner identities, timings, and failure details.
 A checked box means the work has evidence in the detailed ledger. Design approval alone does not
 complete a box.
 
-Active checkpoint: **Milestone 5 / Work Package 4 desktop cache boundary — in-progress native-gate
-preparation for disconnected extraction, 2026-07-15, Codex implementation owner.** Exact-head run
+Active checkpoint: **Milestone 5 / Work Package 4 desktop cache boundary — in-progress replacement
+native gate for bounded TAR inspection, 2026-07-15, Codex implementation owner.** Exact-head run
 [29449869519](https://github.com/stablyai/orca/actions/runs/29449869519) closes deterministic bounded
 `.tar.br` under `E-M5-PORTABLE-ARCHIVE-CI-001`: all six primary Node 24 jobs and both Linux
 oldest-userland supplements pass. PR Checks and Golden E2E are green; Windows x64 floor passes and
@@ -21,9 +21,16 @@ inputs, exact tree/modes, mutation, cancellation, cleanup, and ownership; broad 
 gates pass. An exact downloaded 122,027,869-byte Darwin arm64 tree extracts in 878.73ms with
 49,283,072-byte incremental RSS under `E-M5-ARTIFACT-EXTRACTION-FULL-SIZE-LOCAL-001`. Both native job
 families now require synthetic cross-family and post-build full-size gates under
-`E-M5-ARTIFACT-EXTRACTION-CI-WIRING-LOCAL-001`. Next is exact-head all-six Node 24 execution. Desktop
-consumers, cache publication, SSH transfer/install, mode wiring, tuple enablement, publication,
-production keys/environment/seed, and merge to `main` remain disconnected.
+`E-M5-ARTIFACT-EXTRACTION-CI-WIRING-LOCAL-001`. Exact-head Darwin arm64 then supplied the required
+native RED: Darwin arm64 uses 71,368,704 bytes and Linux x64 uses 68,505,600 bytes, disproving the
+pre-implementation 64 MiB assumption and blocking upload under
+`E-M5-ARTIFACT-EXTRACTION-CI-MEMORY-RED-001`. Evidence decision
+`E-M5-ARTIFACT-EXTRACTION-BUDGET-CORRECTION-001` selects 80 MiB for cold desktop extraction only;
+remote remains 32 MiB and no buffer exceeds 1 MiB. The strict bounded replacement is locally green
+under `E-M5-ARTIFACT-EXTRACTION-TAR-MEMORY-LOCAL-001`: 21 focused tests and five exact payload runs
+use at most 69,402,624 bytes. Next is replacement all-six Node 24 evidence. Desktop consumers, cache publication, SSH
+transfer/install, mode wiring, tuple enablement, publication, production keys/environment/seed, and
+merge to `main` remain disconnected.
 
 ## Safety status
 

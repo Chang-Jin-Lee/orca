@@ -1,19 +1,16 @@
 import { createHash } from 'node:crypto'
-import { createReadStream } from 'node:fs'
-import { lstat, mkdir, realpath, rm } from 'node:fs/promises'
+import { lstat, mkdir, open, realpath, rm } from 'node:fs/promises'
 import { basename, dirname, resolve } from 'node:path'
 
 import type { SshRelaySelectedArtifact } from './ssh-relay-artifact-selector'
-import {
-  extractSshRelayTarBrotli,
-  inspectSshRelayTarBrotli
-} from './ssh-relay-artifact-tar-extraction'
+import { extractSshRelayTarBrotli } from './ssh-relay-artifact-tar-extraction'
+import { inspectSshRelayTarBrotli } from './ssh-relay-artifact-tar-inspection'
 import { verifySshRelayArtifactTree } from './ssh-relay-artifact-tree-verification'
 import { extractSshRelayZip, inspectSshRelayZip } from './ssh-relay-artifact-zip-extraction'
 
 const EXTRACTION_TIMEOUT_MS = 2 * 60_000
 const CHUNK_BYTES = 64 * 1024
-const MAXIMUM_INCREMENTAL_MEMORY_BYTES = 64 * 1024 * 1024
+const MAXIMUM_INCREMENTAL_MEMORY_BYTES = 80 * 1024 * 1024
 const MAXIMUM_WRITE_BUFFER_BYTES = 1024 * 1024
 
 type ArchiveState = {
@@ -46,15 +43,34 @@ async function describeArchive(
   }
   const digest = createHash('sha256')
   let size = 0
-  for await (const chunk of createReadStream(archivePath, {
-    highWaterMark: CHUNK_BYTES,
-    signal
-  })) {
-    size += chunk.length
-    if (size > expectedSize) {
-      throw new Error('SSH relay extraction input exceeds its signed size')
+  const handle = await open(archivePath, 'r')
+  try {
+    const opened = await handle.stat({ bigint: true })
+    if (!opened.isFile() || !sameArchiveState(before, opened)) {
+      throw new Error('SSH relay extraction input changed before hashing')
     }
-    digest.update(chunk)
+    // Why: one reusable buffer prevents consecutive archive passes from retaining full-file slabs.
+    const buffer = Buffer.allocUnsafe(Math.min(CHUNK_BYTES, Math.max(expectedSize, 1)))
+    while (size < expectedSize) {
+      signal.throwIfAborted()
+      const { bytesRead } = await handle.read(
+        buffer,
+        0,
+        Math.min(buffer.length, expectedSize - size),
+        size
+      )
+      if (bytesRead === 0) {
+        break
+      }
+      size += bytesRead
+      digest.update(buffer.subarray(0, bytesRead))
+    }
+    const readComplete = await handle.stat({ bigint: true })
+    if (!sameArchiveState(opened, readComplete)) {
+      throw new Error('SSH relay extraction input changed while hashing')
+    }
+  } finally {
+    await handle.close()
   }
   const after = await lstat(archivePath, { bigint: true })
   if (!sameArchiveState(before, after) || size !== expectedSize) {

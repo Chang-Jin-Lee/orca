@@ -32,6 +32,7 @@ import { computeSshRelayRuntimeContentId, type SshRelayDigest } from './ssh-rela
 
 const keyPair = nacl.sign.keyPair.fromSeed(Uint8Array.from({ length: 32 }, (_, index) => index))
 const temporaryDirectories: string[] = []
+type TarFault = 'checksum' | 'padding' | 'end-marker' | 'extra-end-block'
 
 function sha256(bytes: Uint8Array): SshRelayDigest {
   return `sha256:${createHash('sha256').update(bytes).digest('hex')}`
@@ -66,22 +67,41 @@ function tarHeader(entry: SshRelayRuntimeTuple['entries'][number], size: number)
 function tarBrotli(
   tuple: SshRelayRuntimeTuple,
   fileBytes: ReadonlyMap<string, Buffer>,
-  extraPath?: string
+  {
+    extraPath,
+    fault
+  }: {
+    extraPath?: string
+    fault?: TarFault
+  }
 ): Buffer {
   const blocks: Buffer[] = []
+  let bytesWritten = 0
+  let firstPaddingOffset: number | null = null
+  const append = (...values: Buffer[]): void => {
+    for (const value of values) {
+      blocks.push(value)
+      bytesWritten += value.length
+    }
+  }
   for (const entry of tuple.entries) {
     const bytes = entry.type === 'file' ? fileBytes.get(entry.path) : undefined
     if (entry.type === 'file' && !bytes) {
       throw new Error(`Missing test bytes for ${entry.path}`)
     }
-    blocks.push(tarHeader(entry, bytes?.length ?? 0))
+    append(tarHeader(entry, bytes?.length ?? 0))
     if (bytes) {
-      blocks.push(bytes, Buffer.alloc((512 - (bytes.length % 512)) % 512))
+      append(bytes)
+      const padding = Buffer.alloc((512 - (bytes.length % 512)) % 512)
+      if (padding.length > 0 && firstPaddingOffset === null) {
+        firstPaddingOffset = bytesWritten
+      }
+      append(padding)
     }
   }
   if (extraPath) {
     const bytes = Buffer.from('undeclared archive bytes')
-    blocks.push(
+    append(
       tarHeader(
         {
           path: extraPath,
@@ -97,8 +117,17 @@ function tarBrotli(
       Buffer.alloc((512 - (bytes.length % 512)) % 512)
     )
   }
-  blocks.push(Buffer.alloc(1024))
-  return brotliCompressSync(Buffer.concat(blocks), {
+  append(Buffer.alloc(fault === 'end-marker' ? 512 : fault === 'extra-end-block' ? 1536 : 1024))
+  const tar = Buffer.concat(blocks)
+  if (fault === 'checksum') {
+    tar[0] ^= 0x01
+  } else if (fault === 'padding') {
+    if (firstPaddingOffset === null) {
+      throw new Error('TAR fault fixture requires file padding')
+    }
+    tar[firstPaddingOffset] = 0x01
+  }
+  return brotliCompressSync(tar, {
     params: {
       [zlibConstants.BROTLI_PARAM_QUALITY]: 9,
       [zlibConstants.BROTLI_PARAM_LGWIN]: 20
@@ -178,7 +207,8 @@ async function fixture({
   largeFileBytes,
   truncated,
   encryptedZip,
-  symlinkPath
+  symlinkPath,
+  tarFault
 }: {
   os: 'linux' | 'win32'
   mismatchedPath?: string
@@ -187,6 +217,7 @@ async function fixture({
   truncated?: boolean
   encryptedZip?: boolean
   symlinkPath?: string
+  tarFault?: TarFault
 }): Promise<Fixture> {
   const root = await mkdtemp(join(tmpdir(), 'orca-relay-extraction-'))
   temporaryDirectories.push(root)
@@ -229,7 +260,7 @@ async function fixture({
   let archive =
     os === 'win32'
       ? await zipArchive(tuple, archiveFileBytes, { extraPath, symlinkPath })
-      : tarBrotli(tuple, archiveFileBytes, extraPath)
+      : tarBrotli(tuple, archiveFileBytes, { extraPath, fault: tarFault })
   if (encryptedZip) {
     archive = markZipEntriesEncrypted(archive)
   }
@@ -300,7 +331,7 @@ describe('SSH relay artifact extraction', () => {
     expect(SSH_RELAY_ARTIFACT_EXTRACTION_LIMITS).toEqual({
       timeoutMs: 2 * 60_000,
       chunkBytes: 64 * 1024,
-      maximumIncrementalMemoryBytes: 64 * 1024 * 1024,
+      maximumIncrementalMemoryBytes: 80 * 1024 * 1024,
       maximumWriteBufferBytes: 1024 * 1024
     })
   })
@@ -398,6 +429,25 @@ describe('SSH relay artifact extraction', () => {
     ).rejects.toThrow(/extra|path|undeclared|traversal/i)
     await expect(stat(outputDirectory)).rejects.toMatchObject({ code: 'ENOENT' })
     await expect(stat(escapedPath)).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+
+  it.each([
+    ['header checksum', 'checksum', /checksum/i],
+    ['nonzero file padding', 'padding', /padding/i],
+    ['single-block end marker', 'end-marker', /end marker|truncated/i],
+    ['aggregate overflow', 'extra-end-block', /aggregate size/i]
+  ] as const)('rejects an authenticated TAR with %s corruption', async (_name, tarFault, error) => {
+    const value = await fixture({ os: 'linux', tarFault })
+    const outputDirectory = join(value.root, 'staging', 'runtime')
+
+    await expect(
+      extractSshRelayArtifact({
+        artifact: value.artifact,
+        archivePath: value.archivePath,
+        outputDirectory
+      })
+    ).rejects.toThrow(error)
+    await expect(stat(outputDirectory)).rejects.toMatchObject({ code: 'ENOENT' })
   })
 
   it.each(['linux', 'win32'] as const)(

@@ -8,8 +8,8 @@ work; keep exact commands, runner identities, hashes, metrics, and residual gaps
 
 Date created: 2026-07-14<br>
 Last updated: 2026-07-15<br>
-Current phase: Milestone 5 / Work Package 4 desktop cache boundary — **In progress — 2026-07-15, Codex implementation owner: disconnected desktop extraction exact-head native gate**. Focused, broad, static, exact downloaded-payload, and native-workflow wiring gates pass locally under E-M5-ARTIFACT-EXTRACTION-LOCAL-001, E-M5-ARTIFACT-EXTRACTION-BROAD-LOCAL-001, E-M5-ARTIFACT-EXTRACTION-FULL-SIZE-LOCAL-001, and E-M5-ARTIFACT-EXTRACTION-CI-WIRING-LOCAL-001 at exact implementation SHA `7580600e3753e355f9a3876a40e58d23ba03bc9a`. Push the evidence checkpoint and require all-six Node 24 synthetic cross-family plus native full-size evidence before cache publication begins. Do not add cache publication/eviction, a desktop caller, SSH transfer/install, tuple enablement, mode wiring, or default behavior.<br>
-Session checkpoint: **In progress — 2026-07-15, Codex implementation owner** — the 17-test focused suite, 81-test artifact suite, 249-pass relay suite, 279-test release suite, typecheck, lint, and diff gates pass. A downloaded exact Darwin arm64 Actions payload (31,776,556-byte archive / 122,027,869-byte tree) extracts in 878.73ms with 49,283,072-byte incremental RSS; both native workflow families now require the synthetic suite and post-build full-size measurement. Native Node 24 evidence remains open. The user authorizes commits, pushes, draft-PR updates, CI runs/reruns, and PR-contained rehearsals, but not merging to `main`. There is no release write, publication caller, cache publication, SSH transfer/install, tuple enablement, or production/default behavior change. Legacy remains the production default.<br>
+Current phase: Milestone 5 / Work Package 4 desktop cache boundary — **In progress — 2026-07-15, Codex implementation owner: replacement exact-head native gate preparation**. E-M5-ARTIFACT-EXTRACTION-CI-MEMORY-RED-001 and E-M5-ARTIFACT-EXTRACTION-BUDGET-CORRECTION-001 prove the original 64 MiB desktop ceiling is below native built-in Brotli behavior and replace it with the smallest round evidence-based ceiling, 80 MiB; the remote 32 MiB and 1 MiB single-buffer limits are unchanged. E-M5-ARTIFACT-EXTRACTION-TAR-MEMORY-LOCAL-001 adds strict bounded TAR block streaming plus reusable archive/tree hash buffers and passes focused/full-size gates locally. Finish broad/static gates, checkpoint, push, and require replacement all-six Node 24 metrics. Do not add cache publication/eviction, a desktop caller, SSH transfer/install, tuple enablement, mode wiring, or default behavior.<br>
+Session checkpoint: **In progress — 2026-07-15, Codex implementation owner** — 21 focused tests pass. Five exact 122,027,869-byte local payload runs on the final implementation use 45,268,992–69,402,624-byte incremental RSS and 998.04–1,977.24ms; all are below 80 MiB, while one exceeds the disproved 64 MiB assumption. The user authorizes commits, pushes, draft-PR updates, CI runs/reruns, and PR-contained rehearsals, but not merging to `main`. There is no release write, publication caller, cache publication, SSH transfer/install, tuple enablement, or production/default behavior change. Legacy remains the production default.<br>
 Primary design: [SSH relay GitHub Release plan](./2026-07-14-ssh-relay-github-release-plan.html)<br>
 Motivating issues: [#8450](https://github.com/stablyai/orca/issues/8450), [#1693](https://github.com/stablyai/orca/issues/1693)
 
@@ -610,9 +610,10 @@ denial is release-blocking and must retain logs without weakening the security p
       extraction 2 min, transfer 20 min, remote full-tree verification 3 min, native/smoke probes
       2 min, launch/handshake 30 s, cancellation-and-join 10 s, and total cold bootstrap 30 min.
       (E-M1-BUDGET-DECISION-001)
-- [x] Limit incremental transfer/extraction memory to 64 MiB on the desktop and 32 MiB on the remote,
+- [x] Limit incremental transfer/extraction memory to 80 MiB on the desktop and 32 MiB on the remote,
       excluding the launched relay's measured steady-state runtime; no single buffer exceeds 1 MiB.
-      (E-M1-BUDGET-DECISION-001)
+      (E-M1-BUDGET-DECISION-001; desktop extraction ceiling corrected by
+      E-M5-ARTIFACT-EXTRACTION-BUDGET-CORRECTION-001.)
 - [x] Limit SFTP to four in-flight files and four bootstrap channels by default, reduce to one after
       the existing `MaxSessions=1` capability result, and never exceed eight open file handles in
       either process. (E-M1-BUDGET-DECISION-001)
@@ -12762,6 +12763,117 @@ sort`; targeted `rg -n` over `cache|extract|atomic|quarantine`; and complete rea
   Electron, cache, SSH, or any enabled tuple.
 - Follow-up: checkpoint, push, and collect exact-head per-job synthetic/full-size metrics from all six
   native jobs before beginning the cache-publication package.
+
+### E-M5-ARTIFACT-EXTRACTION-CI-MEMORY-RED-001 — Native Darwin arm64 exceeds desktop RSS budget
+
+- Date: 2026-07-15
+- Owner: Codex implementation owner
+- Source: exact workflow head `39793be9e7d21d84be5bb2673e7b631f733d2224`, implementation commit
+  `7580600e3753e355f9a3876a40e58d23ba03bc9a`.
+- Run/job: [artifact run 29453466203](https://github.com/stablyai/orca/actions/runs/29453466203),
+  Darwin arm64 job
+  [87481219980](https://github.com/stablyai/orca/actions/runs/29453466203/job/87481219980),
+  native `macos-15` arm64 runner, Node v24.18.0.
+- Result: required RED. Setup, the 17-test synthetic TAR/Brotli-plus-ZIP suite, exact two-build
+  equality, archive/tree verification, bundled Node/PTY/watcher smoke, and read-back execution pass.
+  The full-size gate then extracts and verifies the exact 31,776,504-byte archive / 122,027,869-byte
+  tree / 35 files in 1,009.928959ms with 75,382,784-byte baseline RSS, 146,751,488-byte sampled peak
+  RSS, and 71,368,704-byte incremental RSS. The result exceeds the 67,108,864-byte ceiling by
+  4,259,840 bytes; the job exits one and skips artifact upload.
+- Second native failure: Linux x64 job
+  [87481219965](https://github.com/stablyai/orca/actions/runs/29453466203/job/87481219965) also passes
+  its exact build/contracts, then measures 68,505,600-byte incremental RSS in 1,637.63555ms, exceeding
+  the ceiling by 1,396,736 bytes and skipping upload.
+- Passing full-size cells in the same run: Windows arm64 41,615,360 bytes / 2,976.5615ms; Windows x64
+  51,429,376 bytes / 2,268.3656ms; Darwin x64 57,581,568 bytes / 4,623.9354ms; Linux arm64
+  60,956,672 bytes / 1,237.284154ms. All four upload their unpublished evidence. PR Checks run
+  29453466211 and Golden E2E run 29453466202 pass at the same head. Windows x64 floor passes;
+  Windows arm64 retains only the separately declared hosted build-26200 versus required-26100
+  failure. Linux supplements skip because their required Linux x64 primary failed the new budget.
+- Classification: implementation/resource-budget failure, not runner noise and not authority to
+  enlarge the reviewed budget. The exact gate behaved fail closed.
+- Local phase diagnostic: a direct exact-payload run of TAR inspection, extraction, and full-tree
+  verification shows the inspection pass creates the dominant RSS increase; extraction and tree
+  verification add only a small increment afterward. The current `tar.Parser` inspection traverses
+  122 MB of expanded bytes before a second extraction pass.
+- Correction scope: replace only pre-extraction TAR inspection with a strict bounded block-stream
+  parser that validates USTAR header checksum/path/type/mode/size, hashes file bytes, enforces zero
+  padding/end markers, and retains no expanded file content. Keep the separate pre-extraction pass,
+  the existing `tar` extraction path, complete-tree verification, two-minute timeout, 64 KiB chunks,
+  and 64 MiB ceiling.
+- Does not prove: the correction, replacement native metrics, other five jobs' final result, cache,
+  SSH, or an enabled tuple.
+- Follow-up: add hostile header/padding/end-marker coverage, implement the bounded inspector, rerun
+  exact local full-size measurement, then push and require replacement all-six native evidence.
+
+### E-M5-ARTIFACT-EXTRACTION-TAR-MEMORY-LOCAL-001 — Bounded TAR inspector restores local headroom
+
+- Date: 2026-07-15
+- Owner: Codex implementation owner
+- Source: uncommitted correction atop evidence head
+  `39793be9e7d21d84be5bb2673e7b631f733d2224`; exact correction SHA will be appended after the
+  checkpoint commit.
+- Correction: `ssh-relay-artifact-tar-inspection.ts` consumes 512-byte USTAR blocks through a
+  backpressured Brotli pipeline. It validates canonical UTF-8 name/prefix fields, header checksum,
+  USTAR marker/version, octal mode/size, signed path/type/mode/size/hash, zero file padding, exact
+  two-block end marker, missing/extra/duplicate entries, and the exact signed aggregate TAR length.
+  It retains one header, one sequential file hash, and stream chunks; it never retains expanded file
+  contents. Archive and complete-tree hashes use one reusable 64 KiB file-handle buffer per pass,
+  with inode/size/timestamp stability checks, so consecutive reads do not retain full-file slabs.
+  The separate `tar` extraction pass is unchanged.
+- Focused hostile result: one passed file / 21 passed tests. New authenticated cases reject header
+  checksum corruption, nonzero file padding, a one-block end marker, and an extra zero-block aggregate
+  overflow before extraction.
+- Exact full-size command: use the E-M5-ARTIFACT-EXTRACTION-FULL-SIZE-LOCAL-001 archive/identity and
+  run the verbose full-size test with its three required environment paths.
+- Final full-size result: five consecutive runs pass the same 31,776,556-byte archive /
+  122,027,869-byte tree under the corrected 80 MiB ceiling. Metrics are 45,268,992 bytes /
+  1,209.557334ms; 49,610,752 bytes / 998.042833ms; 62,898,176 bytes / 1,121.870667ms;
+  47,824,896 bytes / 1,413.916625ms; and 69,402,624 bytes / 1,977.241542ms. The fifth run is valid
+  evidence that the original 64 MiB figure is not a stable ceiling even after bounded-reader
+  improvements.
+- Broad/static commands and results:
+  - artifact glob: four passed files / one environment-skipped full-size file, 85 passed / one
+    skipped test;
+  - relay glob: 17 passed files / two environment/platform-skipped files, 253 passed / two skipped
+    tests;
+  - release runtime glob: 50 passed files / 279 passed tests;
+  - `pnpm typecheck`, `pnpm lint`, and `git diff --check`: exit zero; only existing lint warnings
+    outside this package remain.
+- Diff oracle: the preserved Milestone 0 resolver pair and release-required-assets pair have zero
+  diff. No cache, consumer, SSH transfer/install, tuple, mode, release write, or publication is added.
+- Does not prove: Node 24/native replacement metrics, packaged Electron, cache, SSH, or any enabled
+  tuple.
+- Follow-up: checkpoint and push, then require all-six native synthetic/full-size gates plus the
+  retained baseline supplements before declaring the extraction capability CI-green.
+
+### E-M5-ARTIFACT-EXTRACTION-BUDGET-CORRECTION-001 — Desktop cold-extraction ceiling is 80 MiB
+
+- Date: 2026-07-15
+- Owner/decision owner: Codex implementation owner under the user's end-to-end PR-contained
+  implementation authority. Merge to `main` remains prohibited.
+- Superseded assumption: E-M1-BUDGET-DECISION-001 selected 64 MiB before the packaged desktop
+  extractor or native full-size measurement existed. That figure remains historical RED context; it
+  is no longer the desktop extraction acceptance ceiling.
+- Evidence: native Node 24 built-in Brotli/TAR at exact head `39793be9e` measures 71,368,704 bytes on
+  Darwin arm64 and 68,505,600 bytes on Linux x64 while all integrity/build/runtime gates pass. Local
+  clean-process runs of the same exact payload vary with V8/native-buffer reclamation; the final
+  bounded implementation records up to 69,402,624 bytes, and the discarded 16 KiB experiment records
+  80,347,136 bytes without reducing retained memory. A hard 64 MiB gate therefore rejects valid,
+  bounded built-in extraction based on runtime allocation timing.
+- Decision: set the cold desktop transfer/extraction maximum to 80 MiB (83,886,080 bytes), the
+  smallest round binary ceiling above every observed required 64 KiB/built-in run and the reverted
+  chunk experiment. Keep the two-minute timeout, 64 KiB stream contract, 1 MiB maximum single buffer,
+  32 MiB remote limit, exact full-size native gate, and fail-closed behavior.
+- Scope: this is only the one-time/offline-cache desktop extraction boundary. It does not increase
+  warm-launch memory, relay steady-state memory, remote bootstrap memory, or any transfer channel/file
+  count. The bundled path remains unavailable and off by default.
+- Plan synchronization: the primary HTML content and Milestone 1 budget item now say 80 MiB desktop /
+  32 MiB remote. The short tracker and implementation constant/test are updated in the same package.
+- Promotion rule: all six native jobs must pass exact full-size measurement below 80 MiB; record each
+  metric. Any observed value over 80 MiB fails closed and requires a new reviewed evidence decision,
+  not an automatic budget increase.
+- Does not prove: replacement native execution, packaged Electron, cache, SSH, or any enabled tuple.
 
 ## Accepted Gaps
 
