@@ -8,7 +8,7 @@ work; keep exact commands, runner identities, hashes, metrics, and residual gaps
 
 Date created: 2026-07-14<br>
 Last updated: 2026-07-15<br>
-Current phase: Milestone 4 / Work Package 3 disconnected release failure/recovery contracts — **In progress — 2026-07-15, Codex implementation owner**. The callable aggregate and protected manifest-signing workflow contract is closed locally and on all six exact-head native jobs under E-M4-PROTECTED-MANIFEST-WORKFLOW-LOCAL-001 and E-M4-PROTECTED-MANIFEST-WORKFLOW-CI-001. The active package must add purpose-named disconnected failure contracts for timeout, bounded retry success/exhaustion, approval absence/denial/timeout, signing failure, aggregate failure, partial output, and exact unpublished-draft recovery without connecting credentials, publication, desktop builds, or any tuple. Release-cut, desktop builds, publication, and every tuple stay disconnected; production/default behavior is unchanged.<br>
+Current phase: Milestone 4 / Work Package 3 disconnected draft-asset upload/recovery command — **In progress — 2026-07-15, Codex implementation owner**. The callable aggregate and protected manifest-signing workflow contract is closed locally and on all six exact-head native jobs under E-M4-PROTECTED-MANIFEST-WORKFLOW-LOCAL-001 and E-M4-PROTECTED-MANIFEST-WORKFLOW-CI-001. Existing E-M4-RELEASE-DAG and E-M4-AGGREGATE-READBACK contracts already cover the declared timeout, retry, approval, failure, recovery, and returned-byte taxonomy. The missing bounded draft upload side is locally green under E-M4-DRAFT-UPLOAD-LOCAL-RED-001 and E-M4-DRAFT-UPLOAD-LOCAL-001: exact local-byte hashing, same-draft/source recovery, immutable retry reconciliation, authenticated metadata/upload calls, partial-draft recovery, injected GitHub responses, and no workflow caller or release write in tests. Fresh all-six native CI is required. Release-cut, desktop builds, publication, and every tuple stay disconnected; production/default behavior is unchanged.<br>
 Session checkpoint: **In progress — 2026-07-15, Codex implementation owner** — exact pushed head `bb4b527e4ea030cbd94f11ca9b6e284900ab8c8a` passes all six target-native artifact jobs in run 29428772206 under E-M4-LINUX-PREREQUISITE-CAPABILITY-CI-001 and E-M4-PROTECTED-MANIFEST-WORKFLOW-CI-001. Linux x64/arm64 capability probes complete in about four seconds, never enter APT, and proceed through full runtime construction; the all-six workflow source contract and broad runtime suites pass. Both Linux oldest-userland supplements and Windows x64 floor pass. Windows arm64 runtime smoke succeeds but the floor job retains the expected fail-closed 26200-versus-26100 mismatch. PR Checks 29428772127 and Golden E2E 29428772389 are green. The user authorizes commits, pushes, draft-PR updates, CI reruns, and protected rehearsals within PRs, but not merging to `main`. No accepted production key, protected environment/seed, native-signing trust proof, release consumer, publication path, desktop consumer, tuple enablement, or production/default change is connected. Legacy remains the production default.<br>
 Primary design: [SSH relay GitHub Release plan](./2026-07-14-ssh-relay-github-release-plan.html)<br>
 Motivating issues: [#8450](https://github.com/stablyai/orca/issues/8450), [#1693](https://github.com/stablyai/orca/issues/1693)
@@ -106,10 +106,11 @@ same change as the work it records.
   pass locally and on all six exact-head native jobs under E-M4-PROTECTED-MANIFEST-WORKFLOW-LOCAL-001
   and E-M4-PROTECTED-MANIFEST-WORKFLOW-CI-001. The environment and seed remain unprovisioned; static
   and test-key proof do not count as live protected signing evidence.
-- Active package: Work Package 3 disconnected release failure/recovery contracts. Add a purpose-named
-  RED and credential-free harness for the declared timeout, retry exhaustion, approval failure,
-  signing failure, aggregate failure, partial-output cleanup, and same-unpublished-draft recovery
-  states. Keep every real credential, release write, desktop consumer, and tuple disconnected.
+- Active package: Work Package 3 disconnected draft-asset upload/recovery command. The purpose-named
+  missing-module RED and locally green implementation are recorded under
+  E-M4-DRAFT-UPLOAD-LOCAL-RED-001 and E-M4-DRAFT-UPLOAD-LOCAL-001. Require exact-head all-six native
+  execution before closing this package. Every workflow caller, real credential, release write,
+  desktop consumer, and tuple remains disconnected.
 - Completed Work Package 2 gate: target-native Windows source-signature reports from exact-head
   artifact jobs 87267322867 and 87267322870 were independently downloaded and matched to their
   identities and signing-stage reports under E-M3-WINDOWS-SOURCE-SIGNATURE-CI-001. PR Checks
@@ -11230,6 +11231,72 @@ src/main/ssh/ssh-relay-manifest-signature.test.ts src/main/ssh/ssh-relay-release
   signing/trust, aggregate artifact passage, publication/read-back, desktop embedding, SSH behavior,
   or any enabled tuple. Those gates remain open and fail closed.
 
+### E-M4-DRAFT-UPLOAD-LOCAL-RED-001 — Bounded immutable draft uploader is absent
+
+- Date: 2026-07-15
+- Owner: Codex implementation owner
+- Source: uncommitted purpose suite atop exact pushed head
+  `9b83971866cd5f7fc71de20a3e09ab2a120e01bd`; draft PR #8741.
+- Runner/remote/network: local macOS 26.2 arm64, Node v26.0.0 and pnpm 10.24.0. Local temporary
+  files and injected responses only; no GitHub request, release write, credential, signing service,
+  SSH remote, desktop consumer, publication, or enabled tuple.
+- Command: `/usr/bin/time -l pnpm exec vitest run --config config/vitest.config.ts --maxWorkers=1
+config/scripts/ssh-relay-runtime-draft-upload.test.mjs`.
+- Result: expected RED. The one suite fails before collecting tests because
+  `ssh-relay-runtime-draft-upload.mjs` does not exist. Vitest reports 143ms; wall time is 0.90s,
+  maximum RSS 131,727,360 bytes, peak footprint 95,819,008 bytes, and zero swaps.
+- Oracle proved: the worktree has immutable stage, recovery-planning, and read-back contracts but no
+  executable boundary that hashes local files, authenticates exact-draft metadata, safely uploads
+  missing bytes, or reconciles an uncertain POST before retry.
+- Does not prove: implementation, real GitHub behavior, a release write, retry settlement, partial
+  draft recovery, read-back, archive execution, publication, desktop embedding, SSH behavior, or an
+  enabled tuple.
+
+### E-M4-DRAFT-UPLOAD-LOCAL-001 — Exact-byte upload and partial-draft recovery pass locally
+
+- Date: 2026-07-15
+- Owner: Codex implementation owner
+- Source: local implementation atop exact pushed head
+  `9b83971866cd5f7fc71de20a3e09ab2a120e01bd`; draft PR #8741.
+- Runner/remote/network: local macOS 26.2 arm64, Node v26.0.0 and pnpm 10.24.0. Local temporary
+  files and injected GitHub API/upload/CDN responses only. No network request, real token, release
+  write, signer, protected environment, SSH remote, desktop consumer, publication, or enabled tuple.
+- Focused command: `/usr/bin/time -l pnpm exec vitest run --config config/vitest.config.ts
+--maxWorkers=1 config/scripts/ssh-relay-runtime-draft-upload.test.mjs` — PASS, 1 file / 7 tests in
+  174ms Vitest and 0.85s wall, with 131,776,512-byte maximum RSS, 95,983,016-byte peak footprint,
+  and zero swaps.
+- Adjacent release command: `/usr/bin/time -l pnpm exec vitest run --config
+config/vitest.config.ts --maxWorkers=1 config/scripts/ssh-relay-runtime-draft-upload.test.mjs
+config/scripts/ssh-relay-runtime-draft-recovery.test.mjs
+config/scripts/ssh-relay-runtime-draft-readback.test.mjs
+config/scripts/ssh-relay-runtime-release-stage-gate.test.mjs
+config/scripts/ssh-relay-runtime-workflow.test.mjs` — PASS, 5 files / 45 tests in 1.16s Vitest and
+  2.27s wall, with 132,694,016-byte maximum RSS, 96,966,128-byte peak footprint, and zero swaps.
+- Broad release command: `/usr/bin/time -l sh -c "rg --files config/scripts | rg
+'/ssh-relay.*[.]test[.]mjs$' | xargs pnpm exec vitest run --config config/vitest.config.ts
+--maxWorkers=1"` — PASS, 52 files / 269 tests in 11.39s Vitest and 13.43s wall, with
+  191,807,488-byte maximum RSS and zero swaps.
+- Static gates: `node --check` passes both new files. `pnpm run typecheck` passes. Full `pnpm run
+lint` passes all 41 reliability gates, the 355-entry max-lines ratchet, bundled-skill verification,
+  localization catalog/parity, and localization coverage; all 26 warnings remain in untouched
+  existing files. Focused `oxfmt --check` and `git diff --check` pass.
+- Oracle proved: only bounded regular files with exact declared name, path, size, SHA-256, per-file
+  size, aggregate size, and count may enter. The release must remain the exact ID/tag/40-hex source
+  commit draft. Existing managed assets are reused only after authenticated metadata and complete
+  downloaded-byte verification; only an approved HTTPS CDN redirect drops authorization. Missing
+  assets upload as bounded streams with exact length and content type. Retryable 408/429/5xx or
+  transport ambiguity is reconciled against downloaded draft bytes before another POST, every retry
+  re-hashes the local file, three-attempt exhaustion fails closed, non-retryable authorization
+  failure does not retry, cancellation settles, and partial drafts recover without replacing exact
+  already uploaded bytes. The capability has no command-line entrypoint or workflow caller.
+- Does not prove: Node 24 or Windows execution, live GitHub API/upload/CDN behavior, a real token or
+  release write, rate-limit timing, full-size artifact throughput/memory, final authenticated
+  read-back, downloaded archive execution, release publication, native signing/trust, desktop
+  embedding, SSH transfer/install, packaged RPC behavior, performance against legacy, or an enabled
+  tuple.
+- Follow-up: checkpoint and push, then require exact-head syntax and seven-test execution on all six
+  native artifact jobs plus PR Checks and Golden E2E. Retain all production/default disconnections.
+
 ## Accepted Gaps
 
 No product gap is accepted merely because it appears in this list. Each entry requires explicit
@@ -11288,13 +11355,11 @@ The project is not complete until every applicable item below is checked with ev
 
 ## Next Required Action
 
-Checkpoint and push E-M4-LINUX-PREREQUISITE-CAPABILITY-CI-001 and
-E-M4-PROTECTED-MANIFEST-WORKFLOW-CI-001. Then begin a purpose-named disconnected RED for the
-release failure/recovery harness: timeout, bounded retry success/exhaustion, approval
-absence/denial/timeout, signing failure, aggregate failure, partial-output cleanup, and exact
-unpublished-draft recovery. Reuse the reviewed budgets and same-draft identity constraints; do not
-connect credentials, release writes, desktop consumers, or tuples. The protected environment,
-accepted production keys, and secret remain unprovisioned, so live signing evidence stays BLOCKED.
+Checkpoint and push the locally green E-M4-DRAFT-UPLOAD-LOCAL-001 implementation, then require
+exact-head syntax and seven-test execution on all six native artifact jobs plus PR Checks and Golden
+E2E. Do not add a command-line entrypoint or workflow caller and do not perform a real release write.
+The protected environment, accepted production keys, and secret remain unprovisioned, so live
+signing evidence stays BLOCKED.
 Keep Windows arm64 build 26100, macOS 13.5, Linux kernel 4.18, release-cut, desktop builds,
 publication, and every tuple separately gated. Do not merge to `main`; retain every
 production/default gate.

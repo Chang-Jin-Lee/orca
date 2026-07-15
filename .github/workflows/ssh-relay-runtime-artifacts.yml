@@ -218,6 +218,8 @@ jobs:
           node --check config/scripts/ssh-relay-runtime-aggregate-input.test.mjs
           node --check config/scripts/ssh-relay-runtime-draft-readback.mjs
           node --check config/scripts/ssh-relay-runtime-draft-readback.test.mjs
+          node --check config/scripts/ssh-relay-runtime-draft-upload.mjs
+          node --check config/scripts/ssh-relay-runtime-draft-upload.test.mjs
           node --check config/scripts/ssh-relay-runtime-manifest-validation.mjs
           node --check config/scripts/ssh-relay-runtime-manifest-assembly.mjs
           node --check config/scripts/ssh-relay-runtime-manifest-assembly.test.mjs
@@ -273,6 +275,7 @@ jobs:
             config/scripts/ssh-relay-runtime-draft-recovery.test.mjs \
             config/scripts/ssh-relay-runtime-aggregate-input.test.mjs \
             config/scripts/ssh-relay-runtime-draft-readback.test.mjs \
+            config/scripts/ssh-relay-runtime-draft-upload.test.mjs \
             config/scripts/ssh-relay-runtime-manifest-assembly.test.mjs \
             config/scripts/ssh-relay-runtime-manifest-signing-handoff.test.mjs \
             config/scripts/ssh-relay-runtime-manifest-seed-signing.test.mjs \
@@ -634,6 +637,10 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'runtime draft read-back syntax check failed' }
           node --check config/scripts/ssh-relay-runtime-draft-readback.test.mjs
           if ($LASTEXITCODE -ne 0) { throw 'runtime draft read-back test syntax check failed' }
+          node --check config/scripts/ssh-relay-runtime-draft-upload.mjs
+          if ($LASTEXITCODE -ne 0) { throw 'runtime draft upload syntax check failed' }
+          node --check config/scripts/ssh-relay-runtime-draft-upload.test.mjs
+          if ($LASTEXITCODE -ne 0) { throw 'runtime draft upload test syntax check failed' }
           node --check config/scripts/ssh-relay-runtime-manifest-validation.mjs
           if ($LASTEXITCODE -ne 0) { throw 'runtime manifest validation syntax check failed' }
           node --check config/scripts/ssh-relay-runtime-manifest-assembly.mjs
@@ -718,6 +725,7 @@ jobs:
             config/scripts/ssh-relay-runtime-draft-recovery.test.mjs `
             config/scripts/ssh-relay-runtime-aggregate-input.test.mjs `
             config/scripts/ssh-relay-runtime-draft-readback.test.mjs `
+            config/scripts/ssh-relay-runtime-draft-upload.test.mjs `
             config/scripts/ssh-relay-runtime-manifest-assembly.test.mjs `
             config/scripts/ssh-relay-runtime-manifest-signing-handoff.test.mjs `
             config/scripts/ssh-relay-runtime-manifest-seed-signing.test.mjs `

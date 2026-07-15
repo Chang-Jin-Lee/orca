@@ -9,15 +9,17 @@ keeps commands, hashes, runner identities, timings, and failure details.
 A checked box means the work has evidence in the detailed ledger. Design approval alone does not
 complete a box.
 
-Active checkpoint: **Milestone 4 / Work Package 3 disconnected release failure/recovery contracts —
+Active checkpoint: **Milestone 4 / Work Package 3 disconnected draft-asset upload/recovery command —
 in progress, 2026-07-15, Codex implementation owner.** Exact-head run
 [29428772206](https://github.com/stablyai/orca/actions/runs/29428772206) at `bb4b527e4` passes all six
 target-native artifact jobs. Both Linux runners prove the complete preinstalled toolchain and skip
 unreachable APT; the protected manifest-workflow source contract passes on every runner. PR Checks
-and Golden E2E are green. Next, add purpose-named disconnected failure contracts for timeout, retry
-exhaustion, approval failure, signing failure, partial output, aggregate failure, and exact-draft
-recovery. Production keys/environment/seed, publication, desktop/default consumers, tuple
-enablement, and merge to `main` remain disconnected.
+and Golden E2E are green. Existing release-stage and draft-recovery contracts already cover the
+failure taxonomy. Their missing bounded upload side is locally green under
+`E-M4-DRAFT-UPLOAD-LOCAL-RED-001` and `E-M4-DRAFT-UPLOAD-LOCAL-001`: exact same-draft reuse,
+immutable local-byte verification, retry reconciliation, partial-draft recovery, and no workflow
+caller. Fresh all-six native CI is required. Production keys/environment/seed, publication,
+desktop/default consumers, tuple enablement, and merge to `main` remain disconnected.
 
 ## Safety status
 
@@ -263,6 +265,9 @@ enablement, and merge to `main` remain disconnected.
       accepted production key, environment, or seed is provisioned.
 - [ ] Embed the exact signed manifest and accepted keys in each desktop build.
 - [ ] Upload to a draft release, read back, re-hash, and execute the downloaded archives.
+      A disconnected bounded upload/recovery implementation is locally green under
+      `E-M4-DRAFT-UPLOAD-LOCAL-001`; no real release write or downloaded archive execution has
+      occurred, so this item remains open.
 - [ ] Test timeouts, retries, approval denial, signing failure, partial output, and draft recovery.
 
 ### WP4 — Desktop resolver and verified cache
