@@ -9,13 +9,18 @@ import {
   isEditableDetailsHtmlBlock,
   matchDetailsHtmlBlock,
   parseDetailsAttributes,
+  parseToggleHeadingVariant,
   renderDetailsAttributes,
-  type DetailsHtmlToken
+  type DetailsHtmlToken,
+  type ToggleHeadingVariant
 } from './details-markdown-html'
 
 const RICH_MARKDOWN_PLACEHOLDER = 'Write markdown… Type / for blocks.'
 const TOGGLE_TEXT_PLACEHOLDER = 'text'
-const TOGGLE_HEADING_PLACEHOLDER = 'Heading 1'
+
+function toggleHeadingPlaceholder(variant: ToggleHeadingVariant): string {
+  return `Heading ${variant.slice('heading-'.length)}`
+}
 
 export function getRichMarkdownPlaceholder({
   editor,
@@ -29,9 +34,12 @@ export function getRichMarkdownPlaceholder({
   }
 
   const parent = editor.state.doc.resolve(pos).parent
-  return parent.type.name === 'details' && parent.attrs.variant === 'heading-1'
-    ? TOGGLE_HEADING_PLACEHOLDER
-    : TOGGLE_TEXT_PLACEHOLDER
+  if (parent.type.name !== 'details') {
+    return TOGGLE_TEXT_PLACEHOLDER
+  }
+
+  const variant = parseToggleHeadingVariant(parent.attrs.variant)
+  return variant ? toggleHeadingPlaceholder(variant) : TOGGLE_TEXT_PLACEHOLDER
 }
 
 export function moveDetailsSummarySelectionToContent(editor: Editor): boolean {
@@ -191,10 +199,11 @@ const OrcaDetails = Details.extend({
       ...this.parent?.(),
       variant: {
         default: null,
-        parseHTML: (element) =>
-          element.getAttribute('data-orca-toggle') === 'heading-1' ? 'heading-1' : null,
-        renderHTML: ({ variant }) =>
-          variant === 'heading-1' ? { 'data-orca-toggle': 'heading-1' } : {}
+        parseHTML: (element) => parseToggleHeadingVariant(element.getAttribute('data-orca-toggle')),
+        renderHTML: ({ variant }) => {
+          const parsed = parseToggleHeadingVariant(variant)
+          return parsed ? { 'data-orca-toggle': parsed } : {}
+        }
       }
     }
   },
