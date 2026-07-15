@@ -34,12 +34,13 @@ vi.mock('./host-credential-cleanup', () => ({
 }))
 
 import {
-  findStoredHostByPublicKey,
   loadHosts,
   MobileRelayUpgradeHostRemovedError,
   removeHost,
   renameHost,
+  resolvePairingHostIdentity,
   resetHostStoreForTests,
+  saveHost,
   saveExistingHostRelayUpgrade,
   updateLastConnected
 } from './host-store'
@@ -86,6 +87,8 @@ describe('host-store list mutations', () => {
     asyncStorageMock.setItem.mockImplementation(async (key: string, raw: string) => {
       if (key === HOSTS_STORAGE_KEY) {
         storedHostsRaw = raw
+      } else if (key === OVERLAY_STORAGE_KEY) {
+        storedOverlayRaw = raw
       }
     })
     secureStoreMock.getItemAsync.mockImplementation(async (key: string) =>
@@ -93,16 +96,87 @@ describe('host-store list mutations', () => {
     )
   })
 
-  it('finds a stored host by its pinned public key (STA-1840 re-pair dedup)', async () => {
-    await expect(findStoredHostByPublicKey(HOST_TWO.publicKeyB64)).resolves.toEqual({
+  it('resolves an existing host by pinned key with one durable read', async () => {
+    await expect(resolvePairingHostIdentity(HOST_TWO.publicKeyB64, 'host-new')).resolves.toEqual({
       id: HOST_TWO.id,
       name: HOST_TWO.name
     })
+    expect(asyncStorageMock.getItem).toHaveBeenCalledOnce()
   })
 
-  it('returns null when no stored host has the public key, or the key is empty', async () => {
-    await expect(findStoredHostByPublicKey('unpaired-key')).resolves.toBeNull()
-    await expect(findStoredHostByPublicKey('')).resolves.toBeNull()
+  it('names a new host from the same durable read used for identity lookup', async () => {
+    await expect(resolvePairingHostIdentity('unpaired-key', 'host-new')).resolves.toEqual({
+      id: 'host-new',
+      name: 'Host 3'
+    })
+    expect(asyncStorageMock.getItem).toHaveBeenCalledOnce()
+  })
+
+  it('fails closed when durable host identity storage is unreadable', async () => {
+    asyncStorageMock.getItem.mockRejectedValueOnce(new Error('storage unavailable'))
+
+    await expect(resolvePairingHostIdentity('key-new', 'host-new')).rejects.toThrow(/unreadable/)
+    expect(asyncStorageMock.setItem).not.toHaveBeenCalled()
+  })
+
+  it('collapses already-persisted duplicates when the desktop is re-paired', async () => {
+    storedHostsRaw = JSON.stringify([
+      HOST_ONE,
+      { ...HOST_TWO, id: 'host-duplicate', publicKeyB64: HOST_ONE.publicKeyB64 }
+    ])
+
+    await saveHost({
+      ...HOST_ONE,
+      endpoint: 'ws://127.0.0.1:3',
+      deviceToken: 'replacement-token'
+    })
+
+    expect(JSON.parse(storedHostsRaw)).toEqual([{ ...HOST_ONE, endpoint: 'ws://127.0.0.1:3' }])
+    expect(scheduleCleanupMock).toHaveBeenCalledWith('host-duplicate', expect.any(Function))
+  })
+
+  it('clears stale relay state when an existing host is re-paired direct-only', async () => {
+    const overlay: MobileRelayHostOverlay = {
+      v: 2,
+      hostId: HOST_ONE.id,
+      endpoints: [
+        { id: 'direct-primary', kind: 'lan', url: HOST_ONE.endpoint },
+        {
+          id: 'relay-primary',
+          kind: 'relay',
+          url: 'wss://relay-c1.onorca.dev/v1/connect/AbCdEf0123_-xyZ9'
+        }
+      ],
+      relayHostId: 'AbCdEf0123_-xyZ9',
+      relay: {
+        v: 1,
+        directorUrl: 'https://relay.onorca.dev',
+        cellUrl: 'https://relay-c1.onorca.dev',
+        assignmentEpoch: 7,
+        relayHostId: 'AbCdEf0123_-xyZ9',
+        e2eeFraming: 2
+      }
+    }
+    storedOverlayRaw = JSON.stringify([overlay])
+
+    await saveHost({ ...HOST_ONE, deviceToken: 'replacement-token' })
+
+    expect(JSON.parse(storedOverlayRaw!)).toEqual([])
+    expect(secureStoreMock.deleteItemAsync).not.toHaveBeenCalled()
+  })
+
+  it('does not touch relay storage when saving a new direct-only host', async () => {
+    await saveHost({
+      id: 'host-new',
+      name: 'New Host',
+      endpoint: 'ws://127.0.0.1:3',
+      publicKeyB64: 'key-new',
+      deviceToken: 'new-token',
+      lastConnected: 0
+    })
+
+    expect(asyncStorageMock.getItem).not.toHaveBeenCalledWith(OVERLAY_STORAGE_KEY)
+    expect(secureStoreMock.deleteItemAsync).not.toHaveBeenCalled()
   })
 
   it('commits the removal when credential cleanup scheduling rejects', async () => {

@@ -6,7 +6,7 @@ import {
   type MobileRelayEndpoint
 } from '../../../src/shared/mobile-relay-credential-contract'
 import { connect, type ConnectOptions } from './rpc-client'
-import { findStoredHostByPublicKey, getNextHostName, saveHost } from './host-store'
+import { resolvePairingHostIdentity, saveHost } from './host-store'
 import type { HostProfile, PairingOffer, RpcResponse } from './types'
 import {
   createMobileRelayPairingJournal,
@@ -39,8 +39,7 @@ type Dependencies = {
   connectDirect: typeof connect
   connectRelay: typeof connectMobileRelayForPairing
   resolveInviteDirector: typeof resolvePairingInviteThroughDirector
-  getNextHostName: typeof getNextHostName
-  findExistingHost: typeof findStoredHostByPublicKey
+  resolveHostIdentity: typeof resolvePairingHostIdentity
   saveHost: typeof saveHost
   saveJournal: typeof saveMobileRelayPairingJournal
   updateJournal: typeof updateMobileRelayPairingJournal
@@ -54,8 +53,7 @@ const defaultDependencies: Dependencies = {
   connectDirect: connect,
   connectRelay: connectMobileRelayForPairing,
   resolveInviteDirector: resolvePairingInviteThroughDirector,
-  getNextHostName,
-  findExistingHost: findStoredHostByPublicKey,
+  resolveHostIdentity: resolvePairingHostIdentity,
   saveHost,
   saveJournal: saveMobileRelayPairingJournal,
   updateJournal: updateMobileRelayPairingJournal,
@@ -132,16 +130,12 @@ async function runPairing(
   isDisposed: () => boolean
 ): Promise<{ hostId: string }> {
   const now = dependencies.now()
-  // Why: if this desktop (by its pinned public key) is already paired, reuse
-  // that host's id and name so the pairing merges into the existing card
-  // instead of minting a fresh host-${now} and duplicating the row (STA-1840).
-  // Every downstream write (journal, credential bundle, saveHost) then keys to
-  // the same id, so persistHost updates in place. A new desktop key falls
-  // through to a fresh id/name.
-  const existing = await dependencies.findExistingHost(offer.publicKeyB64)
-  assertActive(isDisposed)
-  const hostId = existing?.id ?? `host-${now}`
-  const hostName = existing?.name ?? (await dependencies.getNextHostName())
+  // Why: every pairing artifact must share the preserved host id so re-pairing
+  // updates one card instead of publishing a second identity (STA-1840).
+  const { id: hostId, name: hostName } = await dependencies.resolveHostIdentity(
+    offer.publicKeyB64,
+    `host-${now}`
+  )
   assertActive(isDisposed)
   let journal: MobileRelayPairingJournal | null = null
   if (offer.relay && dependencies.platform !== 'web') {

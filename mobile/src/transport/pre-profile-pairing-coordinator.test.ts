@@ -64,8 +64,10 @@ function dependencies(client: RpcClient, events: string[]) {
     resolveInviteDirector: vi.fn(async () => {
       throw new Error('director unavailable')
     }),
-    getNextHostName: vi.fn(async () => 'Blue Whale'),
-    findExistingHost: vi.fn(async (_publicKeyB64: string) => null),
+    resolveHostIdentity: vi.fn(async (_publicKeyB64: string, hostId: string) => ({
+      id: hostId,
+      name: 'Blue Whale'
+    })),
     saveHost: vi.fn(async (_host: HostProfile) => {
       events.push('save-host')
     }),
@@ -143,8 +145,9 @@ describe('pre-profile pairing coordinator', () => {
     const events: string[] = []
     const client = fakeClient([success({ version: '1.0.0' })])
     const deps = dependencies(client, events)
-    deps.findExistingHost = vi.fn(async (publicKeyB64: string) => {
+    deps.resolveHostIdentity = vi.fn(async (publicKeyB64: string, newHostId: string) => {
       expect(publicKeyB64).toBe(directOffer.publicKeyB64)
+      expect(newHostId).toBe(`host-${now}`)
       return { id: 'host-existing', name: 'Studio Mac' }
     })
 
@@ -163,8 +166,6 @@ describe('pre-profile pairing coordinator', () => {
       publicKeyB64: directOffer.publicKeyB64,
       lastConnected: now
     })
-    // Existing host keeps its name — no fresh name minted.
-    expect(deps.getNextHostName).not.toHaveBeenCalled()
   })
 
   it('journals before connecting and publishes only after authoritative direct install', async () => {
