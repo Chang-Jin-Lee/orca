@@ -223,7 +223,10 @@ complete a box.
       smoke, equality, and upload under `E-M4-NATIVE-SIGNING-WORKFLOW-CI-001`. Both Linux userland
       supplements and Windows x64 baseline pass. The run remains red only for the separately
       declared Windows arm64 floor mismatch (hosted build 26200 versus required 26100). Golden E2E
-      and PR Checks are green at the exact head. Real signing/native trust is still open.
+      and PR Checks are green at the exact head. The manual credentialed rehearsal starts with the
+      missing-caller RED `E-M4-NATIVE-SIGNING-REHEARSAL-LOCAL-RED-001` and is locally green under
+      `E-M4-NATIVE-SIGNING-REHEARSAL-LOCAL-001`. GitHub cannot dispatch a new workflow before it
+      exists on the default branch, so real signing/native trust remains blocked without merging.
 - [ ] Add a fail-closed aggregate and immutable manifest-signing job.
 - [ ] Embed the exact signed manifest and accepted keys in each desktop build.
 - [ ] Upload to a draft release, read back, re-hash, and execute the downloaded archives.
@@ -279,6 +282,8 @@ complete a box.
       egress rules, teardown SLA, and cost/capacity ownership.
 - [ ] Release administrator provisions protected manifest/native-signing environments, reviewers,
       test keys/certificates, and access auditing.
+- [ ] After a separately authorized merge, dispatch the reviewed exact-source native-signing
+      rehearsal; GitHub cannot dispatch its new workflow file while it exists only in this PR.
 
 While blocked, artifact-only and test work may continue. No tuple may be enabled or published.
 

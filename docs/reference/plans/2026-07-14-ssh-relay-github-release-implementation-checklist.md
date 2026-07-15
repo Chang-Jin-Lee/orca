@@ -8,8 +8,8 @@ work; keep exact commands, runner identities, hashes, metrics, and residual gaps
 
 Date created: 2026-07-14<br>
 Last updated: 2026-07-15<br>
-Current phase: Milestone 4 / Work Package 3 protected platform-native signing rehearsal — **In progress — 2026-07-15, Codex implementation owner**. The disconnected signing workflow and its authenticated reconstruction/finalization contracts are closed locally and on all six exact-head Node 24 native build jobs under E-M4-NATIVE-SIGNING-WORKFLOW-LOCAL-RED-001, E-M4-NATIVE-SIGNING-WORKFLOW-LOCAL-001, E-M4-NATIVE-SIGNING-WORKFLOW-CI-RED-001, and E-M4-NATIVE-SIGNING-WORKFLOW-CI-001. The next narrow package is a manual-only rehearsal caller that can produce the existing unpublished native artifacts and invoke the callable signing workflow with repository credentials without connecting release-cut, desktop builds, publication, or any tuple. It requires a purpose-named RED and must preserve the expected Windows-arm64 floor failure as a separate gate rather than bypassing it in production. Release-cut and every desktop build remain disconnected until exact floors, real signing/trust, aggregate, publication/read-back, and embedding gates are complete. Production/default behavior is unchanged, no bundled-runtime path is enabled, and no artifact is published.<br>
-Session checkpoint: **In progress — 2026-07-15, Codex implementation owner** — replacement exact-head artifact run 29415642475 at `70b3892aefc31423ad30467ad5251c090842526a` is complete under `E-M4-NATIVE-SIGNING-WORKFLOW-CI-001`. All six target-native build jobs pass the corrected credential-free contracts, reproducible full runtime construction, inspection, bundled Node/PTY/watcher smoke, and unpublished artifact upload. Both Linux oldest-userland supplements and Windows x64 oldest-baseline verification pass. The overall run fails only because the separately retained Windows arm64 floor gate requires build 26100 while GitHub supplied 26200; that job still verifies the 85,213,511-byte tree and passes bundled Node, PTY, watcher, and resource-settlement smoke before refusing qualification. Golden E2E 29415642509 and PR Checks 29415642512 both pass at the exact head. No production signing credential or real returned signature was used by this credential-free run. Real Apple/SignPath signing, returned production signatures, Gatekeeper/notarization, Defender/WDAC, exact macOS 13.5/Linux kernel 4.18/Windows arm64 build-26100 runners, protected manifest signing, publication wiring, desktop embedding, and native trust remain separately gated. Nothing is published or enabled, legacy remains the production default, and merge to `main` remains prohibited.<br>
+Current phase: Milestone 4 / Work Package 3 manual platform-native signing rehearsal caller — **In progress — 2026-07-15, Codex implementation owner**. The disconnected signing workflow and its authenticated reconstruction/finalization contracts are closed locally and on all six exact-head Node 24 native build jobs under E-M4-NATIVE-SIGNING-WORKFLOW-LOCAL-RED-001, E-M4-NATIVE-SIGNING-WORKFLOW-LOCAL-001, E-M4-NATIVE-SIGNING-WORKFLOW-CI-RED-001, and E-M4-NATIVE-SIGNING-WORKFLOW-CI-001. The manual-only rehearsal caller is locally green under E-M4-NATIVE-SIGNING-REHEARSAL-LOCAL-RED-001 and E-M4-NATIVE-SIGNING-REHEARSAL-LOCAL-001. It binds typed authorization to the exact selected source, serializes rehearsals without cancelling an approval in flight, reuses unpublished native artifacts, and invokes the callable signing workflow without connecting release-cut, desktop builds, publication, or any tuple. Real credentialed dispatch is blocked until this new workflow exists on GitHub's default branch; merging to `main` remains outside the implementation owner's authority. Release-cut and every desktop build remain disconnected until exact floors, real signing/trust, aggregate, publication/read-back, and embedding gates are complete. Production/default behavior is unchanged, no bundled-runtime path is enabled, and no artifact is published.<br>
+Session checkpoint: **In progress — 2026-07-15, Codex implementation owner** — the rehearsal caller, default-preserving qualification input, and both native-family contract integrations pass locally under `E-M4-NATIVE-SIGNING-REHEARSAL-LOCAL-001`: focused 3 files / 3 tests, broad 47 files / 242 tests, desktop parity 3 files / 48 tests, typecheck, full lint/reliability/localization/max-lines, focused syntax/lint/formatting, and `git diff --check`. The qualification supplements remain default-on for pull requests, direct manual artifact runs, and ordinary reusable calls; only the explicit rehearsal passes `false`, so the known hosted Windows-arm64 floor mismatch remains open rather than being reclassified. GitHub requires a `workflow_dispatch` file to exist on the default branch before dispatch, so real Apple/SignPath requests cannot be triggered from this unmerged PR. The safe default is to keep credentials unused, publish nothing, retain the caller for post-merge rehearsal, and continue independent disconnected work. Release-cut, desktop builds, tuple enablement, Gatekeeper/notarization, Defender/WDAC, and exact floor gates remain disconnected and open. Legacy remains the production default, and merge to `main` remains prohibited.<br>
 Primary design: [SSH relay GitHub Release plan](./2026-07-14-ssh-relay-github-release-plan.html)<br>
 Motivating issues: [#8450](https://github.com/stablyai/orca/issues/8450), [#1693](https://github.com/stablyai/orca/issues/1693)
 
@@ -10369,23 +10369,108 @@ mismatch`. NTFS cannot materialize the fixture's declared POSIX executable mode.
   every tuple disconnected; a rehearsal must not convert the hosted Windows arm64 floor gap into a
   pass.
 
+### E-M4-NATIVE-SIGNING-REHEARSAL-LOCAL-RED-001 — Manual signing rehearsal caller is absent
+
+- Date: 2026-07-15
+- Owner: Codex implementation owner
+- Source: uncommitted purpose-named contract test atop exact pushed head
+  `5b1a994a3`; draft PR #8741.
+- Runner/remote/network: local macOS 26.2 arm64, Node v26.0.0 and pnpm 10.24.0. Local workflow files
+  only; no GitHub Actions dispatch, repository secret, Apple timestamp service, SignPath request,
+  manual approval, SSH host, publication, desktop consumer, or enabled tuple.
+- Command:
+  `/usr/bin/time -l pnpm exec vitest run --config config/vitest.config.ts --maxWorkers=1 config/scripts/ssh-relay-runtime-native-signing-rehearsal-workflow.test.mjs`.
+- Result: expected FAIL, 1 file / 1 test in 152 ms test duration / 1.00 second wall;
+  131,629,056-byte maximum RSS, 95,769,952-byte peak memory footprint, and zero swaps. The only
+  failure is `ENOENT` for
+  `.github/workflows/ssh-relay-runtime-native-signing-rehearsal.yml`.
+- Oracle proved: no manual-only caller currently binds an explicit confirmation and exact selected
+  source to the existing credential-free native build outputs and callable signing workflow. The
+  RED also defines that oldest-baseline qualification remains default-on for ordinary artifact runs
+  but may be separately skipped by this signing rehearsal so the known hosted Windows-arm64 floor
+  mismatch cannot prevent collection of signed-byte evidence or be misreported as qualified.
+- Does not prove: implementation, Actions schema acceptance, secret availability, real Apple or
+  SignPath signing, returned bytes, native trust, approval/timeout behavior, exact floors,
+  publication, desktop embedding, SSH behavior, or an enabled tuple.
+- Follow-up: implement the exact manual caller and default-preserving qualification input, integrate
+  the contract into both native test families, and run focused plus broad credential-free local
+  proof before any dispatch.
+
+### E-M4-NATIVE-SIGNING-REHEARSAL-LOCAL-001 — Manual rehearsal caller passes locally
+
+- Date: 2026-07-15
+- Owner: Codex implementation owner
+- Source: local implementation atop exact pushed head `5b1a994a3`; draft PR #8741.
+- Runner/remote/network: local macOS 26.2 arm64, Node v26.0.0 and pnpm 10.24.0. Local workflow files
+  and tests only; no Actions dispatch, repository secret, Apple timestamp service, SignPath request,
+  approval, SSH host, publication, desktop consumer, or enabled tuple.
+- Intermediate contract RED: the first three-file implementation run passes the new rehearsal and
+  existing signing-workflow contracts but fails the older build-prerequisite contract because it
+  still requires an empty `workflow_call` interface. Result: 2 passed / 1 failed in 404 ms test /
+  1.16 seconds wall, 131,563,520-byte maximum RSS, 95,638,760-byte peak footprint, and zero swaps.
+  The correction makes that older contract require the exact Boolean input, safe `true` default,
+  and both default-preserving qualification conditions.
+- Commands and final results:
+  - Focused caller/signing/build-prerequisite suite:
+    `/usr/bin/time -l pnpm exec vitest run --config config/vitest.config.ts --maxWorkers=1 config/scripts/ssh-relay-runtime-native-signing-rehearsal-workflow.test.mjs config/scripts/ssh-relay-runtime-native-signing-workflow.test.mjs config/scripts/ssh-relay-runtime-build-prerequisite.test.mjs`
+    — PASS, 3 files / 3 tests in 397 ms test / 1.12 seconds wall, 131,956,736-byte maximum RSS,
+    96,114,016-byte peak footprint, zero swaps.
+  - Broad runtime-release suite:
+    `/usr/bin/time -l pnpm exec vitest run --config config/vitest.config.ts --maxWorkers=1 config/scripts/ssh-relay*.test.mjs`
+    — PASS, 47 files / 242 tests in 8.98 seconds test / 9.95 seconds wall,
+    188,628,992-byte maximum RSS, 95,900,928-byte peak footprint, zero swaps.
+  - Desktop manifest/signature parity:
+    `/usr/bin/time -l pnpm exec vitest run --config config/vitest.config.ts --maxWorkers=1 src/main/ssh/ssh-relay-artifact-schema.test.ts src/main/ssh/ssh-relay-manifest-signature.test.ts src/main/ssh/ssh-relay-release-asset.test.ts`
+    — PASS, 3 files / 48 tests in 570 ms test / 1.27 seconds wall, 131,792,896-byte maximum RSS,
+    95,950,176-byte peak footprint, zero swaps.
+  - `/usr/bin/time -l pnpm run typecheck` — PASS in 2.15 seconds wall,
+    1,279,410,176-byte maximum RSS, 96,523,760-byte peak footprint, zero swaps.
+  - `/usr/bin/time -l pnpm run lint` — PASS in 9.90 seconds wall, 2,006,204,416-byte maximum RSS,
+    95,606,040-byte peak footprint, zero swaps. All 41 reliability gates, the 355-entry max-lines
+    ratchet, bundled-skill guides, localization catalog/parity, and localization coverage pass; all
+    26 warnings are in untouched existing files.
+  - Focused `oxfmt --check`, `oxlint`, both `node --check` commands, `git diff --check`, and zero diff
+    in both user-owned Node/npm resolver files — PASS.
+- Oracle proved: only `workflow_dispatch` can enter the caller. The dispatch must supply the exact
+  lowercase 40-hex commit selected by GitHub plus the exact typed confirmation. Rehearsals serialize
+  and cannot auto-cancel after approval starts. Repository permissions remain read-only. The caller
+  invokes the existing credential-free native build, explicitly separates qualification supplements,
+  then invokes only the existing callable native-signing workflow with inherited secrets. Ordinary
+  pull-request, direct-dispatch, and reusable artifact calls retain baseline gates by default.
+  Release-cut and macOS desktop build remain disconnected, and the caller contains no release,
+  publication, desktop, or tuple path.
+- Operational blocker and safe default: GitHub emits `workflow_dispatch` only for workflow files
+  present on the default branch. This new caller is unmerged by design, so it cannot be credential-
+  dispatched from the PR. Do not temporarily route repository secrets through the existing routine
+  artifact workflow. Keep credentials unused and record real signing/native trust only after a
+  separately authorized merge makes this reviewed caller dispatchable.
+- Does not prove: GitHub schema acceptance at an exact pushed head, a live dispatch, secret
+  availability, Apple/SignPath request or approval, returned signed bytes, native trust,
+  Gatekeeper/notarization, Defender/WDAC, exact oldest floors, protected manifest signing,
+  publication/read-back, desktop embedding, SSH behavior, or an enabled tuple.
+- Follow-up: commit/push and require both native contract families plus ordinary PR checks to pass at
+  the exact head. Attempting the caller by file after push may record GitHub's default-branch refusal
+  but must not use an alternate secret-bearing path. Continue the next independent disconnected
+  artifact-only package while the real signing gate remains open.
+
 ## Accepted Gaps
 
 No product gap is accepted merely because it appears in this list. Each entry requires explicit
 owner and promotion condition.
 
-| Gap                                        | Current behavior                                                        | Risk                                           | Owner                                                   | Promotion/removal condition                                                   | Status       |
-| ------------------------------------------ | ----------------------------------------------------------------------- | ---------------------------------------------- | ------------------------------------------------------- | ----------------------------------------------------------------------------- | ------------ |
-| Bundled runtime only partially implemented | Six unpublished native artifact proofs; no production consumer          | #8450/#1693 environment failures remain        | Codex implementation owner                              | Complete Work Packages 2–7 plus Milestones 3–14                               | Open         |
-| No bundled tuple enabled                   | Every target's default and effective mode remains legacy                | No bundled support claim can be made           | Codex implementation owner                              | Complete target-native build/trust and both required live-evidence layers     | Open         |
-| Windows runtime smoke incomplete           | Native x64/arm64 smoke settles and uploads exact evidence               | Historical blocker is closed                   | Codex implementation owner                              | Met by E-M3-WINDOWS-CI-001                                                    | CLOSED       |
-| Native clean-rebuild identity unproved     | All six native cells pass exact clean-build equality                    | Historical blocker is closed                   | Codex implementation owner                              | Met by E-M3-REPRODUCIBILITY-CI-001                                            | CLOSED       |
-| Cross-family Layer B remotes unavailable   | GitHub native runner labels exist; no approved reachable target pool    | Client/remote integration gaps may escape      | Repository release administrator + implementation owner | Approve provider/snapshots/credentials/egress/teardown/cost owner             | BLOCKED      |
-| Musl has no accepted official Node binary  | Musl is deliberately legacy-only                                        | Unofficial binary would break provenance trust | Codex implementation owner                              | Orca-owned target-native source build, signing, provenance, and live gates    | ACCEPTED GAP |
-| Native arm64 live matrices incomplete      | Hosted Linux/Windows arm64 labels exist; full SSH/runtime cells do not  | Cross-build or unit tests may hide native bugs | Codex implementation owner                              | Full native archive, trust, SFTP/system-SSH, RPC, and baseline evidence       | Open         |
-| Legacy performance baseline unmeasured     | Numeric budgets exist; paired cold/warm measurements do not             | Regression thresholds lack a measured baseline | Codex implementation owner                              | Purpose-built paired harness with ten samples on pinned runner classes        | Open         |
-| Manifest signing environment unprovisioned | Ed25519/key-rotation policy exists; no protected runtime signing secret | Runtime assets cannot be safely published      | Repository release administrator                        | Protected environment, reviewers, two test keys, rehearsals, and access audit | BLOCKED      |
-| Bootstrap primitives lack full live proof  | POSIX/Windows contracts exist; bounded SSH implementations do not       | Hidden dependency or transfer corruption       | Codex implementation owner                              | Purpose-named full-size SFTP/POSIX/Windows system-SSH live suites             | Open         |
+| Gap                                        | Current behavior                                                        | Risk                                            | Owner                                                   | Promotion/removal condition                                                   | Status       |
+| ------------------------------------------ | ----------------------------------------------------------------------- | ----------------------------------------------- | ------------------------------------------------------- | ----------------------------------------------------------------------------- | ------------ |
+| Bundled runtime only partially implemented | Six unpublished native artifact proofs; no production consumer          | #8450/#1693 environment failures remain         | Codex implementation owner                              | Complete Work Packages 2–7 plus Milestones 3–14                               | Open         |
+| No bundled tuple enabled                   | Every target's default and effective mode remains legacy                | No bundled support claim can be made            | Codex implementation owner                              | Complete target-native build/trust and both required live-evidence layers     | Open         |
+| Windows runtime smoke incomplete           | Native x64/arm64 smoke settles and uploads exact evidence               | Historical blocker is closed                    | Codex implementation owner                              | Met by E-M3-WINDOWS-CI-001                                                    | CLOSED       |
+| Native clean-rebuild identity unproved     | All six native cells pass exact clean-build equality                    | Historical blocker is closed                    | Codex implementation owner                              | Met by E-M3-REPRODUCIBILITY-CI-001                                            | CLOSED       |
+| Cross-family Layer B remotes unavailable   | GitHub native runner labels exist; no approved reachable target pool    | Client/remote integration gaps may escape       | Repository release administrator + implementation owner | Approve provider/snapshots/credentials/egress/teardown/cost owner             | BLOCKED      |
+| Musl has no accepted official Node binary  | Musl is deliberately legacy-only                                        | Unofficial binary would break provenance trust  | Codex implementation owner                              | Orca-owned target-native source build, signing, provenance, and live gates    | ACCEPTED GAP |
+| Native arm64 live matrices incomplete      | Hosted Linux/Windows arm64 labels exist; full SSH/runtime cells do not  | Cross-build or unit tests may hide native bugs  | Codex implementation owner                              | Full native archive, trust, SFTP/system-SSH, RPC, and baseline evidence       | Open         |
+| Legacy performance baseline unmeasured     | Numeric budgets exist; paired cold/warm measurements do not             | Regression thresholds lack a measured baseline  | Codex implementation owner                              | Purpose-built paired harness with ten samples on pinned runner classes        | Open         |
+| New rehearsal caller is not dispatchable   | GitHub requires the workflow file on the default branch                 | Real Apple/SignPath/native-trust proof is gated | Repository release administrator + implementation owner | Reviewed PR is merged separately, then exact-source rehearsal passes          | BLOCKED      |
+| Manifest signing environment unprovisioned | Ed25519/key-rotation policy exists; no protected runtime signing secret | Runtime assets cannot be safely published       | Repository release administrator                        | Protected environment, reviewers, two test keys, rehearsals, and access audit | BLOCKED      |
+| Bootstrap primitives lack full live proof  | POSIX/Windows contracts exist; bounded SSH implementations do not       | Hidden dependency or transfer corruption        | Codex implementation owner                              | Purpose-named full-size SFTP/POSIX/Windows system-SSH live suites             | Open         |
 
 ## Final Definition of Done
 
@@ -10426,14 +10511,15 @@ The project is not complete until every applicable item below is checked with ev
 
 ## Next Required Action
 
-Commit and push the exact-head CI evidence recorded under
-E-M4-NATIVE-SIGNING-WORKFLOW-CI-001. Then add a purpose-named RED and a manual-only rehearsal caller
-that produces the existing unpublished native artifacts and invokes the disconnected signing
-workflow with repository credentials. Do not connect release-cut or any desktop build. The
-rehearsal must retain the Windows arm64 build-26100, macOS 13.5, and Linux kernel 4.18 qualification
-gates as separately open, and must not publish or enable a tuple. Record real Apple/SignPath request,
-approval/return, exact changed-byte identity, native trust, runner, duration, and residual evidence.
-Do not merge to `main`; retain every production/default gate.
+Commit and push the locally proven manual rehearsal caller under
+E-M4-NATIVE-SIGNING-REHEARSAL-LOCAL-001, then require its purpose-named contracts to pass on both
+native test families at the exact head. Record GitHub's expected default-branch dispatch refusal;
+do not route secrets through an existing routine workflow as a workaround. Real Apple/SignPath
+request, approval/return, changed-byte identity, and native-trust evidence remain gated until a
+separately authorized merge makes the reviewed caller dispatchable. While blocked, begin the next
+purpose-named disconnected aggregate/immutable-manifest job package. Keep Windows arm64 build 26100,
+macOS 13.5, Linux kernel 4.18, release-cut, desktop builds, publication, and every tuple separately
+gated. Do not merge to `main`; retain every production/default gate.
 
 Cross-family Layer B targets, the protected manifest-signing environment, oldest-baseline/native-
 trust cells, and the paired legacy performance baseline remain release/default-path blockers. No

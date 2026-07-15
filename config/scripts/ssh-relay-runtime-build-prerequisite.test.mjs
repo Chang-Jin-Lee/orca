@@ -19,7 +19,16 @@ describe('SSH relay runtime reusable build prerequisite', () => {
     ])
     const workflow = parse(source)
 
-    expect(workflow.on.workflow_call).toEqual({})
+    expect(workflow.on.workflow_call).toEqual({
+      inputs: {
+        'include-baseline-gates': {
+          description: 'Run separately gated oldest-baseline qualification jobs',
+          required: false,
+          default: true,
+          type: 'boolean'
+        }
+      }
+    })
     expect(workflow.permissions).toEqual({ contents: 'read' })
     expect(Object.keys(workflow.jobs)).toEqual([
       'build-posix-runtime',
@@ -31,6 +40,14 @@ describe('SSH relay runtime reusable build prerequisite', () => {
       'build-posix-runtime'
     )
     expect(workflow.jobs['verify-windows-runtime-baseline'].needs).toBe('build-windows-runtime')
+    for (const jobName of [
+      'verify-linux-runtime-baseline-userland',
+      'verify-windows-runtime-baseline'
+    ]) {
+      expect(workflow.jobs[jobName].if).toBe(
+        "github.event_name != 'workflow_call' || inputs.include-baseline-gates"
+      )
+    }
     for (const job of Object.values(workflow.jobs)) {
       expect(job.steps[0].with.ref).toBe('${{ github.event.pull_request.head.sha || github.sha }}')
     }

@@ -16,7 +16,13 @@ on:
       - 'src/relay/**'
   workflow_dispatch:
   # Why: callers may gate on the native graph only after separate release wiring is reviewed.
-  workflow_call: {}
+  workflow_call:
+    inputs:
+      include-baseline-gates:
+        description: Run separately gated oldest-baseline qualification jobs
+        required: false
+        default: true
+        type: boolean
 
 concurrency:
   group: ssh-relay-runtime-artifacts-${{ github.event.pull_request.number || github.ref }}
@@ -174,6 +180,7 @@ jobs:
           node --check config/scripts/ssh-relay-runtime-native-signing-finalization.mjs
           node --check config/scripts/ssh-relay-runtime-native-signing-finalization.test.mjs
           node --check config/scripts/ssh-relay-runtime-native-signing-workflow.test.mjs
+          node --check config/scripts/ssh-relay-runtime-native-signing-rehearsal-workflow.test.mjs
           node --check config/scripts/ssh-relay-runtime-build-prerequisite.test.mjs
           pnpm exec vitest run --config config/vitest.config.ts \
             config/scripts/ssh-relay-runtime-compatibility.test.mjs \
@@ -210,6 +217,7 @@ jobs:
             config/scripts/ssh-relay-runtime-macos-signing.test.mjs \
             config/scripts/ssh-relay-runtime-native-signing-finalization.test.mjs \
             config/scripts/ssh-relay-runtime-native-signing-workflow.test.mjs \
+            config/scripts/ssh-relay-runtime-native-signing-rehearsal-workflow.test.mjs \
             config/scripts/ssh-relay-runtime-build-prerequisite.test.mjs \
             config/scripts/ssh-relay-runtime-closure.test.mjs \
             config/scripts/ssh-relay-runtime-pty-smoke.test.mjs \
@@ -584,6 +592,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'runtime signing finalization test syntax check failed' }
           node --check config/scripts/ssh-relay-runtime-native-signing-workflow.test.mjs
           if ($LASTEXITCODE -ne 0) { throw 'runtime native signing workflow test syntax check failed' }
+          node --check config/scripts/ssh-relay-runtime-native-signing-rehearsal-workflow.test.mjs
+          if ($LASTEXITCODE -ne 0) { throw 'runtime native signing rehearsal workflow test syntax check failed' }
           node --check config/scripts/ssh-relay-runtime-build-prerequisite.test.mjs
           if ($LASTEXITCODE -ne 0) { throw 'runtime build prerequisite test syntax check failed' }
           pnpm exec vitest run --config config/vitest.config.ts `
@@ -621,6 +631,7 @@ jobs:
             config/scripts/ssh-relay-runtime-macos-signing.test.mjs `
             config/scripts/ssh-relay-runtime-native-signing-finalization.test.mjs `
             config/scripts/ssh-relay-runtime-native-signing-workflow.test.mjs `
+            config/scripts/ssh-relay-runtime-native-signing-rehearsal-workflow.test.mjs `
             config/scripts/ssh-relay-runtime-build-prerequisite.test.mjs `
             config/scripts/ssh-relay-runtime-closure.test.mjs `
             config/scripts/ssh-relay-runtime-pty-smoke.test.mjs `
@@ -813,6 +824,8 @@ jobs:
   verify-linux-runtime-baseline-userland:
     name: Supplement ${{ matrix.tuple }} oldest userland (kernel gap remains)
     needs: build-posix-runtime
+    # Why: signing rehearsals need candidate bytes, while qualification stays a separate default-on gate.
+    if: github.event_name != 'workflow_call' || inputs.include-baseline-gates
     strategy:
       fail-fast: false
       matrix:
@@ -922,6 +935,8 @@ jobs:
   verify-windows-runtime-baseline:
     name: Verify ${{ matrix.tuple }} oldest Windows baseline
     needs: build-windows-runtime
+    # Why: a newer hosted image must not block signing evidence or be mistaken for floor qualification.
+    if: github.event_name != 'workflow_call' || inputs.include-baseline-gates
     strategy:
       fail-fast: false
       matrix:
