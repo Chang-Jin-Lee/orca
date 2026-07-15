@@ -209,7 +209,14 @@ complete a box.
       reconstruction, bounded signing boundary, transactional finalization, and credential-free
       regression gates are locally green (`E-M4-NATIVE-SIGNING-WORKFLOW-LOCAL-RED-001`,
       `E-M4-NATIVE-SIGNING-WORKFLOW-LOCAL-001`). Exact-head native contract proof and real protected
-      Apple/SignPath/native-trust evidence remain required before this item can close.
+      Apple/SignPath/native-trust evidence remain required before this item can close. First
+      exact-head run
+      [29415080004](https://github.com/stablyai/orca/actions/runs/29415080004) is the required Windows
+      CI RED: both Windows contract jobs reject two hardcoded Darwin tar fixtures because NTFS cannot
+      materialize their declared executable modes, while all four POSIX native build jobs pass and
+      strict production mode validation remains unchanged (`E-M4-NATIVE-SIGNING-WORKFLOW-CI-RED-001`).
+      The test-only native ZIP fixture correction at `85c70c5e9` and full 241-test release suite pass
+      locally; a replacement all-six exact-head run is next.
 - [ ] Add a fail-closed aggregate and immutable manifest-signing job.
 - [ ] Embed the exact signed manifest and accepted keys in each desktop build.
 - [ ] Upload to a draft release, read back, re-hash, and execute the downloaded archives.

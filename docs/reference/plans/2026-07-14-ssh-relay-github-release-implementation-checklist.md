@@ -8,8 +8,8 @@ work; keep exact commands, runner identities, hashes, metrics, and residual gaps
 
 Date created: 2026-07-14<br>
 Last updated: 2026-07-15<br>
-Current phase: Milestone 4 / Work Package 3 platform-native signing-job workflow contract — **In progress — 2026-07-15, Codex implementation owner**. The reusable credential-free target-native build-prerequisite package is closed locally and on all six exact-head Node 24 native build jobs under E-M4-BUILD-PREREQUISITE-LOCAL-RED-001, E-M4-BUILD-PREREQUISITE-LOCAL-001, and E-M4-BUILD-PREREQUISITE-CI-001. The active disconnected signing slice now reconstructs the authenticated unsigned archive, binds the exact staged native payload to the source identity, returns changed signed bytes through platform-native Apple/SignPath boundaries, applies them into an exclusive complete runtime, verifies the complete final tree and native policy before PTY/watcher smoke, and only then emits the final archive, SBOM, provenance, and tuple descriptor. Credential-free local proof is complete under E-M4-NATIVE-SIGNING-WORKFLOW-LOCAL-001, but it cannot satisfy real Apple/SignPath signing, returned production signatures, or native-trust evidence. Exact-head native contract execution is the next internal gate. Release-cut and every desktop build remain disconnected until exact floors, real signing/trust, aggregate, publication/read-back, and embedding gates are complete. The slice may not publish, connect a desktop consumer, or enable a tuple. Production/default behavior is unchanged, no bundled-runtime path is enabled, and no artifact is published.<br>
-Session checkpoint: **In progress — 2026-07-15, Codex implementation owner** — the purpose-named signing-workflow RED is now green locally through authenticated archive reconstruction, exact stage-report validation, bounded macOS codesign invocation, SignPath workflow wiring, transactional full-tree finalization, target-native verification ordering, PTY/watcher smoke handoff, and regenerated final metadata/tuple assets under E-M4-NATIVE-SIGNING-WORKFLOW-LOCAL-001. The callable workflow has only read permissions, all actions are SHA-pinned, and release-cut, release-mac-build, the reusable native builder, and desktop consumers remain disconnected. No production signing credential or real returned signature was used. Exact-head credential-free execution on all six native build jobs remains next. The preceding exact-head artifact run 29412010582, PR Checks 29412010603, and Golden E2E 29412010624 retain their recorded status; the artifact run is red only for the declared Windows arm64 oldest-floor mismatch (hosted build 26200 versus required build 26100). Real Apple/SignPath signing, returned production signatures, Gatekeeper/notarization, Defender/WDAC, exact macOS 13.5/Linux kernel 4.18/Windows arm64 build-26100 runners, protected manifest signing, publication wiring, desktop embedding, and native trust remain separately gated. Nothing is published or enabled, legacy remains the production default, and merge to `main` remains prohibited.<br>
+Current phase: Milestone 4 / Work Package 3 platform-native signing-job workflow contract — **In progress — 2026-07-15, Codex implementation owner**. The reusable credential-free target-native build-prerequisite package is closed locally and on all six exact-head Node 24 native build jobs under E-M4-BUILD-PREREQUISITE-LOCAL-RED-001, E-M4-BUILD-PREREQUISITE-LOCAL-001, and E-M4-BUILD-PREREQUISITE-CI-001. The active disconnected signing slice reconstructs the authenticated unsigned archive, binds the exact staged native payload to the source identity, returns changed signed bytes through platform-native Apple/SignPath boundaries, applies them into an exclusive complete runtime, verifies the complete final tree and native policy before PTY/watcher smoke, and only then emits the final archive, SBOM, provenance, and tuple descriptor. Credential-free local proof is complete under E-M4-NATIVE-SIGNING-WORKFLOW-LOCAL-001. First exact-head run 29415080004 produced the required Windows fixture RED under E-M4-NATIVE-SIGNING-WORKFLOW-CI-RED-001; the test-only native archive-family correction is locally green and replacement exact-head execution is next. No credential-free path can satisfy real Apple/SignPath signing, returned production signatures, or native-trust evidence. Release-cut and every desktop build remain disconnected until exact floors, real signing/trust, aggregate, publication/read-back, and embedding gates are complete. The slice may not publish, connect a desktop consumer, or enable a tuple. Production/default behavior is unchanged, no bundled-runtime path is enabled, and no artifact is published.<br>
+Session checkpoint: **In progress — 2026-07-15, Codex implementation owner** — exact-head artifact run 29415080004 at `0c43b83e8260a252def164fe62d135177e79f56b` proves GitHub accepts the disconnected callable signing workflow and all four POSIX native build jobs pass the new credential-free contracts plus complete runtime builds. Both Windows contract jobs fail before Node input download, native build, or artifact upload because two new tests hardcode a Darwin tar fixture whose declared executable modes cannot be materialized by NTFS; strict archive mode validation correctly rejects `bin/node` (`E-M4-NATIVE-SIGNING-WORKFLOW-CI-RED-001`). The correction selects the native Windows ZIP tuple on Windows while POSIX runners retain both tar and ZIP coverage; the focused suite and 46-file / 241-test release suite pass locally without changing production validation. A replacement exact-head run is next. Golden E2E 29415079993 passes; PR Checks 29415080046 remain independent. The callable signing workflow still has only read permissions and no consumer, and no production signing credential or real returned signature was used. Real Apple/SignPath signing, returned production signatures, Gatekeeper/notarization, Defender/WDAC, exact macOS 13.5/Linux kernel 4.18/Windows arm64 build-26100 runners, protected manifest signing, publication wiring, desktop embedding, and native trust remain separately gated. Nothing is published or enabled, legacy remains the production default, and merge to `main` remains prohibited.<br>
 Primary design: [SSH relay GitHub Release plan](./2026-07-14-ssh-relay-github-release-plan.html)<br>
 Motivating issues: [#8450](https://github.com/stablyai/orca/issues/8450), [#1693](https://github.com/stablyai/orca/issues/1693)
 
@@ -10244,6 +10244,55 @@ diff --check`.
   exact-head native build job, and record Actions schema/job evidence. Keep real protected
   Apple/SignPath/native-trust rehearsals and every release/default consumer separately gated.
 
+### E-M4-NATIVE-SIGNING-WORKFLOW-CI-RED-001 — Windows rejects non-native POSIX test fixtures
+
+- Date: 2026-07-15
+- Commit SHA / PR: `0c43b83e8260a252def164fe62d135177e79f56b`; draft PR #8741
+- Workflow/run: SSH Relay Runtime Artifacts run
+  [29415080004](https://github.com/stablyai/orca/actions/runs/29415080004)
+- Runners and failed jobs:
+  - Windows x64 job
+    [87351075144](https://github.com/stablyai/orca/actions/runs/29415080004/job/87351075144):
+    GitHub-hosted `windows-2022`, runner `GitHub Actions 1000055729`; contract-test step fails from
+    12:26:12Z through 12:26:39Z.
+  - Windows arm64 job
+    [87351075167](https://github.com/stablyai/orca/actions/runs/29415080004/job/87351075167):
+    GitHub-hosted `windows-11-arm`, runner `GitHub Actions 1000055732`; contract-test step fails from
+    12:28:14Z through 12:28:37Z.
+- Remote/transport/network: GitHub-hosted native test runners only. Both failures occur before Node
+  release-input download, native runtime construction, artifact upload, signing credentials,
+  SignPath/Apple calls, SSH, publication, desktop consumption, or an enabled tuple.
+- Result: expected CI RED in both Windows jobs. GitHub annotations identify the same two failures:
+  `ssh-relay-runtime-archive-extraction.test.mjs` and
+  `ssh-relay-runtime-native-signing-finalization.test.mjs` each construct a hardcoded Darwin tar
+  fixture, and strict archive inspection rejects `bin/node` with `Runtime archive type or mode
+mismatch`. NTFS cannot materialize the fixture's declared POSIX executable mode. Darwin arm64,
+  Darwin x64, Linux arm64, and Linux x64 native build jobs all pass the new credential-free contracts
+  and complete build/inspection/smoke/upload on the same exact head. Golden E2E run 29415079993
+  passes.
+- Oracle proved: GitHub accepts the new callable workflow schema and action pins; the failure is a
+  test-fixture portability defect rather than a production archive relaxation. The production
+  inspector retains exact mode enforcement and blocks both Windows jobs before any candidate output
+  can be built or uploaded.
+- Correction commit: `85c70c5e902e6ff5725fa11de054d83f2b821850`.
+- Correction and local proof: the archive reconstruction test now selects native
+  `win32-${process.arch}` ZIP fixtures on Windows and retains both tar and ZIP coverage on POSIX. The
+  finalization test does the same while preserving the real Windows policy shape: official Node,
+  three returned SignPath candidates, and two exact preserved upstream ConPTY files. Focused 3 files
+  / 10 tests pass locally. The exact broad command
+  `/usr/bin/time -l pnpm exec vitest run --config config/vitest.config.ts --maxWorkers=1 config/scripts/ssh-relay*.test.mjs`
+  passes 46 files / 241 tests in 20.07 seconds test duration / 22.43 seconds wall with
+  190,513,152-byte maximum RSS, 96,048,528-byte peak memory footprint, and zero swaps. Focused
+  `oxfmt`, `oxlint`, syntax, and `git diff --check` gates pass.
+- Does not prove: corrected execution on either native Windows runner, a production signing job,
+  Apple/SignPath credentials or returned bytes, native trust, oldest baselines, protected aggregate,
+  publication/read-back, desktop embedding, SSH behavior, or an enabled tuple.
+- Checklist items satisfied: required CI RED and locally green test-fixture-only correction for the
+  active signing workflow package. The package remains open pending replacement all-six exact-head
+  execution.
+- Follow-up: commit and push the fixture-only correction, then require both Windows architectures
+  and all four POSIX jobs to pass on the replacement exact head. Do not weaken archive mode checks.
+
 ## Accepted Gaps
 
 No product gap is accepted merely because it appears in this list. Each entry requires explicit
@@ -10301,10 +10350,10 @@ The project is not complete until every applicable item below is checked with ev
 
 ## Next Required Action
 
-Commit and push the locally green disconnected signing/finalization package recorded under
-E-M4-NATIVE-SIGNING-WORKFLOW-LOCAL-001, then require its credential-free purpose-named contracts to
-pass on every exact-head native build job. Record GitHub Actions schema acceptance, runner identity,
-test counts, timings, and residual failures. Do not connect release-cut or any desktop build;
+Commit and push the native test-fixture correction recorded under
+E-M4-NATIVE-SIGNING-WORKFLOW-CI-RED-001, then require its credential-free purpose-named contracts to
+pass on every replacement exact-head native build job. Record runner identity, test counts, timings,
+and residual failures. Do not connect release-cut or any desktop build;
 Windows arm64 build-26100, macOS 13.5, Linux kernel 4.18, real Apple/SignPath returned bytes and
 native trust, protected aggregate/manifest signing, publication/read-back, and embedding remain
 prerequisites. Do not merge to `main`, publish, use production signing credentials during ordinary
