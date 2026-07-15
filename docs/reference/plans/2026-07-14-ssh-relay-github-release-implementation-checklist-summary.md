@@ -64,8 +64,9 @@ complete a box.
       read-back verification.** Release-DAG contracts pass locally and on all six native build jobs in
       exact-head run [29390079639](https://github.com/stablyai/orca/actions/runs/29390079639) under
       `E-M4-RELEASE-DAG-CI-001`. Aggregate/read-back RED/GREEN, workflow, full SSH-relay, and static
-      gates pass locally under `E-M4-AGGREGATE-READBACK-LOCAL-001`; exact-head CI is next. No
-      production workflow, publication, desktop consumer, signing credential, or tuple is connected.
+      gates pass locally at implementation commit `e99518654` under
+      `E-M4-AGGREGATE-READBACK-LOCAL-001`; exact-head CI is next. No production workflow,
+      publication, desktop consumer, signing credential, or tuple is connected.
 
 ## Work packages, in required order
 
@@ -105,7 +106,8 @@ complete a box.
 - [ ] **In progress — 2026-07-15, Codex implementation owner:** implement disconnected
       aggregate-input and authenticated draft read-back verification before any production workflow,
       publication, desktop consumer, or signing credential is connected. Local implementation and
-      verification pass under `E-M4-AGGREGATE-READBACK-LOCAL-001`; exact-head CI is next.
+      verification pass at `e99518654` under `E-M4-AGGREGATE-READBACK-LOCAL-001`; exact-head CI is
+      next.
 - [ ] Add target-native runtime jobs as desktop release prerequisites.
 - [ ] Add native signing jobs; hash only the returned signed bytes.
 - [ ] Add a fail-closed aggregate and immutable manifest-signing job.
