@@ -141,6 +141,8 @@ jobs:
           node --check config/scripts/ssh-relay-runtime-macos-signature-verification.test.mjs
           node --check config/scripts/ssh-relay-runtime-windows-signature-verification.mjs
           node --check config/scripts/ssh-relay-runtime-windows-signature-verification.test.mjs
+          node --check config/scripts/ssh-relay-runtime-windows-source-signature-verification.mjs
+          node --check config/scripts/ssh-relay-runtime-windows-source-signature-verification.test.mjs
           pnpm exec vitest run --config config/vitest.config.ts \
             config/scripts/ssh-relay-node-release-verification.test.mjs \
             config/scripts/ssh-relay-node-tar-inspection.test.mjs \
@@ -161,6 +163,7 @@ jobs:
             config/scripts/ssh-relay-runtime-native-signing-apply.test.mjs \
             config/scripts/ssh-relay-runtime-macos-signature-verification.test.mjs \
             config/scripts/ssh-relay-runtime-windows-signature-verification.test.mjs \
+            config/scripts/ssh-relay-runtime-windows-source-signature-verification.test.mjs \
             config/scripts/ssh-relay-runtime-closure.test.mjs \
             config/scripts/ssh-relay-runtime-pty-smoke.test.mjs \
             config/scripts/ssh-relay-runtime-reproducibility.test.mjs \
@@ -472,6 +475,10 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'runtime Windows signature verification script syntax check failed' }
           node --check config/scripts/ssh-relay-runtime-windows-signature-verification.test.mjs
           if ($LASTEXITCODE -ne 0) { throw 'runtime Windows signature verification test syntax check failed' }
+          node --check config/scripts/ssh-relay-runtime-windows-source-signature-verification.mjs
+          if ($LASTEXITCODE -ne 0) { throw 'runtime Windows source signature verification script syntax check failed' }
+          node --check config/scripts/ssh-relay-runtime-windows-source-signature-verification.test.mjs
+          if ($LASTEXITCODE -ne 0) { throw 'runtime Windows source signature verification test syntax check failed' }
           pnpm exec vitest run --config config/vitest.config.ts `
             config/scripts/ssh-relay-node-release-verification.test.mjs `
             config/scripts/ssh-relay-node-tar-inspection.test.mjs `
@@ -492,6 +499,7 @@ jobs:
             config/scripts/ssh-relay-runtime-native-signing-apply.test.mjs `
             config/scripts/ssh-relay-runtime-macos-signature-verification.test.mjs `
             config/scripts/ssh-relay-runtime-windows-signature-verification.test.mjs `
+            config/scripts/ssh-relay-runtime-windows-source-signature-verification.test.mjs `
             config/scripts/ssh-relay-runtime-closure.test.mjs `
             config/scripts/ssh-relay-runtime-pty-smoke.test.mjs `
             config/scripts/ssh-relay-runtime-reproducibility.test.mjs `
@@ -639,6 +647,28 @@ jobs:
             [System.Text.UTF8Encoding]::new($false)
           )
           $reportJson
+          $sourceSignatureReport = Join-Path $outputRoot 'orca-ssh-relay-runtime-${{ matrix.tuple }}.source-signatures.json'
+          $sourceSignatureLines = & node config/scripts/ssh-relay-runtime-windows-source-signature-verification.mjs `
+            --identity (Join-Path $firstOutput 'orca-ssh-relay-runtime-${{ matrix.tuple }}.identity.json') `
+            --runtime-directory (Join-Path $firstOutput 'runtime') `
+            --signing-report $signingReport
+          if ($LASTEXITCODE -ne 0) { throw 'runtime Windows source signature verification failed' }
+          $sourceSignatureJson = $sourceSignatureLines -join [Environment]::NewLine
+          $sourceSignature = $sourceSignatureJson | ConvertFrom-Json
+          if (
+            $sourceSignature.tupleId -ne '${{ matrix.tuple }}' -or
+            @($sourceSignature.verifiedFiles).Count -ne 3 -or
+            @($sourceSignature.verifiedFiles | Where-Object { $_.signerKind -eq 'official-node' }).Count -ne 1 -or
+            @($sourceSignature.verifiedFiles | Where-Object { $_.signerKind -eq 'preserved-upstream' }).Count -ne 2
+          ) {
+            throw 'Windows source signature report violates the immutable/preserved trust contract'
+          }
+          [System.IO.File]::WriteAllText(
+            $sourceSignatureReport,
+            "$sourceSignatureJson`n",
+            [System.Text.UTF8Encoding]::new($false)
+          )
+          $sourceSignatureJson
           Remove-Item -LiteralPath $signingStage -Recurse -Force
           $evidence = Join-Path $env:GITHUB_WORKSPACE 'runtime-evidence/${{ matrix.tuple }}'
           New-Item -ItemType Directory -Path $evidence -Force | Out-Null
@@ -648,6 +678,7 @@ jobs:
             Where-Object { $_.Name -match '\.(?:spdx|provenance|identity)\.json$' } |
             Copy-Item -Destination $evidence
           Copy-Item -LiteralPath $signingReport -Destination $evidence
+          Copy-Item -LiteralPath $sourceSignatureReport -Destination $evidence
 
       - name: Upload unpublished artifact evidence
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7

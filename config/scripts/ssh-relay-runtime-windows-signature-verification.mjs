@@ -114,7 +114,13 @@ function assertSignerPolicy(signature, signerKind, expectedSigner) {
   return classified
 }
 
-async function verifySignedFile({ path, entry, signerKind, expectedSigner, spawnSyncImpl }) {
+export async function verifySshRelayRuntimeWindowsSignatureTarget({
+  path,
+  entry,
+  signerKind,
+  expectedSigner,
+  spawnSyncImpl = spawnSync
+}) {
   const metadata = await lstat(path)
   if (metadata.isSymbolicLink() || !metadata.isFile()) {
     throw new Error(`Runtime Windows signature target is not a regular file: ${entry.path}`)
@@ -191,7 +197,7 @@ export async function verifySshRelayRuntimeWindowsSignatures({
   const verifiedFiles = []
   for (const target of verificationTargets(finalIdentity, selection)) {
     verifiedFiles.push(
-      await verifySignedFile({
+      await verifySshRelayRuntimeWindowsSignatureTarget({
         path: localPath(physicalRoot, target.entry.path),
         ...target,
         spawnSyncImpl

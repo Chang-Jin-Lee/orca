@@ -96,6 +96,9 @@ describe('SSH relay runtime artifact workflow', () => {
       source.match(/ssh-relay-runtime-windows-signature-verification\.test\.mjs/g)
     ).toHaveLength(4)
     expect(
+      source.match(/ssh-relay-runtime-windows-source-signature-verification\.test\.mjs/g)
+    ).toHaveLength(4)
+    expect(
       source.match(/node --check config\/scripts\/ssh-relay-runtime-native-signing-plan\.mjs/g)
     ).toHaveLength(2)
     expect(
@@ -123,6 +126,11 @@ describe('SSH relay runtime artifact workflow', () => {
     expect(
       source.match(
         /node --check config\/scripts\/ssh-relay-runtime-windows-signature-verification\.mjs/g
+      )
+    ).toHaveLength(2)
+    expect(
+      source.match(
+        /node --check config\/scripts\/ssh-relay-runtime-windows-source-signature-verification\.mjs/g
       )
     ).toHaveLength(2)
     expect(
@@ -219,7 +227,20 @@ describe('SSH relay runtime artifact workflow', () => {
     expect(windowsRun).toContain('@($report.preservedUpstreamFiles).Count -ne 2')
     expect(windowsRun).toContain('Required upstream signature was not preserved')
     expect(windowsRun).toContain("Join-Path $signingStage 'bin/node.exe'")
+    expect(windowsRun).toContain('ssh-relay-runtime-windows-source-signature-verification.mjs')
+    expect(
+      windowsRun.indexOf('ssh-relay-runtime-windows-source-signature-verification.mjs')
+    ).toBeGreaterThan(windowsRun.indexOf('ssh-relay-runtime-native-signing-stage.mjs'))
+    expect(
+      windowsRun.indexOf('ssh-relay-runtime-windows-source-signature-verification.mjs')
+    ).toBeLessThan(windowsRun.indexOf('Remove-Item -LiteralPath $signingStage'))
+    expect(windowsRun).toContain(
+      'Windows source signature report violates the immutable/preserved trust contract'
+    )
+    expect(windowsRun).toContain("$_.signerKind -eq 'official-node'")
+    expect(windowsRun).toContain("$_.signerKind -eq 'preserved-upstream'")
     expect(source.match(/\.signing-stage\.json/g)).toHaveLength(3)
+    expect(source.match(/\.source-signatures\.json/g)).toHaveLength(1)
     expect(source).not.toMatch(/SIGNPATH_|APPLE_(?:ID|KEY)|Developer ID Application/)
   })
 
