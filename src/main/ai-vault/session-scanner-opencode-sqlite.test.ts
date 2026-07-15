@@ -223,7 +223,7 @@ describe('listOpenCodeSqliteSessions', () => {
     expect(candidates[1].file.path).toBe(buildOpenCodeSqliteCandidatePath(path, 'ses_old'))
   })
 
-  it('discovers sessions when unrelated message, part, and event content is malformed', async () => {
+  it('discovers sessions when message content is malformed and part/event rows are noisy', async () => {
     const { db, path } = createTempDb()
     applyOpenCodeSchema(db)
     db.exec(`CREATE TABLE event (id TEXT PRIMARY KEY, data TEXT NOT NULL)`)

@@ -96,7 +96,7 @@ function applyOpenCodeSchema(db: Database.Database): void {
   `)
 }
 
-describe('scanAiVaultSessions — OpenCode SQLite + legacy file coexistence', () => {
+describe('OpenCode SQLite coexistence and cache identity', () => {
   it('discovers SQLite sessions next to a custom OpenCode storage directory', async () => {
     const root = await mkdtemp(join(tmpdir(), 'orca-ai-vault-custom-opencode-'))
     tempRoots.push(root)
