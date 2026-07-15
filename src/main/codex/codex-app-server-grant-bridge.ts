@@ -24,19 +24,17 @@ const GRANT_ENTRY_MAX_BUFFER_BYTES = 16 * 1024 * 1024
 export function resolveCodexGrantEntryPath(
   pathExists: (candidate: string) => boolean = existsSync
 ): string | null {
-  // Why: this module is also bundled into a plain-Node CLI entry, so entry
-  // discovery cannot import Electron. Replacing the module's own asar segment
-  // finds the unpacked sibling in packaged builds and is a no-op in dev.
-  const unpackedModuleDir = __dirname.replace('app.asar', 'app.asar.unpacked')
-  const resourcesPath = (process as NodeJS.Process & { resourcesPath?: string }).resourcesPath
-  const candidates = [
-    resourcesPath
-      ? join(resourcesPath, 'app.asar.unpacked', 'out', 'main', 'codex', GRANT_ENTRY_FILE_NAME)
-      : null,
-    join(unpackedModuleDir, 'codex', GRANT_ENTRY_FILE_NAME),
-    join(unpackedModuleDir, '..', 'codex', GRANT_ENTRY_FILE_NAME)
-  ].filter((candidate): candidate is string => candidate !== null)
-  for (const candidate of candidates) {
+  // Why: resolved from __dirname (not electron's app paths) so this module
+  // stays loadable in plain-node CLI entries — the build guard rejects any
+  // electron require reachable from them. The emitted bridge chunk sits in
+  // out/main or out/main/chunks, so the entry is one or two levels up.
+  // ELECTRON_RUN_AS_NODE bypasses asar integration, so packaged builds must
+  // run the copy under app.asar.unpacked (out/main/codex/** is asarUnpacked).
+  const baseDirs = [__dirname, join(__dirname, '..')].map((dir) =>
+    dir.includes('app.asar') ? dir.replace('app.asar', 'app.asar.unpacked') : dir
+  )
+  for (const baseDir of baseDirs) {
+    const candidate = join(baseDir, 'codex', GRANT_ENTRY_FILE_NAME)
     if (pathExists(candidate)) {
       return candidate
     }
