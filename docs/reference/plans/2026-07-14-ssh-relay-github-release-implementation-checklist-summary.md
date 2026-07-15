@@ -60,7 +60,7 @@ complete a box.
     remain separately gated.
   - Next external proof: kernel 4.18, macOS 13.5, Windows arm64 build 26100, and native signing/trust.
   - No tuple is enabled; every SSH transfer/runtime and rollout cell remains open.
-- [ ] **WP3 active implementation — Supply verified post-sign tuple descriptors to the aggregate.**
+- [ ] **WP3 active implementation — Tuple descriptors proven; regenerate post-sign metadata next.**
       Windows compatibility-kind parity is closed locally and on all six target-native jobs in
       exact-head run
       [29393022768](https://github.com/stablyai/orca/actions/runs/29393022768) under
@@ -83,9 +83,15 @@ complete a box.
       per-platform role counts first (`E-M4-MANIFEST-TUPLE-SCHEMA-RED-001`). The correction,
       credential-free producer, 228-test release suite, 48-test desktop parity suite, and static gates
       are locally green under `E-M4-MANIFEST-TUPLE-LOCAL-001` and
-      `E-M4-MANIFEST-TUPLE-LOCAL-002`. Commit/push authorization for PR-contained work was granted
-      on 2026-07-15; committing, pushing, and collecting exact-head Node 24 native CI is the active
-      gate. Merging to `main` remains prohibited without separate user action.
+      `E-M4-MANIFEST-TUPLE-LOCAL-002`. Exact-head run
+      [29405619251](https://github.com/stablyai/orca/actions/runs/29405619251) passes the new seven-test
+      tuple suite and full runtime construction on all six Node 24 native jobs under
+      `E-M4-MANIFEST-TUPLE-CI-001`; PR Checks
+      [29405619196](https://github.com/stablyai/orca/actions/runs/29405619196) and Golden E2E
+      [29405619242](https://github.com/stablyai/orca/actions/runs/29405619242) are green. The artifact
+      run is red only for the declared Windows arm64 floor mismatch (hosted build 26200 versus
+      required 26100). Next, regenerate and semantically verify post-sign SBOM/provenance from the
+      verified final tree. Merging to `main` remains prohibited without separate user action.
 
 ## Work packages, in required order
 
@@ -142,15 +148,23 @@ complete a box.
       consumers, and every tuple outside this slice
       (`E-M4-MANIFEST-AGGREGATE-LOCAL-001`, `E-M4-MANIFEST-AGGREGATE-LOCAL-002`,
       `E-M4-MANIFEST-AGGREGATE-CI-001`).
-- [ ] **In progress — 2026-07-15, Codex implementation owner:** add the credential-free post-sign
+- [x] Add the credential-free post-sign
       tuple-descriptor producer and native-verification handoff needed to supply the aggregate.
       Derive it only from a fully verified returned runtime tree; keep real signing, publication,
       desktop consumers, and every tuple outside this slice. The missing-module RED is recorded under
       `E-M4-MANIFEST-TUPLE-LOCAL-RED-001`. Before GREEN, correct release/desktop tuple-role
       cardinality for the real Windows closure under `E-M4-MANIFEST-TUPLE-SCHEMA-RED-001`. Code and
       local proof are complete under `E-M4-MANIFEST-TUPLE-LOCAL-001` and
-      `E-M4-MANIFEST-TUPLE-LOCAL-002`; commit/push is authorized and exact-head Node 24 native CI is
-      now the active gate. Do not merge to `main`.
+      `E-M4-MANIFEST-TUPLE-LOCAL-002`; all-six exact-head Node 24 proof is recorded under
+      `E-M4-MANIFEST-TUPLE-CI-001`.
+- [ ] **In progress — 2026-07-15, Codex implementation owner:** regenerate SBOM and provenance from
+      the verified post-sign runtime tree and semantically bind both outputs to the final content
+      identity before tuple assembly. Keep credentials, publication, desktop consumers, and every
+      tuple disconnected. The purpose-named missing-module RED is recorded under
+      `E-M4-POST-SIGN-METADATA-LOCAL-RED-001`. The implementation, semantic tuple-consumer gate,
+      233-test release suite, 48-test desktop parity suite, and static gates are locally green under
+      `E-M4-POST-SIGN-METADATA-LOCAL-001` and `E-M4-POST-SIGN-METADATA-LOCAL-002`; exact-head Node 24
+      execution on all six native jobs is required before this item closes.
 - [ ] Add target-native runtime jobs as desktop release prerequisites.
 - [ ] Add native signing jobs; hash only the returned signed bytes.
 - [ ] Add a fail-closed aggregate and immutable manifest-signing job.

@@ -24,6 +24,8 @@ import {
   writeSshRelayRuntimeManifestTupleDescriptor
 } from './ssh-relay-runtime-manifest-tuple.mjs'
 import { buildSshRelayRuntimeNativeSigningPlan } from './ssh-relay-runtime-native-signing-plan.mjs'
+import { createSshRelayRuntimeProvenance } from './ssh-relay-runtime-provenance.mjs'
+import { createSshRelayRuntimeSbom } from './ssh-relay-runtime-sbom.mjs'
 
 const temporaryDirectories = []
 const SOURCE_DATE_EPOCH = 1_788_739_200
@@ -77,9 +79,60 @@ async function runtimeFixture() {
   })
   const sbomName = 'orca-ssh-relay-runtime-win32-x64.spdx.json'
   const provenanceName = 'orca-ssh-relay-runtime-win32-x64.provenance.json'
+  const sbom = createSshRelayRuntimeSbom({
+    identity: finalIdentity,
+    archive,
+    sourceDateEpoch: SOURCE_DATE_EPOCH
+  })
+  const toolchain = Object.fromEntries(
+    [
+      'buildNode',
+      'bundledNode',
+      'compiler',
+      'buildSystem',
+      'python',
+      'archive',
+      'linker',
+      'nodeAddonApi',
+      'nodeGyp'
+    ].map((name, index) => [
+      name,
+      { version: `${name} version`, sha256: `sha256:${(index + 1).toString(16).repeat(64)}` }
+    ])
+  )
+  const provenance = createSshRelayRuntimeProvenance({
+    identity: finalIdentity,
+    archive,
+    nodeRelease: {
+      baseUrl: 'https://nodejs.org/dist/v24.18.0',
+      archives: {
+        'win32-x64': { name: 'node-v24.18.0-win-x64.zip', sha256: 'a'.repeat(64) }
+      },
+      signature: {
+        key: { sourceUrl: 'https://example.invalid/key.asc', sha256: 'b'.repeat(64) }
+      },
+      windowsBuildInputs: {
+        headersArchive: { name: 'node-v24.18.0-headers.tar.gz', sha256: 'c'.repeat(64) },
+        importLibraries: {
+          'win32-x64': { name: 'win-x64/node.lib', sha256: 'd'.repeat(64) }
+        }
+      }
+    },
+    sourceDateEpoch: SOURCE_DATE_EPOCH,
+    gitCommit: '1'.repeat(40),
+    builder: 'local://win32/x64',
+    runner: {
+      os: 'Windows',
+      architecture: 'X64',
+      environment: 'local',
+      requestedLabel: 'local',
+      image: { os: 'win32', version: 'local' }
+    },
+    toolchain
+  })
   await Promise.all([
-    writeFile(join(inputDirectory, sbomName), '{"spdxVersion":"SPDX-2.3"}\n'),
-    writeFile(join(inputDirectory, provenanceName), '{"_type":"https://in-toto.io/Statement/v1"}\n')
+    writeFile(join(inputDirectory, sbomName), `${JSON.stringify(sbom)}\n`),
+    writeFile(join(inputDirectory, provenanceName), `${JSON.stringify(provenance)}\n`)
   ])
   const plan = buildSshRelayRuntimeNativeSigningPlan(finalIdentity)
   return {
@@ -278,6 +331,22 @@ describe('SSH relay runtime post-sign manifest tuple', () => {
     ).rejects.toThrow(/archive|zip/i)
     await expect(
       readFile(join(archive.inputDirectory, archive.descriptorName))
+    ).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+
+  it('rejects semantically stale post-sign metadata before writing a descriptor', async () => {
+    const fixture = await runtimeFixture()
+    const sbomPath = join(fixture.inputDirectory, 'orca-ssh-relay-runtime-win32-x64.spdx.json')
+    const sbom = JSON.parse(await readFile(sbomPath, 'utf8'))
+    sbom.packages.find((entry) => entry.name === 'orca-ssh-relay').versionInfo =
+      `sha256:${'e'.repeat(64)}`
+    await writeFile(sbomPath, `${JSON.stringify(sbom)}\n`)
+
+    await expect(
+      writeSshRelayRuntimeManifestTupleDescriptor(producerInput(fixture))
+    ).rejects.toThrow(/SBOM.*content|content.*SBOM/i)
+    await expect(
+      readFile(join(fixture.inputDirectory, fixture.descriptorName))
     ).rejects.toMatchObject({ code: 'ENOENT' })
   })
 

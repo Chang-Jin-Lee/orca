@@ -9,6 +9,7 @@ import { assertSshRelayRuntimeClosureEntries } from './ssh-relay-runtime-closure
 import { computeSshRelayRuntimeContentId } from './ssh-relay-runtime-identity.mjs'
 import { parseSshRelayRuntimeManifestTuple } from './ssh-relay-runtime-manifest-validation.mjs'
 import { buildSshRelayRuntimeNativeSigningPlan } from './ssh-relay-runtime-native-signing-plan.mjs'
+import { verifySshRelayRuntimePostSignMetadata } from './ssh-relay-runtime-post-sign-metadata.mjs'
 import { verifyRuntimeTree } from './verify-ssh-relay-runtime.mjs'
 
 const DIGEST_PATTERN = /^sha256:[0-9a-f]{64}$/u
@@ -308,6 +309,13 @@ export async function writeSshRelayRuntimeManifestTupleDescriptor({
     )
   ])
   await inspectSshRelayRuntimeArchive(join(physicalInput, names.archive), finalIdentity, {
+    signal: effectiveSignal
+  })
+  await verifySshRelayRuntimePostSignMetadata({
+    finalIdentity,
+    archive: { ...archive, path: join(physicalInput, names.archive) },
+    sbomPath: join(physicalInput, names.sbom),
+    provenancePath: join(physicalInput, names.provenance),
     signal: effectiveSignal
   })
   await verifyRuntimeTree(physicalRuntime, finalIdentity)

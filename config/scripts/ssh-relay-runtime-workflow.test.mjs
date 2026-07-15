@@ -114,7 +114,8 @@ describe('SSH relay runtime artifact workflow', () => {
       'manifest-assembly',
       'manifest-signing-handoff',
       'manifest-aggregate',
-      'manifest-tuple'
+      'manifest-tuple',
+      'post-sign-metadata'
     ]) {
       const script = `ssh-relay-runtime-${moduleName}`
       expect(source.split(`${script}.test.mjs`)).toHaveLength(5)

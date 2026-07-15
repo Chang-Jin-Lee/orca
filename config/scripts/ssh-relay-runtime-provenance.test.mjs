@@ -122,6 +122,7 @@ describe('SSH relay runtime published metadata', () => {
       metadata: { runner }
     })
     expect(provenance.predicate.buildDefinition).toMatchObject({
+      externalParameters: { contentId: input.identity.contentId },
       internalParameters: { toolchain },
       resolvedDependencies: expect.arrayContaining([
         {

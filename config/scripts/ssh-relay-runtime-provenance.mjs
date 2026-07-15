@@ -15,8 +15,7 @@ async function writeJson(path, value) {
   return { name: path.split(/[\\/]/).at(-1), size: bytes.length, sha256: sha256(bytes) }
 }
 
-export async function writeSshRelayRuntimeMetadata({
-  outputDirectory,
+export function createSshRelayRuntimeProvenance({
   identity,
   archive,
   nodeRelease,
@@ -27,10 +26,6 @@ export async function writeSshRelayRuntimeMetadata({
   toolchain
 }) {
   assertSshRelayRuntimeToolchain(toolchain, identity.tupleId)
-  const sbomName = `orca-ssh-relay-runtime-${identity.tupleId}.spdx.json`
-  const provenanceName = `orca-ssh-relay-runtime-${identity.tupleId}.provenance.json`
-  const identityName = `orca-ssh-relay-runtime-${identity.tupleId}.identity.json`
-  const sbom = createSshRelayRuntimeSbom({ identity, archive, sourceDateEpoch })
   const nativeFiles = identity.entries
     .filter(
       (entry) =>
@@ -59,7 +54,7 @@ export async function writeSshRelayRuntimeMetadata({
       { uri: `${nodeRelease.baseUrl}/${library.name}`, digest: { sha256: library.sha256 } }
     )
   }
-  const provenance = {
+  return {
     _type: 'https://in-toto.io/Statement/v1',
     subject: [{ name: archive.name, digest: { sha256: archive.sha256.slice('sha256:'.length) } }],
     predicateType: 'https://slsa.dev/provenance/v1',
@@ -69,6 +64,7 @@ export async function writeSshRelayRuntimeMetadata({
         externalParameters: {
           tuple: identity.tupleId,
           nodeVersion: identity.nodeVersion,
+          contentId: identity.contentId,
           sourceDateEpoch
         },
         internalParameters: { toolchain },
@@ -84,6 +80,33 @@ export async function writeSshRelayRuntimeMetadata({
       }
     }
   }
+}
+
+export async function writeSshRelayRuntimeMetadata({
+  outputDirectory,
+  identity,
+  archive,
+  nodeRelease,
+  sourceDateEpoch,
+  gitCommit,
+  builder,
+  runner,
+  toolchain
+}) {
+  const sbomName = `orca-ssh-relay-runtime-${identity.tupleId}.spdx.json`
+  const provenanceName = `orca-ssh-relay-runtime-${identity.tupleId}.provenance.json`
+  const identityName = `orca-ssh-relay-runtime-${identity.tupleId}.identity.json`
+  const sbom = createSshRelayRuntimeSbom({ identity, archive, sourceDateEpoch })
+  const provenance = createSshRelayRuntimeProvenance({
+    identity,
+    archive,
+    nodeRelease,
+    sourceDateEpoch,
+    gitCommit,
+    builder,
+    runner,
+    toolchain
+  })
   const identityDocument = {
     ...identity,
     archive: {
