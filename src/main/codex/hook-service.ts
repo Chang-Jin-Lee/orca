@@ -1035,6 +1035,12 @@ export class CodexHookService {
   }
 
   getStatus(): AgentHookInstallStatus {
+    return this.getStatusAfterInstall(null)
+  }
+
+  private getStatusAfterInstall(
+    recentGrantEntries: readonly CodexTrustEntry[] | null
+  ): AgentHookInstallStatus {
     const configPath = getConfigPath()
     const scriptPath = getManagedScriptPath()
     const config = readHooksJson(configPath)
@@ -1068,9 +1074,21 @@ export class CodexHookService {
     // Why: RPC-granted entries store Codex's own hash, which is authoritative
     // even when it differs from computeTrustedHash — that difference is the
     // drift bug class this lane exists to absorb, not a stale entry.
-    const ledgerHome = readCurrentCodexTrustGrantLedgerHome(getOrcaManagedCodexHomePath(), {
-      kind: 'native'
-    })
+    // Why: install() already resolved the binary and either verified Codex's
+    // hashes or wrote fallback hashes. Re-resolving PATH here doubles sync launch work.
+    const ledgerHome =
+      recentGrantEntries === null
+        ? readCurrentCodexTrustGrantLedgerHome(getOrcaManagedCodexHomePath(), { kind: 'native' })
+        : null
+    const recentGrantHashes = new Map<string, { signature: string; trustedHash: string }>()
+    for (const entry of recentGrantEntries ?? []) {
+      if (entry.trustedHash) {
+        recentGrantHashes.set(normalizeHookTrustKeyForLookup(computeTrustKey(entry)), {
+          signature: getCodexHookTrustSignature(entry),
+          trustedHash: entry.trustedHash
+        })
+      }
+    }
 
     const missing: string[] = []
     const trustMissing: string[] = []
@@ -1120,6 +1138,13 @@ export class CodexHookService {
       const grantedHash = getCodexLedgerTrustedHash(ledgerHome, trustKey, trustInput)
       if (grantedHash) {
         validHashes.add(grantedHash)
+      }
+      const recentGrant = recentGrantHashes.get(normalizeHookTrustKeyForLookup(trustKey))
+      if (
+        recentGrant?.signature === getCodexHookTrustSignature(trustInput) &&
+        recentGrant.trustedHash
+      ) {
+        validHashes.add(recentGrant.trustedHash)
       }
       const actualState = trustEntries.get(trustKey)
       if (!actualState?.trustedHash || !validHashes.has(actualState.trustedHash)) {
@@ -1248,6 +1273,7 @@ export class CodexHookService {
       })
     }
     const trustEntries: CodexTrustEntry[] = [...mirroredTrustEntries, ...managedTrustEntries]
+    let recentGrantEntries: readonly CodexTrustEntry[] = []
 
     config.hooks = nextHooks
     writeManagedScript(scriptPath, getManagedScript())
@@ -1272,6 +1298,7 @@ export class CodexHookService {
         host: { kind: 'native' }
       })
       if (grant.lane === 'rpc') {
+        recentGrantEntries = grant.entries
         upsertHookTrustEntries(tomlPath, mirroredTrustEntries)
         removeStaleRuntimeHookTrustEntries(tomlPath, configPath, [
           ...mirroredTrustEntries,
@@ -1303,7 +1330,7 @@ export class CodexHookService {
     } catch (error) {
       console.warn('[codex-hook-service] failed to clean legacy Codex hooks', error)
     }
-    return this.getStatus()
+    return this.getStatusAfterInstall(recentGrantEntries)
   }
 
   async installRemote(

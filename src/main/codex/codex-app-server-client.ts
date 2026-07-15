@@ -178,8 +178,10 @@ export async function runCodexHookTrustGrantSession(
   child.on('close', () => {
     failPending(buildEarlyExitError())
   })
-  child.stderr.on('data', (chunk: Buffer) => {
-    stderrTail = (stderrTail + chunk.toString('utf8')).slice(-STDERR_TAIL_MAX_BYTES)
+  // Why: JSONL can contain non-ASCII hook paths. Stream decoding must retain a
+  // multibyte character split across pipe chunks or the response becomes invalid JSON.
+  child.stderr.setEncoding('utf8').on('data', (chunk: string) => {
+    stderrTail = (stderrTail + chunk).slice(-STDERR_TAIL_MAX_BYTES)
   })
   // Why: a child can exit between the liveness check and stdin.write(); an
   // EPIPE must reject the RPC instead of becoming an unhandled stream error.
@@ -188,8 +190,8 @@ export async function runCodexHookTrustGrantSession(
   })
 
   let stdoutBuffer = ''
-  child.stdout.on('data', (chunk: Buffer) => {
-    stdoutBuffer += chunk.toString('utf8')
+  child.stdout.setEncoding('utf8').on('data', (chunk: string) => {
+    stdoutBuffer += chunk
     if (Buffer.byteLength(stdoutBuffer) > STDOUT_LINE_MAX_BYTES) {
       child.kill('SIGKILL')
       failPending(new Error('codex app-server emitted an oversized JSONL response'))

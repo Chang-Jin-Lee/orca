@@ -82,10 +82,15 @@ export function readCurrentCodexTrustGrantLedgerHome(
   host: CodexTrustGrantHost
 ): CodexTrustGrantLedgerHome | null {
   try {
-    return readCodexTrustGrantLedgerHomeMatchingStamp(
-      runtimeHomePath,
-      resolveCodexTrustGrantHost(host).binaryStamp
-    )
+    const home = readCodexTrustGrantLedgerHome(runtimeHomePath)
+    if (!home) {
+      // Why: fallback-only installs have no ledger. Avoid a synchronous PATH
+      // and version-manager scan when there is no recorded stamp to validate.
+      return null
+    }
+    return binaryStampsMatch(home.binary, resolveCodexTrustGrantHost(host).binaryStamp)
+      ? home
+      : null
   } catch {
     // Why: status is diagnostic and best-effort; unreadable ledger/binary
     // paths must trigger conservative self-hash handling, not throw.

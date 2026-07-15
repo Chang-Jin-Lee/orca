@@ -18,9 +18,10 @@ import {
 } from './codex-trust-grant-ledger'
 import type { CodexHookTrustGrantRequest } from './codex-app-server-client'
 
-const { getPathMock, homedirMock } = vi.hoisted(() => ({
+const { getPathMock, homedirMock, resolveCodexCommandMock } = vi.hoisted(() => ({
   getPathMock: vi.fn<(name: string) => string>(),
-  homedirMock: vi.fn<() => string>()
+  homedirMock: vi.fn<() => string>(),
+  resolveCodexCommandMock: vi.fn<() => string>()
 }))
 
 vi.mock('electron', () => ({ app: { getPath: getPathMock } }))
@@ -28,6 +29,7 @@ vi.mock('os', async (importOriginal) => {
   const actual = await importOriginal<typeof Os>()
   return { ...actual, homedir: homedirMock }
 })
+vi.mock('../codex-cli/command', () => ({ resolveCodexCommand: resolveCodexCommandMock }))
 
 import { CodexHookService } from './hook-service'
 
@@ -41,6 +43,7 @@ beforeEach(() => {
   previousUserDataPath = process.env.ORCA_USER_DATA_PATH
   process.env.ORCA_USER_DATA_PATH = userDataDir
   homedirMock.mockReturnValue(tmpHome)
+  resolveCodexCommandMock.mockReturnValue(process.execPath)
   getPathMock.mockImplementation((name: string) => {
     if (name === 'userData') {
       return userDataDir
@@ -133,6 +136,9 @@ describe('CodexHookService app-server trust grant lane', () => {
 
     expect(service.install().state).toBe('installed')
     expect(runner).toHaveBeenCalledTimes(1)
+    // Why: each launch validates the binary stamp once; getStatus reuses the
+    // just-verified grant instead of repeating PATH/version-manager scans.
+    expect(resolveCodexCommandMock).toHaveBeenCalledTimes(2)
     expect(readFileSync(join(managedHome, 'config.toml'))).toEqual(firstToml)
   })
 
@@ -204,8 +210,11 @@ describe('CodexHookService app-server trust grant lane', () => {
     const runner = vi.fn()
     trustGrantInternals.setGrantSessionRunnerSync(runner)
 
-    expect(new CodexHookService().install().state).toBe('installed')
+    const service = new CodexHookService()
+    expect(service.install().state).toBe('installed')
+    expect(service.getStatus().state).toBe('installed')
     expect(runner).not.toHaveBeenCalled()
+    expect(resolveCodexCommandMock).not.toHaveBeenCalled()
   })
 
   it('restores exact config bytes before fallback after a mutating RPC failure', () => {
