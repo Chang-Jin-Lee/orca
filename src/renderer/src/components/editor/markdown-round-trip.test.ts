@@ -145,6 +145,16 @@ describe('rich markdown round trip', () => {
     }
   )
 
+  it('preserves a heading toggle when its attribute uses HTML whitespace around equals', () => {
+    expect(
+      roundTripMarkdown(
+        '<details data-orca-toggle = "heading-4"><summary>Toggle</summary><p>Body</p></details>\n'
+      )
+    ).toBe(
+      '<details class="orca-details" data-orca-toggle="heading-4">\n<summary>Toggle</summary>\n\nBody\n\n</details>'
+    )
+  })
+
   it('preserves details blocks with raw html as passthrough html', () => {
     const input = '<details><summary><span>Toggle</span></summary><p><em>Body</em></p></details>\n'
     expect(roundTripMarkdown(input)).toBe(input.trimEnd())

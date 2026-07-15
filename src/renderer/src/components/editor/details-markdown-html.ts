@@ -46,8 +46,10 @@ export function escapeDetailsHtml(value: string): string {
 }
 
 export function parseDetailsAttributes(rawAttributes: string): Record<string, unknown> {
+  // Why: validation accepts normal HTML whitespace around `=`, so parsing
+  // must accept it too or an editable toggle loses its heading variant.
   const variantMatch = rawAttributes.match(
-    /\sdata-orca-toggle=(?:"(heading-[1-4])"|'(heading-[1-4])'|(heading-[1-4]))(?:\s|$)/i
+    /\sdata-orca-toggle\s*=\s*(?:"(heading-[1-4])"|'(heading-[1-4])'|(heading-[1-4]))(?:\s|$)/i
   )
   return {
     open: /\sopen(?:\s|=|$)/i.test(rawAttributes),
