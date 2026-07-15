@@ -938,9 +938,11 @@
                 <p>
                   Assemble pinned Node, relay entries, patched <code>node-pty</code>, the exact
                   <code>@parcel/watcher</code> package, and required JavaScript dependencies on
-                  matching CI environments. Hosted Linux prerequisite acquisition uses HTTPS with
-                  bounded connection timeouts and retries; exhaustion fails the native build before
-                  any artifact is accepted. Run executable smoke probes before archiving.
+                  matching CI environments. Hosted Linux jobs first prove the preinstalled
+                  compiler/toolchain with executable C and C++ probes; only genuinely missing
+                  prerequisites use HTTPS with bounded connection timeouts and retries. Probe or
+                  install exhaustion fails the native build before any artifact is accepted. Run
+                  executable runtime smoke probes before archiving.
                 </p>
               </div>
               <div class="phase-output">

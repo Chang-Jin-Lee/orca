@@ -56,7 +56,19 @@ describe('SSH relay runtime artifact workflow', () => {
     const installStep = workflow.jobs['build-posix-runtime'].steps.find(
       (step) => step.name === 'Install Linux build and verification tools'
     )
+    const missingGate = 'if ((${#missing_requirements[@]} > 0)); then'
 
+    expect(installStep.run).toContain(
+      'required_commands=(cc c++ make ar ld strip curl gpg gpgv python3 xz)'
+    )
+    expect(installStep.run).toContain('missing_requirements+=(ca-certificates)')
+    expect(installStep.run).toContain(missingGate)
+    expect(installStep.run.indexOf('if ! probe_c_toolchain')).toBeLessThan(
+      installStep.run.indexOf(missingGate)
+    )
+    expect(installStep.run.indexOf('sudo sed -i')).toBeGreaterThan(
+      installStep.run.indexOf(missingGate)
+    )
     expect(installStep.run).toContain("'s|http://ports.ubuntu.com|https://ports.ubuntu.com|g'")
     expect(installStep.run).toContain('Acquire::Retries=3')
     expect(installStep.run).toContain('Acquire::https::Timeout=15')
@@ -64,6 +76,11 @@ describe('SSH relay runtime artifact workflow', () => {
     expect(
       installStep.run.match(/timeout --signal=TERM --kill-after=15s 180s sudo apt-get/g)
     ).toHaveLength(2)
+    expect(installStep.run).toContain('orca-ci-c-probe')
+    expect(installStep.run).toContain('orca-ci-cxx-probe')
+    expect(installStep.run.lastIndexOf('probe_cxx_toolchain')).toBeGreaterThan(
+      installStep.run.indexOf(missingGate)
+    )
   })
 
   it('uploads only the first output after two clean builds verify and compare', async () => {

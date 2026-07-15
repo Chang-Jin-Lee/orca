@@ -9,16 +9,14 @@ keeps commands, hashes, runner identities, timings, and failure details.
 A checked box means the work has evidence in the detailed ledger. Design approval alone does not
 complete a box.
 
-Active checkpoint: **Milestone 4 / Work Package 3 Linux prerequisite transport correction — in
-progress, 2026-07-15, Codex implementation owner.** The disconnected protected-manifest workflow is
-locally green at `4979bc26c`. Exact-head artifact run
-[29426142423](https://github.com/stablyai/orca/actions/runs/29426142423) and its isolated attempt 2
-both prove Ubuntu 24.04 ARM port-80 mirror failure before dependencies or tests. The narrow active
-package now passes locally: hosted Linux prerequisite acquisition moves to HTTPS with bounded
-connection timeouts, retries, lock wait, and TERM-to-KILL settlement; exhaustion still fails the
-native build. The correction is ready to checkpoint and push for fresh all-six native proof. Golden
-E2E and PR Checks are green on the prior exact head. Production keys/environment/seed, publication,
-desktop/default consumers, tuple enablement, and merge to `main` remain disconnected.
+Active checkpoint: **Milestone 4 / Work Package 3 Linux prerequisite capability gate — in progress,
+2026-07-15, Codex implementation owner.** Port 80 failed twice at `4979bc26c`; fresh ARM job
+[87395626746](https://github.com/stablyai/orca/actions/runs/29428082375/job/87395626746)
+at `c9ffa26a9` proves port 443 is also unavailable and that the new command bound settles with exit 124. The narrow capability-first refinement is locally green: it verifies preinstalled primitives
+and executable C/C++ probes, and invokes bounded HTTPS APT only when a prerequisite is missing. It
+is ready to checkpoint and push for fresh native proof. Other `c9ffa26a9` jobs are still settling.
+Production keys/environment/seed, publication, desktop/default consumers, tuple enablement, and
+merge to `main` remain disconnected.
 
 ## Safety status
 

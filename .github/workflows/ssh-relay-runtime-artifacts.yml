@@ -93,26 +93,65 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          # Why: hosted ARM runners repeatedly lost port-80 mirror access; bounded HTTPS keeps failures explicit.
-          for source_file in /etc/apt/sources.list /etc/apt/sources.list.d/*.sources; do
-            [ -f "$source_file" ] || continue
-            sudo sed -i \
-              -e 's|http://ports.ubuntu.com|https://ports.ubuntu.com|g' \
-              -e 's|http://archive.ubuntu.com|https://archive.ubuntu.com|g' \
-              -e 's|http://security.ubuntu.com|https://security.ubuntu.com|g' \
-              -e 's|http://azure.archive.ubuntu.com|https://azure.archive.ubuntu.com|g' \
-              "$source_file"
+          # Why: hosted ARM mirror egress can disappear; prove preinstalled tools before bounded APT fallback.
+          probe_root=$(mktemp -d)
+          trap 'rm -rf "$probe_root"' EXIT
+          required_commands=(cc c++ make ar ld strip curl gpg gpgv python3 xz)
+          missing_requirements=()
+          for required_command in "${required_commands[@]}"; do
+            if ! command -v "$required_command" >/dev/null; then
+              missing_requirements+=("$required_command")
+            fi
           done
-          apt_options=(
-            -o Acquire::Retries=3
-            -o Acquire::http::Timeout=15
-            -o Acquire::https::Timeout=15
-            -o Acquire::ForceIPv4=true
-            -o DPkg::Lock::Timeout=60
-          )
-          timeout --signal=TERM --kill-after=15s 180s sudo apt-get "${apt_options[@]}" update -qq
-          timeout --signal=TERM --kill-after=15s 180s sudo apt-get "${apt_options[@]}" install -y -qq \
-            build-essential ca-certificates curl gnupg gpgv python3 xz-utils
+          if [ ! -r /etc/ssl/certs/ca-certificates.crt ]; then
+            missing_requirements+=(ca-certificates)
+          fi
+
+          probe_c_toolchain() {
+            printf '%s\n' '#include <stdlib.h>' 'int main(void) { return EXIT_SUCCESS; }' \
+              | cc -x c - -o "$probe_root/orca-ci-c-probe" \
+              && "$probe_root/orca-ci-c-probe"
+          }
+          probe_cxx_toolchain() {
+            printf '%s\n' '#include <cstdlib>' 'int main() { return EXIT_SUCCESS; }' \
+              | c++ -x c++ - -o "$probe_root/orca-ci-cxx-probe" \
+              && "$probe_root/orca-ci-cxx-probe"
+          }
+          if command -v cc >/dev/null && command -v c++ >/dev/null; then
+            if ! probe_c_toolchain || ! probe_cxx_toolchain; then
+              missing_requirements+=(build-essential)
+            fi
+          fi
+
+          if ((${#missing_requirements[@]} > 0)); then
+            printf 'missing Linux prerequisites: %s\n' "${missing_requirements[*]}"
+            for source_file in /etc/apt/sources.list /etc/apt/sources.list.d/*.sources; do
+              [ -f "$source_file" ] || continue
+              sudo sed -i \
+                -e 's|http://ports.ubuntu.com|https://ports.ubuntu.com|g' \
+                -e 's|http://archive.ubuntu.com|https://archive.ubuntu.com|g' \
+                -e 's|http://security.ubuntu.com|https://security.ubuntu.com|g' \
+                -e 's|http://azure.archive.ubuntu.com|https://azure.archive.ubuntu.com|g' \
+                "$source_file"
+            done
+            apt_options=(
+              -o Acquire::Retries=3
+              -o Acquire::http::Timeout=15
+              -o Acquire::https::Timeout=15
+              -o Acquire::ForceIPv4=true
+              -o DPkg::Lock::Timeout=60
+            )
+            timeout --signal=TERM --kill-after=15s 180s sudo apt-get "${apt_options[@]}" update -qq
+            timeout --signal=TERM --kill-after=15s 180s sudo apt-get "${apt_options[@]}" install -y -qq \
+              build-essential ca-certificates curl gnupg gpgv python3 xz-utils
+          fi
+
+          for required_command in "${required_commands[@]}"; do
+            command -v "$required_command" >/dev/null
+          done
+          test -r /etc/ssl/certs/ca-certificates.crt
+          probe_c_toolchain
+          probe_cxx_toolchain
 
       - name: Install macOS signature verifier
         if: runner.os == 'macOS'
