@@ -400,6 +400,7 @@ describe('closeTerminalTab', () => {
     const requestPinnedTabCloseConfirm = vi.fn()
     const closeTab = vi.fn()
     const closeUnifiedTab = vi.fn()
+    const onClosed = vi.fn()
     getStateMock.mockReturnValue(
       makePinnedTabState({
         confirmClosePinnedTab: true,
@@ -409,12 +410,36 @@ describe('closeTerminalTab', () => {
       })
     )
 
-    closeTerminalTab('pinned-entity-1')
+    closeTerminalTab('pinned-entity-1', { onClosed })
+    expect(onClosed).not.toHaveBeenCalled()
     const { onConfirm } = requestPinnedTabCloseConfirm.mock.calls[0][0] as { onConfirm: () => void }
     onConfirm()
 
     expect(closeTab).toHaveBeenCalledWith('pinned-entity-1', { reason: undefined })
     expect(closeUnifiedTab).not.toHaveBeenCalled()
+    expect(onClosed).toHaveBeenCalledTimes(1)
+  })
+
+  it('reports cancellation without finalizing a pinned tab close', () => {
+    const requestPinnedTabCloseConfirm = vi.fn()
+    const closeUnifiedTab = vi.fn()
+    const onClosed = vi.fn()
+    const onCancel = vi.fn()
+    getStateMock.mockReturnValue(
+      makePinnedTabState({
+        confirmClosePinnedTab: true,
+        requestPinnedTabCloseConfirm,
+        closeUnifiedTab
+      })
+    )
+
+    closeTerminalTab('pinned-entity-1', { onClosed, onCancel })
+    const request = requestPinnedTabCloseConfirm.mock.calls[0][0] as { onCancel?: () => void }
+    request.onCancel?.()
+
+    expect(closeUnifiedTab).not.toHaveBeenCalled()
+    expect(onClosed).not.toHaveBeenCalled()
+    expect(onCancel).toHaveBeenCalledTimes(1)
   })
 
   it('guards a pinned tab closed by its unified id (workspace overlay path)', () => {

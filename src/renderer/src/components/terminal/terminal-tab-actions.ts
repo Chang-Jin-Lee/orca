@@ -104,6 +104,8 @@ export function closeTerminalTab(
     localPtyTeardownOwnedExternally?: boolean
     precomputedRetirementPlan?: TerminalTabRetirementPlan
     precomputedCloseState?: PrecomputedTerminalCloseState
+    onClosed?: () => void
+    onCancel?: () => void
   }
 ): void {
   const state = useAppStore.getState()
@@ -114,6 +116,7 @@ export function closeTerminalTab(
   )
   const target = resolveTerminalCloseTarget(state, tabId, precomputedCloseState)
   if (!target) {
+    options?.onClosed?.()
     return
   }
   const { worktreeId: owningWorktreeId, terminalTabId } = target
@@ -128,7 +131,8 @@ export function closeTerminalTab(
     guardPinnedTabClose({
       isPinned: true,
       tabLabel: resolvePinnedTabLabel(state, owningWorktreeId, terminalTabId),
-      onClose: () => closeTerminalTab(tabId, { force: true })
+      onClose: () => closeTerminalTab(tabId, { ...options, force: true }),
+      ...(options?.onCancel ? { onCancel: options.onCancel } : {})
     })
     return
   }
@@ -167,6 +171,7 @@ export function closeTerminalTab(
       tabId: hostBackedTabId,
       environmentId: runtimeEnvironmentId
     })
+    options?.onClosed?.()
     return
   }
 
@@ -203,6 +208,7 @@ export function closeTerminalTab(
         }
       }
     }
+    options?.onClosed?.()
     return
   }
 
@@ -223,6 +229,7 @@ export function closeTerminalTab(
       ? { precomputedRetirementPlan: options.precomputedRetirementPlan }
       : {})
   })
+  options?.onClosed?.()
 }
 
 export function closeOtherTerminalTabs(tabId: string, activeWorktreeId: string | null): void {
