@@ -169,6 +169,7 @@ export function foldClaudeBackgroundTasksIntoRoster(
     return
   }
   const listedIds = new Set<string>()
+  const pendingRunningTasks = new Map<string, ClaudeBackgroundAgentTask>()
   const hasTeammateTypedTask = tasks.some((task) => task.teammate)
   for (const task of tasks) {
     if (task.teammate) {
@@ -179,6 +180,7 @@ export function foldClaudeBackgroundTasksIntoRoster(
     if (existing) {
       if (!task.running) {
         roster.delete(task.id)
+        pendingRunningTasks.delete(task.id)
         continue
       }
       existing.agentType = task.agentType ?? existing.agentType
@@ -187,6 +189,7 @@ export function foldClaudeBackgroundTasksIntoRoster(
       continue
     }
     if (!task.running) {
+      pendingRunningTasks.delete(task.id)
       continue
     }
     upsertWorkingClaudeSubagent(
@@ -199,24 +202,43 @@ export function foldClaudeBackgroundTasksIntoRoster(
     if (created) {
       created.backgroundTasksAuthoritative = true
       created.listedAsSubagentTask = true
+    } else {
+      // Why: a full roster may still contain stale entries that this same
+      // inventory will reap. Retry after cleanup so a replacement stays live.
+      pendingRunningTasks.set(task.id, task)
     }
   }
-  if (options?.inventoryComplete === false) {
-    return
+  if (options?.inventoryComplete !== false) {
+    for (const [id, tracked] of roster) {
+      if (listedIds.has(id)) {
+        continue
+      }
+      if (
+        hasTeammateTypedTask &&
+        !tracked.backgroundTasksAuthoritative &&
+        tracked.listedAsSubagentTask !== true &&
+        isClaudeTeammateLifecycleId(id)
+      ) {
+        continue
+      }
+      roster.delete(id)
+    }
   }
-  for (const [id, tracked] of roster) {
-    if (listedIds.has(id)) {
-      continue
+  for (const task of pendingRunningTasks.values()) {
+    if (roster.size >= AGENT_STATUS_MAX_SUBAGENTS) {
+      break
     }
-    if (
-      hasTeammateTypedTask &&
-      !tracked.backgroundTasksAuthoritative &&
-      tracked.listedAsSubagentTask !== true &&
-      isClaudeTeammateLifecycleId(id)
-    ) {
-      continue
+    upsertWorkingClaudeSubagent(
+      roster,
+      task.id,
+      { agentType: task.agentType, description: task.description },
+      now
+    )
+    const created = roster.get(task.id)
+    if (created) {
+      created.backgroundTasksAuthoritative = true
+      created.listedAsSubagentTask = true
     }
-    roster.delete(id)
   }
 }
 

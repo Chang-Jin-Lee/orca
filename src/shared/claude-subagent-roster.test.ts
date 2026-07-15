@@ -81,6 +81,24 @@ describe('claude-subagent-roster', () => {
     expect(roster.size).toBe(AGENT_STATUS_MAX_SUBAGENTS)
   })
 
+  it('reconciles stale entries before adding replacement tasks at the cap', () => {
+    const roster: ClaudeSubagentRoster = new Map()
+    for (let i = 0; i < AGENT_STATUS_MAX_SUBAGENTS; i++) {
+      upsertWorkingClaudeSubagent(roster, `a${i}`, {}, i)
+    }
+    const tasks = Array.from({ length: AGENT_STATUS_MAX_SUBAGENTS }, (_, index) =>
+      task({ id: index === 0 ? 'replacement' : `a${index}` })
+    )
+
+    // Why: a complete inventory can replace a stale child while the roster is
+    // full. Reap the stale slot first so the new live child keeps the done-gate.
+    foldClaudeBackgroundTasksIntoRoster(roster, tasks, 999)
+
+    expect(roster.has('a0')).toBe(false)
+    expect(roster.has('replacement')).toBe(true)
+    expect(roster.size).toBe(AGENT_STATUS_MAX_SUBAGENTS)
+  })
+
   it('reads only agent-typed background_tasks entries', () => {
     const { present, tasks } = readClaudeBackgroundAgentTasks({
       background_tasks: [
