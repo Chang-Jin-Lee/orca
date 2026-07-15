@@ -9,7 +9,7 @@ work; keep exact commands, runner identities, hashes, metrics, and residual gaps
 Date created: 2026-07-14<br>
 Last updated: 2026-07-14<br>
 Current phase: Milestone 3 / Work Package 2 oldest-supported-baseline and native-trust proof — **In progress — 2026-07-14, Codex implementation owner**; exact-head run [29373507297](https://github.com/stablyai/orca/actions/runs/29373507297) passes all six target-native build, smoke, exact clean-build equality, upload, SBOM, license, provenance, runner/toolchain, and prohibited-content cells, and direct inspection of every downloaded payload passes exact archive/subject hashes, archive-scoped SPDX identity, one-owner-per-file, dependency, commit/run/builder/runner, tool-version/hash, and closure assertions (E-M3-METADATA-CI-001); Windows x64/arm64 record strict `MSVC 14.44.35207` identities and distinct exact linker SHA-256 values despite the Git-for-Windows PATH collision; the all-six metadata/provenance gate is closed, while oldest-baseline execution, native signing/trust, cross-family remotes, and measured legacy baselines remain open; production/default behavior and every tuple state remain unchanged; no bundled-runtime path is enabled and no artifact is published<br>
-Session checkpoint: **In progress — 2026-07-14, Codex implementation owner** — target-native pre-sign assessment, real first-build candidate staging, unpublished JSON evidence, and cleanup are implemented at `1a79e4921` and locally green under E-M3-NATIVE-ASSESSMENT-LOCAL-001. Exact-head proof must now show Linux hash-only verification, three-file macOS staging, and Windows Authenticode preservation/staging on both architectures. This package uses no credentials or signing service, establishes no native trust, publishes nothing, enables no tuple, and leaves legacy as the production default.<br>
+Session checkpoint: **In progress — 2026-07-14, Codex implementation owner** — target-native pre-sign assessment, real first-build candidate staging, unpublished JSON evidence, and cleanup are implemented at `1a79e4921` and pass locally plus all six exact-head native jobs under E-M3-NATIVE-ASSESSMENT-LOCAL-001 and E-M3-NATIVE-ASSESSMENT-CI-001. The next safe credential-free package is exact returned-file application plus final post-sign runtime identity/closure contracts; real Apple/SignPath calls and native trust remain separately gated. Nothing is published or enabled, and legacy remains the production default.<br>
 Primary design: [SSH relay GitHub Release plan](./2026-07-14-ssh-relay-github-release-plan.html)<br>
 Motivating issues: [#8450](https://github.com/stablyai/orca/issues/8450), [#1693](https://github.com/stablyai/orca/issues/1693)
 
@@ -698,7 +698,8 @@ payload; macOS must stage exactly three non-Node candidates; Windows must invoke
 the three unsigned Orca-built `.node` files. Candidate paths stay out of PowerShell source, any
 hash/status/certificate drift fails closed, stage JSON is retained only as unpublished evidence,
 and the temporary payload is removed. Local implementation passes at `1a79e4921` under
-E-M3-NATIVE-ASSESSMENT-LOCAL-001; exact-head native execution remains required.
+E-M3-NATIVE-ASSESSMENT-LOCAL-001; exact-head run 29384042509 closes all six real candidate cells
+under E-M3-NATIVE-ASSESSMENT-CI-001.
 
 **Baseline correction — 2026-07-14, Codex implementation owner:**
 E-M3-LINUX-BASELINE-LOCAL-RED-001 proves the existing Linux x64 candidate cannot load its patched
@@ -8043,6 +8044,90 @@ diff --check`.
   transfer/install, packaged desktop use, fallback/performance, or an enabled tuple.
 - Follow-up: push the implementation and evidence separately; require exact-head logs and downloaded
   stage reports from all six jobs before accepting real candidate behavior.
+
+### E-M3-NATIVE-ASSESSMENT-CI-001 — All six real candidates pass native assessment and exclusive staging
+
+- Date: 2026-07-14 (run timestamps 2026-07-15 UTC)
+- Owner: Codex implementation owner
+- Source/run: exact draft-PR head `82f6c0cefa9d7ac031d56bcfd0b85a2ab71a7d8b`, containing
+  implementation `1a79e492145a1297949a10ab6870d2118c5f5cd3` and local evidence
+  `82f6c0cefa9d7ac031d56bcfd0b85a2ab71a7d8b`; Actions run
+  [29384042509](https://github.com/stablyai/orca/actions/runs/29384042509).
+- Commands:
+
+  ```sh
+  gh run view 29384042509 --repo stablyai/orca \
+    --json status,conclusion,headSha,createdAt,updatedAt,url,jobs
+  gh run view 29384042509 --repo stablyai/orca --job 87253495614 --log | \
+    awk -F '\t' '$2 == "Run runtime artifact contract tests"' | \
+    rg 'native-signing-stage|windows-authenticode-assessment|Test Files|Tests|Duration'
+  gh run view 29384042509 --repo stablyai/orca --job 87253495617 --log | \
+    awk -F '\t' '$2 == "Run runtime artifact contract tests"' | \
+    rg 'native-signing-stage|windows-authenticode-assessment|Test Files|Tests|Duration'
+  gh run download 29384042509 --repo stablyai/orca \
+    --dir /private/tmp/orca-8450-run-29384042509-artifacts \
+    --pattern 'ssh-relay-runtime-*'
+  node --input-type=module  # inline six-report identity/cardinality/hash audit recorded below
+  gh run view 29384042507 --repo stablyai/orca \
+    --json status,conclusion,headSha,createdAt,updatedAt,url,jobs
+  gh run view 29384042498 --repo stablyai/orca \
+    --json status,conclusion,headSha,createdAt,updatedAt,url,jobs
+  ```
+
+- Contract result: PASS on Linux x64/arm64, macOS x64/arm64, and Windows x64/arm64. Every native
+  build job syntax-checked and ran both new suites under exact Node 24.18.0. The POSIX log records
+  Authenticode contract 8/8, target-native stage 5/5, and aggregate 26 files/135 tests in 6.78
+  seconds. The PowerShell log records Authenticode contract 7 passed plus one POSIX-only symlink skip,
+  target-native stage 5/5, and aggregate 27 files/132 passed plus seven total platform skips out of
+  139 in 7.33 seconds.
+- Real first-build result: PASS. Both Linux reports authenticate the exact three native identity
+  entries, select/stage zero files, and create no payload. Both macOS reports select and stage exactly
+  three non-Node files, with no assessment or preserved-upstream entry. Both Windows reports contain
+  exactly five hash-bound PowerShell assessments, preserve exactly `OpenConsole.exe` and
+  `conpty.dll` as `Valid`, and stage exactly the three `NotSigned` Orca-built `.node` files. All six
+  builds confirm official Node is verification-only, delete the temporary stage, and upload only the
+  JSON report plus the prior unpublished evidence set.
+- Downloaded-report audit: PASS. Six artifacts contained exactly one identity and signing-stage
+  report each. An inline Node audit required tuple/platform equality; matched every immutable,
+  assessment, signing, preserved, and staged path/size/SHA-256 back to the identity; required staged
+  paths and size totals to equal the signing selection; enforced the platform cardinalities; and
+  rechecked official-Node exclusion and the exact Windows preserved set. Exact report evidence:
+
+  | Tuple             | Report SHA-256                                                     | Assess | Sign | Preserve | Stage | Staged bytes |
+  | ----------------- | ------------------------------------------------------------------ | ------ | ---- | -------- | ----- | ------------ |
+  | linux-x64-glibc   | `9376647f4ac66060a82bab660752b961fedfc374d1b3fbc76fe60b6f35590a3b` | 0      | 0    | 0        | 0     | 0            |
+  | linux-arm64-glibc | `453fe413e81aa475149f92180f54713293de0562fe86b049746d8ec77c449f1e` | 0      | 0    | 0        | 0     | 0            |
+  | darwin-x64        | `ae9ac0afb40bd5a07ff2dba78d9a4c62bb7662f4f21a9483bd0c7f5469ef0162` | 0      | 3    | 0        | 3     | 393,744      |
+  | darwin-arm64      | `dbfae0d923d3a18cd042939d8fa174e1e0420aad548bb5caf6256aed2b37a22e` | 0      | 3    | 0        | 3     | 459,592      |
+  | win32-x64         | `69d6685d8c8dc54682a3af25402a1e489d11fc4a1771fd9ca599ea2c7864ddff` | 5      | 3    | 2        | 3     | 2,114,048    |
+  | win32-arm64       | `50f85ebb09695bdc4443add6f267add66f099ee2b4b0fe9108a35f1f7db644f3` | 5      | 3    | 2        | 3     | 2,224,128    |
+
+- Windows signer evidence: all four preserved entries report exact subject
+  `CN=Microsoft Corporation, O=Microsoft Corporation, L=Redmond, S=Washington, C=US`. x64
+  `OpenConsole.exe` and `conpty.dll` use thumbprint
+  `3F56A45111684D454E231CFDC4DA5C8D370F9816`. arm64 `conpty.dll` uses that thumbprint and arm64
+  `OpenConsole.exe` uses `F5877012FBD62FABCBDC8D8CEE9C9585BA30DF79`. These observations bind the
+  unchanged source bytes but do not establish final Orca native trust.
+- Native build/regression controls: all six double-build, smoke, exact-equality, metadata, stage,
+  cleanup, and unpublished-upload jobs passed in Linux x64 3m58s, Linux arm64 4m48s, macOS x64
+  6m08s, macOS arm64 3m32s, Windows x64 5m35s, and Windows arm64 9m02s. Linux x64/arm64 oldest-
+  userland supplements passed in 37s/53s; Windows x64 exact build-20348 floor passed in 1m24s.
+- Expected aggregate status: the artifact workflow concluded failure only because Windows arm64
+  hosted image 10.0.26200 again rejected the exact declared 10.0.26100 floor in 3m46s. The failure
+  preserves E-M3-WINDOWS-ARM64-BASELINE-CI-RED-001 and is not an assessment/staging regression.
+- Other exact-head controls: PR Checks
+  [29384042507](https://github.com/stablyai/orca/actions/runs/29384042507) passed in 13m59s. Golden E2E
+  [29384042498](https://github.com/stablyai/orca/actions/runs/29384042498) passed macOS/Linux in
+  4m02s/4m31s.
+- Oracle proved: real first-build native candidate bytes on all six runner families obey the exact
+  credential-free pre-sign assessment, preservation, exclusive staging, evidence, and cleanup
+  contract without changing prior build/runtime outcomes.
+- Does not prove: Apple Developer ID or SignPath invocation/approval, returned signed bytes, final
+  post-signing hashes, Gatekeeper/quarantine/notarized-app provenance, final SignPath signer policy,
+  Defender/WDAC, exact missing oldest snapshots, release aggregation, SSH transfer/install, packaged
+  desktop use, fallback/performance, or an enabled tuple.
+- Follow-up: keep every tuple disabled; implement exact returned-file application and final runtime
+  identity/closure contracts before any credentialed signing job is allowed to feed aggregation.
 
 ## Accepted Gaps
 
