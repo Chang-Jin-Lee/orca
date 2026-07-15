@@ -241,28 +241,50 @@ describe('listOpenCodeSqliteSessions', () => {
       `INSERT INTO message (id, session_id, time_created, time_updated, data)
        VALUES ('msg_malformed', 'ses_noise', 1777634000500, 1777634000500, ?)`
     ).run('malformed message JSON')
-    insertPart(db, {
-      id: 'part_malformed',
-      messageId: 'msg_malformed',
-      sessionId: 'ses_noise',
-      timeCreated: 1_777_634_000_500,
-      data: 'malformed part JSON'
-    })
     db.prepare(`INSERT INTO event (id, data) VALUES ('event_1', ?)`).run('malformed event content')
     db.close()
 
+    const { db: partDb, path: partPath } = createTempDb()
+    applyOpenCodeSchema(partDb)
+    insertSession(partDb, {
+      id: 'ses_part_noise',
+      timeCreated: 1_777_634_002_000,
+      timeUpdated: 1_777_634_002_000
+    })
+    insertMessage(partDb, {
+      id: 'msg_part_noise',
+      sessionId: 'ses_part_noise',
+      role: 'assistant',
+      timeCreated: 1_777_634_002_000
+    })
+    insertPart(partDb, {
+      id: 'part_malformed',
+      messageId: 'msg_part_noise',
+      sessionId: 'ses_part_noise',
+      timeCreated: 1_777_634_002_000,
+      data: 'malformed part JSON'
+    })
+    partDb.close()
+
     const issues: AiVaultScanIssue[] = []
     const candidates = await listOpenCodeSqliteSessions({
-      dbPaths: [path],
+      dbPaths: [path, partPath],
       limit: 10,
       issues
     })
 
     expect(issues).toEqual([])
     expect(candidates.map((candidate) => candidate.file.path)).toEqual([
+      buildOpenCodeSqliteCandidatePath(partPath, 'ses_part_noise'),
       buildOpenCodeSqliteCandidatePath(path, 'ses_clean'),
       buildOpenCodeSqliteCandidatePath(path, 'ses_noise')
     ])
+    const cleanSession = await parseOpenCodeSqliteSession({
+      dbPath: path,
+      sessionId: 'ses_clean',
+      platform: 'darwin'
+    })
+    expect(cleanSession?.sessionId).toBe('ses_clean')
     await expect(
       parseOpenCodeSqliteSession({ dbPath: path, sessionId: 'ses_noise', platform: 'darwin' })
     ).rejects.toThrow('malformed JSON')
