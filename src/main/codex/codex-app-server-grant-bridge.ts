@@ -39,40 +39,25 @@ const GRANT_ENTRY_FILE_NAME = 'codex-app-server-grant-entry.js'
 const GRANT_ENTRY_TIMEOUT_MARGIN_MS = 5_000
 const GRANT_ENTRY_MAX_BUFFER_BYTES = 16 * 1024 * 1024
 
-function loadElectronApp(): { getAppPath(): string; isPackaged: boolean } | null {
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    return (
-      (require('electron') as { app?: { getAppPath(): string; isPackaged: boolean } }).app ?? null
-    )
-  } catch {
-    return null
-  }
-}
-
 export function resolveCodexGrantEntryPath(
   pathExists: (candidate: string) => boolean = existsSync
 ): string | null {
-  const app = loadElectronApp()
-  let appPath: string | undefined
-  try {
-    appPath = app?.getAppPath()
-  } catch {
-    appPath = undefined
-  }
-  // Why: ELECTRON_RUN_AS_NODE bypasses Electron's asar integration, so the
+  // Why: this module is reachable from plain-Node CLI entries, so it must not
+  // require electron (plain-node-entry-guard). __dirname of the built chunk is
+  // out/main (root chunk) or out/main/chunks; the entry sits at
+  // out/main/codex/. ELECTRON_RUN_AS_NODE bypasses asar integration, so the
   // packaged entry must run from app.asar.unpacked (out/main/codex/** is in
-  // the asarUnpack list).
-  const unpackedAppPath =
-    app?.isPackaged && appPath ? appPath.replace('app.asar', 'app.asar.unpacked') : appPath
-  const candidates = [
-    // Dev/E2E: electron-vite's appPath is already out/main.
-    unpackedAppPath ? join(unpackedAppPath, 'codex', GRANT_ENTRY_FILE_NAME) : null,
-    unpackedAppPath ? join(unpackedAppPath, 'out', 'main', 'codex', GRANT_ENTRY_FILE_NAME) : null,
-    // Plain-node CLI context (no electron): resolve relative to this chunk.
-    join(__dirname, 'codex', GRANT_ENTRY_FILE_NAME),
-    join(__dirname, '..', 'codex', GRANT_ENTRY_FILE_NAME)
-  ].filter((candidate): candidate is string => candidate !== null)
+  // the asarUnpack list) — cover that with a path rewrite instead of app APIs.
+  const chunkDirs = [__dirname, join(__dirname, '..')]
+  const candidates = chunkDirs.flatMap((dir) => {
+    const unpackedDir = dir.includes('app.asar')
+      ? dir.replace('app.asar', 'app.asar.unpacked')
+      : null
+    return [
+      ...(unpackedDir ? [join(unpackedDir, 'codex', GRANT_ENTRY_FILE_NAME)] : []),
+      join(dir, 'codex', GRANT_ENTRY_FILE_NAME)
+    ]
+  })
   for (const candidate of candidates) {
     if (pathExists(candidate)) {
       return candidate
