@@ -8,8 +8,8 @@ work; keep exact commands, runner identities, hashes, metrics, and residual gaps
 
 Date created: 2026-07-14<br>
 Last updated: 2026-07-15<br>
-Current phase: Milestone 5 / Work Package 4 offline artifact selection — **Native CI wiring correction locally GREEN; replacement exact-head CI pending — 2026-07-15, Codex implementation owner**. The selector implementation is pushed at `5ae2a505c`, but audit E-M5-OFFLINE-SELECTION-CI-WIRING-RED-001 proved the native workflow did not invoke its portable source suites. E-M5-OFFLINE-SELECTION-CI-WIRING-LOCAL-001 now pins all five artifact/manifest/selector suites in both POSIX and Windows job families. Commit and push the correction, then require replacement all-six exact-head Node 24 evidence; runs already started for `5ae2a505c` are intermediate only. No networking, cache, desktop consumer, SSH transfer, tuple enablement, mode wiring, or default behavior is connected.<br>
-Session checkpoint: **In progress — 2026-07-15, Codex implementation owner** — exact pushed head `8c925c24990ac93f6d2dd8de2081a50a74f30d97` passes the 10-test draft-release composition suite and full runtime construction/execution on all six target-native jobs in run 29440806947 under E-M4-DRAFT-RELEASE-COMPOSITION-CI-001. PR Checks 29440804969 and both Golden E2E jobs in 29440804978 are green. Both Linux supplements and Windows x64 floor pass. Windows arm64 floor smoke passes in 6,178.8338ms with 49,881,088-byte RSS; the floor gate then correctly rejects hosted build 26200 versus required 26100. The user authorizes end-to-end commits, pushes, draft-PR updates, CI runs/reruns, and PR-contained rehearsals, but not merging to `main`. There is no real release write, publication caller, desktop consumer, SSH transfer/install, tuple enablement, or production/default behavior change. No accepted production key, protected environment/seed, native-signing trust proof, publication path, or tuple enablement is connected. Legacy remains the production default.<br>
+Current phase: Milestone 5 / Work Package 4 desktop download boundary — **Offline selection closed; begin disconnected bounded-download RED — 2026-07-15, Codex implementation owner**. The verified immutable offline tuple/content/archive/URL selector is closed locally and on all six exact-head native Node 24 jobs under E-M5-OFFLINE-SELECTION-LOCAL-001 and E-M5-OFFLINE-SELECTION-CI-001. Begin only relay-specific Electron download contracts for bounded streaming, cancellation, exact size/hash, approved GitHub redirects, and credential/header stripping. Do not add cache publication/extraction, desktop call sites, SSH transfer/install, tuple enablement, mode wiring, or default behavior.<br>
+Session checkpoint: **In progress — 2026-07-15, Codex implementation owner** — exact pushed head `3be4e68679f6f235165c8784eca61576dc2fd828` passes the portable artifact/manifest/selector suites and full runtime construction/execution on all six target-native jobs in run 29443291349 under E-M5-OFFLINE-SELECTION-CI-001. PR Checks 29443290994 and both Golden E2E jobs in 29443291091 are green. Both Linux supplements and Windows x64 floor pass. Windows arm64 floor smoke passes in 5,982.393ms with 48,451,584-byte RSS; the floor gate then correctly rejects hosted build 26200 versus required 26100. The user authorizes end-to-end commits, pushes, draft-PR updates, CI runs/reruns, and PR-contained rehearsals, but not merging to `main`. There is no real release write, publication caller, desktop consumer, SSH transfer/install, tuple enablement, or production/default behavior change. No accepted production key, protected environment/seed, native-signing trust proof, publication path, or tuple enablement is connected. Legacy remains the production default.<br>
 Primary design: [SSH relay GitHub Release plan](./2026-07-14-ssh-relay-github-release-plan.html)<br>
 Motivating issues: [#8450](https://github.com/stablyai/orca/issues/8450), [#1693](https://github.com/stablyai/orca/issues/1693)
 
@@ -12021,6 +12021,55 @@ config/vitest.config.ts config/scripts/ssh-relay-runtime-draft-release-verificat
 - Follow-up: commit and push the workflow/test/evidence correction, then collect replacement all-six
   native Node 24 jobs plus PR Checks and Golden E2E.
 
+### E-M5-OFFLINE-SELECTION-CI-001 — Verified offline selection passes all six native Node 24 jobs
+
+- Date: 2026-07-15
+- Owner: Codex implementation owner
+- Source: exact pushed head `3be4e68679f6f235165c8784eca61576dc2fd828`; selector
+  implementation commit `7b8c7669a`, native test wiring commit `d1dda17c8`; draft PR #8741.
+- Workflow: [SSH Relay Runtime Artifacts run 29443291349](https://github.com/stablyai/orca/actions/runs/29443291349),
+  19:07:08Z–19:24:08Z. The aggregate conclusion is the expected failure only because the separate
+  Windows arm64 floor job rejects hosted build 26200 after successful runtime verification/smoke.
+- Native jobs and combined portable/release contract suites:
+  - Linux x64 job 87447445800, runner label/image `ubuntu-24.04`, image version
+    `20260705.232.1`, PASS in 4m06s; 60 files / 377 tests in 9.63s.
+  - Linux arm64 job 87447445787, `ubuntu-24.04-arm`, image version `20260706.52.2`, PASS in
+    4m19s; 60 files / 377 tests in 7.32s.
+  - Darwin x64 job 87447445754, runner label `macos-15-intel`, image `macos-15` version
+    `20260629.0276.1`, PASS in 7m16s; 60 files / 377 tests in 32.57s.
+  - Darwin arm64 job 87447445790, runner label `macos-15`, image `macos-15-arm64` version
+    `20260706.0213.1`, PASS in 3m32s; 60 files / 377 tests in 14.35s.
+  - Windows x64 job 87447445786, `windows-2022`, image version `20260714.244.1`, PASS in
+    6m47s; 61 files / 371 passed + 10 platform skips of 381 in 22.26s.
+  - Windows arm64 job 87447445745, `windows-11-arm`, image version `20260714.109.1`, PASS in
+    10m48s; 61 files / 371 passed + 10 platform skips of 381 in 18.67s.
+- Downstream/adjacent evidence: Linux x64 supplement job 87449112159 and Linux arm64 supplement
+  job 87449112031 pass. Windows x64 floor job 87449773555 passes. Windows arm64 floor job
+  87449773588 uses image `windows-11-arm64` `20260706.102.1`; the 60-entry/42-file/85,213,511-byte
+  runtime passes Node v24.18.0, PTY, watcher, resource-settlement, full-tree verification, and smoke
+  in 5,982.393ms with 48,451,584-byte RSS; the complete verifier takes 8,030.9838ms before the gate
+  rejects observed build 26200 versus required build 26100.
+- PR Checks [run 29443290994](https://github.com/stablyai/orca/actions/runs/29443290994), job
+  87447364904, passes in 10m10s. Golden E2E
+  [run 29443291091](https://github.com/stablyai/orca/actions/runs/29443291091) passes Linux job
+  87447365115 in 4m27s and macOS job 87447365196 in 5m38s.
+- Oracle proved: artifact schema, accepted-key signature verification/recursive immutability, exact
+  release-asset identity, offline compatibility selection, and runtime identity contracts execute
+  consistently under Node 24 on Linux, macOS, and Windows x64/arm64. Every job returns the exact
+  authenticated tuple/content/archive/tag-qualified URL or a classified unavailable result, without
+  API/latest/freshness input. Full artifact build, native smoke, equality, and adjacent product gates
+  remain green.
+- Consumer-disconnection oracle: there is no production accepted key, embedded-manifest loader,
+  Electron network call, redirect/download/cache/extraction, desktop consumer, SSH transfer/install,
+  mode, tuple enablement, or default behavior. No runtime artifact is published. Legacy remains the
+  only production path.
+- Does not prove: production manifest keys/packaged embedding, live direct-URL/redirect/proxy/
+  certificate behavior, download/cache, oldest Windows arm64/macOS/Linux-kernel floors, native
+  signing/trust, live SSH hosts, performance against legacy, or any enabled tuple.
+- Follow-up: checkpoint this evidence, update PR/worktree status, then begin only the disconnected
+  bounded relay-download RED. Preserve every cache, consumer, SSH, tuple, publication, and default
+  disconnection.
+
 ## Accepted Gaps
 
 No product gap is accepted merely because it appears in this list. Each entry requires explicit
@@ -12079,13 +12128,7 @@ The project is not complete until every applicable item below is checked with ev
 
 ## Next Required Action
 
-Commit and push the native CI wiring correction and its evidence checkpoint. Require the five
-portable artifact/manifest/selector suites to pass inside the Linux x64/arm64, macOS x64/arm64, and
-Windows x64/arm64 artifact jobs at the replacement exact head, plus normal PR Checks and Golden E2E.
-Runs for `5ae2a505c` are intermediate only. Record replacement job IDs, runner images, timings,
-results, and the separately gated Windows arm64 floor outcome before closing the package.
-
-Only after that evidence is complete, begin a purpose-named disconnected download-boundary RED for
+Begin a purpose-named disconnected download-boundary RED for
 bounded streaming, cancellation, archive hash/size, approved GitHub redirect origins, and credential/
 header stripping. Do not add a desktop call site, cache publication, extraction, SSH transfer/install,
 mode wiring, tuple enablement, or default behavior. Keep `ORCA_RELAY_PATH`, existing desktop required-
