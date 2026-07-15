@@ -2810,6 +2810,7 @@ function createPtyApi(): NonNullable<Partial<PreloadApi>['pty']> {
     declarePendingPaneSerializer: () => Promise.resolve(0),
     settlePaneSerializer: () => Promise.resolve(),
     clearPendingPaneSerializer: () => Promise.resolve(),
+    reportRendererSerializerReady: () => Promise.resolve(),
     management: {
       listSessions: () => Promise.resolve({ sessions: [], degraded: false }),
       killAll: () => Promise.resolve({ killedCount: 0, remainingCount: 0, killedSessionIds: [] }),

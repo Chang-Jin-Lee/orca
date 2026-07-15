@@ -1140,7 +1140,7 @@ const api = {
 
     sendSerializedBuffer: (
       requestId: string,
-      snapshot: { data: string; cols: number; rows: number; lastTitle?: string } | null
+      snapshot: { data: string; cols: number; rows: number; seq?: number; lastTitle?: string } | null
     ): void => {
       ipcRenderer.send('pty:serializeBuffer:response', { requestId, snapshot })
     },
@@ -1158,6 +1158,9 @@ const api = {
 
     clearPendingPaneSerializer: (paneKey: string, gen: number): Promise<void> =>
       ipcRenderer.invoke('pty:clearPendingPaneSerializer', { paneKey, gen }),
+
+    reportRendererSerializerReady: (ptyId: string): Promise<void> =>
+      ipcRenderer.invoke('pty:reportRendererSerializerReady', { ptyId }),
 
     management: {
       listSessions: () => ipcRenderer.invoke('pty:management:listSessions'),

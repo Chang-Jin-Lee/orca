@@ -10,7 +10,13 @@ function stubRuntime(overrides: Partial<OrcaRuntimeService> = {}): OrcaRuntimeSe
   return {
     getRuntimeId: () => 'test-runtime',
     registerRemoteTerminalViewSubscriber: () => () => {},
-    requestRendererTerminalTabMount: () => {},
+    requestRendererTerminalTabMount: () => false,
+    getRendererTerminalSerializerGenerationForHandle: () => 0,
+    getRendererTerminalSerializerGeneration: () => 0,
+    waitForRendererTerminalSerializer: async () => false,
+    getPtyOutputSequence: () => 0,
+    replaceHeadlessTerminalFromRendererSnapshotForRecovery: () => {},
+    serializeRendererTerminalBuffer: async () => null,
     hasHeadlessTerminalState: () => true,
     ...overrides
   } as OrcaRuntimeService
@@ -27,7 +33,7 @@ describe('terminal.subscribe blank-tab background mount', () => {
   it('does not mount a hidden tab for an already-aborted mobile subscribe', async () => {
     const controller = new AbortController()
     controller.abort()
-    const requestRendererTerminalTabMount = vi.fn()
+    const requestRendererTerminalTabMount = vi.fn(() => true)
     const runtime = stubRuntime({
       resolveLeafForHandle: vi.fn().mockReturnValue(null),
       requestRendererTerminalTabMount,
@@ -63,6 +69,7 @@ describe('terminal.subscribe blank-tab background mount', () => {
     const unsubscribeData = vi.fn()
     const requestRendererTerminalTabMount = vi.fn(() => {
       callOrder.push('request-mount')
+      return true
     })
     const runtime = stubRuntime({
       resolveLeafForHandle: vi.fn().mockReturnValue({ ptyId: 'pty-1' }),
@@ -121,7 +128,7 @@ describe('terminal.subscribe blank-tab background mount', () => {
 
   it('does not request a renderer tab mount when an attached terminal is legitimately blank', async () => {
     const cleanups = new Map<string, () => void>()
-    const requestRendererTerminalTabMount = vi.fn()
+    const requestRendererTerminalTabMount = vi.fn(() => true)
     const runtime = stubRuntime({
       resolveLeafForHandle: vi.fn().mockReturnValue({ ptyId: 'pty-1' }),
       requestRendererTerminalTabMount,
@@ -163,6 +170,64 @@ describe('terminal.subscribe blank-tab background mount', () => {
 
     await vi.waitFor(() => expect(runtime.handleMobileSubscribe).toHaveBeenCalled())
     expect(requestRendererTerminalTabMount).not.toHaveBeenCalled()
+
+    runtime.cleanupSubscription('terminal-1:phone-1')
+    await dispatchPromise
+  })
+
+  it('does not wait for a remount when the current snapshot came from the renderer', async () => {
+    const cleanups = new Map<string, () => void>()
+    const requestRendererTerminalTabMount = vi.fn(() => true)
+    const waitForRendererTerminalSerializer = vi.fn()
+    const runtime = stubRuntime({
+      resolveLeafForHandle: vi.fn().mockReturnValue({ ptyId: 'pty-1' }),
+      requestRendererTerminalTabMount,
+      waitForRendererTerminalSerializer,
+      hasHeadlessTerminalState: vi.fn().mockReturnValue(false),
+      handleMobileSubscribe: vi.fn().mockResolvedValue(true),
+      handleMobileUnsubscribe: vi.fn(),
+      subscribeToTerminalData: vi.fn().mockReturnValue(vi.fn()),
+      readTerminal: vi.fn().mockResolvedValue({ tail: [], truncated: false }),
+      serializeTerminalBuffer: vi.fn().mockResolvedValue({
+        data: 'current renderer prompt $ ',
+        cols: 80,
+        rows: 24,
+        source: 'renderer'
+      }),
+      getTerminalSize: vi.fn().mockReturnValue({ cols: 80, rows: 24 }),
+      getMobileDisplayMode: vi.fn().mockReturnValue('auto'),
+      getLayout: vi.fn().mockReturnValue({ seq: 1 }),
+      isTerminalAlternateScreen: vi.fn().mockReturnValue(false),
+      subscribeToTerminalResize: vi.fn().mockReturnValue(vi.fn()),
+      subscribeToFitOverrideChanges: vi.fn().mockReturnValue(vi.fn()),
+      registerSubscriptionCleanup: vi.fn((id: string, cleanup: () => void) => {
+        cleanups.set(id, cleanup)
+      }),
+      cleanupSubscription: vi.fn((id: string) => {
+        cleanups.get(id)?.()
+        cleanups.delete(id)
+      }),
+      waitForTerminal: vi.fn(() => new Promise<RuntimeTerminalWait>(() => {}))
+    })
+    const dispatcher = new RpcDispatcher({ runtime, methods: TERMINAL_METHODS })
+
+    const dispatchPromise = dispatcher.dispatchStreaming(
+      makeRequest('terminal.subscribe', {
+        terminal: 'terminal-1',
+        client: { id: 'phone-1', type: 'mobile' },
+        capabilities: { terminalBinaryStream: 1 }
+      }),
+      vi.fn(),
+      {
+        connectionId: 'conn-phone',
+        sendBinary: vi.fn(),
+        registerBinaryStreamHandler: vi.fn(() => vi.fn())
+      }
+    )
+
+    await vi.waitFor(() => expect(runtime.handleMobileSubscribe).toHaveBeenCalled())
+    expect(requestRendererTerminalTabMount).not.toHaveBeenCalled()
+    expect(waitForRendererTerminalSerializer).not.toHaveBeenCalled()
 
     runtime.cleanupSubscription('terminal-1:phone-1')
     await dispatchPromise
