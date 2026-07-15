@@ -13134,7 +13134,7 @@
         "send": "Enviar respuesta",
         "next": "Siguiente",
         "skip": "Omitir",
-        "sending": "Sending…"
+        "sending": "Enviando…"
       },
       "approval": {
         "title": "¿Permitir {{value0}}?",

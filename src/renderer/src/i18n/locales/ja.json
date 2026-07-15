@@ -13134,7 +13134,7 @@
         "send": "回答を送信する",
         "next": "次へ",
         "skip": "スキップ",
-        "sending": "Sending…"
+        "sending": "送信中…"
       },
       "approval": {
         "title": "{{value0}} を許可しますか?",

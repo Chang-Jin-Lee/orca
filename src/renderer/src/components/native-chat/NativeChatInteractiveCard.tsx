@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useAppStore } from '../../store'
 import { parseInteractivePrompt } from './native-chat-interactive-prompt'
 import { nativeChatCardDismissKey } from './native-chat-dismiss-key'
@@ -66,8 +66,8 @@ export function NativeChatInteractiveCard({
     setSubmitting(false)
   }, [])
   // A replacement prompt, ownership loss, or unmount must stop both timers and
-  // PTY writes, or the old answer can type into a prompt the desktop no longer owns.
-  useEffect(
+  // PTY writes during commit, before an old answer can type into the new prompt.
+  useLayoutEffect(
     () => () => {
       clearDismissTimer()
       cancelPending()
