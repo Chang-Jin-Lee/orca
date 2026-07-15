@@ -8,8 +8,8 @@ work; keep exact commands, runner identities, hashes, metrics, and residual gaps
 
 Date created: 2026-07-14<br>
 Last updated: 2026-07-15<br>
-Current phase: Milestone 4 / Work Package 3 disconnected authenticated draft read-back materialization — **In progress — 2026-07-15, Codex implementation owner**. The relay-specific required-asset capability is closed locally and on all six exact-head native Node 24 jobs under E-M4-RELEASE-ASSETS-LOCAL-RED-001, E-M4-RELEASE-ASSETS-LOCAL-001, and E-M4-RELEASE-ASSETS-CI-001. It remains a disconnected pure metadata boundary; detached-signature byte encoding, the existing desktop required-asset gate, and workflow composition are unchanged. The next slice must add an exclusive local materialization boundary to the existing authenticated read-back so exact verified bytes can later enter archive extraction/execution without a second download. Begin with a purpose-named RED; keep release writes, publication, desktop consumers, and every tuple disconnected.<br>
-Session checkpoint: **In progress — 2026-07-15, Codex implementation owner** — exact pushed head `5460563ff48846cbf54218860fdca1cc3c7b8614` passes the new 13-test release-asset gate and full runtime construction on all six native jobs in run 29433808457 under E-M4-RELEASE-ASSETS-CI-001. PR Checks 29433808934 and both Golden E2E jobs in 29433808372 are green. Linux supplements and the Windows x64 floor pass. Windows arm64 runtime smoke passes in 7,936.874ms with 49,553,408-byte RSS; its separate floor job then retains the expected fail-closed hosted-build 26200 versus required 26100 mismatch. There is no command-line entrypoint, release API call, upload/publication caller, desktop consumer, tuple enablement, or production/default behavior change. The user authorizes commits, pushes, draft-PR updates, CI reruns, and protected rehearsals within PRs, but not merging to `main`. No accepted production key, protected environment/seed, native-signing trust proof, release write, publication path, desktop consumer, tuple enablement, or production/default change is connected. Legacy remains the production default.<br>
+Current phase: Milestone 4 / Work Package 3 disconnected authenticated draft read-back materialization — **In progress — 2026-07-15, Codex implementation owner**. The relay-specific required-asset capability is closed locally and on all six exact-head native Node 24 jobs under E-M4-RELEASE-ASSETS-LOCAL-RED-001, E-M4-RELEASE-ASSETS-LOCAL-001, and E-M4-RELEASE-ASSETS-CI-001. The exclusive local materialization boundary is now locally green under E-M4-DRAFT-READBACK-MATERIALIZATION-LOCAL-RED-001 and E-M4-DRAFT-READBACK-MATERIALIZATION-LOCAL-001; exact-head all-six native Node 24 proof remains required before this slice closes. It persists the existing authenticated response stream without a second download, exposes final names only after verification, and removes the complete output on failure or cancellation. Release writes, archive execution, publication, desktop consumers, and every tuple remain disconnected.<br>
+Session checkpoint: **In progress — 2026-07-15, Codex implementation owner** — current pushed branch head `16edb7e755d35eeec561adbfff07587f5fc0bdf2` records E-M4-RELEASE-ASSETS-CI-001; its exact code head `5460563ff48846cbf54218860fdca1cc3c7b8614` passes the new 13-test release-asset gate and full runtime construction on all six native jobs in run 29433808457. PR Checks 29433808934 and both Golden E2E jobs in 29433808372 are green. Linux supplements and the Windows x64 floor pass. Windows arm64 runtime smoke passes in 7,936.874ms with 49,553,408-byte RSS; its separate floor job then retains the expected fail-closed hosted-build 26200 versus required 26100 mismatch. The intended materialization module/test, native test wiring, and living-checklist updates are locally green and awaiting commit/push plus exact-head CI; `git diff --check` passes and the protected resolver/desktop gate files have zero diff. The user authorizes end-to-end commits, pushes, draft-PR updates, CI runs/reruns, and PR-contained rehearsals, but not merging to `main`. There is no command-line entrypoint, release API write, upload/publication caller, archive execution, desktop consumer, tuple enablement, or production/default behavior change. No accepted production key, protected environment/seed, native-signing trust proof, release write, publication path, desktop consumer, tuple enablement, or production/default change is connected. Legacy remains the production default.<br>
 Primary design: [SSH relay GitHub Release plan](./2026-07-14-ssh-relay-github-release-plan.html)<br>
 Motivating issues: [#8450](https://github.com/stablyai/orca/issues/8450), [#1693](https://github.com/stablyai/orca/issues/1693)
 
@@ -116,10 +116,12 @@ same change as the work it records.
   identity, and consumer disconnection pass locally and on all six exact-head jobs under
   E-M4-RELEASE-ASSETS-LOCAL-RED-001, E-M4-RELEASE-ASSETS-LOCAL-001, and
   E-M4-RELEASE-ASSETS-CI-001. Release workflow composition remains open.
-- Active package: Work Package 3 disconnected authenticated draft read-back materialization. Begin
-  with a purpose-named RED for exclusive output, exact byte persistence during the existing bounded
-  authenticated download, mutation cleanup, cancellation, and consumer disconnection. Do not add
-  archive execution, release publication, or a production caller in this slice.
+- Active package: Work Package 3 disconnected authenticated draft read-back materialization. The
+  purpose-named RED and local GREEN are recorded under
+  E-M4-DRAFT-READBACK-MATERIALIZATION-LOCAL-RED-001 and
+  E-M4-DRAFT-READBACK-MATERIALIZATION-LOCAL-001. Exact-head all-six native Node 24 execution is the
+  next gate. Do not add archive execution, release publication, or a production caller in this
+  slice.
 - Completed Work Package 2 gate: target-native Windows source-signature reports from exact-head
   artifact jobs 87267322867 and 87267322870 were independently downloaded and matched to their
   identities and signing-stage reports under E-M3-WINDOWS-SOURCE-SIGNATURE-CI-001. PR Checks
@@ -11490,6 +11492,91 @@ config/scripts/verify-release-required-assets.test.mjs` — PASS, 7 files / 64 t
 - Follow-up: checkpoint and push this evidence, then begin the disconnected authenticated draft
   read-back materialization RED. Retain all production/default disconnections.
 
+### E-M4-DRAFT-READBACK-MATERIALIZATION-LOCAL-RED-001 — Transactional materialization entrypoint is absent
+
+- Date: 2026-07-15
+- Owner: Codex implementation owner
+- Worktree head before implementation: `16edb7e755d35eeec561adbfff07587f5fc0bdf2`; draft PR
+  #8741. The working tree contains only the session-checkpoint update, purpose-named RED test, and
+  POSIX/Windows native-job test wiring.
+- Command:
+  `pnpm exec vitest run --config config/vitest.config.ts config/scripts/ssh-relay-runtime-draft-readback-materialization.test.mjs`
+- Result: expected FAIL in 0.862s; 1 file / 4 tests fail only because
+  `materializeSshRelayRuntimeDraftReadback` is not a function. The existing verification-only
+  entrypoint remains present and unchanged.
+- Contract pinned by the RED: one existing authenticated streamed download must persist exact bytes;
+  partial bytes cannot use the final asset name; the output directory must be absent beneath an
+  existing real parent before any GitHub request; a later asset failure or cancellation must remove
+  the entire output; success must return exact bounded asset paths.
+- Does not prove: implementation, local GREEN, Node 24/native-runner portability, real authenticated
+  GitHub bytes, archive execution, release write/publication, desktop consumption, native trust,
+  SSH transfer/install, performance, or any enabled tuple.
+- Follow-up: implement the new materialization entrypoint by sharing the existing bounded download
+  and hash pass. Preserve the verification-only API and every production/default disconnection.
+
+### E-M4-DRAFT-READBACK-MATERIALIZATION-LOCAL-001 — One-pass verified materialization passes locally
+
+- Date: 2026-07-15
+- Owner: Codex implementation owner
+- Source: uncommitted implementation and purpose-named test atop exact pushed head
+  `16edb7e755d35eeec561adbfff07587f5fc0bdf2`; draft PR #8741.
+- Runner/remote/network: local macOS 26.2 arm64, Node v26.0.0 and pnpm 10.24.0. In-memory
+  authenticated release/asset response fixtures and local temporary files only. No real network,
+  credential, release write, signer, protected environment, SSH remote, desktop consumer,
+  publication, or enabled tuple.
+- First implementation command: `node --check config/scripts/ssh-relay-runtime-draft-readback.mjs
+&& node --check config/scripts/ssh-relay-runtime-draft-readback-materialization.test.mjs && pnpm
+exec vitest run --config config/vitest.config.ts
+config/scripts/ssh-relay-runtime-draft-readback-materialization.test.mjs
+config/scripts/ssh-relay-runtime-draft-readback.test.mjs` — expected correction signal: 1 failed / 13
+  passed because the test expected macOS's logical `/var` alias while the security boundary correctly
+  returned physical `/private/var`. The test now derives the physical parent with `realpath`; no
+  production path check was weakened.
+- Focused command: `/usr/bin/time -l pnpm exec vitest run --config config/vitest.config.ts
+--maxWorkers=1 config/scripts/ssh-relay-runtime-draft-readback-materialization.test.mjs
+config/scripts/ssh-relay-runtime-draft-readback.test.mjs` — PASS, 2 files / 14 tests in 739ms
+  Vitest and 2.16s wall; maximum RSS 132,464,640 bytes, peak footprint 96,703,936 bytes, and zero
+  swaps.
+- Adjacent release command: `/usr/bin/time -l pnpm exec vitest run --config
+config/vitest.config.ts --maxWorkers=1
+config/scripts/ssh-relay-runtime-draft-readback-materialization.test.mjs
+config/scripts/ssh-relay-runtime-draft-readback.test.mjs
+config/scripts/ssh-relay-runtime-draft-upload.test.mjs
+config/scripts/ssh-relay-runtime-draft-recovery.test.mjs
+config/scripts/ssh-relay-runtime-release-stage-gate.test.mjs
+config/scripts/ssh-relay-runtime-workflow.test.mjs
+config/scripts/ssh-relay-runtime-release-assets.test.mjs
+config/scripts/verify-release-required-assets.test.mjs` — PASS, 8 files / 68 tests in 2.02s
+  Vitest and 3.52s wall; maximum RSS 132,612,096 bytes, peak footprint 96,802,168 bytes, and zero
+  swaps.
+- Broad release command: `/usr/bin/time -l sh -c "rg --files config/scripts | rg
+'/ssh-relay.*[.]test[.]mjs$' | xargs pnpm exec vitest run --config config/vitest.config.ts
+--maxWorkers=1"` — PASS, 54 files / 287 tests in 10.73s Vitest and 11.98s wall; maximum RSS
+  189,743,104 bytes and zero swaps.
+- Static gates: `node --check` passes the production module and purpose-named test. `/usr/bin/time -l
+pnpm run typecheck` passes in 2.83s wall with 1,257,357,312-byte maximum RSS and zero swaps.
+  `/usr/bin/time -l pnpm run lint` passes in 10.78s wall with 2,021,834,752-byte maximum RSS and
+  zero swaps; all 41 reliability gates and the 355-entry max-lines ratchet pass, and the existing 26
+  unrelated warnings remain. Focused `oxfmt --check` and `git diff --check` pass.
+- Oracle proved: the output must be absent below an existing physical parent before any GitHub
+  request. Each authenticated response is streamed once into an exclusive temporary file while the
+  existing size and SHA-256 pass runs; the file is synced and final names are published only after
+  every asset verifies. A later asset failure or mid-stream cancellation removes the entire output.
+  Success returns only the bounded validated assets with exact physical paths. The verification-only
+  API remains byte-for-byte compatible at its return boundary and its 10-test suite stays green.
+- Consumer-disconnection oracle: repository search finds the new entrypoint only in its purpose-named
+  test; both native artifact job families perform syntax and test execution only. There is no CLI,
+  workflow caller, archive execution, release API write, publication, desktop consumer, tuple
+  enablement, or production/default behavior change. The protected Node/npm resolver files and
+  existing desktop required-asset gate retain zero diff.
+- Does not prove: Node 24/native-runner behavior, real authenticated GitHub bytes, detached-signature
+  encoding, downloaded archive execution, real release write/publication, native signing/trust,
+  oldest OS floors, desktop embedding, SSH transfer/install, performance against legacy, or any
+  enabled tuple.
+- Follow-up: commit and push the exact package, then require syntax and 4-test materialization
+  execution plus the full contract/runtime construction on all six exact-head native Node 24 jobs.
+  Keep every production/default consumer disconnected.
+
 ## Accepted Gaps
 
 No product gap is accepted merely because it appears in this list. Each entry requires explicit
@@ -11548,14 +11635,13 @@ The project is not complete until every applicable item below is checked with ev
 
 ## Next Required Action
 
-Checkpoint and push E-M4-RELEASE-ASSETS-CI-001. Then add a purpose-named RED for exclusive local
-materialization during the existing authenticated draft read-back: create only an absent output
-directory, persist the exact already-streamed bytes without a second download, publish no partial
-file before size/SHA-256 success, clean up on failure/cancellation, and return bounded asset paths
-for the later archive-execution slice. Do not add archive execution, a workflow caller, or a real
-release write in this package. Keep the existing desktop `verify-release-required-assets.mjs`
-behavior and detached-signature byte encoding unchanged. The protected environment, accepted
-production keys, and secret remain unprovisioned, so live signing evidence stays BLOCKED.
+Commit and push E-M4-DRAFT-READBACK-MATERIALIZATION-LOCAL-RED-001 and
+E-M4-DRAFT-READBACK-MATERIALIZATION-LOCAL-001, then require exact-head syntax and focused execution
+on all six native Node 24 build jobs plus the existing full artifact construction, PR Checks, and
+Golden E2E. Do not add archive execution, a workflow caller, or a real release write in this
+package. Keep the existing desktop `verify-release-required-assets.mjs` behavior and
+detached-signature byte encoding unchanged. The protected environment, accepted production keys,
+and secret remain unprovisioned, so live signing evidence stays BLOCKED.
 Keep Windows arm64 build 26100, macOS 13.5, Linux kernel 4.18, release-cut, desktop builds,
 publication, and every tuple separately gated. Do not merge to `main`; retain every
 production/default gate.

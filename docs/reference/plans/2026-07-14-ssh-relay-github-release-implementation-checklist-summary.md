@@ -16,9 +16,12 @@ in progress, 2026-07-15, Codex implementation owner.** Exact-head run
 target-native artifact jobs and the required-asset gate's 13-test suite on every Node 24 runner under
 `E-M4-RELEASE-ASSETS-CI-001`. PR Checks and Golden E2E are green; the artifact workflow is red only
 for the retained Windows ARM build-26200-versus-26100 floor mismatch after successful runtime smoke.
-Next, add exclusive local materialization to the existing authenticated read-back without a second
-download. Production keys/environment/seed, publication, desktop/default consumers, tuple enablement,
-and merge to `main` remain disconnected.
+Exclusive one-pass local materialization is now locally green under
+`E-M4-DRAFT-READBACK-MATERIALIZATION-LOCAL-001`; exact-head proof on all six native Node 24 jobs is
+next. Production keys/environment/seed, publication, desktop/default consumers, tuple enablement,
+and merge to `main` remain disconnected. Current pushed branch head is `16edb7e75`; the
+implementation owner is authorized to drive commits, pushes, CI, and PR-contained rehearsals end to
+end without merging.
 
 ## Safety status
 
@@ -271,7 +274,11 @@ and merge to `main` remain disconnected.
       A disconnected bounded upload/recovery implementation is locally green under
       `E-M4-DRAFT-UPLOAD-LOCAL-001` and passes all six native Node 24 jobs under
       `E-M4-DRAFT-UPLOAD-CI-001`; no real release write or downloaded archive execution has occurred,
-      so this item remains open.
+      so this item remains open. The purpose-named transactional materialization RED is recorded
+      under `E-M4-DRAFT-READBACK-MATERIALIZATION-LOCAL-RED-001`; one-pass persistence, exclusive
+      temporary/final naming, cancellation/failure cleanup, and exact returned paths pass locally
+      under `E-M4-DRAFT-READBACK-MATERIALIZATION-LOCAL-001`. Exact-head all-six Node 24 proof and
+      downloaded archive execution are still required.
 - [ ] Test timeouts, retries, approval denial, signing failure, partial output, and draft recovery.
 
 ### WP4 — Desktop resolver and verified cache

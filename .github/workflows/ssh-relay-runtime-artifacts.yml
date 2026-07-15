@@ -218,6 +218,7 @@ jobs:
           node --check config/scripts/ssh-relay-runtime-aggregate-input.test.mjs
           node --check config/scripts/ssh-relay-runtime-draft-readback.mjs
           node --check config/scripts/ssh-relay-runtime-draft-readback.test.mjs
+          node --check config/scripts/ssh-relay-runtime-draft-readback-materialization.test.mjs
           node --check config/scripts/ssh-relay-runtime-draft-upload.mjs
           node --check config/scripts/ssh-relay-runtime-draft-upload.test.mjs
           node --check config/scripts/ssh-relay-runtime-release-assets.mjs
@@ -277,6 +278,7 @@ jobs:
             config/scripts/ssh-relay-runtime-draft-recovery.test.mjs \
             config/scripts/ssh-relay-runtime-aggregate-input.test.mjs \
             config/scripts/ssh-relay-runtime-draft-readback.test.mjs \
+            config/scripts/ssh-relay-runtime-draft-readback-materialization.test.mjs \
             config/scripts/ssh-relay-runtime-draft-upload.test.mjs \
             config/scripts/ssh-relay-runtime-release-assets.test.mjs \
             config/scripts/ssh-relay-runtime-manifest-assembly.test.mjs \
@@ -640,6 +642,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'runtime draft read-back syntax check failed' }
           node --check config/scripts/ssh-relay-runtime-draft-readback.test.mjs
           if ($LASTEXITCODE -ne 0) { throw 'runtime draft read-back test syntax check failed' }
+          node --check config/scripts/ssh-relay-runtime-draft-readback-materialization.test.mjs
+          if ($LASTEXITCODE -ne 0) { throw 'runtime draft read-back materialization test syntax check failed' }
           node --check config/scripts/ssh-relay-runtime-draft-upload.mjs
           if ($LASTEXITCODE -ne 0) { throw 'runtime draft upload syntax check failed' }
           node --check config/scripts/ssh-relay-runtime-draft-upload.test.mjs
@@ -732,6 +736,7 @@ jobs:
             config/scripts/ssh-relay-runtime-draft-recovery.test.mjs `
             config/scripts/ssh-relay-runtime-aggregate-input.test.mjs `
             config/scripts/ssh-relay-runtime-draft-readback.test.mjs `
+            config/scripts/ssh-relay-runtime-draft-readback-materialization.test.mjs `
             config/scripts/ssh-relay-runtime-draft-upload.test.mjs `
             config/scripts/ssh-relay-runtime-release-assets.test.mjs `
             config/scripts/ssh-relay-runtime-manifest-assembly.test.mjs `
