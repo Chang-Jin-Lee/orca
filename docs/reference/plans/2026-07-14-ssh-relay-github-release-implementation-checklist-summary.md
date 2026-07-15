@@ -20,8 +20,8 @@ arm64 Actions artifact pass locally under `E-M4-READBACK-ARCHIVE-EXECUTION-LOCAL
 all-six proof is pending. Production keys/environment/seed,
 publication, desktop/default consumers, SSH transfer/install, tuple enablement, and merge to `main`
 remain disconnected. Current pushed branch head is `0fbbac118`; the
-implementation owner is authorized to drive commits, pushes, CI, and PR-contained rehearsals end to
-end without merging.
+local implementation commit is `b8c42f92a`. The implementation owner is authorized to drive
+commits, pushes, CI, and PR-contained rehearsals end to end without merging.
 
 ## Safety status
 
