@@ -60,7 +60,7 @@ complete a box.
     remain separately gated.
   - Next external proof: kernel 4.18, macOS 13.5, Windows arm64 build 26100, and native signing/trust.
   - No tuple is enabled; every SSH transfer/runtime and rollout cell remains open.
-- [ ] **WP3 active implementation — Tuple descriptors proven; regenerate post-sign metadata next.**
+- [ ] **WP3 active implementation — disconnected native signing workflow locally proven.**
       Windows compatibility-kind parity is closed locally and on all six target-native jobs in
       exact-head run
       [29393022768](https://github.com/stablyai/orca/actions/runs/29393022768) under
@@ -105,9 +105,16 @@ complete a box.
       `E-M4-POST-SIGN-METADATA-CI-001`. PR Checks
       [29409257568](https://github.com/stablyai/orca/actions/runs/29409257568) and Golden E2E
       [29409257636](https://github.com/stablyai/orca/actions/runs/29409257636) are green. The artifact
-      run is red only for the separately declared Windows arm64 floor mismatch. Next, add a
-      disconnected reusable build-prerequisite contract without connecting release-cut, signing,
-      publication, desktop consumers, or any tuple. Merging to `main` remains prohibited.
+      run is red only for the separately declared Windows arm64 floor mismatch. The reusable native
+      build prerequisite is closed locally and on all six build jobs under
+      `E-M4-BUILD-PREREQUISITE-CI-001`. The next disconnected package reconstructs authenticated
+      unsigned archives, signs only the exact native payload, applies returned bytes into an
+      exclusive full tree, verifies native policy before PTY/watcher smoke, and regenerates the final
+      archive, SBOM, provenance, and tuple descriptor. Its purpose-named RED and locally green
+      implementation are recorded under `E-M4-NATIVE-SIGNING-WORKFLOW-LOCAL-RED-001` and
+      `E-M4-NATIVE-SIGNING-WORKFLOW-LOCAL-001`. Exact-head native schema/contract execution and real
+      Apple/SignPath returned-byte/native-trust rehearsals remain open. Release-cut, publication,
+      desktop consumers, and every tuple remain disconnected. Merging to `main` remains prohibited.
 
 ## Work packages, in required order
 
@@ -198,7 +205,11 @@ complete a box.
       `E-M4-BUILD-PREREQUISITE-LOCAL-001`, `E-M4-BUILD-PREREQUISITE-CI-001`).
 - [ ] **In progress — 2026-07-15, Codex implementation owner:** add platform-native signing jobs;
       hash only the returned signed bytes. Begin with a purpose-named disconnected workflow RED;
-      no test double counts as real signing/native-trust evidence.
+      no test double counts as real signing/native-trust evidence. The workflow, authenticated
+      reconstruction, bounded signing boundary, transactional finalization, and credential-free
+      regression gates are locally green (`E-M4-NATIVE-SIGNING-WORKFLOW-LOCAL-RED-001`,
+      `E-M4-NATIVE-SIGNING-WORKFLOW-LOCAL-001`). Exact-head native contract proof and real protected
+      Apple/SignPath/native-trust evidence remain required before this item can close.
 - [ ] Add a fail-closed aggregate and immutable manifest-signing job.
 - [ ] Embed the exact signed manifest and accepted keys in each desktop build.
 - [ ] Upload to a draft release, read back, re-hash, and execute the downloaded archives.
