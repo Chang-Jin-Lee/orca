@@ -333,7 +333,7 @@ describe('SSH relay runtime macOS signature verification', () => {
         }
       }
       const staleArchive = structuredClone(fixture.finalIdentity)
-      staleArchive.archive = { fileName: 'unsigned.tar.xz' }
+      staleArchive.archive = { fileName: 'unsigned.tar.br' }
       await expect(
         verifySshRelayRuntimeMacosSignatures({ ...common, finalIdentity: staleArchive })
       ).rejects.toThrow(/does not match its unsigned source/i)

@@ -197,7 +197,7 @@ function expectedTupleId(tuple) {
 }
 
 function expectedArchiveName(tuple) {
-  const extension = tuple.os === 'win32' ? 'zip' : 'tar.xz'
+  const extension = tuple.os === 'win32' ? 'zip' : 'tar.br'
   return `orca-ssh-relay-runtime-v1-${tuple.tupleId}-${tuple.contentId.slice(7)}.${extension}`
 }
 

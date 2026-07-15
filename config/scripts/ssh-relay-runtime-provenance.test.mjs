@@ -44,7 +44,7 @@ function fixture() {
     tuple,
     identity,
     archive: {
-      name: `orca-ssh-relay-runtime-v1-${tuple}-${'f'.repeat(64)}.tar.xz`,
+      name: `orca-ssh-relay-runtime-v1-${tuple}-${'f'.repeat(64)}.tar.br`,
       size: 123,
       sha256: sha256('a')
     },

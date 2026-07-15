@@ -33,7 +33,7 @@ function assertExactFields(value, fields, label) {
 
 function expectedArchiveName(tupleId, contentId) {
   const digest = contentId.slice('sha256:'.length)
-  const extension = tupleId.startsWith('win32-') ? 'zip' : 'tar.xz'
+  const extension = tupleId.startsWith('win32-') ? 'zip' : 'tar.br'
   return `orca-ssh-relay-runtime-v1-${tupleId}-${digest}.${extension}`
 }
 

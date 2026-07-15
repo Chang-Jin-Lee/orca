@@ -1,14 +1,17 @@
-import { spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { createReadStream } from 'node:fs'
 import { lstat, mkdir, realpath, rm } from 'node:fs/promises'
 import { basename, dirname, resolve } from 'node:path'
 import { pipeline } from 'node:stream/promises'
 import { pathToFileURL } from 'node:url'
+import { createBrotliDecompress } from 'node:zlib'
 
 import { extract } from 'tar'
 
-import { inspectSshRelayRuntimeArchive } from './ssh-relay-runtime-archive.mjs'
+import {
+  inspectSshRelayRuntimeArchive,
+  SSH_RELAY_RUNTIME_POSIX_ARCHIVE_LIMITS
+} from './ssh-relay-runtime-archive.mjs'
 import { assertSshRelayRuntimeClosureEntries } from './ssh-relay-runtime-closure.mjs'
 import { computeSshRelayRuntimeContentId } from './ssh-relay-runtime-identity.mjs'
 import { readSshRelayRuntimeNativeSigningIdentity } from './ssh-relay-runtime-native-signing-plan.mjs'
@@ -17,10 +20,9 @@ import { verifyRuntimeTree } from './verify-ssh-relay-runtime.mjs'
 
 const MAX_ARCHIVE_BYTES = 100 * 1024 * 1024
 const EXTRACTION_TIMEOUT_MS = 5 * 60_000
-const MAX_DIAGNOSTIC_BYTES = 64 * 1024
 
 function expectedArchiveName(identity) {
-  const extension = identity.os === 'win32' ? 'zip' : 'tar.xz'
+  const extension = identity.os === 'win32' ? 'zip' : 'tar.br'
   return `orca-ssh-relay-runtime-v1-${identity.tupleId}-${identity.contentId.slice('sha256:'.length)}.${extension}`
 }
 
@@ -97,27 +99,7 @@ async function assertOutputAbsent(outputDirectory) {
   throw new Error('Runtime archive extraction requires an exclusive output directory')
 }
 
-async function extractTarXz(archivePath, outputDirectory, signal) {
-  const child = spawn('xz', ['--decompress', '--stdout', '--single-stream', '--', archivePath], {
-    stdio: ['ignore', 'pipe', 'pipe'],
-    windowsHide: true,
-    signal
-  })
-  let stderr = ''
-  child.stderr.setEncoding('utf8')
-  child.stderr.on('data', (chunk) => {
-    stderr = `${stderr}${chunk}`.slice(-MAX_DIAGNOSTIC_BYTES)
-  })
-  const completion = new Promise((resolvePromise, reject) => {
-    child.once('error', reject)
-    child.once('close', (code, closeSignal) => {
-      if (code === 0) {
-        resolvePromise()
-      } else {
-        reject(new Error(`xz extraction failed (${code ?? closeSignal ?? 'unknown'}): ${stderr}`))
-      }
-    })
-  })
+async function extractTarBrotli(archivePath, outputDirectory, signal) {
   const unpack = extract({
     cwd: outputDirectory,
     strict: true,
@@ -125,15 +107,16 @@ async function extractTarXz(archivePath, outputDirectory, signal) {
     noChmod: false,
     unlink: false
   })
-  try {
-    await Promise.all([pipeline(child.stdout, unpack, { signal }), completion])
-  } catch (error) {
-    if (child.exitCode === null && child.signalCode === null) {
-      child.kill()
-    }
-    await completion.catch(() => {})
-    throw error
-  }
+  await pipeline(
+    createReadStream(archivePath, {
+      highWaterMark: SSH_RELAY_RUNTIME_POSIX_ARCHIVE_LIMITS.chunkBytes
+    }),
+    createBrotliDecompress({
+      chunkSize: SSH_RELAY_RUNTIME_POSIX_ARCHIVE_LIMITS.chunkBytes
+    }),
+    unpack,
+    { signal }
+  )
 }
 
 export async function extractSshRelayRuntimeArchive({
@@ -169,7 +152,7 @@ export async function extractSshRelayRuntimeArchive({
           identity: finalIdentity,
           signal: effectiveSignal
         })
-      : extractTarXz(absoluteArchive, physicalOutput, effectiveSignal))
+      : extractTarBrotli(absoluteArchive, physicalOutput, effectiveSignal))
     const tree = await verifyRuntimeTree(physicalOutput, finalIdentity, { signal: effectiveSignal })
     const after = await describeArchive(absoluteArchive, identity.archive.size, effectiveSignal)
     if (!sameFileState(before.state, after.state) || before.sha256 !== after.sha256) {

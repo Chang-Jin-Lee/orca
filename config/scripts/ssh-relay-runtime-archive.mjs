@@ -1,95 +1,66 @@
-import { spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { createReadStream, createWriteStream } from 'node:fs'
-import { mkdtemp, rm, stat } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { rm, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import { pipeline } from 'node:stream/promises'
+import { constants as zlibConstants, createBrotliCompress, createBrotliDecompress } from 'node:zlib'
 
 import { create, Parser } from 'tar'
 
 import { createSshRelayRuntimeZip, inspectSshRelayRuntimeZip } from './ssh-relay-runtime-zip.mjs'
 
 const MAX_ARCHIVE_BYTES = 100 * 1024 * 1024
-const MAX_DIAGNOSTIC_BYTES = 64 * 1024
-const XZ_TIMEOUT_MS = 5 * 60 * 1000
+const ARCHIVE_TIMEOUT_MS = 5 * 60 * 1000
+const BROTLI_CHUNK_BYTES = 64 * 1024
+const BROTLI_QUALITY = 9
+const BROTLI_WINDOW_BITS = 20
 
 function archiveName(tuple, contentId) {
   const match = /^sha256:([0-9a-f]{64})$/.exec(contentId)
   if (!match) {
     throw new Error('Runtime content identity is not a SHA-256 digest')
   }
-  const suffix = tuple.startsWith('win32-') ? 'zip' : 'tar.xz'
+  const suffix = tuple.startsWith('win32-') ? 'zip' : 'tar.br'
   return `orca-ssh-relay-runtime-v1-${tuple}-${match[1]}.${suffix}`
 }
 
-async function compressTar(tarPath, archivePath, signal) {
-  const child = spawn(
-    'xz',
-    ['--compress', '--stdout', '--threads=1', '--check=crc64', '-9e', '--', tarPath],
-    { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true, signal }
+async function compressRuntimeTree({
+  runtimeRoot,
+  paths,
+  sourceDateEpoch,
+  archivePath,
+  signal,
+  markOutputCreated
+}) {
+  const archiveOutput = createWriteStream(archivePath, { flags: 'wx', mode: 0o600 })
+  archiveOutput.once('open', markOutputCreated)
+  const tarStream = create(
+    {
+      cwd: runtimeRoot,
+      portable: true,
+      noPax: true,
+      noDirRecurse: true,
+      mtime: new Date(sourceDateEpoch * 1000)
+    },
+    paths
   )
-  let stderr = ''
-  child.stderr.setEncoding('utf8')
-  child.stderr.on('data', (chunk) => {
-    stderr = `${stderr}${chunk}`.slice(-MAX_DIAGNOSTIC_BYTES)
-  })
-  const completion = new Promise((resolve, reject) => {
-    child.once('error', reject)
-    child.once('close', (code, closeSignal) => {
-      if (code === 0) {
-        resolve()
-      } else {
-        reject(new Error(`xz failed (${code ?? closeSignal ?? 'unknown'}): ${stderr.trim()}`))
-      }
-    })
-  })
-  try {
-    await Promise.all([
-      pipeline(child.stdout, createWriteStream(archivePath, { flags: 'wx', mode: 0o600 }), {
-        signal
-      }),
-      completion
-    ])
-  } catch (error) {
-    if (child.exitCode === null && child.signalCode === null) {
-      child.kill()
+  const compression = createBrotliCompress({
+    chunkSize: BROTLI_CHUNK_BYTES,
+    params: {
+      [zlibConstants.BROTLI_PARAM_QUALITY]: BROTLI_QUALITY,
+      [zlibConstants.BROTLI_PARAM_LGWIN]: BROTLI_WINDOW_BITS
     }
-    await completion.catch(() => {})
-    throw error
-  }
+  })
+  await pipeline(tarStream, compression, archiveOutput, { signal })
 }
 
 async function decompressArchive(archivePath, destination, signal) {
-  const child = spawn('xz', ['--decompress', '--stdout', '--single-stream', '--', archivePath], {
-    stdio: ['ignore', 'pipe', 'pipe'],
-    windowsHide: true,
-    signal
-  })
-  let stderr = ''
-  child.stderr.setEncoding('utf8')
-  child.stderr.on('data', (chunk) => {
-    stderr = `${stderr}${chunk}`.slice(-MAX_DIAGNOSTIC_BYTES)
-  })
-  const completion = new Promise((resolve, reject) => {
-    child.once('error', reject)
-    child.once('close', (code, closeSignal) => {
-      if (code === 0) {
-        resolve()
-      } else {
-        reject(new Error(`xz failed (${code ?? closeSignal ?? 'unknown'}): ${stderr.trim()}`))
-      }
-    })
-  })
-  try {
-    await Promise.all([pipeline(child.stdout, destination, { signal }), completion])
-  } catch (error) {
-    if (child.exitCode === null && child.signalCode === null) {
-      child.kill()
-    }
-    await completion.catch(() => {})
-    throw error
-  }
+  await pipeline(
+    createReadStream(archivePath, { highWaterMark: BROTLI_CHUNK_BYTES }),
+    createBrotliDecompress({ chunkSize: BROTLI_CHUNK_BYTES }),
+    destination,
+    { signal }
+  )
 }
 
 export async function createSshRelayRuntimeArchive({
@@ -111,25 +82,25 @@ export async function createSshRelayRuntimeArchive({
   if (!Number.isSafeInteger(sourceDateEpoch) || sourceDateEpoch < 0) {
     throw new Error('Runtime archive SOURCE_DATE_EPOCH must be a non-negative safe integer')
   }
-  const temporaryDirectory = await mkdtemp(join(tmpdir(), 'orca-runtime-tar-'))
-  const tarPath = join(temporaryDirectory, 'runtime.tar')
   const name = archiveName(identity.tupleId, identity.contentId)
   const archivePath = join(outputDirectory, name)
-  const effectiveSignal = signal ?? AbortSignal.timeout(XZ_TIMEOUT_MS)
+  const timeoutSignal = AbortSignal.timeout(ARCHIVE_TIMEOUT_MS)
+  const effectiveSignal = signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal
+  effectiveSignal.throwIfAborted()
+  let outputCreated = false
   try {
     const paths = identity.entries.map((entry) => entry.path).sort()
-    await create(
-      {
-        cwd: runtimeRoot,
-        file: tarPath,
-        portable: true,
-        noPax: true,
-        noDirRecurse: true,
-        mtime: new Date(sourceDateEpoch * 1000)
-      },
-      paths
-    )
-    await compressTar(tarPath, archivePath, effectiveSignal)
+    await compressRuntimeTree({
+      runtimeRoot,
+      paths,
+      sourceDateEpoch,
+      archivePath,
+      signal: effectiveSignal,
+      // Why: an exclusive-open failure must never delete an output owned by another build.
+      markOutputCreated: () => {
+        outputCreated = true
+      }
+    })
     const metadata = await stat(archivePath)
     if (!metadata.isFile() || metadata.size === 0 || metadata.size > MAX_ARCHIVE_BYTES) {
       throw new Error('Runtime archive exceeds the release-manifest compressed-size limit')
@@ -145,10 +116,10 @@ export async function createSshRelayRuntimeArchive({
       sha256: `sha256:${digest.digest('hex')}`
     }
   } catch (error) {
-    await rm(archivePath, { force: true })
+    if (outputCreated) {
+      await rm(archivePath, { force: true })
+    }
     throw error
-  } finally {
-    await rm(temporaryDirectory, { recursive: true, force: true })
   }
 }
 
@@ -202,7 +173,10 @@ export async function inspectSshRelayRuntimeArchive(archivePath, identity, { sig
       parser.abort(error)
     }
   })
-  await decompressArchive(archivePath, parser, signal ?? AbortSignal.timeout(XZ_TIMEOUT_MS))
+  const timeoutSignal = AbortSignal.timeout(ARCHIVE_TIMEOUT_MS)
+  const effectiveSignal = signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal
+  effectiveSignal.throwIfAborted()
+  await decompressArchive(archivePath, parser, effectiveSignal)
   await Promise.all(pendingFiles)
   const missing = [...expected.keys()].filter((path) => !seen.has(path))
   if (missing.length > 0) {
@@ -214,3 +188,9 @@ export async function inspectSshRelayRuntimeArchive(archivePath, identity, { sig
     expandedBytes: identity.expandedSize
   }
 }
+
+export const SSH_RELAY_RUNTIME_POSIX_ARCHIVE_LIMITS = Object.freeze({
+  chunkBytes: BROTLI_CHUNK_BYTES,
+  quality: BROTLI_QUALITY,
+  windowBits: BROTLI_WINDOW_BITS
+})

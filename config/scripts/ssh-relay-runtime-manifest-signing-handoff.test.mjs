@@ -50,7 +50,7 @@ describe('SSH relay runtime manifest signing handoff', () => {
     ])
     expect(request).toMatchObject({
       algorithm: 'ed25519-v1',
-      payloadSha256: 'sha256:e78bf4416628a91055035dc7926035cbf633f29d3618be34e041c6dc5e0794fb',
+      payloadSha256: 'sha256:dc36bff51330eb3aa4791bf30c25eeedd6e8d4cbc57470d50f377c24e0a5ed06',
       payloadSize: canonical.length
     })
     expect(request.canonicalBytes).toEqual(canonical)

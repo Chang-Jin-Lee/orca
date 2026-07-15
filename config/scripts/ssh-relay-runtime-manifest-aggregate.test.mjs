@@ -42,7 +42,7 @@ function arm64TupleFrom(source) {
   tuple.metadataAssets.sbom.name = 'orca-ssh-relay-runtime-linux-arm64-glibc.spdx.json'
   tuple.metadataAssets.provenance.name = 'orca-ssh-relay-runtime-linux-arm64-glibc.provenance.json'
   tuple.contentId = computeSshRelayRuntimeContentId(tuple)
-  tuple.archive.name = `orca-ssh-relay-runtime-v1-${tuple.tupleId}-${tuple.contentId.slice('sha256:'.length)}.tar.xz`
+  tuple.archive.name = `orca-ssh-relay-runtime-v1-${tuple.tupleId}-${tuple.contentId.slice('sha256:'.length)}.tar.br`
   return tuple
 }
 

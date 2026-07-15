@@ -30,7 +30,7 @@ function arm64TupleFrom(source) {
   tuple.metadataAssets.sbom.name = 'orca-ssh-relay-runtime-linux-arm64-glibc.spdx.json'
   tuple.metadataAssets.provenance.name = 'orca-ssh-relay-runtime-linux-arm64-glibc.provenance.json'
   tuple.contentId = computeSshRelayRuntimeContentId(tuple)
-  tuple.archive.name = `orca-ssh-relay-runtime-v1-${tuple.tupleId}-${tuple.contentId.slice('sha256:'.length)}.tar.xz`
+  tuple.archive.name = `orca-ssh-relay-runtime-v1-${tuple.tupleId}-${tuple.contentId.slice('sha256:'.length)}.tar.br`
   return tuple
 }
 
@@ -40,10 +40,10 @@ describe('SSH relay runtime canonical manifest assembly', () => {
 
     expect(assembled.canonicalBytes.at(-1)).not.toBe('\n'.charCodeAt(0))
     expect(createHash('sha256').update(assembled.canonicalBytes).digest('hex')).toBe(
-      'e78bf4416628a91055035dc7926035cbf633f29d3618be34e041c6dc5e0794fb'
+      'dc36bff51330eb3aa4791bf30c25eeedd6e8d4cbc57470d50f377c24e0a5ed06'
     )
     expect(assembled.sha256).toBe(
-      'sha256:e78bf4416628a91055035dc7926035cbf633f29d3618be34e041c6dc5e0794fb'
+      'sha256:dc36bff51330eb3aa4791bf30c25eeedd6e8d4cbc57470d50f377c24e0a5ed06'
     )
     expect(parseCanonicalSshRelayRuntimeManifestBytes(assembled.canonicalBytes)).toEqual(
       assembled.manifest

@@ -12,7 +12,7 @@ const tuple = 'linux-x64-glibc'
 const contentId = `sha256:${'a'.repeat(64)}`
 const archiveBytes = 'archive bytes'
 const archiveSha256 = `sha256:${createHash('sha256').update(archiveBytes).digest('hex')}`
-const archiveName = `orca-ssh-relay-runtime-v1-${tuple}-${contentId.slice('sha256:'.length)}.tar.xz`
+const archiveName = `orca-ssh-relay-runtime-v1-${tuple}-${contentId.slice('sha256:'.length)}.tar.br`
 
 afterEach(async () => {
   await Promise.all(temporaryDirectories.splice(0).map((path) => rm(path, { recursive: true })))

@@ -11,7 +11,7 @@ function asset(name, digit) {
 
 function fixture() {
   const expectedAssets = [
-    asset('orca-ssh-relay-runtime-v1-linux-x64-glibc-a.tar.xz', '1'),
+    asset('orca-ssh-relay-runtime-v1-linux-x64-glibc-a.tar.br', '1'),
     asset('orca-ssh-relay-runtime-v1-win32-x64-b.zip', '2'),
     asset('orca-ssh-relay-runtime-manifest.json', '3'),
     asset('orca-ssh-relay-runtime-manifest.sig', '4')

@@ -20,7 +20,7 @@ import {
   parseSshRelayRuntimeReadbackArchiveExecutionArguments
 } from './ssh-relay-runtime-readback-archive-execution.mjs'
 
-const ARCHIVE_NAME = 'orca-ssh-relay-runtime-v1-linux-x64-glibc-a.tar.xz'
+const ARCHIVE_NAME = 'orca-ssh-relay-runtime-v1-linux-x64-glibc-a.tar.br'
 const ARCHIVE_BYTES = Buffer.from('verified materialized archive bytes')
 const ARCHIVE_SHA256 = `sha256:${createHash('sha256').update(ARCHIVE_BYTES).digest('hex')}`
 

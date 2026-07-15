@@ -16,7 +16,7 @@ async function fixture() {
   temporaryDirectories.push(inputDirectory)
   const contentId = `sha256:${'a'.repeat(64)}`
   const bytes = Buffer.from('verified runtime bytes')
-  const name = `orca-ssh-relay-runtime-v1-linux-x64-glibc-${contentId.slice(7)}.tar.xz`
+  const name = `orca-ssh-relay-runtime-v1-linux-x64-glibc-${contentId.slice(7)}.tar.br`
   await writeFile(join(inputDirectory, name), bytes)
   return {
     inputDirectory,
@@ -80,7 +80,7 @@ describe('SSH relay runtime aggregate inputs', () => {
 
   it('rejects duplicate tuples, names, and unsupported identities', async () => {
     const duplicateTuple = await fixture()
-    duplicateTuple.assets.push({ ...duplicateTuple.assets[0], name: 'different.tar.xz' })
+    duplicateTuple.assets.push({ ...duplicateTuple.assets[0], name: 'different.tar.br' })
     await expect(verifySshRelayRuntimeAggregateInputs(duplicateTuple)).rejects.toThrow(
       /duplicate tuple/i
     )
@@ -100,7 +100,7 @@ describe('SSH relay runtime aggregate inputs', () => {
 
   it('derives the archive name from tuple and content identity', async () => {
     const input = await fixture()
-    input.assets[0].name = 'latest.tar.xz'
+    input.assets[0].name = 'latest.tar.br'
 
     await expect(verifySshRelayRuntimeAggregateInputs(input)).rejects.toThrow(/archive name/i)
   })

@@ -133,7 +133,7 @@ function tupleFor(tupleId) {
   tuple.metadataAssets.sbom.name = `orca-ssh-relay-runtime-${tupleId}.spdx.json`
   tuple.metadataAssets.provenance.name = `orca-ssh-relay-runtime-${tupleId}.provenance.json`
   tuple.contentId = computeSshRelayRuntimeContentId(tuple)
-  const extension = os === 'win32' ? 'zip' : 'tar.xz'
+  const extension = os === 'win32' ? 'zip' : 'tar.br'
   tuple.archive.name = `orca-ssh-relay-runtime-v1-${tupleId}-${tuple.contentId.slice(7)}.${extension}`
   return tuple
 }

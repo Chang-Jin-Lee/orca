@@ -246,6 +246,7 @@ jobs:
           node --check config/scripts/ssh-relay-runtime-post-sign-metadata.test.mjs
           node --check config/scripts/ssh-relay-runtime-archive-extraction.mjs
           node --check config/scripts/ssh-relay-runtime-archive-extraction.test.mjs
+          node --check config/scripts/ssh-relay-runtime-portable-archive.test.mjs
           node --check config/scripts/ssh-relay-runtime-native-signing-stage-report.mjs
           node --check config/scripts/ssh-relay-runtime-macos-signing.mjs
           node --check config/scripts/ssh-relay-runtime-macos-signing.test.mjs
@@ -272,6 +273,7 @@ jobs:
             config/scripts/ssh-relay-node-pty-windows-settlement.test.mjs \
             config/scripts/ssh-relay-node-zip-inspection.test.mjs \
             config/scripts/ssh-relay-runtime-artifact.test.mjs \
+            config/scripts/ssh-relay-runtime-portable-archive.test.mjs \
             config/scripts/ssh-relay-runtime-baseline.test.mjs \
             config/scripts/ssh-relay-runtime-build.test.mjs \
             config/scripts/ssh-relay-runtime-linux-build-evidence.test.mjs \
@@ -388,7 +390,7 @@ jobs:
                 --git-commit "$source_commit"
             first_output="$output_root/first"
             identity="$first_output/orca-ssh-relay-runtime-${{ matrix.tuple }}.identity.json"
-            archive=$(find "$first_output" -maxdepth 1 -name '*.tar.xz' -print -quit)
+            archive=$(find "$first_output" -maxdepth 1 -name '*.tar.br' -print -quit)
             test -n "$archive"
             executed_runtime="$output_root/readback-executed"
             # Why: exercise only local verified bytes; release writes and remote consumers stay disconnected.
@@ -449,7 +451,7 @@ jobs:
               --source-date-epoch "$source_date_epoch" \
               --git-commit "$source_commit"
             identity="$output/orca-ssh-relay-runtime-${{ matrix.tuple }}.identity.json"
-            archive=$(find "$output" -maxdepth 1 -name '*.tar.xz' -print -quit)
+            archive=$(find "$output" -maxdepth 1 -name '*.tar.br' -print -quit)
             test -n "$archive"
             /usr/bin/time -p node config/scripts/verify-ssh-relay-runtime.mjs \
               --runtime-directory "$output/runtime" \
@@ -467,7 +469,7 @@ jobs:
             --first-output-directory "$first_output" \
             --second-output-directory "$second_output"
           identity="$first_output/orca-ssh-relay-runtime-${{ matrix.tuple }}.identity.json"
-          archive=$(find "$first_output" -maxdepth 1 -name '*.tar.xz' -print -quit)
+          archive=$(find "$first_output" -maxdepth 1 -name '*.tar.br' -print -quit)
           test -n "$archive"
           executed_runtime="$output_root/readback-executed"
           # Why: exercise only local verified bytes; release writes and remote consumers stay disconnected.
@@ -496,7 +498,7 @@ jobs:
           test ! -e "$signing_stage/bin/node"
           rm -rf -- "$signing_stage"
           mkdir -p "$GITHUB_WORKSPACE/runtime-evidence/${{ matrix.tuple }}"
-          cp "$first_output"/*.tar.xz "$first_output"/*.spdx.json "$first_output"/*.provenance.json "$first_output"/*.identity.json \
+          cp "$first_output"/*.tar.br "$first_output"/*.spdx.json "$first_output"/*.provenance.json "$first_output"/*.identity.json \
             "$signing_report" "$GITHUB_WORKSPACE/runtime-evidence/${{ matrix.tuple }}/"
 
       - name: Upload unpublished artifact evidence
@@ -739,6 +741,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'runtime archive extraction syntax check failed' }
           node --check config/scripts/ssh-relay-runtime-archive-extraction.test.mjs
           if ($LASTEXITCODE -ne 0) { throw 'runtime archive extraction test syntax check failed' }
+          node --check config/scripts/ssh-relay-runtime-portable-archive.test.mjs
+          if ($LASTEXITCODE -ne 0) { throw 'runtime portable archive test syntax check failed' }
           node --check config/scripts/ssh-relay-runtime-native-signing-stage-report.mjs
           if ($LASTEXITCODE -ne 0) { throw 'runtime signing stage report syntax check failed' }
           node --check config/scripts/ssh-relay-runtime-macos-signing.mjs
@@ -775,6 +779,7 @@ jobs:
             config/scripts/ssh-relay-node-pty-windows-settlement.test.mjs `
             config/scripts/ssh-relay-node-zip-inspection.test.mjs `
             config/scripts/ssh-relay-runtime-artifact.test.mjs `
+            config/scripts/ssh-relay-runtime-portable-archive.test.mjs `
             config/scripts/ssh-relay-runtime-baseline.test.mjs `
             config/scripts/ssh-relay-runtime-build.test.mjs `
             config/scripts/ssh-relay-runtime-linux-build-evidence.test.mjs `
@@ -1079,7 +1084,7 @@ jobs:
           set -euo pipefail
           evidence="$GITHUB_WORKSPACE/runtime-evidence/${{ matrix.tuple }}"
           mapfile -d '' identities < <(find "$evidence" -maxdepth 1 -type f -name '*.identity.json' -print0)
-          mapfile -d '' archives < <(find "$evidence" -maxdepth 1 -type f -name '*.tar.xz' -print0)
+          mapfile -d '' archives < <(find "$evidence" -maxdepth 1 -type f -name '*.tar.br' -print0)
           if (( ${#identities[@]} != 1 || ${#archives[@]} != 1 )); then
             printf 'runtime baseline evidence is ambiguous: identities=%s archives=%s\n' \
               "${#identities[@]}" "${#archives[@]}" >&2
@@ -1088,8 +1093,10 @@ jobs:
           identity=${identities[0]}
           archive=${archives[0]}
           runtime="$RUNNER_TEMP/baseline-runtime/${{ matrix.tuple }}"
-          mkdir -p "$runtime"
-          tar -xJf "$archive" -C "$runtime"
+          node config/scripts/ssh-relay-runtime-archive-extraction.mjs \
+            --identity "$identity" \
+            --archive "$archive" \
+            --output-directory "$runtime"
           node config/scripts/verify-ssh-relay-runtime.mjs \
             --runtime-directory "$runtime" \
             --identity "$identity" \

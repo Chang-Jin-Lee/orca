@@ -63,8 +63,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          brew list xz >/dev/null 2>&1 || brew install xz
-          command -v xz
           test -x /usr/bin/codesign
           security help >/dev/null
 
@@ -80,7 +78,7 @@ jobs:
           set -euo pipefail
           evidence="$RUNNER_TEMP/ssh-relay-runtime-build/${{ matrix.tuple }}"
           identity="$evidence/orca-ssh-relay-runtime-${{ matrix.tuple }}.identity.json"
-          archive=$(find "$evidence" -maxdepth 1 -type f -name 'orca-ssh-relay-runtime-v1-*.tar.xz' -print)
+          archive=$(find "$evidence" -maxdepth 1 -type f -name 'orca-ssh-relay-runtime-v1-*.tar.br' -print)
           test "$(printf '%s\n' "$archive" | sed '/^$/d' | wc -l | tr -d ' ')" = 1
           runtime="$RUNNER_TEMP/ssh-relay-runtime-source/${{ matrix.tuple }}"
           node config/scripts/ssh-relay-runtime-archive-extraction.mjs \

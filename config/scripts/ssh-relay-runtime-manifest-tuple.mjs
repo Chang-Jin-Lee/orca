@@ -57,7 +57,7 @@ async function physicalDirectory(path, label) {
 
 function expectedNames(identity) {
   const digest = identity.contentId.slice('sha256:'.length)
-  const extension = identity.tupleId.startsWith('win32-') ? 'zip' : 'tar.xz'
+  const extension = identity.tupleId.startsWith('win32-') ? 'zip' : 'tar.br'
   const prefix = `orca-ssh-relay-runtime-${identity.tupleId}`
   return {
     archive: `orca-ssh-relay-runtime-v1-${identity.tupleId}-${digest}.${extension}`,

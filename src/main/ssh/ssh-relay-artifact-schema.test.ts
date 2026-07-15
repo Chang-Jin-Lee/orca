@@ -336,7 +336,7 @@ describe('SSH relay artifact manifest schema', () => {
     expect(() => parseSshRelayArtifactManifest(identityMismatch)).toThrow(/content identity/i)
 
     const nameMismatch = createSshRelayArtifactTestManifest()
-    nameMismatch.tuples[0].archive.name = 'latest.tar.xz'
+    nameMismatch.tuples[0].archive.name = 'latest.tar.br'
     expect(() => parseSshRelayArtifactManifest(nameMismatch)).toThrow(/archive name/i)
   })
 

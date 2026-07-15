@@ -37,7 +37,7 @@ function stage(id, output, overrides = {}) {
 }
 
 function successfulFixture() {
-  const linux = asset(LINUX, 'orca-ssh-relay-runtime-linux.tar.xz', SHA.linux, 'a')
+  const linux = asset(LINUX, 'orca-ssh-relay-runtime-linux.tar.br', SHA.linux, 'a')
   const windowsUnsigned = asset(
     WINDOWS,
     'orca-ssh-relay-runtime-windows-unsigned.zip',
@@ -111,7 +111,7 @@ describe('SSH relay runtime release stage gate', () => {
     expect(result.candidateTupleIds).toEqual([LINUX, WINDOWS])
     expect(result.finalRuntimeAssets.map((entry) => entry.tupleId)).toEqual([LINUX, WINDOWS])
     expect(result.releaseAssets.map((entry) => entry.name)).toEqual([
-      'orca-ssh-relay-runtime-linux.tar.xz',
+      'orca-ssh-relay-runtime-linux.tar.br',
       'orca-ssh-relay-runtime-windows-signed.zip',
       'orca-ssh-relay-runtime-manifest.json',
       'orca-ssh-relay-runtime-manifest.sig'

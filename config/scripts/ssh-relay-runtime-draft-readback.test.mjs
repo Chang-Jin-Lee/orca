@@ -7,7 +7,7 @@ const REPO = 'stablyai/orca'
 const TOKEN = 'secret-token'
 const bytes = Buffer.from('immutable release bytes')
 const expected = {
-  name: 'orca-ssh-relay-runtime-v1-linux-x64-glibc-a.tar.xz',
+  name: 'orca-ssh-relay-runtime-v1-linux-x64-glibc-a.tar.br',
   sha256: 'sha256:5396515749878bd28c5dae110040b4fbae1c33f59318b9c23f446319d68e236a',
   size: bytes.length
 }
