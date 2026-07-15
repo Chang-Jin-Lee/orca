@@ -22,7 +22,47 @@ function sha256(bytes) {
   return `sha256:${createHash('sha256').update(bytes).digest('hex')}`
 }
 
-function toolchain() {
+function fixtureTarget() {
+  if (!['darwin', 'linux', 'win32'].includes(process.platform)) {
+    throw new Error(`Unsupported runtime metadata fixture platform: ${process.platform}`)
+  }
+  if (!['arm64', 'x64'].includes(process.arch)) {
+    throw new Error(`Unsupported runtime metadata fixture architecture: ${process.arch}`)
+  }
+  const architecture = process.arch
+  const tupleId =
+    process.platform === 'linux'
+      ? `linux-${architecture}-glibc`
+      : `${process.platform}-${architecture}`
+  const labels = {
+    'darwin-arm64': 'macos-15',
+    'darwin-x64': 'macos-15-intel',
+    'linux-arm64-glibc': 'ubuntu-24.04-arm',
+    'linux-x64-glibc': 'ubuntu-24.04',
+    'win32-arm64': 'windows-11-arm',
+    'win32-x64': 'windows-2022'
+  }
+  return {
+    tupleId,
+    os: process.platform,
+    architecture,
+    runner: {
+      os:
+        process.platform === 'win32'
+          ? 'Windows'
+          : process.platform === 'darwin'
+            ? 'macOS'
+            : 'Linux',
+      architecture: architecture.toUpperCase(),
+      environment: 'github-hosted',
+      requestedLabel: labels[tupleId],
+      image: { os: `fixture-${process.platform}`, version: 'fixture-version' }
+    }
+  }
+}
+
+function toolchain(tupleId) {
+  const platformTools = tupleId.startsWith('win32-') ? ['linker'] : ['strip']
   return Object.fromEntries(
     [
       'buildNode',
@@ -33,7 +73,7 @@ function toolchain() {
       'archive',
       'nodeAddonApi',
       'nodeGyp',
-      'strip'
+      ...platformTools
     ].map((name, index) => [
       name,
       { version: `${name} version`, sha256: `sha256:${(index + 6).toString(16).repeat(64)}` }
@@ -47,7 +87,9 @@ async function runtimeFixture() {
   const runtimeRoot = join(root, 'runtime')
   const outputDirectory = join(root, 'output')
   await Promise.all([mkdir(runtimeRoot), mkdir(outputDirectory)])
-  const tupleId = 'linux-x64-glibc'
+  // Why: Windows cannot materialize POSIX executable bits; its native ZIP writer carries them.
+  const target = fixtureTarget()
+  const { tupleId } = target
   const entries = []
   for (const entry of expectedSshRelayRuntimeClosureEntries(tupleId)) {
     const path = join(runtimeRoot, ...entry.path.split('/'))
@@ -64,8 +106,8 @@ async function runtimeFixture() {
   const base = {
     identitySchemaVersion: 1,
     tupleId,
-    os: 'linux',
-    architecture: 'x64',
+    os: target.os,
+    architecture: target.architecture,
     compatibility: sshRelayRuntimeCompatibility[tupleId],
     nodeVersion: '24.18.0',
     dependencies: { nodePtyVersion: '1.1.0', parcelWatcherVersion: '2.5.6' },
@@ -90,30 +132,12 @@ async function runtimeFixture() {
     outputDirectory,
     finalIdentity,
     archive,
-    nodeRelease: {
-      baseUrl: 'https://nodejs.org/dist/v24.18.0',
-      archives: {
-        [tupleId]: {
-          name: 'node-v24.18.0-linux-x64.tar.xz',
-          sha256: 'b'.repeat(64)
-        }
-      },
-      signature: {
-        key: {
-          sourceUrl: 'https://github.com/nodejs/release-keys/raw/commit/gpg/key.asc',
-          sha256: 'c'.repeat(64)
-        }
-      }
-    },
+    nodeRelease: JSON.parse(
+      await readFile(new URL('../ssh-relay-node-release-v24.18.0.json', import.meta.url), 'utf8')
+    ),
     builder: `https://github.com/stablyai/orca/blob/${GIT_COMMIT}/.github/workflows/ssh-relay-runtime-artifacts.yml`,
-    runner: {
-      os: 'Linux',
-      architecture: 'X64',
-      environment: 'github-hosted',
-      requestedLabel: 'ubuntu-24.04',
-      image: { os: 'ubuntu24', version: '20260705.232.1' }
-    },
-    toolchain: toolchain()
+    runner: target.runner,
+    toolchain: toolchain(tupleId)
   }
 }
 

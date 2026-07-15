@@ -8,8 +8,8 @@ work; keep exact commands, runner identities, hashes, metrics, and residual gaps
 
 Date created: 2026-07-14<br>
 Last updated: 2026-07-15<br>
-Current phase: Milestone 4 / Work Package 3 semantic post-sign SBOM/provenance regeneration — **In progress — 2026-07-15, Codex implementation owner**. The preceding tuple-specific native-role correction and credential-free descriptor producer are closed locally and on all six exact-head Node 24 native jobs under E-M4-MANIFEST-TUPLE-LOCAL-001, E-M4-MANIFEST-TUPLE-LOCAL-002, and E-M4-MANIFEST-TUPLE-CI-001. The active slice must regenerate bounded SBOM and provenance bytes from the verified final runtime tree and semantically bind them to the final content identity before tuple assembly. Its purpose-named missing-module RED is recorded under E-M4-POST-SIGN-METADATA-LOCAL-RED-001. It may not publish, connect desktop consumers, use production signing credentials, or enable a tuple. Production/default behavior is unchanged, no bundled-runtime path is enabled, and no artifact is published.<br>
-Session checkpoint: **In progress — 2026-07-15, Codex implementation owner** — semantic post-sign metadata regeneration and tuple-consumer verification are locally green under E-M4-POST-SIGN-METADATA-LOCAL-001 and E-M4-POST-SIGN-METADATA-LOCAL-002: focused 5 files / 22 tests, release-side 41 files / 233 tests, desktop parity 3 files / 48 tests, typecheck, full lint, formatting, syntax, max-lines, and diff gates pass. The writer verifies the final tree and archive before and after exclusive bounded emission; SBOM and provenance bind the final content ID, exact archive, complete file/native inventory, builder/toolchain context, and tuple. Tuple assembly rejects stale semantic bindings before writing a descriptor. Exact-head Node 24 execution on all six native jobs remains required. Real Apple/SignPath signing, returned production signatures, Gatekeeper/notarization, Defender/WDAC, missing exact-floor snapshots, protected manifest signing, publication wiring, desktop embedding, and native trust remain separately gated. Nothing is published or enabled, legacy remains the production default, and merge to `main` remains prohibited.<br>
+Current phase: Milestone 4 / Work Package 3 semantic post-sign SBOM/provenance regeneration — **In progress — 2026-07-15, Codex implementation owner**. The preceding tuple-specific native-role correction and credential-free descriptor producer are closed locally and on all six exact-head Node 24 native jobs under E-M4-MANIFEST-TUPLE-LOCAL-001, E-M4-MANIFEST-TUPLE-LOCAL-002, and E-M4-MANIFEST-TUPLE-CI-001. The active slice must regenerate bounded SBOM and provenance bytes from the verified final runtime tree and semantically bind them to the final content identity before tuple assembly. Its purpose-named missing-module RED is recorded under E-M4-POST-SIGN-METADATA-LOCAL-RED-001. Exact-head Windows x64 execution exposed a test-fixture-only POSIX-mode portability defect under E-M4-POST-SIGN-METADATA-CI-RED-001. The correction now selects each runner's native tuple/archive family and is locally green without weakening archive validation under E-M4-POST-SIGN-METADATA-CORRECTION-LOCAL-001; replacement all-six exact-head evidence remains required. This slice may not publish, connect desktop consumers, use production signing credentials, or enable a tuple. Production/default behavior is unchanged, no bundled-runtime path is enabled, and no artifact is published.<br>
+Session checkpoint: **In progress — 2026-07-15, Codex implementation owner** — semantic post-sign metadata regeneration and tuple-consumer verification are locally green under E-M4-POST-SIGN-METADATA-LOCAL-001 and E-M4-POST-SIGN-METADATA-LOCAL-002. Exact-head run 29408355188 at `1989e801af4a922a646d62ffd13e235615462975` fails only the new metadata fixture on Windows x64: the hardcoded Linux tar fixture cannot obtain its declared executable mode from a Windows filesystem, so the strict production archive inspector correctly rejects `bin/node` (`E-M4-POST-SIGN-METADATA-CI-RED-001`). The platform-native fixture correction passes 5 files / 22 focused tests, 41 files / 233 release-side tests, 3 files / 48 desktop parity tests, typecheck, full lint, formatting, syntax, max-lines, and diff gates under E-M4-POST-SIGN-METADATA-CORRECTION-LOCAL-001. Production archive type/mode enforcement is unchanged. Real Apple/SignPath signing, returned production signatures, Gatekeeper/notarization, Defender/WDAC, missing exact-floor snapshots, protected manifest signing, publication wiring, desktop embedding, and native trust remain separately gated. Nothing is published or enabled, legacy remains the production default, and merge to `main` remains prohibited.<br>
 Primary design: [SSH relay GitHub Release plan](./2026-07-14-ssh-relay-github-release-plan.html)<br>
 Motivating issues: [#8450](https://github.com/stablyai/orca/issues/8450), [#1693](https://github.com/stablyai/orca/issues/1693)
 
@@ -87,8 +87,13 @@ same change as the work it records.
 - Active package: Work Package 3 semantic regeneration and verification of post-sign SBOM and
   provenance from the verified final runtime tree. E-M4-POST-SIGN-METADATA-LOCAL-RED-001 proves the
   purpose-named boundary was absent before implementation. The implementation is locally green under
-  E-M4-POST-SIGN-METADATA-LOCAL-001 and E-M4-POST-SIGN-METADATA-LOCAL-002; exact-head Node 24 native
-  CI remains open. Production signing credentials, publication, desktop consumers, and tuple
+  E-M4-POST-SIGN-METADATA-LOCAL-001 and E-M4-POST-SIGN-METADATA-LOCAL-002. Exact-head run
+  29408355188 exposes a Windows x64 test-fixture portability failure under
+  E-M4-POST-SIGN-METADATA-CI-RED-001; production archive type/mode validation remains correct and
+  must not be relaxed. The fixture now selects the exact platform/architecture tuple, archive
+  family, release inputs, runner identity, and toolchain shape and is locally green under
+  E-M4-POST-SIGN-METADATA-CORRECTION-LOCAL-001. Replace all-six exact-head Node 24 evidence before
+  closing the package. Production signing credentials, publication, desktop consumers, and tuple
   enablement remain outside this slice. No broader Milestone 4 box is checked until its evidence
   exists.
 - Completed Work Package 2 gate: target-native Windows source-signature reports from exact-head
@@ -9872,6 +9877,81 @@ diff --check`.
 - Follow-up: commit and push, then require all six exact-head Node 24 native jobs before marking this
   package complete. Keep every production/default gate unchanged and do not merge to `main`.
 
+### E-M4-POST-SIGN-METADATA-CI-RED-001 — Windows rejects host-incompatible Linux tar fixture
+
+- Date: 2026-07-15
+- Commit SHA / PR: `1989e801af4a922a646d62ffd13e235615462975`; draft PR #8741
+- Workflow/run: SSH relay runtime artifacts run
+  [29408355188](https://github.com/stablyai/orca/actions/runs/29408355188), Windows x64 job
+  [87329210635](https://github.com/stablyai/orca/actions/runs/29408355188/job/87329210635)
+- Runner: GitHub-hosted `windows-2022` x64 image `20260706.237.1`, runner
+  `GitHub Actions 1000055651`; Node 24 workflow toolchain
+- Remote: not applicable; disconnected credential-free artifact construction and tests
+- Transport/network: GitHub dependency/source downloads used by the artifact workflow; no signer,
+  SSH host, publication, desktop consumer, production/default call, or enabled tuple
+- Command: native job's release-side contract suite,
+  `pnpm exec vitest run --config config/vitest.config.ts --maxWorkers=1 config/scripts/ssh-relay*.test.mjs`
+- Result: expected evidence-gating FAIL; 40 files passed and 1 failed, 222 tests passed, 2 failed,
+  and 9 skipped in 11.23 seconds. Both failures are in the post-sign metadata suite:
+  “regenerates exact SBOM and provenance from the verified final tree” and “makes tuple consumers
+  reject stale SBOM and provenance bindings.” Strict archive inspection reports
+  `Runtime archive type or mode mismatch: bin/node`.
+- Oracle proved: the new test fixture hardcodes a `linux-x64-glibc` tar identity but creates its
+  executable through the Windows filesystem, where `writeFile(..., { mode: 0o755 })` cannot supply
+  POSIX executable mode bits. The production archive inspector fails closed on the mismatch as
+  designed; this is not evidence to weaken archive type/mode validation.
+- Does not prove: corrected cross-platform fixture behavior, all-six exact-head pass, real
+  post-sign signatures/native trust, publication, desktop embedding, SSH behavior, or an enabled
+  tuple.
+- Checklist items satisfied: required exact-head CI RED and root-cause evidence for the active
+  correction; the semantic post-sign metadata package remains open.
+- Follow-up: make the fixture select a platform-native tuple/archive/closure, rerun focused and broad
+  local gates, push the correction, and replace the exact-head all-six native evidence.
+
+### E-M4-POST-SIGN-METADATA-CORRECTION-LOCAL-001 — Platform-native metadata fixture passes locally
+
+- Date: 2026-07-15
+- Commit SHA / PR: uncommitted correction atop
+  `1989e801af4a922a646d62ffd13e235615462975`; draft PR #8741
+- Runner: macOS 26.2 arm64, native local worktree; Node v26.0.0 and pnpm 10.24.0
+- Remote: not applicable; disconnected credential-free artifact contract tests
+- Transport/network: local filesystem and generated Darwin tar archives only; no signer, SSH host,
+  publication, desktop consumer, production/default call, or enabled tuple
+- Commands and results:
+  - Purpose-named correction:
+    `/usr/bin/time -l pnpm exec vitest run --config config/vitest.config.ts --maxWorkers=1 config/scripts/ssh-relay-runtime-post-sign-metadata.test.mjs`
+    — PASS, 1 file / 4 tests in 2.67 seconds test duration / 5.84 seconds wall;
+    132,399,104-byte maximum RSS, 96,589,128-byte peak memory footprint, and zero swaps.
+  - Semantic post-sign focused suite:
+    `/usr/bin/time -l pnpm exec vitest run --config config/vitest.config.ts --maxWorkers=1 config/scripts/ssh-relay-runtime-post-sign-metadata.test.mjs config/scripts/ssh-relay-runtime-provenance.test.mjs config/scripts/ssh-relay-runtime-sbom.test.mjs config/scripts/ssh-relay-runtime-manifest-tuple.test.mjs config/scripts/ssh-relay-runtime-workflow.test.mjs`
+    — PASS, 5 files / 22 tests in 12.70 seconds test duration / 18.96 seconds wall;
+    134,725,632-byte maximum RSS, 96,310,600-byte peak memory footprint, and zero swaps.
+  - Broad release suite:
+    `/usr/bin/time -l pnpm exec vitest run --config config/vitest.config.ts --maxWorkers=1 config/scripts/ssh-relay*.test.mjs`
+    — PASS, 41 files / 233 tests in 35.93 seconds test duration / 39.61 seconds wall;
+    189,087,744-byte maximum RSS, 96,998,824-byte peak memory footprint, and zero swaps.
+  - Desktop schema/signature parity:
+    `/usr/bin/time -l pnpm exec vitest run --config config/vitest.config.ts --maxWorkers=1 src/main/ssh/ssh-relay-artifact-schema.test.ts src/main/ssh/ssh-relay-manifest-signature.test.ts src/main/ssh/ssh-relay-release-asset.test.ts`
+    — PASS, 3 files / 48 tests in 2.02 seconds test duration / 3.70 seconds wall;
+    132,562,944-byte maximum RSS, 96,343,440-byte peak memory footprint, and zero swaps.
+  - `/usr/bin/time -l pnpm run typecheck` — PASS in 6.53 seconds wall with
+    1,215,283,200-byte maximum RSS and zero swaps.
+  - `/usr/bin/time -l pnpm run lint` — PASS in 63.09 seconds wall with the 41 reliability gates,
+    355-entry max-lines ratchet, bundled-skill guides, localization catalog/parity, and localization
+    coverage green. All 26 warnings are in untouched existing files.
+  - Focused `pnpm exec oxfmt --check`, `node --check`, `git diff --check`, and zero diff in both
+    user-owned Node/npm resolver files — PASS.
+- Oracle proved: the fixture now selects the exact native tuple, runtime closure, archive family,
+  immutable Node release inputs, runner identity, and toolchain shape for all six supported
+  platform/architecture combinations. POSIX runners retain strict tar mode proof; Windows runners
+  use the ZIP writer that records declared Unix modes independently of Windows filesystem modes.
+  Production archive inspection is unchanged.
+- Does not prove: Windows execution or any other replacement native-runner cell, real post-sign
+  signatures/native trust, publication, desktop embedding, SSH behavior, or an enabled tuple.
+- Checklist items satisfied: local correction gate for E-M4-POST-SIGN-METADATA-CI-RED-001; the
+  semantic post-sign metadata package remains open pending all-six replacement CI.
+- Follow-up: commit and push the correction, then require all six exact-head Node 24 native jobs.
+
 ## Accepted Gaps
 
 No product gap is accepted merely because it appears in this list. Each entry requires explicit
@@ -9929,12 +10009,13 @@ The project is not complete until every applicable item below is checked with ev
 
 ## Next Required Action
 
-Commit and push the locally green semantic post-sign metadata package, then collect exact-head Node
-24 proof from all six native build jobs; do not merge to `main`. Retain every production/default
-gate and do not connect release publication, production signing credentials, or a desktop consumer. In
-parallel, provision qualifying exact-floor execution for Linux kernel 4.18, macOS 13.5, and Windows
-arm64 build 26100 and real macOS/Windows signing and trust. Keep every tuple disabled until the
-applicable baseline and trust cells pass.
+Commit and push the locally green platform-native fixture correction under
+E-M4-POST-SIGN-METADATA-CORRECTION-LOCAL-001, then collect replacement exact-head Node 24 proof from
+all six native build jobs; do not merge to `main`. Retain every production/default gate and do not
+connect release publication, production signing credentials, or a desktop consumer. In parallel,
+provision qualifying exact-floor execution for Linux kernel 4.18, macOS 13.5, and Windows arm64
+build 26100 and real macOS/Windows signing and trust. Keep every tuple disabled until the applicable
+baseline and trust cells pass.
 
 Cross-family Layer B targets, the protected manifest-signing environment, oldest-baseline/native-
 trust cells, and the paired legacy performance baseline remain release/default-path blockers. No

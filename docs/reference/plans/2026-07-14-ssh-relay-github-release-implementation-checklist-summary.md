@@ -91,7 +91,15 @@ complete a box.
       [29405619242](https://github.com/stablyai/orca/actions/runs/29405619242) are green. The artifact
       run is red only for the declared Windows arm64 floor mismatch (hosted build 26200 versus
       required 26100). Next, regenerate and semantically verify post-sign SBOM/provenance from the
-      verified final tree. Merging to `main` remains prohibited without separate user action.
+      verified final tree. That implementation is locally green, but exact-head run
+      [29408355188](https://github.com/stablyai/orca/actions/runs/29408355188) exposed a Windows x64
+      test-fixture portability defect: the hardcoded Linux tar fixture cannot obtain its declared
+      executable mode from a Windows filesystem, so strict archive inspection correctly rejects
+      `bin/node` (`E-M4-POST-SIGN-METADATA-CI-RED-001`). The platform-native fixture correction is
+      locally green across the 22-test focused suite, 233-test release suite, 48-test desktop parity
+      suite, typecheck, and full lint without weakening production mode validation
+      (`E-M4-POST-SIGN-METADATA-CORRECTION-LOCAL-001`). Replacement all-six exact-head evidence is
+      required. Merging to `main` remains prohibited.
 
 ## Work packages, in required order
 
@@ -164,7 +172,14 @@ complete a box.
       `E-M4-POST-SIGN-METADATA-LOCAL-RED-001`. The implementation, semantic tuple-consumer gate,
       233-test release suite, 48-test desktop parity suite, and static gates are locally green under
       `E-M4-POST-SIGN-METADATA-LOCAL-001` and `E-M4-POST-SIGN-METADATA-LOCAL-002`; exact-head Node 24
-      execution on all six native jobs is required before this item closes.
+      execution on all six native jobs is required before this item closes. Windows x64 job
+      [87329210635](https://github.com/stablyai/orca/actions/runs/29408355188/job/87329210635)
+      is the required CI RED: its filesystem cannot create the hardcoded Linux tar fixture's
+      executable mode, and strict archive inspection rejects `bin/node`
+      (`E-M4-POST-SIGN-METADATA-CI-RED-001`). The test-fixture-only correction now selects the exact
+      native tuple/archive family on each runner and is locally green under
+      `E-M4-POST-SIGN-METADATA-CORRECTION-LOCAL-001`; production type/mode validation is unchanged.
+      Replacement exact-head execution on all six native jobs is still required.
 - [ ] Add target-native runtime jobs as desktop release prerequisites.
 - [ ] Add native signing jobs; hash only the returned signed bytes.
 - [ ] Add a fail-closed aggregate and immutable manifest-signing job.
