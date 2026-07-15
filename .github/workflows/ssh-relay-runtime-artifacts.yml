@@ -257,6 +257,11 @@ jobs:
           node --check config/scripts/ssh-relay-runtime-native-signing-rehearsal-workflow.test.mjs
           node --check config/scripts/ssh-relay-runtime-build-prerequisite.test.mjs
           pnpm exec vitest run --config config/vitest.config.ts \
+            src/main/ssh/ssh-relay-artifact-schema.test.ts \
+            src/main/ssh/ssh-relay-manifest-signature.test.ts \
+            src/main/ssh/ssh-relay-release-asset.test.ts \
+            src/main/ssh/ssh-relay-artifact-selector.test.ts \
+            src/main/ssh/ssh-relay-runtime-identity.test.ts \
             config/scripts/ssh-relay-runtime-compatibility.test.mjs \
             config/scripts/ssh-relay-node-release-verification.test.mjs \
             config/scripts/ssh-relay-node-tar-inspection.test.mjs \
@@ -754,6 +759,11 @@ jobs:
           node --check config/scripts/ssh-relay-runtime-build-prerequisite.test.mjs
           if ($LASTEXITCODE -ne 0) { throw 'runtime build prerequisite test syntax check failed' }
           pnpm exec vitest run --config config/vitest.config.ts `
+            src/main/ssh/ssh-relay-artifact-schema.test.ts `
+            src/main/ssh/ssh-relay-manifest-signature.test.ts `
+            src/main/ssh/ssh-relay-release-asset.test.ts `
+            src/main/ssh/ssh-relay-artifact-selector.test.ts `
+            src/main/ssh/ssh-relay-runtime-identity.test.ts `
             config/scripts/ssh-relay-runtime-compatibility.test.mjs `
             config/scripts/ssh-relay-node-release-verification.test.mjs `
             config/scripts/ssh-relay-node-tar-inspection.test.mjs `

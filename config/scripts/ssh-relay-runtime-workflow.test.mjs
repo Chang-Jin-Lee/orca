@@ -99,6 +99,17 @@ describe('SSH relay runtime artifact workflow', () => {
     expect(uploadIndex).toBeGreaterThan(buildIndex)
     expect(source).toContain('verify-ssh-relay-runtime.mjs')
     expect(source).toContain('ssh-relay-runtime-workflow.test.mjs')
+    for (const testName of [
+      'ssh-relay-artifact-schema.test.ts',
+      'ssh-relay-manifest-signature.test.ts',
+      'ssh-relay-release-asset.test.ts',
+      'ssh-relay-artifact-selector.test.ts',
+      'ssh-relay-runtime-identity.test.ts'
+    ]) {
+      // Why: portable desktop selection contracts need proof on every native runner family, not
+      // only the local client architecture or the generic Linux PR job.
+      expect(source.split(`src/main/ssh/${testName}`)).toHaveLength(3)
+    }
     expect(source).toContain('pnpm install --frozen-lockfile --ignore-scripts')
     expect(source).toContain('--connect-timeout 20 --max-time 300 --retry 2')
     expect(source).toContain('mkdir -p "$output_root"')
