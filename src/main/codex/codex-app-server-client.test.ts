@@ -22,7 +22,19 @@ const config = JSON.parse(process.env.STUB_CONFIG)
 require('node:fs').writeFileSync(config.pidFile, String(process.pid))
 const trusted = new Set(config.hooks.filter(h => h.trustStatus === 'trusted').map(h => h.key))
 let buffer = ''
-function send(message) { process.stdout.write(JSON.stringify(message) + '\\n') }
+function send(message) {
+  const serialized = Buffer.from(JSON.stringify(message) + '\\n')
+  if (config.scenario === 'split-unicode') {
+    const marker = Buffer.from('é')
+    const markerIndex = serialized.indexOf(marker)
+    if (markerIndex !== -1) {
+      process.stdout.write(serialized.subarray(0, markerIndex + 1))
+      setTimeout(() => process.stdout.write(serialized.subarray(markerIndex + 1)), 5)
+      return
+    }
+  }
+  process.stdout.write(serialized)
+}
 function listing() {
   return {
     data: [{
@@ -210,6 +222,23 @@ describe('runCodexHookTrustGrantSession', () => {
 
     const result = await runCodexHookTrustGrantSession(request)
     expect(result.outcome).toBe('verify-failed')
+  })
+
+  it('decodes JSONL when a non-ASCII hook path is split across stdout chunks', async () => {
+    const command = "/bin/sh '/tmp/rené/codex-hook.sh'"
+    const key = '/home/rené/.codex/hooks.json:session_start:0:0'
+    const { request } = createStubRequest({
+      scenario: 'split-unicode',
+      hooks: [{ ...managedHook(key), command }],
+      expectedTrustKeys: [key],
+      managedCommand: command,
+      timeoutMs: 2_000
+    })
+
+    await expect(runCodexHookTrustGrantSession(request)).resolves.toMatchObject({
+      outcome: 'granted',
+      entries: [{ key }]
+    })
   })
 
   it('throws the unsupported error class for unknown JSON-RPC methods', async () => {
