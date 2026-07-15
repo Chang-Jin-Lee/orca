@@ -9,13 +9,17 @@ import {
   runCodexHookTrustGrantSession,
   type CodexHookTrustGrantRequest
 } from './codex-app-server-client'
-import { runCodexHookTrustGrantSessionSync } from './codex-app-server-grant-bridge'
+import {
+  resolveCodexGrantEntryPath,
+  runCodexHookTrustGrantSessionSync
+} from './codex-app-server-grant-bridge'
 
 // Stub codex app-server speaking the same JSONL protocol: initialize →
 // initialized → hooks/list → config/batchWrite → hooks/list. Scenario-driven
 // via STUB_CONFIG so each test controls listings, errors, and hangs.
 const STUB_SERVER_SOURCE = `
 const config = JSON.parse(process.env.STUB_CONFIG)
+require('node:fs').writeFileSync(config.pidFile, String(process.pid))
 const trusted = new Set(config.hooks.filter(h => h.trustStatus === 'trusted').map(h => h.key))
 let buffer = ''
 function send(message) { process.stdout.write(JSON.stringify(message) + '\\n') }
@@ -93,14 +97,16 @@ function createStubRequest(options: {
   expectedTrustKeys: string[]
   managedCommand: string
   timeoutMs?: number
-}): { request: CodexHookTrustGrantRequest; recordFile: string } {
+}): { request: CodexHookTrustGrantRequest; recordFile: string; pidFile: string } {
   const root = mkdtempSync(join(tmpdir(), 'orca-codex-stub-'))
   tempRoots.push(root)
   const stubPath = join(root, 'stub-app-server.cjs')
   writeFileSync(stubPath, STUB_SERVER_SOURCE)
   const recordFile = join(root, 'batch-write-params.json')
+  const pidFile = join(root, 'app-server.pid')
   return {
     recordFile,
+    pidFile,
     request: {
       invocation: {
         command: process.execPath,
@@ -110,7 +116,8 @@ function createStubRequest(options: {
             scenario: options.scenario,
             hooks: options.hooks,
             cwd: root,
-            recordFile
+            recordFile,
+            pidFile
           })
         },
         timeoutMs: options.timeoutMs ?? 10_000
@@ -234,7 +241,7 @@ describe('runCodexHookTrustGrantSession', () => {
 
   it('kills a hung server at the session deadline', async () => {
     const keys = ['/home/a/.codex/hooks.json:session_start:0:0']
-    const { request } = createStubRequest({
+    const { request, pidFile } = createStubRequest({
       scenario: 'hang',
       hooks: keys.map((key) => managedHook(key)),
       expectedTrustKeys: keys,
@@ -249,6 +256,8 @@ describe('runCodexHookTrustGrantSession', () => {
     // Why: the reap path must not stack the grace periods on top of the
     // deadline — a wedged server may ignore everything but SIGKILL.
     expect(Date.now() - startedAt).toBeLessThan(5_000)
+    const childPid = Number(readFileSync(pidFile, 'utf8'))
+    expect(() => process.kill(childPid, 0)).toThrow()
   })
 
   it('surfaces spawn failures as regular errors, not capability signals', async () => {
@@ -324,5 +333,49 @@ describe('runCodexHookTrustGrantSessionSync', () => {
     expect(() => runCodexHookTrustGrantSessionSync(baseRequest, { entryPath })).toThrow(
       /produced no result \(exit 7\)/
     )
+  })
+
+  it('classifies the spawnSync deadline as a typed timeout', () => {
+    const entryPath = writeEntryFixture(`setInterval(() => {}, 1000)`)
+    const request = {
+      ...baseRequest,
+      invocation: { ...baseRequest.invocation, timeoutMs: 20 }
+    }
+    expect(() =>
+      runCodexHookTrustGrantSessionSync(request, { entryPath, timeoutMarginMs: 20 })
+    ).toThrow(CodexAppServerTimeoutError)
+  })
+})
+
+describe('resolveCodexGrantEntryPath', () => {
+  const entryName = 'codex-app-server-grant-entry.js'
+
+  it('finds the sibling entry from emitted main and chunk directories', () => {
+    const mainDir = join('/opt', 'orca', 'out', 'main')
+    expect(
+      resolveCodexGrantEntryPath(
+        (candidate) => candidate === join(mainDir, 'codex', entryName),
+        mainDir
+      )
+    ).toBe(join(mainDir, 'codex', entryName))
+
+    const chunkDir = join(mainDir, 'chunks')
+    expect(
+      resolveCodexGrantEntryPath(
+        (candidate) => candidate === join(mainDir, 'codex', entryName),
+        chunkDir
+      )
+    ).toBe(join(mainDir, 'codex', entryName))
+  })
+
+  it('redirects app.asar to unpacked without double-unpacking an existing path', () => {
+    const resourcesDir = join('/Applications', 'Orca.app', 'Contents', 'Resources')
+    const expected = join(resourcesDir, 'app.asar.unpacked', 'out', 'main', 'codex', entryName)
+    for (const archiveDir of ['app.asar', 'app.asar.unpacked']) {
+      const moduleDir = join(resourcesDir, archiveDir, 'out', 'main', 'chunks')
+      expect(resolveCodexGrantEntryPath((candidate) => candidate === expected, moduleDir)).toBe(
+        expected
+      )
+    }
   })
 })

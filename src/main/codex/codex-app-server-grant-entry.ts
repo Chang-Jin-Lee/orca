@@ -4,7 +4,8 @@
 // JSONL RPC session itself needs a live event loop. Reads the request JSON
 // from stdin, writes a single result-envelope JSON line to stdout, and never
 // imports electron (see PLAIN_NODE_ENTRY_NAMES in the build guard).
-import { buildGrantEntryEnvelope } from './codex-app-server-grant-bridge'
+import { buildGrantEntryEnvelope } from './codex-app-server-grant-envelope'
+import { writeSync } from 'node:fs'
 import {
   runCodexHookTrustGrantSession,
   type CodexHookTrustGrantRequest
@@ -39,7 +40,10 @@ async function main(): Promise<void> {
   // suspend mid-session); exiting closes the codex child's stdio so it
   // exits on EOF instead of orphaning.
   const hardExit = setTimeout(() => {
-    process.stdout.write(
+    // Why: process.exit() does not flush asynchronous stdout pipes; write the
+    // timeout envelope synchronously so the parent can classify the fallback.
+    writeSync(
+      process.stdout.fd,
       `${JSON.stringify({
         ok: false,
         errorName: 'CodexAppServerTimeoutError',
@@ -54,7 +58,9 @@ async function main(): Promise<void> {
 }
 
 void main().then(
-  () => process.exit(0),
+  () => {
+    process.exitCode = 0
+  },
   (error: unknown) => {
     process.stdout.write(
       `${JSON.stringify({
@@ -63,6 +69,6 @@ void main().then(
         message: error instanceof Error ? error.message : String(error)
       })}\n`
     )
-    process.exit(0)
+    process.exitCode = 0
   }
 )

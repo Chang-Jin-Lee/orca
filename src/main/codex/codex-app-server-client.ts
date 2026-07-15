@@ -87,6 +87,7 @@ type CodexHookListing = {
 
 const JSON_RPC_METHOD_NOT_FOUND = -32601
 const STDERR_TAIL_MAX_BYTES = 8192
+const STDOUT_LINE_MAX_BYTES = 1024 * 1024
 
 function isMethodNotFoundError(error: { code?: number; message?: string }): boolean {
   return error.code === JSON_RPC_METHOD_NOT_FOUND || /method not found/i.test(error.message ?? '')
@@ -180,10 +181,20 @@ export async function runCodexHookTrustGrantSession(
   child.stderr.on('data', (chunk: Buffer) => {
     stderrTail = (stderrTail + chunk.toString('utf8')).slice(-STDERR_TAIL_MAX_BYTES)
   })
+  // Why: a child can exit between the liveness check and stdin.write(); an
+  // EPIPE must reject the RPC instead of becoming an unhandled stream error.
+  child.stdin.on('error', (error) => {
+    failPending(error)
+  })
 
   let stdoutBuffer = ''
   child.stdout.on('data', (chunk: Buffer) => {
     stdoutBuffer += chunk.toString('utf8')
+    if (Buffer.byteLength(stdoutBuffer) > STDOUT_LINE_MAX_BYTES) {
+      child.kill('SIGKILL')
+      failPending(new Error('codex app-server emitted an oversized JSONL response'))
+      return
+    }
     let newlineIndex
     while ((newlineIndex = stdoutBuffer.indexOf('\n')) !== -1) {
       const line = stdoutBuffer.slice(0, newlineIndex).trim()
@@ -342,7 +353,6 @@ export async function runCodexHookTrustGrantSession(
     }
     throw error
   } finally {
-    clearTimeout(deadline)
     try {
       child.stdin.end()
     } catch {
@@ -358,5 +368,6 @@ export async function runCodexHookTrustGrantSession(
         await Promise.race([exitPromise, new Promise<void>((resolve) => setTimeout(resolve, 1000))])
       }
     }
+    clearTimeout(deadline)
   }
 }

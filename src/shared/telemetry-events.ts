@@ -457,6 +457,7 @@ const codexTrustGrantSchema = z
         'unsupported',
         'unsupported-cached',
         'verify-failed',
+        'retry-cached',
         'error'
       ])
       .optional()
