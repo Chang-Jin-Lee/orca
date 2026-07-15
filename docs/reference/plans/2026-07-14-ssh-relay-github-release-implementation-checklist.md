@@ -8,8 +8,8 @@ work; keep exact commands, runner identities, hashes, metrics, and residual gaps
 
 Date created: 2026-07-14<br>
 Last updated: 2026-07-15<br>
-Current phase: Milestone 4 / Work Package 3 platform-native signing-job workflow contract — **In progress — 2026-07-15, Codex implementation owner**. The reusable credential-free target-native build-prerequisite package is closed locally and on all six exact-head Node 24 native build jobs under E-M4-BUILD-PREREQUISITE-LOCAL-RED-001, E-M4-BUILD-PREREQUISITE-LOCAL-001, and E-M4-BUILD-PREREQUISITE-CI-001. The active disconnected signing slice reconstructs the authenticated unsigned archive, binds the exact staged native payload to the source identity, returns changed signed bytes through platform-native Apple/SignPath boundaries, applies them into an exclusive complete runtime, verifies the complete final tree and native policy before PTY/watcher smoke, and only then emits the final archive, SBOM, provenance, and tuple descriptor. Credential-free local proof is complete under E-M4-NATIVE-SIGNING-WORKFLOW-LOCAL-001. First exact-head run 29415080004 produced the required Windows fixture RED under E-M4-NATIVE-SIGNING-WORKFLOW-CI-RED-001; the test-only native archive-family correction is locally green and replacement exact-head execution is next. No credential-free path can satisfy real Apple/SignPath signing, returned production signatures, or native-trust evidence. Release-cut and every desktop build remain disconnected until exact floors, real signing/trust, aggregate, publication/read-back, and embedding gates are complete. The slice may not publish, connect a desktop consumer, or enable a tuple. Production/default behavior is unchanged, no bundled-runtime path is enabled, and no artifact is published.<br>
-Session checkpoint: **In progress — 2026-07-15, Codex implementation owner** — exact-head artifact run 29415080004 at `0c43b83e8260a252def164fe62d135177e79f56b` proves GitHub accepts the disconnected callable signing workflow and all four POSIX native build jobs pass the new credential-free contracts plus complete runtime builds. Both Windows contract jobs fail before Node input download, native build, or artifact upload because two new tests hardcode a Darwin tar fixture whose declared executable modes cannot be materialized by NTFS; strict archive mode validation correctly rejects `bin/node` (`E-M4-NATIVE-SIGNING-WORKFLOW-CI-RED-001`). The correction selects the native Windows ZIP tuple on Windows while POSIX runners retain both tar and ZIP coverage; the focused suite and 46-file / 241-test release suite pass locally without changing production validation. A replacement exact-head run is next. Golden E2E 29415079993 passes; PR Checks 29415080046 remain independent. The callable signing workflow still has only read permissions and no consumer, and no production signing credential or real returned signature was used. Real Apple/SignPath signing, returned production signatures, Gatekeeper/notarization, Defender/WDAC, exact macOS 13.5/Linux kernel 4.18/Windows arm64 build-26100 runners, protected manifest signing, publication wiring, desktop embedding, and native trust remain separately gated. Nothing is published or enabled, legacy remains the production default, and merge to `main` remains prohibited.<br>
+Current phase: Milestone 4 / Work Package 3 protected platform-native signing rehearsal — **In progress — 2026-07-15, Codex implementation owner**. The disconnected signing workflow and its authenticated reconstruction/finalization contracts are closed locally and on all six exact-head Node 24 native build jobs under E-M4-NATIVE-SIGNING-WORKFLOW-LOCAL-RED-001, E-M4-NATIVE-SIGNING-WORKFLOW-LOCAL-001, E-M4-NATIVE-SIGNING-WORKFLOW-CI-RED-001, and E-M4-NATIVE-SIGNING-WORKFLOW-CI-001. The next narrow package is a manual-only rehearsal caller that can produce the existing unpublished native artifacts and invoke the callable signing workflow with repository credentials without connecting release-cut, desktop builds, publication, or any tuple. It requires a purpose-named RED and must preserve the expected Windows-arm64 floor failure as a separate gate rather than bypassing it in production. Release-cut and every desktop build remain disconnected until exact floors, real signing/trust, aggregate, publication/read-back, and embedding gates are complete. Production/default behavior is unchanged, no bundled-runtime path is enabled, and no artifact is published.<br>
+Session checkpoint: **In progress — 2026-07-15, Codex implementation owner** — replacement exact-head artifact run 29415642475 at `70b3892aefc31423ad30467ad5251c090842526a` is complete under `E-M4-NATIVE-SIGNING-WORKFLOW-CI-001`. All six target-native build jobs pass the corrected credential-free contracts, reproducible full runtime construction, inspection, bundled Node/PTY/watcher smoke, and unpublished artifact upload. Both Linux oldest-userland supplements and Windows x64 oldest-baseline verification pass. The overall run fails only because the separately retained Windows arm64 floor gate requires build 26100 while GitHub supplied 26200; that job still verifies the 85,213,511-byte tree and passes bundled Node, PTY, watcher, and resource-settlement smoke before refusing qualification. Golden E2E 29415642509 and PR Checks 29415642512 both pass at the exact head. No production signing credential or real returned signature was used by this credential-free run. Real Apple/SignPath signing, returned production signatures, Gatekeeper/notarization, Defender/WDAC, exact macOS 13.5/Linux kernel 4.18/Windows arm64 build-26100 runners, protected manifest signing, publication wiring, desktop embedding, and native trust remain separately gated. Nothing is published or enabled, legacy remains the production default, and merge to `main` remains prohibited.<br>
 Primary design: [SSH relay GitHub Release plan](./2026-07-14-ssh-relay-github-release-plan.html)<br>
 Motivating issues: [#8450](https://github.com/stablyai/orca/issues/8450), [#1693](https://github.com/stablyai/orca/issues/1693)
 
@@ -10293,6 +10293,82 @@ mismatch`. NTFS cannot materialize the fixture's declared POSIX executable mode.
 - Follow-up: commit and push the fixture-only correction, then require both Windows architectures
   and all four POSIX jobs to pass on the replacement exact head. Do not weaken archive mode checks.
 
+### E-M4-NATIVE-SIGNING-WORKFLOW-CI-001 — Corrected signing contracts pass all six native builds
+
+- Date: 2026-07-15
+- Owner: Codex implementation owner
+- Commit SHA / PR: exact head `70b3892aefc31423ad30467ad5251c090842526a`; correction commit
+  `85c70c5e902e6ff5725fa11de054d83f2b821850`; draft PR
+  [#8741](https://github.com/stablyai/orca/pull/8741).
+- Workflow/run: SSH Relay Runtime Artifacts
+  [29415642475](https://github.com/stablyai/orca/actions/runs/29415642475), 12:33:09Z–12:45:41Z.
+  This is a credential-free exact-head replacement for the required Windows RED. It does not call
+  the signing workflow or use repository secrets.
+- Target-native build jobs and resolved images:
+  - Linux x64 job
+    [87352975773](https://github.com/stablyai/orca/actions/runs/29415642475/job/87352975773):
+    `ubuntu-24.04`, `ubuntu24` image `20260705.232.1`, X64, 12:33:13Z–12:38:05Z.
+  - Linux arm64 job
+    [87352975853](https://github.com/stablyai/orca/actions/runs/29415642475/job/87352975853):
+    `ubuntu-24.04-arm`, `ubuntu24-arm64` image `20260706.52.2`, ARM64,
+    12:33:16Z–12:37:57Z.
+  - macOS x64 job
+    [87352975950](https://github.com/stablyai/orca/actions/runs/29415642475/job/87352975950):
+    `macos-15-intel`, `macos15` image `20260629.0276.1`, X64,
+    12:33:14Z–12:39:14Z.
+  - macOS arm64 job
+    [87352975799](https://github.com/stablyai/orca/actions/runs/29415642475/job/87352975799):
+    `macos-15`, `macos15` image `20260706.0213.1`, ARM64, 12:33:14Z–12:37:31Z.
+  - Windows x64 job
+    [87352975877](https://github.com/stablyai/orca/actions/runs/29415642475/job/87352975877):
+    `windows-2022`, `win22` image `20260706.237.1`, X64, 12:33:13Z–12:38:30Z.
+  - Windows arm64 job
+    [87352975797](https://github.com/stablyai/orca/actions/runs/29415642475/job/87352975797):
+    `windows-11-arm`, `win11-arm64` image `20260706.102.1`, ARM64,
+    12:33:13Z–12:41:51Z.
+- Contract results: every job checks out the exact 40-hex source and passes the new archive
+  reconstruction, signing-stage, returned-tree finalization, and callable-workflow contracts before
+  downloading Node inputs or constructing an artifact. Each POSIX job passes 45 files / 237 tests;
+  durations are 5.64 seconds on Linux x64, 5.45 seconds on Linux arm64, 10.95 seconds on macOS
+  arm64, and 24.06 seconds on macOS x64. Each Windows job passes 46 files / 232 tests with nine
+  declared non-Windows-applicable skips out of 241; durations are 11.63 seconds on x64 and 11.30
+  seconds on arm64. Both corrected Windows fixtures exercise the native ZIP/runtime policy while
+  POSIX retains exact tar-mode coverage; production archive mode validation is unchanged.
+- Artifact oracle: all six jobs then complete two clean target-native builds, exact equality,
+  archive/tree inspection, bundled Node v24.18.0, PTY, watcher, source-signature/native-plan checks,
+  and unpublished artifact upload. Both supplemental Linux userland jobs pass:
+  [87354301778](https://github.com/stablyai/orca/actions/runs/29415642475/job/87354301778)
+  for x64 and
+  [87354301762](https://github.com/stablyai/orca/actions/runs/29415642475/job/87354301762)
+  for arm64. Windows x64 oldest-baseline job
+  [87354877657](https://github.com/stablyai/orca/actions/runs/29415642475/job/87354877657)
+  also passes.
+- Expected retained failure: Windows arm64 baseline job
+  [87354877689](https://github.com/stablyai/orca/actions/runs/29415642475/job/87354877689)
+  fails closed only because the contract requires OS build 26100 while the hosted runner reports
+  `10.0.26200`. Before refusing qualification it authenticates the 60-entry / 42-file /
+  85,213,511-expanded-byte tree with content ID
+  `sha256:02edf462be83c2864a89546d5344d348f9e07ce10964660342608a8c614e47db`, runs bundled Node,
+  PTY resize/exit, and watcher create/update/delete/rename smoke, settles to two pipe handles after a
+  2,000 ms observation, and reports 5,877.1343 ms smoke time, 48,570,368-byte RSS, and 7,671.6441 ms
+  total verification. Platform and architecture checks pass; only the exact floor check is false.
+- Adjacent exact-head regressions: Golden E2E
+  [29415642509](https://github.com/stablyai/orca/actions/runs/29415642509) passes both macOS and Linux
+  jobs. PR Checks [29415642512](https://github.com/stablyai/orca/actions/runs/29415642512) pass the
+  `verify` job from 12:33:13Z through 12:47:00Z. Both use the same exact head.
+- Does not prove: real Apple/SignPath credentials, approval, returned signed bytes, native trust,
+  Gatekeeper/notarization, Defender/WDAC, macOS 13.5, Linux kernel 4.18, Windows arm64 build 26100,
+  protected manifest signing, release publication/read-back, desktop embedding, SSH
+  transfer/install, or an enabled tuple. No production/default consumer is connected and no artifact
+  is published.
+- Checklist items satisfied: credential-free exact-head native execution prerequisite for the active
+  signing-job package. The Work Package 3 signing item remains open pending real protected signing
+  and native-trust evidence.
+- Follow-up: add a purpose-named RED and manual-only rehearsal caller for the existing build and
+  signing workflows. Keep baseline qualification, release-cut, desktop consumers, publication, and
+  every tuple disconnected; a rehearsal must not convert the hosted Windows arm64 floor gap into a
+  pass.
+
 ## Accepted Gaps
 
 No product gap is accepted merely because it appears in this list. Each entry requires explicit
@@ -10350,15 +10426,14 @@ The project is not complete until every applicable item below is checked with ev
 
 ## Next Required Action
 
-Commit and push the native test-fixture correction recorded under
-E-M4-NATIVE-SIGNING-WORKFLOW-CI-RED-001, then require its credential-free purpose-named contracts to
-pass on every replacement exact-head native build job. Record runner identity, test counts, timings,
-and residual failures. Do not connect release-cut or any desktop build;
-Windows arm64 build-26100, macOS 13.5, Linux kernel 4.18, real Apple/SignPath returned bytes and
-native trust, protected aggregate/manifest signing, publication/read-back, and embedding remain
-prerequisites. Do not merge to `main`, publish, use production signing credentials during ordinary
-PR validation, or enable a tuple. Retain every production/default gate. In parallel, provision the
-qualifying exact-floor and real macOS/Windows signing/trust environments.
+Commit and push the exact-head CI evidence recorded under
+E-M4-NATIVE-SIGNING-WORKFLOW-CI-001. Then add a purpose-named RED and a manual-only rehearsal caller
+that produces the existing unpublished native artifacts and invokes the disconnected signing
+workflow with repository credentials. Do not connect release-cut or any desktop build. The
+rehearsal must retain the Windows arm64 build-26100, macOS 13.5, and Linux kernel 4.18 qualification
+gates as separately open, and must not publish or enable a tuple. Record real Apple/SignPath request,
+approval/return, exact changed-byte identity, native trust, runner, duration, and residual evidence.
+Do not merge to `main`; retain every production/default gate.
 
 Cross-family Layer B targets, the protected manifest-signing environment, oldest-baseline/native-
 trust cells, and the paired legacy performance baseline remain release/default-path blockers. No
