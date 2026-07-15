@@ -8,8 +8,8 @@ work; keep exact commands, runner identities, hashes, metrics, and residual gaps
 
 Date created: 2026-07-14<br>
 Last updated: 2026-07-15<br>
-Current phase: Milestone 4 / Work Package 3 disconnected draft-asset upload/recovery command — **In progress — 2026-07-15, Codex implementation owner**. The callable aggregate and protected manifest-signing workflow contract is closed locally and on all six exact-head native jobs under E-M4-PROTECTED-MANIFEST-WORKFLOW-LOCAL-001 and E-M4-PROTECTED-MANIFEST-WORKFLOW-CI-001. Existing E-M4-RELEASE-DAG and E-M4-AGGREGATE-READBACK contracts already cover the declared timeout, retry, approval, failure, recovery, and returned-byte taxonomy. The missing bounded draft upload side is locally green under E-M4-DRAFT-UPLOAD-LOCAL-RED-001 and E-M4-DRAFT-UPLOAD-LOCAL-001: exact local-byte hashing, same-draft recovery, authenticated lightweight/annotated tag-to-source binding, immutable retry reconciliation, authenticated metadata/upload calls, partial-draft recovery, injected GitHub responses, and no workflow caller or release write in tests. Fresh all-six native CI is required. Release-cut, desktop builds, publication, and every tuple stay disconnected; production/default behavior is unchanged.<br>
-Session checkpoint: **In progress — 2026-07-15, Codex implementation owner** — exact pushed head `bb4b527e4ea030cbd94f11ca9b6e284900ab8c8a` passes all six target-native artifact jobs in run 29428772206 under E-M4-LINUX-PREREQUISITE-CAPABILITY-CI-001 and E-M4-PROTECTED-MANIFEST-WORKFLOW-CI-001. Linux x64/arm64 capability probes complete in about four seconds, never enter APT, and proceed through full runtime construction; the all-six workflow source contract and broad runtime suites pass. Both Linux oldest-userland supplements and Windows x64 floor pass. Windows arm64 runtime smoke succeeds but the floor job retains the expected fail-closed 26200-versus-26100 mismatch. PR Checks 29428772127 and Golden E2E 29428772389 are green. The user authorizes commits, pushes, draft-PR updates, CI reruns, and protected rehearsals within PRs, but not merging to `main`. No accepted production key, protected environment/seed, native-signing trust proof, release consumer, publication path, desktop consumer, tuple enablement, or production/default change is connected. Legacy remains the production default.<br>
+Current phase: Milestone 4 / Work Package 3 disconnected relay required-asset gate — **In progress — 2026-07-15, Codex implementation owner**. The bounded draft upload/recovery capability is closed locally and on all six exact-head native jobs under E-M4-DRAFT-UPLOAD-LOCAL-RED-001, E-M4-DRAFT-UPLOAD-LOCAL-001, and E-M4-DRAFT-UPLOAD-CI-001. The active package must add a disconnected relay-specific release gate that consumes only an already verified signed manifest plus authenticated draft metadata and rejects missing, extra managed, non-uploaded, empty, wrong-size, uncovered, cross-tag/channel, or signature-disagreeing assets. Keep the existing desktop required-asset gate unchanged until composition is explicitly reviewed. Release-cut, desktop builds, publication, and every tuple stay disconnected; production/default behavior is unchanged.<br>
+Session checkpoint: **In progress — 2026-07-15, Codex implementation owner** — exact pushed head `b37cacecf8f1c865f09c118f274ab62302e951ad` passes all six target-native artifact jobs and the eight-test uploader suite in run 29431510990 under E-M4-DRAFT-UPLOAD-CI-001. Both Linux oldest-userland supplements and Windows x64 floor pass. Windows arm64 runtime smoke passes in 7,752.6288ms with 49,684,480-byte RSS, then its floor job retains the expected fail-closed hosted-build 26200 versus required 26100 mismatch. PR Checks 29431510764 and Golden E2E 29431510883 are green. The user authorizes commits, pushes, draft-PR updates, CI reruns, and protected rehearsals within PRs, but not merging to `main`. No accepted production key, protected environment/seed, native-signing trust proof, release write, publication path, desktop consumer, tuple enablement, or production/default change is connected. Legacy remains the production default.<br>
 Primary design: [SSH relay GitHub Release plan](./2026-07-14-ssh-relay-github-release-plan.html)<br>
 Motivating issues: [#8450](https://github.com/stablyai/orca/issues/8450), [#1693](https://github.com/stablyai/orca/issues/1693)
 
@@ -106,11 +106,15 @@ same change as the work it records.
   pass locally and on all six exact-head native jobs under E-M4-PROTECTED-MANIFEST-WORKFLOW-LOCAL-001
   and E-M4-PROTECTED-MANIFEST-WORKFLOW-CI-001. The environment and seed remain unprovisioned; static
   and test-key proof do not count as live protected signing evidence.
-- Active package: Work Package 3 disconnected draft-asset upload/recovery command. The purpose-named
-  missing-module RED and locally green implementation are recorded under
-  E-M4-DRAFT-UPLOAD-LOCAL-RED-001 and E-M4-DRAFT-UPLOAD-LOCAL-001. Require exact-head all-six native
-  execution before closing this package. Every workflow caller, real credential, release write,
-  desktop consumer, and tuple remains disconnected.
+- Completed Work Package 3 gate: disconnected draft-asset upload/recovery capability. Exact local
+  bytes, authenticated tag/source binding, safe reuse, bounded retry reconciliation, cancellation,
+  and partial-draft recovery pass locally and on all six exact-head native jobs under
+  E-M4-DRAFT-UPLOAD-LOCAL-RED-001, E-M4-DRAFT-UPLOAD-LOCAL-001, and E-M4-DRAFT-UPLOAD-CI-001. There
+  is no CLI entrypoint or workflow caller, and no real release write occurred.
+- Active package: Work Package 3 disconnected relay required-asset gate. Begin with a purpose-named
+  missing-module RED for exact verified-manifest coverage, signature, name, size, upload state,
+  managed-asset closure, tag/channel identity, and consumer disconnection. Keep the existing desktop
+  required-asset gate unchanged in this slice.
 - Completed Work Package 2 gate: target-native Windows source-signature reports from exact-head
   artifact jobs 87267322867 and 87267322870 were independently downloaded and matched to their
   identities and signing-stage reports under E-M3-WINDOWS-SOURCE-SIGNATURE-CI-001. PR Checks
@@ -11256,8 +11260,8 @@ config/scripts/ssh-relay-runtime-draft-upload.test.mjs`.
 
 - Date: 2026-07-15
 - Owner: Codex implementation owner
-- Source: implementation commit `8d9013cd106734ecd979f785b515dd9640841330` plus the local
-  authenticated tag-binding correction; draft PR #8741.
+- Source: implementation commits `8d9013cd106734ecd979f785b515dd9640841330` and
+  `b37cacecf8f1c865f09c118f274ab62302e951ad`; draft PR #8741.
 - Runner/remote/network: local macOS 26.2 arm64, Node v26.0.0 and pnpm 10.24.0. Local temporary
   files and injected GitHub API/upload/CDN responses only. No network request, real token, release
   write, signer, protected environment, SSH remote, desktop consumer, publication, or enabled tuple.
@@ -11299,6 +11303,57 @@ lint` passes all 41 reliability gates, the 355-entry max-lines ratchet, bundled-
   tuple.
 - Follow-up: checkpoint and push, then require exact-head syntax and eight-test execution on all six
   native artifact jobs plus PR Checks and Golden E2E. Retain all production/default disconnections.
+
+### E-M4-DRAFT-UPLOAD-CI-001 — Draft upload/recovery passes all six native Node 24 jobs
+
+- Date: 2026-07-15
+- Owner: Codex implementation owner
+- Source: exact pushed head `b37cacecf8f1c865f09c118f274ab62302e951ad`; draft PR #8741.
+- Workflow: [SSH Relay Runtime Artifacts run 29431510990](https://github.com/stablyai/orca/actions/runs/29431510990),
+  16:13:32Z–16:30:34Z. The aggregate conclusion is the expected failure only because the separate
+  Windows arm64 floor job rejects hosted build 26200 after successful runtime execution.
+- Native build jobs and durations:
+  - Darwin x64 job 87407470012, `macos-15` image `20260629.0276.1`, runner 2.335.1, Azure `westus`,
+    16:13:52Z–16:20:58Z, PASS in 7m06s.
+  - Darwin arm64 job 87407470027, `macos-15-arm64` image `20260706.0213.1`, runner 2.335.1, Azure
+    `westus`, 16:13:50Z–16:17:32Z, PASS in 3m42s.
+  - Linux arm64 job 87407470041, `ubuntu-24.04-arm` image `20260706.52.2`, runner 2.335.1, Azure
+    `northcentralus`, 16:13:53Z–16:18:11Z, PASS in 4m18s.
+  - Windows x64 job 87407470042, `windows-2022` image `20260706.237.1`, runner 2.335.1, Azure
+    `westus`, 16:13:51Z–16:19:32Z, PASS in 5m41s.
+  - Linux x64 job 87407470091, `ubuntu-24.04` image `20260714.240.1`, runner 2.335.1, Azure
+    `westus3`, 16:13:50Z–16:17:27Z, PASS in 3m37s.
+  - Windows arm64 job 87407470316, `windows-11-arm64` image `20260706.102.1`, runner 2.335.1,
+    Azure `northcentralus`, 16:13:51Z–16:24:34Z, PASS in 10m43s.
+- Exact uploader suite: `config/scripts/ssh-relay-runtime-draft-upload.test.mjs` passes 8/8 under
+  Node 24.18.0 on every native job: Darwin x64 260ms, Darwin arm64 51ms, Linux arm64 78ms, Windows
+  x64 151ms, Linux x64 89ms, and Windows arm64 192ms.
+- Broad contract counts: every POSIX job passes 51 files / 266 tests; Vitest durations are Darwin
+  x64 24.06s, Darwin arm64 8.27s, Linux arm64 6.59s, and Linux x64 6.43s. Each Windows job passes 52
+  files / 260 tests plus 10 platform skips of 270; x64 takes 12.74s and arm64 17.32s.
+- Downstream evidence: Linux arm64 supplement job 87409169300 passes in 54s; Linux x64 supplement
+  87409169317 passes in 51s; Windows x64 floor job 87410005329 passes in 1m27s. Windows arm64 floor
+  job 87410005404 uses `windows-11-arm64` image `20260714.109.1`, executes the artifact successfully
+  in 7,752.6288ms with 49,684,480-byte RSS, and then fails exactly because OS/kernel build 26200 is
+  not required floor 26100.
+- Adjacent exact-head workflows: PR Checks run
+  [29431510764](https://github.com/stablyai/orca/actions/runs/29431510764), job 87407413500, passes
+  16:13:36Z–16:29:15Z, including lint, typecheck, Git compatibility, tests, unpacked build, and
+  packaged CLI smoke. Golden E2E run
+  [29431510883](https://github.com/stablyai/orca/actions/runs/29431510883) passes Linux job
+  87407414410 and macOS job 87407414424.
+- Oracle proved: the uploader module, tests, and POSIX/PowerShell workflow wiring parse and execute
+  consistently on all six native Node 24 runner families. Every family exercises regular-file
+  hashing, exact draft/tag/source binding including annotated-tag peeling, authenticated redirect
+  isolation, exact reuse, uncertain-POST reconciliation, retry exhaustion, mutation detection,
+  authorization failure, cancellation, and partial-draft recovery. Full native artifact construction
+  and adjacent regressions remain green.
+- Does not prove: live GitHub API/upload/CDN behavior, a real token or release write, full-size upload
+  throughput/memory, a real retry/429, final read-back, downloaded archive execution, publication,
+  native signing/trust, oldest macOS/Linux kernel/Windows arm64 floor, desktop embedding, SSH
+  transfer/install, packaged RPC behavior, performance against legacy, or any enabled tuple.
+- Checklist items satisfied: exact-head all-six CI gate for the disconnected draft upload/recovery
+  capability. The broader draft upload/read-back/execution and Work Package 3 boxes remain open.
 
 ## Accepted Gaps
 
@@ -11358,11 +11413,13 @@ The project is not complete until every applicable item below is checked with ev
 
 ## Next Required Action
 
-Checkpoint and push the locally green E-M4-DRAFT-UPLOAD-LOCAL-001 implementation, then require
-exact-head syntax and eight-test execution on all six native artifact jobs plus PR Checks and Golden
-E2E. Do not add a command-line entrypoint or workflow caller and do not perform a real release write.
-The protected environment, accepted production keys, and secret remain unprovisioned, so live
-signing evidence stays BLOCKED.
+Checkpoint and push E-M4-DRAFT-UPLOAD-CI-001. Then begin a purpose-named disconnected RED for the
+relay-specific release required-asset gate: consume only an already verified signed manifest and
+authenticated draft metadata; require exact manifest/signature coverage, asset names, sizes, upload
+state, managed-asset closure, and stable/RC/perf tag identity. Keep the existing desktop
+`verify-release-required-assets.mjs` behavior unchanged until composition is separately reviewed.
+Do not add a workflow caller or perform a real release write. The protected environment, accepted
+production keys, and secret remain unprovisioned, so live signing evidence stays BLOCKED.
 Keep Windows arm64 build 26100, macOS 13.5, Linux kernel 4.18, release-cut, desktop builds,
 publication, and every tuple separately gated. Do not merge to `main`; retain every
 production/default gate.
