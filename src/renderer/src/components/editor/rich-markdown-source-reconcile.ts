@@ -1,4 +1,10 @@
-import { applyPatches, makePatches } from '@sanity/diff-match-patch'
+import {
+  applyPatches,
+  cleanupEfficiency,
+  cleanupSemantic,
+  makeDiff,
+  makePatches
+} from '@sanity/diff-match-patch'
 
 // Why: bound the safety re-parse cost — it builds a throwaway TipTap editor per
 // commit, whose parse time scales with document length (UTF-16 code units, the
@@ -7,6 +13,11 @@ import { applyPatches, makePatches } from '@sanity/diff-match-patch'
 // the 300ms serialize debounce; a higher cap risks a main-thread stall on
 // slow/SSH hosts. Above the cap we use today's canonical output (no regression).
 const RECONCILE_SIZE_CAP_CODE_UNITS = 50_000
+
+// Why: diff-match-patch defaults to a one-second search, which freezes the
+// renderer on replacement-heavy paste/edit paths. A timed-out coarse diff is
+// still safe because the round-trip proof below rejects any bad placement.
+const RECONCILE_DIFF_TIMEOUT_SECONDS = 0.01
 
 export type ReconcileSerializedMarkdownParams = {
   /** Current on-disk source bytes (possibly non-canonical, possibly CRLF). */
@@ -79,7 +90,23 @@ export function reconcileSerializedMarkdown({
   }
 
   // Branch 4: run the divergent-base patch entirely in LF space.
-  const patches = makePatches(baseLf, editedLf)
+  // Why: the dependency's half-match accelerator ignores its diff deadline and
+  // can spend 100ms+ scanning repeated long seeds. Returning canonical is safer
+  // than entering that unbounded path for highly repetitive replacements.
+  if (hasRepeatedHalfMatchSeed(baseLf, editedLf)) {
+    return restoreEol(editedLf, eol)
+  }
+  let diffs = makeDiff(baseLf, editedLf, {
+    checkLines: true,
+    timeout: RECONCILE_DIFF_TIMEOUT_SECONDS
+  })
+  // Match makePatches(textA, textB)'s cleanup behavior while supplying the
+  // bounded diff ourselves instead of inheriting the library's 1s timeout.
+  if (diffs.length > 2) {
+    diffs = cleanupSemantic(diffs)
+    diffs = cleanupEfficiency(diffs)
+  }
+  const patches = makePatches(baseLf, diffs)
   const [reconciledLf, results] = applyPatches(patches, originalSourceLf)
 
   // Branch 5: a hunk that failed to locate in the non-canonical source → the
@@ -127,4 +154,42 @@ function normalizeForSafety(text: string): string {
   // CRLF-normalized) — a trailing `\n\n` empty paragraph is semantic, so a lenient
   // trimEnd would mask exactly the trailing-block drift branch 6 must catch.
   return text.replace(/\r\n/g, '\n')
+}
+
+function hasRepeatedHalfMatchSeed(textA: string, textB: string): boolean {
+  // Match diff-match-patch's own prefix/suffix trimming so a small edit in a
+  // repetitive document is not mistaken for a repetitive replacement.
+  const minimumLength = Math.min(textA.length, textB.length)
+  let prefixLength = 0
+  while (
+    prefixLength < minimumLength &&
+    textA.charCodeAt(prefixLength) === textB.charCodeAt(prefixLength)
+  ) {
+    prefixLength += 1
+  }
+  let suffixLength = 0
+  while (
+    suffixLength < minimumLength - prefixLength &&
+    textA.charCodeAt(textA.length - suffixLength - 1) ===
+      textB.charCodeAt(textB.length - suffixLength - 1)
+  ) {
+    suffixLength += 1
+  }
+  const middleA = textA.slice(prefixLength, textA.length - suffixLength)
+  const middleB = textB.slice(prefixLength, textB.length - suffixLength)
+  const longText = middleA.length > middleB.length ? middleA : middleB
+  const shortText = middleA.length > middleB.length ? middleB : middleA
+  if (longText.length < 4 || shortText.length * 2 < longText.length) {
+    return false
+  }
+
+  const seedLength = Math.floor(longText.length / 4)
+  for (const start of [Math.ceil(longText.length / 4), Math.ceil(longText.length / 2)]) {
+    const seed = longText.slice(start, start + seedLength)
+    const firstMatch = shortText.indexOf(seed)
+    if (firstMatch !== -1 && shortText.includes(seed, firstMatch + 1)) {
+      return true
+    }
+  }
+  return false
 }
