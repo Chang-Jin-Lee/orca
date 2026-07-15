@@ -6093,6 +6093,10 @@ describe('Last-status persistence', () => {
           subagents: undefined
         })
       ])
+      // Why: make the migration one-time; otherwise every launch reparses and
+      // re-prunes the same persisted idle rows.
+      const persisted = JSON.parse(readFileSync(lastStatusPath(), 'utf8'))
+      expect(persisted.entries[PANE].payload.subagents).toBeUndefined()
     } finally {
       server.stop()
     }

@@ -2477,11 +2477,9 @@ export function markClaudeLeadTurnInterrupted(state: HookListenerState, paneKey:
   state.claudeLeadStateByPaneKey.set(paneKey, { state: 'done', interrupted: true })
 }
 
-/** Rebuild a pane's roster from a persisted status snapshot during hydration.
- *  Restart loses the in-memory roster while the renderer replays the child
- *  rows from disk; without reseeding, the next teammate-bearing Stop (whose
- *  task ids never match lifecycle ids) would silently drop those rows. Stale
- *  seeds self-heal: an empty background_tasks clears, activity refreshes. */
+/** Rebuild a pane's working roster from a persisted status snapshot. Live
+ *  activity confirms a seed after restart; a complete task inventory may reap
+ *  an unconfirmed seed whose finish hook arrived while Orca was offline. */
 export function seedClaudeSubagentRosterFromSnapshots(
   state: HookListenerState,
   paneKey: string,

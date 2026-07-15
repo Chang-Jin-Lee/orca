@@ -46,7 +46,7 @@ describe('claude-subagent-roster', () => {
     expect(roster.has('aprobe1-6d3cb5b5')).toBe(false)
   })
 
-  it('re-adds a resumed agent as working, keeping its original startedAt', () => {
+  it('re-adds a resumed agent as working with a fresh startedAt', () => {
     const roster: ClaudeSubagentRoster = new Map()
     upsertWorkingClaudeSubagent(roster, 'aprobe1-6d3cb5b5', { agentType: 'probe1' }, 100)
     finishClaudeSubagent(roster, 'aprobe1-6d3cb5b5')
