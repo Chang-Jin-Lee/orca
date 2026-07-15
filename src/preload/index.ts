@@ -3495,6 +3495,16 @@ const api = {
       ipcRenderer.on('terminal:requestTabCreate', listener)
       return () => ipcRenderer.removeListener('terminal:requestTabCreate', listener)
     },
+    onRequestTerminalTabMount: (
+      callback: (data: { worktreeId: string; tabId?: string; ptyId?: string }) => void
+    ): (() => void) => {
+      const listener = (
+        _event: Electron.IpcRendererEvent,
+        data: { worktreeId: string; tabId?: string; ptyId?: string }
+      ) => callback(data)
+      ipcRenderer.on('terminal:requestTabMount', listener)
+      return () => ipcRenderer.removeListener('terminal:requestTabMount', listener)
+    },
     replyTerminalCreate: (reply: {
       requestId: string
       tabId?: string

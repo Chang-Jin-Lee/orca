@@ -2821,6 +2821,9 @@ export type PreloadApi = {
     onRequestTerminalCreate: (
       callback: (data: RuntimeTerminalCreateRequestPayload) => void
     ) => () => void
+    onRequestTerminalTabMount: (
+      callback: (data: { worktreeId: string; tabId?: string; ptyId?: string }) => void
+    ) => () => void
     replyTerminalCreate: (reply: {
       requestId: string
       tabId?: string

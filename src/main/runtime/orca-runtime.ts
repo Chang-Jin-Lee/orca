@@ -18722,6 +18722,43 @@ export class OrcaRuntimeService {
     })
   }
 
+  // Why: a mobile subscribe can target a tab whose pane the desktop never
+  // mounted this session — a cold-activation-deferred tab (#8597), a cold-parked
+  // tab, or any tab in a workspace the desktop isn't currently showing. With no
+  // mounted pane the PTY is never attached, so the runtime has no headless
+  // emulator and the mobile snapshot is empty → the terminal renders blank
+  // (STA-1840). Ask the renderer to background-mount that tab so it attaches/
+  // cold-restores; the live data stream the subscribe already holds then
+  // delivers output. Idempotent — a request for an already-mounted tab is a
+  // no-op in the renderer.
+  //
+  // Why pass ptyId: a workspace the renderer never mounted has no renderer-graph
+  // leaves, so its terminals are surfaced to mobile via synthetic `pty:<ptyId>`
+  // handles that carry no real UI tabId. The renderer resolves the owning tab
+  // from the ptyId; when the handle already names a real tab we send that
+  // directly.
+  requestRendererTerminalTabMount(handle: string): void {
+    const record = this.handles.get(handle)
+    if (!record?.worktreeId) {
+      return
+    }
+    const tabId = record.tabId.startsWith('pty:') ? undefined : record.tabId
+    const ptyId = record.ptyId ?? undefined
+    if (!tabId && !ptyId) {
+      return
+    }
+    try {
+      this.getAuthoritativeWindow().webContents.send('terminal:requestTabMount', {
+        worktreeId: record.worktreeId,
+        ...(tabId ? { tabId } : {}),
+        ...(ptyId ? { ptyId } : {})
+      })
+    } catch {
+      // No authoritative window (shutdown/headless): the subscribe keeps its
+      // existing empty-snapshot fallback.
+    }
+  }
+
   // Why: a leaf appears in the graph before its PTY spawns. If we issue a
   // handle while ptyId is null, the next graph sync after PTY spawn will
   // change ptyId and invalidate the handle. Wait for a connected PTY so

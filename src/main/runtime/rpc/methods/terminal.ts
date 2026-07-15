@@ -2362,6 +2362,11 @@ export const TERMINAL_METHODS: RpcAnyMethod[] = [
       // scrollback+end with no live stream or phone-fit. Wait for the PTY so
       // the subscribe can proceed normally.
       if (!leaf?.ptyId && isMobile) {
+        // Why: a tab the desktop never mounted this session (cold-activation
+        // deferral / cold-park / a workspace the desktop isn't showing) has no
+        // leaf in the runtime graph, so no PTY is attached to wait for. Ask the
+        // renderer to background-mount it so one attaches (#8597, STA-1840).
+        runtime.requestRendererTerminalTabMount(params.terminal)
         try {
           const ptyId = await runtime.waitForLeafPtyId(params.terminal, 10_000, signal)
           leaf = { ptyId }
@@ -2771,6 +2776,16 @@ export const TERMINAL_METHODS: RpcAnyMethod[] = [
         let serialized = await serializeBudgetedMobileSnapshot(runtime, ptyId, isMobile)
         if (closed) {
           return
+        }
+        // Why: the handle resolved a ptyId (from the persisted layout graph) but
+        // the runtime has no headless emulator for it — the desktop never mounted
+        // this tab this session, so nothing ever attached the PTY to feed one.
+        // The initial snapshot is therefore empty and the mobile terminal renders
+        // blank (STA-1840). Ask the renderer to background-mount the tab; that
+        // attaches the PTY and the live data stream (already subscribed above)
+        // then delivers the output. Idempotent for already-mounted tabs.
+        if (isMobile && !serialized?.data && read.tail.length === 0) {
+          runtime.requestRendererTerminalTabMount(params.terminal)
         }
         let initialOutputOverflowed = false
         if (pendingOutputOverflowed) {
