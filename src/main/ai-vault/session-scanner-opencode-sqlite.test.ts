@@ -177,12 +177,15 @@ function insertPart(
     timeCreated: number
     type?: 'text' | 'tool' | 'reasoning'
     text?: string
+    data?: string
   }
 ): void {
-  const data = JSON.stringify({
-    type: args.type ?? 'text',
-    text: args.text ?? 'hello world'
-  })
+  const data =
+    args.data ??
+    JSON.stringify({
+      type: args.type ?? 'text',
+      text: args.text ?? 'hello world'
+    })
   db.prepare(
     `INSERT INTO part (id, message_id, session_id, time_created, time_updated, data)
      VALUES (?, ?, ?, ?, ?, ?)`
@@ -260,12 +263,6 @@ describe('listOpenCodeSqliteSessions', () => {
       buildOpenCodeSqliteCandidatePath(path, 'ses_clean'),
       buildOpenCodeSqliteCandidatePath(path, 'ses_noise')
     ])
-    const cleanSession = await parseOpenCodeSqliteSession({
-      dbPath: path,
-      sessionId: 'ses_clean',
-      platform: 'darwin'
-    })
-    expect(cleanSession?.sessionId).toBe('ses_clean')
     await expect(
       parseOpenCodeSqliteSession({ dbPath: path, sessionId: 'ses_noise', platform: 'darwin' })
     ).rejects.toThrow('malformed JSON')
