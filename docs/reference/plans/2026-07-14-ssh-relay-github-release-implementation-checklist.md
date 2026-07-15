@@ -8,8 +8,8 @@ work; keep exact commands, runner identities, hashes, metrics, and residual gaps
 
 Date created: 2026-07-14<br>
 Last updated: 2026-07-15<br>
-Current phase: Milestone 4 / Work Package 3 disconnected relay required-asset gate — **In progress — 2026-07-15, Codex implementation owner**. The bounded draft upload/recovery capability is closed locally and on all six exact-head native jobs under E-M4-DRAFT-UPLOAD-LOCAL-RED-001, E-M4-DRAFT-UPLOAD-LOCAL-001, and E-M4-DRAFT-UPLOAD-CI-001. The active package's purpose-named missing-module RED and locally green implementation are recorded under E-M4-RELEASE-ASSETS-LOCAL-RED-001 and E-M4-RELEASE-ASSETS-LOCAL-001. Exact-head execution on all six native Node 24 jobs is required before closing this package. The gate remains a disconnected pure metadata boundary; detached-signature byte encoding, the existing desktop required-asset gate, and workflow composition are unchanged. Release-cut, desktop builds, publication, and every tuple stay disconnected; production/default behavior is unchanged.<br>
-Session checkpoint: **In progress — 2026-07-15, Codex implementation owner** — the locally green release-asset gate pins exact release ID/tag/channel/prerelease, derives the complete managed set from a validated already-verified signed-manifest envelope, binds opaque manifest/signature descriptors by hash and signer IDs, and rejects missing, extra managed, duplicate, non-uploaded, empty, wrong-size, uncovered, or cross-identity metadata under E-M4-RELEASE-ASSETS-LOCAL-001. The final local run passes 13 focused tests, 64 adjacent release tests, all 283 SSH-relay script tests, typecheck, lint, formatting, and diff checks. Only syntax/test execution is added to the six native artifact jobs; there is no command-line entrypoint, release API call, upload/publication caller, desktop consumer, or tuple enablement. The user authorizes commits, pushes, draft-PR updates, CI reruns, and protected rehearsals within PRs, but not merging to `main`. No accepted production key, protected environment/seed, native-signing trust proof, release write, publication path, desktop consumer, tuple enablement, or production/default change is connected. Legacy remains the production default.<br>
+Current phase: Milestone 4 / Work Package 3 disconnected authenticated draft read-back materialization — **In progress — 2026-07-15, Codex implementation owner**. The relay-specific required-asset capability is closed locally and on all six exact-head native Node 24 jobs under E-M4-RELEASE-ASSETS-LOCAL-RED-001, E-M4-RELEASE-ASSETS-LOCAL-001, and E-M4-RELEASE-ASSETS-CI-001. It remains a disconnected pure metadata boundary; detached-signature byte encoding, the existing desktop required-asset gate, and workflow composition are unchanged. The next slice must add an exclusive local materialization boundary to the existing authenticated read-back so exact verified bytes can later enter archive extraction/execution without a second download. Begin with a purpose-named RED; keep release writes, publication, desktop consumers, and every tuple disconnected.<br>
+Session checkpoint: **In progress — 2026-07-15, Codex implementation owner** — exact pushed head `5460563ff48846cbf54218860fdca1cc3c7b8614` passes the new 13-test release-asset gate and full runtime construction on all six native jobs in run 29433808457 under E-M4-RELEASE-ASSETS-CI-001. PR Checks 29433808934 and both Golden E2E jobs in 29433808372 are green. Linux supplements and the Windows x64 floor pass. Windows arm64 runtime smoke passes in 7,936.874ms with 49,553,408-byte RSS; its separate floor job then retains the expected fail-closed hosted-build 26200 versus required 26100 mismatch. There is no command-line entrypoint, release API call, upload/publication caller, desktop consumer, tuple enablement, or production/default behavior change. The user authorizes commits, pushes, draft-PR updates, CI reruns, and protected rehearsals within PRs, but not merging to `main`. No accepted production key, protected environment/seed, native-signing trust proof, release write, publication path, desktop consumer, tuple enablement, or production/default change is connected. Legacy remains the production default.<br>
 Primary design: [SSH relay GitHub Release plan](./2026-07-14-ssh-relay-github-release-plan.html)<br>
 Motivating issues: [#8450](https://github.com/stablyai/orca/issues/8450), [#1693](https://github.com/stablyai/orca/issues/1693)
 
@@ -111,13 +111,15 @@ same change as the work it records.
   and partial-draft recovery pass locally and on all six exact-head native jobs under
   E-M4-DRAFT-UPLOAD-LOCAL-RED-001, E-M4-DRAFT-UPLOAD-LOCAL-001, and E-M4-DRAFT-UPLOAD-CI-001. There
   is no CLI entrypoint or workflow caller, and no real release write occurred.
-- Active package: Work Package 3 disconnected relay required-asset gate. Begin with a purpose-named
-  missing-module RED for exact verified-manifest coverage, signature, name, size, upload state,
-  managed-asset closure, tag/channel identity, and consumer disconnection. The missing-module RED is
-  recorded under E-M4-RELEASE-ASSETS-LOCAL-RED-001. The locally green pure gate and test-only native
-  workflow wiring are recorded under E-M4-RELEASE-ASSETS-LOCAL-001; require exact-head all-six CI.
-  Keep the existing desktop required-asset gate and detached-signature byte encoding unchanged in
-  this slice.
+- Completed Work Package 3 gate: disconnected relay required-asset capability. Exact manifest
+  coverage, signature binding, name, size, upload state, managed-asset closure, stable/RC/perf
+  identity, and consumer disconnection pass locally and on all six exact-head jobs under
+  E-M4-RELEASE-ASSETS-LOCAL-RED-001, E-M4-RELEASE-ASSETS-LOCAL-001, and
+  E-M4-RELEASE-ASSETS-CI-001. Release workflow composition remains open.
+- Active package: Work Package 3 disconnected authenticated draft read-back materialization. Begin
+  with a purpose-named RED for exclusive output, exact byte persistence during the existing bounded
+  authenticated download, mutation cleanup, cancellation, and consumer disconnection. Do not add
+  archive execution, release publication, or a production caller in this slice.
 - Completed Work Package 2 gate: target-native Windows source-signature reports from exact-head
   artifact jobs 87267322867 and 87267322870 were independently downloaded and matched to their
   identities and signing-stage reports under E-M3-WINDOWS-SOURCE-SIGNATURE-CI-001. PR Checks
@@ -11440,6 +11442,54 @@ config/scripts/verify-release-required-assets.test.mjs` — PASS, 7 files / 64 t
   exact-head native Node 24 jobs plus PR Checks and Golden E2E. Keep every production/default
   consumer disconnected.
 
+### E-M4-RELEASE-ASSETS-CI-001 — Required-asset gate passes all six native Node 24 jobs
+
+- Date: 2026-07-15
+- Owner: Codex implementation owner
+- Source: exact pushed head `5460563ff48846cbf54218860fdca1cc3c7b8614`; draft PR #8741.
+- Workflow: [SSH Relay Runtime Artifacts run 29433808457](https://github.com/stablyai/orca/actions/runs/29433808457),
+  16:46:33Z–17:00:13Z. The aggregate conclusion is the expected failure only because the separate
+  Windows arm64 floor job rejects hosted build 26200 after successful runtime execution.
+- Native build jobs, runner 2.335.1 throughout:
+  - Darwin arm64 job 87415257002, `macos-15-arm64` image `20260706.0213.1`, PASS in 5m12s.
+  - Windows x64 job 87415257023, `windows-2022` image `20260714.244.1`, PASS in 8m37s.
+  - Linux arm64 job 87415257044, `ubuntu-24.04-arm` image `20260714.61.1`, PASS in 4m24s.
+  - Linux x64 job 87415257081, `ubuntu-24.04` image `20260714.240.1`, PASS in 3m54s.
+  - Darwin x64 job 87415257094, `macos-15` image `20260629.0276.1`, PASS in 5m33s.
+  - Windows arm64 job 87415257120, `windows-11-arm64` image `20260706.102.1`, PASS in 9m30s.
+- Exact required-asset suite: `config/scripts/ssh-relay-runtime-release-assets.test.mjs` passes
+  13/13 under Node 24.18.0 on every native job: Darwin arm64 26ms, Windows x64 41ms, Linux arm64
+  31ms, Linux x64 66ms, Darwin x64 66ms, and Windows arm64 38ms.
+- Broad contract counts: every POSIX job passes 52 files / 279 tests; durations are Darwin arm64
+  15.51s, Linux arm64 6.18s, Linux x64 8.05s, and Darwin x64 27.03s. Each Windows job passes 53
+  files / 273 tests plus 10 platform skips of 283; x64 takes 25.34s and arm64 14.83s.
+- Downstream evidence: Linux x64 supplement job 87416554990 passes in 43s; Linux arm64 supplement
+  87416555037 passes in 50s; Windows x64 floor job 87417454621 passes in 1m35s. Windows arm64 floor
+  job 87417454470 uses `windows-11-arm64` image `20260706.102.1`, executes bundled Node 24.18.0 and
+  native PTY/watcher smoke in 7,936.874ms with 49,553,408-byte RSS, and then fails exactly because
+  OS/kernel build 26200 is not the required floor 26100.
+- Adjacent exact-head workflows: PR Checks run
+  [29433808934](https://github.com/stablyai/orca/actions/runs/29433808934), job 87415230751, passes
+  16:46:37Z–17:01:03Z including lint, typecheck, Git compatibility, tests, unpacked app build, and
+  packaged CLI smoke. Golden E2E run
+  [29433808372](https://github.com/stablyai/orca/actions/runs/29433808372) passes Linux job
+  87415226359 and macOS job 87415226314.
+- Oracle proved: the pure required-asset module, purpose-named tests, and POSIX/PowerShell
+  syntax/test wiring parse and execute consistently on all six native Node 24 runner families.
+  Every family covers exact stable/RC/perf identity, manifest-derived managed closure, manifest and
+  opaque signature binding, uploaded/nonempty/exact-size metadata, extra/missing/duplicate rejection,
+  and zero network use. Full target-native runtime construction and adjacent product regressions
+  remain green.
+- Does not prove: real authenticated GitHub metadata, cryptographic verification before envelope
+  construction, final detached-signature byte encoding, real release upload/materialization,
+  read-back archive execution, a release write, publication, native signing/trust, oldest macOS/
+  Linux kernel/Windows arm64 floor, desktop embedding, SSH transfer/install, performance against
+  legacy, or any enabled tuple.
+- Checklist items satisfied: exact-head all-six CI gate for the disconnected relay-specific
+  required-asset capability. Release composition/publication remains open.
+- Follow-up: checkpoint and push this evidence, then begin the disconnected authenticated draft
+  read-back materialization RED. Retain all production/default disconnections.
+
 ## Accepted Gaps
 
 No product gap is accepted merely because it appears in this list. Each entry requires explicit
@@ -11498,12 +11548,14 @@ The project is not complete until every applicable item below is checked with ev
 
 ## Next Required Action
 
-Checkpoint and push E-M4-RELEASE-ASSETS-LOCAL-RED-001 and E-M4-RELEASE-ASSETS-LOCAL-001. Require
-exact-head syntax and 13-test execution on all six native artifact jobs plus PR Checks and Golden
-E2E. Do not add a workflow caller or perform a real release write; keep the existing desktop
-`verify-release-required-assets.mjs` behavior and detached-signature byte encoding unchanged until
-composition is separately reviewed. The protected environment, accepted production keys, and
-secret remain unprovisioned, so live signing evidence stays BLOCKED.
+Checkpoint and push E-M4-RELEASE-ASSETS-CI-001. Then add a purpose-named RED for exclusive local
+materialization during the existing authenticated draft read-back: create only an absent output
+directory, persist the exact already-streamed bytes without a second download, publish no partial
+file before size/SHA-256 success, clean up on failure/cancellation, and return bounded asset paths
+for the later archive-execution slice. Do not add archive execution, a workflow caller, or a real
+release write in this package. Keep the existing desktop `verify-release-required-assets.mjs`
+behavior and detached-signature byte encoding unchanged. The protected environment, accepted
+production keys, and secret remain unprovisioned, so live signing evidence stays BLOCKED.
 Keep Windows arm64 build 26100, macOS 13.5, Linux kernel 4.18, release-cut, desktop builds,
 publication, and every tuple separately gated. Do not merge to `main`; retain every
 production/default gate.

@@ -9,17 +9,16 @@ keeps commands, hashes, runner identities, timings, and failure details.
 A checked box means the work has evidence in the detailed ledger. Design approval alone does not
 complete a box.
 
-Active checkpoint: **Milestone 4 / Work Package 3 disconnected relay required-asset gate —
+Active checkpoint: **Milestone 4 / Work Package 3 disconnected authenticated draft read-back
+materialization —
 in progress, 2026-07-15, Codex implementation owner.** Exact-head run
-[29431510990](https://github.com/stablyai/orca/actions/runs/29431510990) at `b37cacecf` passes all six
-target-native artifact jobs and the uploader's eight-test suite on every Node 24 runner under
-`E-M4-DRAFT-UPLOAD-CI-001`. PR Checks and Golden E2E are green; the artifact workflow is red only for
-the retained Windows ARM build-26200-versus-26100 floor mismatch after successful runtime smoke.
-The disconnected relay-specific release required-asset gate is locally green under
-`E-M4-RELEASE-ASSETS-LOCAL-RED-001` and `E-M4-RELEASE-ASSETS-LOCAL-001`: exact manifest coverage,
-names, sizes, signature binding, upload state, and stable/RC/perf identity. Exact-head all-six native
-CI is required. Production keys/environment/seed, publication, desktop/default consumers, tuple
-enablement, and merge to `main` remain disconnected.
+[29433808457](https://github.com/stablyai/orca/actions/runs/29433808457) at `5460563ff` passes all six
+target-native artifact jobs and the required-asset gate's 13-test suite on every Node 24 runner under
+`E-M4-RELEASE-ASSETS-CI-001`. PR Checks and Golden E2E are green; the artifact workflow is red only
+for the retained Windows ARM build-26200-versus-26100 floor mismatch after successful runtime smoke.
+Next, add exclusive local materialization to the existing authenticated read-back without a second
+download. Production keys/environment/seed, publication, desktop/default consumers, tuple enablement,
+and merge to `main` remain disconnected.
 
 ## Safety status
 
@@ -263,10 +262,10 @@ enablement, and merge to `main` remain disconnected.
       `E-M4-PROTECTED-MANIFEST-WORKFLOW-LOCAL-001`, and exact-head execution passes on all six native
       jobs under `E-M4-PROTECTED-MANIFEST-WORKFLOW-CI-001`. Live protected signing remains open; no
       accepted production key, environment, or seed is provisioned.
-- [ ] Add the relay-specific required-asset gate to the release composition. The disconnected pure
-      gate is locally green under `E-M4-RELEASE-ASSETS-LOCAL-RED-001` and
-      `E-M4-RELEASE-ASSETS-LOCAL-001`; exact-head all-six native CI is required before closing the
-      capability, and release/default workflow composition remains separately gated.
+- [x] Add the disconnected relay-specific required-asset capability. It passes locally and on all
+      six native jobs under `E-M4-RELEASE-ASSETS-LOCAL-RED-001`,
+      `E-M4-RELEASE-ASSETS-LOCAL-001`, and `E-M4-RELEASE-ASSETS-CI-001`. Release/default workflow
+      composition remains separately gated.
 - [ ] Embed the exact signed manifest and accepted keys in each desktop build.
 - [ ] Upload to a draft release, read back, re-hash, and execute the downloaded archives.
       A disconnected bounded upload/recovery implementation is locally green under
