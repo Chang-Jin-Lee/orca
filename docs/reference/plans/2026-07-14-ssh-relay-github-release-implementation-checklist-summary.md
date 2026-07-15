@@ -99,7 +99,15 @@ complete a box.
       locally green across the 22-test focused suite, 233-test release suite, 48-test desktop parity
       suite, typecheck, and full lint without weakening production mode validation
       (`E-M4-POST-SIGN-METADATA-CORRECTION-LOCAL-001`). Replacement all-six exact-head evidence is
-      required. Merging to `main` remains prohibited.
+      complete in run
+      [29409257513](https://github.com/stablyai/orca/actions/runs/29409257513): all six native build
+      jobs pass the corrected four-test metadata suite and full artifact construction under
+      `E-M4-POST-SIGN-METADATA-CI-001`. PR Checks
+      [29409257568](https://github.com/stablyai/orca/actions/runs/29409257568) and Golden E2E
+      [29409257636](https://github.com/stablyai/orca/actions/runs/29409257636) are green. The artifact
+      run is red only for the separately declared Windows arm64 floor mismatch. Next, add a
+      disconnected reusable build-prerequisite contract without connecting release-cut, signing,
+      publication, desktop consumers, or any tuple. Merging to `main` remains prohibited.
 
 ## Work packages, in required order
 
@@ -165,7 +173,7 @@ complete a box.
       local proof are complete under `E-M4-MANIFEST-TUPLE-LOCAL-001` and
       `E-M4-MANIFEST-TUPLE-LOCAL-002`; all-six exact-head Node 24 proof is recorded under
       `E-M4-MANIFEST-TUPLE-CI-001`.
-- [ ] **In progress — 2026-07-15, Codex implementation owner:** regenerate SBOM and provenance from
+- [x] Regenerate SBOM and provenance from
       the verified post-sign runtime tree and semantically bind both outputs to the final content
       identity before tuple assembly. Keep credentials, publication, desktop consumers, and every
       tuple disconnected. The purpose-named missing-module RED is recorded under
@@ -179,8 +187,12 @@ complete a box.
       (`E-M4-POST-SIGN-METADATA-CI-RED-001`). The test-fixture-only correction now selects the exact
       native tuple/archive family on each runner and is locally green under
       `E-M4-POST-SIGN-METADATA-CORRECTION-LOCAL-001`; production type/mode validation is unchanged.
-      Replacement exact-head execution on all six native jobs is still required.
-- [ ] Add target-native runtime jobs as desktop release prerequisites.
+      Exact-head execution passes on all six native jobs under
+      `E-M4-POST-SIGN-METADATA-CI-001`.
+- [ ] **In progress — 2026-07-15, Codex implementation owner:** add a reusable target-native runtime
+      build prerequisite contract. Keep it disconnected from release-cut and every desktop build
+      until exact floors, native signing/trust, aggregate, and publication gates are complete; no
+      tuple is enabled by this slice.
 - [ ] Add native signing jobs; hash only the returned signed bytes.
 - [ ] Add a fail-closed aggregate and immutable manifest-signing job.
 - [ ] Embed the exact signed manifest and accepted keys in each desktop build.

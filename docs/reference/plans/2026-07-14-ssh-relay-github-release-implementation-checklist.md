@@ -8,8 +8,8 @@ work; keep exact commands, runner identities, hashes, metrics, and residual gaps
 
 Date created: 2026-07-14<br>
 Last updated: 2026-07-15<br>
-Current phase: Milestone 4 / Work Package 3 semantic post-sign SBOM/provenance regeneration — **In progress — 2026-07-15, Codex implementation owner**. The preceding tuple-specific native-role correction and credential-free descriptor producer are closed locally and on all six exact-head Node 24 native jobs under E-M4-MANIFEST-TUPLE-LOCAL-001, E-M4-MANIFEST-TUPLE-LOCAL-002, and E-M4-MANIFEST-TUPLE-CI-001. The active slice must regenerate bounded SBOM and provenance bytes from the verified final runtime tree and semantically bind them to the final content identity before tuple assembly. Its purpose-named missing-module RED is recorded under E-M4-POST-SIGN-METADATA-LOCAL-RED-001. Exact-head Windows x64 execution exposed a test-fixture-only POSIX-mode portability defect under E-M4-POST-SIGN-METADATA-CI-RED-001. The correction now selects each runner's native tuple/archive family and is locally green without weakening archive validation under E-M4-POST-SIGN-METADATA-CORRECTION-LOCAL-001; replacement all-six exact-head evidence remains required. This slice may not publish, connect desktop consumers, use production signing credentials, or enable a tuple. Production/default behavior is unchanged, no bundled-runtime path is enabled, and no artifact is published.<br>
-Session checkpoint: **In progress — 2026-07-15, Codex implementation owner** — semantic post-sign metadata regeneration and tuple-consumer verification are locally green under E-M4-POST-SIGN-METADATA-LOCAL-001 and E-M4-POST-SIGN-METADATA-LOCAL-002. Exact-head run 29408355188 at `1989e801af4a922a646d62ffd13e235615462975` fails only the new metadata fixture on Windows x64: the hardcoded Linux tar fixture cannot obtain its declared executable mode from a Windows filesystem, so the strict production archive inspector correctly rejects `bin/node` (`E-M4-POST-SIGN-METADATA-CI-RED-001`). The platform-native fixture correction passes 5 files / 22 focused tests, 41 files / 233 release-side tests, 3 files / 48 desktop parity tests, typecheck, full lint, formatting, syntax, max-lines, and diff gates under E-M4-POST-SIGN-METADATA-CORRECTION-LOCAL-001. Production archive type/mode enforcement is unchanged. Real Apple/SignPath signing, returned production signatures, Gatekeeper/notarization, Defender/WDAC, missing exact-floor snapshots, protected manifest signing, publication wiring, desktop embedding, and native trust remain separately gated. Nothing is published or enabled, legacy remains the production default, and merge to `main` remains prohibited.<br>
+Current phase: Milestone 4 / Work Package 3 reusable target-native build-prerequisite contract — **In progress — 2026-07-15, Codex implementation owner**. Semantic post-sign SBOM/provenance regeneration is closed locally and on all six exact-head Node 24 native build jobs under E-M4-POST-SIGN-METADATA-LOCAL-001, E-M4-POST-SIGN-METADATA-LOCAL-002, E-M4-POST-SIGN-METADATA-CORRECTION-LOCAL-001, and E-M4-POST-SIGN-METADATA-CI-001. The active slice may define and test only a credential-free reusable target-native build-prerequisite interface. It must remain disconnected from release-cut and every desktop build until exact floors, native signing/trust, aggregate, publication/read-back, and embedding gates are complete. It may not publish, use production signing credentials, connect a desktop consumer, or enable a tuple. Production/default behavior is unchanged, no bundled-runtime path is enabled, and no artifact is published.<br>
+Session checkpoint: **In progress — 2026-07-15, Codex implementation owner** — exact-head run 29409257513 at `9e81229274a3aa9a0fdb4db537e853e1cc9699ca` passes the corrected four-test post-sign metadata suite, full release-side contract suite, native build-twice/equality, archive inspection, Node/PTY/watcher smoke, and unpublished evidence upload on all six native build jobs under E-M4-POST-SIGN-METADATA-CI-001. PR Checks 29409257568 and Golden E2E 29409257636 are green. The artifact run is red only for the declared Windows arm64 oldest-floor mismatch: the hosted image is build 26200 instead of required build 26100. The next slice is a disconnected reusable build-prerequisite contract, not release workflow activation. Real Apple/SignPath signing, returned production signatures, Gatekeeper/notarization, Defender/WDAC, missing exact-floor snapshots, protected manifest signing, publication wiring, desktop embedding, and native trust remain separately gated. Nothing is published or enabled, legacy remains the production default, and merge to `main` remains prohibited.<br>
 Primary design: [SSH relay GitHub Release plan](./2026-07-14-ssh-relay-github-release-plan.html)<br>
 Motivating issues: [#8450](https://github.com/stablyai/orca/issues/8450), [#1693](https://github.com/stablyai/orca/issues/1693)
 
@@ -84,7 +84,7 @@ same change as the work it records.
   closure. The correction and producer are green locally and on all six exact-head Node 24 native
   jobs under E-M4-MANIFEST-TUPLE-LOCAL-001, E-M4-MANIFEST-TUPLE-LOCAL-002, and
   E-M4-MANIFEST-TUPLE-CI-001.
-- Active package: Work Package 3 semantic regeneration and verification of post-sign SBOM and
+- Completed Work Package 3 gate: semantic regeneration and verification of post-sign SBOM and
   provenance from the verified final runtime tree. E-M4-POST-SIGN-METADATA-LOCAL-RED-001 proves the
   purpose-named boundary was absent before implementation. The implementation is locally green under
   E-M4-POST-SIGN-METADATA-LOCAL-001 and E-M4-POST-SIGN-METADATA-LOCAL-002. Exact-head run
@@ -92,10 +92,14 @@ same change as the work it records.
   E-M4-POST-SIGN-METADATA-CI-RED-001; production archive type/mode validation remains correct and
   must not be relaxed. The fixture now selects the exact platform/architecture tuple, archive
   family, release inputs, runner identity, and toolchain shape and is locally green under
-  E-M4-POST-SIGN-METADATA-CORRECTION-LOCAL-001. Replace all-six exact-head Node 24 evidence before
-  closing the package. Production signing credentials, publication, desktop consumers, and tuple
-  enablement remain outside this slice. No broader Milestone 4 box is checked until its evidence
-  exists.
+  E-M4-POST-SIGN-METADATA-CORRECTION-LOCAL-001. Replacement exact-head Node 24 evidence passes all
+  six native build jobs under E-M4-POST-SIGN-METADATA-CI-001. Production signing credentials,
+  publication, desktop consumers, and tuple enablement remain outside this slice.
+- Active package: Work Package 3 reusable target-native build-prerequisite contract. Define and
+  test a credential-free reusable interface over the existing target-native jobs, but do not connect
+  release-cut or a desktop build until exact-floor, native signing/trust, aggregate,
+  publication/read-back, and embedding gates are complete. No broader Milestone 4 box is checked
+  until its complete evidence exists.
 - Completed Work Package 2 gate: target-native Windows source-signature reports from exact-head
   artifact jobs 87267322867 and 87267322870 were independently downloaded and matched to their
   identities and signing-stage reports under E-M3-WINDOWS-SOURCE-SIGNATURE-CI-001. PR Checks
@@ -941,8 +945,11 @@ Rules:
 
 ## Milestone 4 — Make Relay Artifacts Prerequisites of Desktop Builds
 
-- [ ] Add target-native runtime build jobs for every enabled tuple; do not treat a cross-build alone
-      as native execution evidence.
+- [ ] **In progress — 2026-07-15, Codex implementation owner:** add a reusable target-native runtime
+      build prerequisite contract for every candidate tuple; do not treat a cross-build alone as
+      native execution evidence. Keep release-cut and desktop builds disconnected until the
+      remaining exact-floor, signing/trust, aggregate, publication/read-back, and embedding gates
+      pass.
 - [ ] Add platform-native signing jobs. Signed macOS and Windows runtime bytes must return as
       immutable outputs before final hashes are computed.
 - [ ] Add one fail-closed aggregate job that waits for all required native build/signing outputs,
@@ -1570,6 +1577,9 @@ focused commands as their scripts/tests are introduced.
       `config/scripts/ssh-relay-runtime-manifest-tuple.test.mjs` on all six runner families
       (E-M4-MANIFEST-TUPLE-CI-001)
 - [x] `pnpm exec vitest run --config config/vitest.config.ts --maxWorkers=1 config/scripts/ssh-relay-runtime-post-sign-metadata.test.mjs config/scripts/ssh-relay-runtime-provenance.test.mjs config/scripts/ssh-relay-runtime-sbom.test.mjs config/scripts/ssh-relay-runtime-manifest-tuple.test.mjs config/scripts/ssh-relay-runtime-workflow.test.mjs` (E-M4-POST-SIGN-METADATA-LOCAL-001)
+- [x] Exact-head Node 24 native workflow execution of
+      `config/scripts/ssh-relay-runtime-post-sign-metadata.test.mjs` on all six runner families
+      (E-M4-POST-SIGN-METADATA-CI-001)
 - [x] `pnpm exec vitest run --config config/vitest.config.ts --maxWorkers=1 config/scripts/ssh-relay*.test.mjs` (E-M4-MANIFEST-HANDOFF-LOCAL-002; all release-side SSH-relay contracts)
 - [x] `pnpm exec vitest run --config config/vitest.config.ts --maxWorkers=1 src/main/ssh/ssh-relay-artifact-schema.test.ts src/main/ssh/ssh-relay-manifest-signature.test.ts src/main/ssh/ssh-relay-release-asset.test.ts` (E-M4-MANIFEST-HANDOFF-LOCAL-002; desktop schema/signature parity)
 
@@ -9952,6 +9962,61 @@ diff --check`.
   semantic post-sign metadata package remains open pending all-six replacement CI.
 - Follow-up: commit and push the correction, then require all six exact-head Node 24 native jobs.
 
+### E-M4-POST-SIGN-METADATA-CI-001 — Platform-native post-sign metadata passes all six build jobs
+
+- Date: 2026-07-15
+- Commit SHA / PR: `9e81229274a3aa9a0fdb4db537e853e1cc9699ca`; draft PR #8741
+- Workflow/run: SSH Relay Runtime Artifacts run
+  [29409257513](https://github.com/stablyai/orca/actions/runs/29409257513)
+- Exact native build jobs and release-side suite results:
+  - Darwin arm64 job
+    [87332153920](https://github.com/stablyai/orca/actions/runs/29409257513/job/87332153920):
+    `macos-15` label, `macos-15-arm64` image `20260706.0213.1`, native ARM64; post-sign
+    metadata 4/4 in 623 ms; 40 files / 229 tests in 8.34 seconds; full build job PASS in 3m35s.
+  - Darwin x64 job
+    [87332153864](https://github.com/stablyai/orca/actions/runs/29409257513/job/87332153864):
+    `macos-15-intel` label, `macos-15` image `20260629.0276.1`, native X64; post-sign
+    metadata 4/4 in 1,673 ms; 40 files / 229 tests in 19.98 seconds; full build job PASS in 6m15s.
+  - Linux arm64 job
+    [87332153919](https://github.com/stablyai/orca/actions/runs/29409257513/job/87332153919):
+    `ubuntu-24.04-arm` image `20260714.61.1`, native ARM64; post-sign metadata 4/4 in 614 ms;
+    40 files / 229 tests in 4.90 seconds; full build job PASS in 4m33s.
+  - Linux x64 job
+    [87332153898](https://github.com/stablyai/orca/actions/runs/29409257513/job/87332153898):
+    `ubuntu-24.04` image `20260705.232.1`, native X64; post-sign metadata 4/4 in 880 ms;
+    40 files / 229 tests in 6.31 seconds; full build job PASS in 4m2s.
+  - Windows arm64 job
+    [87332153840](https://github.com/stablyai/orca/actions/runs/29409257513/job/87332153840):
+    `windows-11-arm` label, `windows-11-arm64` image `20260706.102.1`, native ARM64;
+    post-sign metadata 4/4 in 2,235 ms; 41 files / 224 passed / 9 skipped in 10.92 seconds;
+    full build job PASS in 8m37s.
+  - Windows x64 job
+    [87332153931](https://github.com/stablyai/orca/actions/runs/29409257513/job/87332153931):
+    `windows-2022` image `20260706.237.1`, native X64; post-sign metadata 4/4 in 1,773 ms;
+    41 files / 224 passed / 9 skipped in 9.93 seconds; full build job PASS in 5m16s.
+- Every build job also completed exact Node input verification, two clean native builds, archive
+  inspection, byte-for-byte reproducibility, bundled Node execution, real PTY input/resize/exit,
+  watcher lifecycle smoke, and unpublished Actions artifact evidence upload.
+- Adjacent exact-head regressions: PR Checks
+  [29409257568](https://github.com/stablyai/orca/actions/runs/29409257568) PASS in 14m51s;
+  Golden E2E [29409257636](https://github.com/stablyai/orca/actions/runs/29409257636) PASS.
+- Overall artifact-run result: expected FAIL only in Windows arm64 oldest-floor job
+  [87333789968](https://github.com/stablyai/orca/actions/runs/29409257513/job/87333789968):
+  hosted build 26200 does not equal required build 26100. Windows x64 oldest-floor and both Linux
+  oldest-userland supplemental jobs pass. This declared floor gap is independent of the six green
+  metadata/build jobs and still prevents tuple enablement.
+- Oracle proved: each platform/architecture pair creates and semantically verifies post-sign SBOM
+  and provenance using its native runtime closure, archive family, immutable Node inputs, runner
+  identity, and exact platform toolchain. Both Windows ZIP fixtures pass strict declared type/mode
+  inspection without weakening production validation, replacing E-M4-POST-SIGN-METADATA-CI-RED-001.
+- Does not prove: real Apple/SignPath returned bytes, native trust, exact macOS 13.5 or Windows arm64
+  build-26100 execution, Linux kernel 4.18, protected manifest signing, publication/read-back,
+  desktop embedding, SSH transfer/install, or an enabled tuple.
+- Checklist items satisfied: all-six exact-head native CI gate for semantic post-sign metadata. The
+  metadata package is closed; broader Work Package 3 and Milestone 4 remain open.
+- Follow-up: add a credential-free reusable target-native build-prerequisite contract while keeping
+  release-cut, desktop builds, signing credentials, publication, and every tuple disconnected.
+
 ## Accepted Gaps
 
 No product gap is accepted merely because it appears in this list. Each entry requires explicit
@@ -10009,13 +10074,13 @@ The project is not complete until every applicable item below is checked with ev
 
 ## Next Required Action
 
-Commit and push the locally green platform-native fixture correction under
-E-M4-POST-SIGN-METADATA-CORRECTION-LOCAL-001, then collect replacement exact-head Node 24 proof from
-all six native build jobs; do not merge to `main`. Retain every production/default gate and do not
-connect release publication, production signing credentials, or a desktop consumer. In parallel,
-provision qualifying exact-floor execution for Linux kernel 4.18, macOS 13.5, and Windows arm64
-build 26100 and real macOS/Windows signing and trust. Keep every tuple disabled until the applicable
-baseline and trust cells pass.
+Add and RED/GREEN-test a credential-free reusable target-native build-prerequisite contract over
+the existing six native jobs. Do not connect release-cut or any desktop build in this slice; the
+Windows arm64 build-26100, macOS 13.5, Linux kernel 4.18, native signing/trust, aggregate,
+publication/read-back, and embedding gates remain prerequisites to that connection. Do not merge to
+`main`, publish, use production signing credentials, or enable a tuple. Retain every
+production/default gate. In parallel, provision the qualifying exact-floor and real macOS/Windows
+signing/trust environments.
 
 Cross-family Layer B targets, the protected manifest-signing environment, oldest-baseline/native-
 trust cells, and the paired legacy performance baseline remain release/default-path blockers. No
