@@ -57,7 +57,7 @@ export type TuiAgentConfig = {
    * file/path written lives in src/main/agent-trust-presets.ts; this flag
    * just routes the workspace path through the matching preset before the
    * agent spawns. */
-  preflightTrust?: 'cursor' | 'copilot' | 'codex'
+  preflightTrust?: 'cursor' | 'copilot' | 'codex' | 'claude'
   /** Why: most TUIs need both bracketed-paste enablement and a quiet render
    * window before pasted bytes reliably land in the composer. Codex can use
    * a stronger signal from its own renderer: chat_composer.rs writes the
@@ -79,7 +79,12 @@ export const TUI_AGENT_CONFIG: Record<TuiAgent, TuiAgentConfig> = {
     // input box, nothing submitted. Strictly better than the paste-after-
     // ready fallback because it eliminates the readiness race entirely.
     // See PR https://github.com/stablyai/orca/pull/926 for context.
-    draftPromptFlag: '--prefill'
+    draftPromptFlag: '--prefill',
+    // Why: on a fresh worktree Claude shows a "Do you trust this folder?" dialog
+    // before the composer — even with --dangerously-skip-permissions — which
+    // hides the --prefill issue draft (#6613). Pre-writing folder trust skips
+    // the dialog so the prefilled issue URL is visible immediately.
+    preflightTrust: 'claude'
   },
   'claude-agent-teams': {
     // Why: this is an Orca-provided launch mode, not a separate upstream

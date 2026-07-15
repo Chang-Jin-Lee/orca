@@ -6,6 +6,7 @@ import {
   readFileSync,
   realpathSync,
   rmSync,
+  statSync,
   writeFileSync
 } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -15,7 +16,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 const testState = {
   fakeHomeDir: '',
   userDataDir: '',
-  previousUserDataPath: undefined as string | undefined
+  previousUserDataPath: undefined as string | undefined,
+  previousClaudeConfigDir: undefined as string | undefined
 }
 
 vi.mock('electron', () => ({
@@ -38,14 +40,22 @@ vi.mock('node:os', async () => {
   }
 })
 
-const { markCodexProjectTrusted, markCopilotFolderTrusted, markCursorWorkspaceTrusted } =
-  await import('./agent-trust-presets')
+const {
+  markClaudeFolderTrusted,
+  markCodexProjectTrusted,
+  markCopilotFolderTrusted,
+  markCursorWorkspaceTrusted
+} = await import('./agent-trust-presets')
 
 beforeEach(() => {
   testState.fakeHomeDir = mkdtempSync(join(tmpdir(), 'orca-trust-presets-'))
   testState.userDataDir = mkdtempSync(join(tmpdir(), 'orca-trust-presets-user-data-'))
   testState.previousUserDataPath = process.env.ORCA_USER_DATA_PATH
   process.env.ORCA_USER_DATA_PATH = testState.userDataDir
+  // Why: markClaudeFolderTrusted resolves ~/.claude.json only when
+  // CLAUDE_CONFIG_DIR is unset; keep the mocked home authoritative.
+  testState.previousClaudeConfigDir = process.env.CLAUDE_CONFIG_DIR
+  delete process.env.CLAUDE_CONFIG_DIR
 })
 
 afterEach(() => {
@@ -56,9 +66,15 @@ afterEach(() => {
   } else {
     process.env.ORCA_USER_DATA_PATH = testState.previousUserDataPath
   }
+  if (testState.previousClaudeConfigDir === undefined) {
+    delete process.env.CLAUDE_CONFIG_DIR
+  } else {
+    process.env.CLAUDE_CONFIG_DIR = testState.previousClaudeConfigDir
+  }
   testState.fakeHomeDir = ''
   testState.userDataDir = ''
   testState.previousUserDataPath = undefined
+  testState.previousClaudeConfigDir = undefined
 })
 
 describe('markCursorWorkspaceTrusted', () => {
@@ -207,6 +223,78 @@ describe('markCodexProjectTrusted', () => {
       expect(runtimeWritten).toContain('notes = "keep-runtime"')
       expect(runtimeWritten).toContain('trust_level = "trusted"')
       expect(runtimeWritten).not.toContain('trust_level = "untrusted"')
+    } finally {
+      rmSync(workspace, { recursive: true, force: true })
+    }
+  })
+})
+
+describe('markClaudeFolderTrusted', () => {
+  it('writes ~/.claude.json with the worktree marked hasTrustDialogAccepted', () => {
+    const workspace = mkdtempSync(join(tmpdir(), 'orca-claude-ws-'))
+    const realpath = realpathSync.native(workspace)
+    try {
+      markClaudeFolderTrusted(workspace)
+      const configPath = join(testState.fakeHomeDir, '.claude.json')
+      expect(existsSync(configPath)).toBe(true)
+      const parsed = JSON.parse(readFileSync(configPath, 'utf-8'))
+      expect(parsed.projects[realpath].hasTrustDialogAccepted).toBe(true)
+      // Why: ~/.claude.json holds account identity + project paths; it must stay
+      // owner-only (0o600), never widened to group/other-readable, on POSIX.
+      if (process.platform !== 'win32') {
+        expect(statSync(configPath).mode & 0o777).toBe(0o600)
+      }
+    } finally {
+      rmSync(workspace, { recursive: true, force: true })
+    }
+  })
+
+  it('preserves other top-level keys and sibling projects, and merges into an existing entry', () => {
+    const workspace = mkdtempSync(join(tmpdir(), 'orca-claude-ws-'))
+    const realpath = realpathSync.native(workspace)
+    try {
+      writeFileSync(
+        join(testState.fakeHomeDir, '.claude.json'),
+        JSON.stringify({
+          hasCompletedOnboarding: true,
+          projects: {
+            '/some/other/project': { hasTrustDialogAccepted: true },
+            [realpath]: { projectOnboardingSeenCount: 3 }
+          }
+        })
+      )
+      markClaudeFolderTrusted(workspace)
+      const parsed = JSON.parse(readFileSync(join(testState.fakeHomeDir, '.claude.json'), 'utf-8'))
+      expect(parsed.hasCompletedOnboarding).toBe(true)
+      expect(parsed.projects['/some/other/project'].hasTrustDialogAccepted).toBe(true)
+      expect(parsed.projects[realpath].hasTrustDialogAccepted).toBe(true)
+      // Existing per-project fields survive the merge.
+      expect(parsed.projects[realpath].projectOnboardingSeenCount).toBe(3)
+    } finally {
+      rmSync(workspace, { recursive: true, force: true })
+    }
+  })
+
+  it('is idempotent — an already-trusted worktree is left byte-for-byte unchanged', () => {
+    const workspace = mkdtempSync(join(tmpdir(), 'orca-claude-ws-'))
+    try {
+      markClaudeFolderTrusted(workspace)
+      const configPath = join(testState.fakeHomeDir, '.claude.json')
+      const first = readFileSync(configPath, 'utf-8')
+      markClaudeFolderTrusted(workspace)
+      expect(readFileSync(configPath, 'utf-8')).toBe(first)
+    } finally {
+      rmSync(workspace, { recursive: true, force: true })
+    }
+  })
+
+  it('refuses to overwrite a corrupted ~/.claude.json', () => {
+    const workspace = mkdtempSync(join(tmpdir(), 'orca-claude-ws-'))
+    try {
+      const configPath = join(testState.fakeHomeDir, '.claude.json')
+      writeFileSync(configPath, '{ this is not valid json')
+      markClaudeFolderTrusted(workspace)
+      expect(readFileSync(configPath, 'utf-8')).toBe('{ this is not valid json')
     } finally {
       rmSync(workspace, { recursive: true, force: true })
     }

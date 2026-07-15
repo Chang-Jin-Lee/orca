@@ -1,11 +1,12 @@
 import { existsSync, mkdirSync, readFileSync, realpathSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
+import { ClaudeRuntimePathResolver } from './claude-accounts/runtime-paths'
 import { writeFileAtomically } from './codex-accounts/fs-utils'
 import { getOrcaManagedCodexHomePath } from './codex/codex-home-paths'
 import { upsertProjectTrustLevel } from './codex/config-toml-trust'
 
-export type AgentTrustPreset = 'cursor' | 'copilot' | 'codex'
+export type AgentTrustPreset = 'cursor' | 'copilot' | 'codex' | 'claude'
 
 /**
  * Pre-mark a workspace as trusted for cursor-agent, GitHub Copilot CLI, or
@@ -115,6 +116,61 @@ export function markCodexProjectTrusted(workspacePath: string): void {
   // Why: Orca-launched Codex runs with an Orca-owned CODEX_HOME, so the trust
   // preset must also update the runtime config Codex will actually read.
   upsertProjectTrustLevel(join(getOrcaManagedCodexHomePath(), 'config.toml'), absPath, 'trusted')
+}
+
+/**
+ * Claude Code records per-project folder trust in its config JSON under
+ *   projects["<realpath>"].hasTrustDialogAccepted = true
+ * (default `~/.claude.json`, or the CLAUDE_CONFIG_DIR-colocated `.claude.json`
+ * for managed accounts). Without that flag, Claude shows a "Do you trust this
+ * folder?" dialog on first launch in a new worktree — even with
+ * `--dangerously-skip-permissions` — which blocks the `--prefill` issue draft
+ * from reaching the composer (#6613). Pre-writing the same flag Claude writes
+ * after the user accepts skips the dialog so the prefill lands immediately.
+ *
+ * We upsert in place so unrelated projects and top-level keys survive, and we
+ * refuse to overwrite a corrupted config the same way markCopilotFolderTrusted
+ * does. `hasTrustDialogAccepted: true` alone is sufficient to suppress the menu.
+ */
+export function markClaudeFolderTrusted(workspacePath: string): void {
+  const absPath = canonicalize(workspacePath)
+  const configPath = new ClaudeRuntimePathResolver().getRuntimePaths().configPath
+  let config: Record<string, unknown> = {}
+  try {
+    if (existsSync(configPath)) {
+      const parsed = JSON.parse(readFileSync(configPath, 'utf-8'))
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        config = parsed as Record<string, unknown>
+      }
+    }
+  } catch {
+    // Why: a corrupted .claude.json is the user's to fix — refuse to overwrite
+    // it. Claude will rewrite the file itself after the user accepts the trust
+    // prompt manually.
+    return
+  }
+  const projects =
+    config.projects && typeof config.projects === 'object' && !Array.isArray(config.projects)
+      ? (config.projects as Record<string, unknown>)
+      : {}
+  const existingEntry =
+    projects[absPath] && typeof projects[absPath] === 'object' && !Array.isArray(projects[absPath])
+      ? (projects[absPath] as Record<string, unknown>)
+      : {}
+  if (existingEntry.hasTrustDialogAccepted === true) {
+    return
+  }
+  projects[absPath] = { ...existingEntry, hasTrustDialogAccepted: true }
+  config.projects = projects
+  const configDir = dirname(configPath)
+  if (!existsSync(configDir)) {
+    mkdirSync(configDir, { recursive: true })
+  }
+  // Why: ~/.claude.json holds the Claude oauthAccount identity and every
+  // project path; Orca's own auth service keeps it owner-only (0o600). A
+  // mode-less atomic write would rename a umask-default (0o644) temp file over
+  // it and leak that data to other local users on shared/SSH hosts.
+  writeFileAtomically(configPath, `${JSON.stringify(config, null, 2)}\n`, { mode: 0o600 })
 }
 
 function canonicalize(p: string): string {
