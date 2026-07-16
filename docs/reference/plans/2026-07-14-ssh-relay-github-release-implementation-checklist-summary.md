@@ -10,12 +10,18 @@ A checked box means the work has evidence in the detailed ledger. Design approva
 complete a box.
 
 Active checkpoint: **Milestone 5 / Work Package 4 desktop resolver/cache — disconnected
-official-build manifest loader locally proven; isolated commit/push and all-six native Node 24 proof
+official-build manifest loader proven on all six native clients; accepted-key/resource-input audit
 next, 2026-07-15, Codex implementation owner.** `E-M5-PACKAGED-MANIFEST-LOCAL-001` passes 6/6
 purpose-named tests, 300/300 non-full-size SSH relay tests, 279/279 release-script tests, typecheck,
 lint, format, max-lines, and diff gates. `E-M5-PACKAGED-MANIFEST-CI-WIRING-LOCAL-001` pins the suite
-into both native job families. No packaged resource, production key, cache root, downloader, SSH
-consumer, Beta mode, tuple, publication, or default behavior is connected. Exact-head run
+into both native job families; exact-head run
+[29466359518](https://github.com/stablyai/orca/actions/runs/29466359518) passes the contract step and
+complete primary job on Linux, macOS, and Windows, x64 and arm64, under
+`E-M5-PACKAGED-MANIFEST-CI-001`. PR Checks
+[29466359581](https://github.com/stablyai/orca/actions/runs/29466359581) and Golden E2E
+[29466359541](https://github.com/stablyai/orca/actions/runs/29466359541) pass. No packaged resource,
+production key, cache root, downloader, SSH consumer, Beta mode, tuple, publication, or default
+behavior is connected. Prior exact-head run
 [29464742446](https://github.com/stablyai/orca/actions/runs/29464742446) passes the lease/eviction
 source contracts and exact full-size active-retention/release/eviction lifecycle on Linux, macOS,
 and Windows, x64 and arm64, under `E-M5-ARTIFACT-CACHE-EVICTION-CI-001`. Retention is 11.14–47.88ms
@@ -318,9 +324,9 @@ production keys/environment/seed, and merge to `main` remain disconnected.
       `E-M5-OFFLINE-SELECTION-CI-WIRING-LOCAL-001`, and exact-head all-six native proof is closed by
       `E-M5-OFFLINE-SELECTION-CI-001`. The disconnected fixed-resource manifest loader is locally
       green under `E-M5-PACKAGED-MANIFEST-LOCAL-001`, and both native workflow command families are
-      pinned under `E-M5-PACKAGED-MANIFEST-CI-WIRING-LOCAL-001`. Exact-head all-six native proof,
-      production keys, signed embedded bytes, builder mapping, packaged-app smoke, and a consumer
-      remain open, so this item is not complete.
+      pinned under `E-M5-PACKAGED-MANIFEST-CI-WIRING-LOCAL-001`. Exact-head all-six native source
+      proof is closed by `E-M5-PACKAGED-MANIFEST-CI-001`. Production keys, signed embedded bytes,
+      builder mapping, packaged-app smoke, and a consumer remain open, so this item is not complete.
 - [ ] Stream bounded downloads; verify signature, size, archive hash, and extracted tree.
       The disconnected Electron downloader is locally green under
       `E-M5-ARTIFACT-DOWNLOAD-LOCAL-RED-001` and `E-M5-ARTIFACT-DOWNLOAD-LOCAL-001`; exact-head

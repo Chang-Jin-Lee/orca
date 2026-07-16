@@ -8,7 +8,7 @@ work; keep exact commands, runner identities, hashes, metrics, and residual gaps
 
 Date created: 2026-07-14<br>
 Last updated: 2026-07-15<br>
-Current phase: Milestone 5 / Work Package 4 desktop resolver/cache — **In progress — 2026-07-15, Codex implementation owner: checkpoint and obtain all-six native evidence for the locally proven disconnected official-build manifest loader**. `E-M5-PACKAGED-MANIFEST-LOCAL-001` and `E-M5-PACKAGED-MANIFEST-CI-WIRING-LOCAL-001` prove the fixed-resource loader and its native source-test wiring locally. Keep resource embedding, production keys, Electron/cache-root/downloader/SSH/settings/tuples/publication/default behavior disconnected until the exact-head native jobs pass.<br>
+Current phase: Milestone 5 / Work Package 4 desktop resolver/cache — **In progress — 2026-07-15, Codex implementation owner: all-six native packaged-manifest source gate closed; audit the next disconnected accepted-key/resource-embedding prerequisite**. `E-M5-PACKAGED-MANIFEST-CI-001` proves the fixed-resource loader on Linux, macOS, and Windows, x64 and arm64, under Node 24.18.0. Keep production keys/secrets, signed embedded bytes, Electron/cache-root/downloader/SSH/settings/tuples/publication/default behavior disconnected while selecting the next purpose-named RED.<br>
 Session checkpoint: **In progress — 2026-07-15, Codex implementation owner** — user authority covers end-to-end PR-contained implementation, commits, pushes, CI, rehearsals, and release writes; merging to `main` remains explicitly prohibited. Commit `b79bcbd04` passes all six native source/full-size cache jobs, PR Checks, and Golden E2E. The artifact workflow is red only for the retained hosted Windows arm64 build-26200 versus required-26100 floor rejection after its primary proof. No Electron, downloader, SSH, setting, tuple, publication, or default-path consumer exists. Legacy remains the production default.<br>
 Primary design: [SSH relay GitHub Release plan](./2026-07-14-ssh-relay-github-release-plan.html)<br>
 Motivating issues: [#8450](https://github.com/stablyai/orca/issues/8450), [#1693](https://github.com/stablyai/orca/issues/1693)
@@ -13874,6 +13874,65 @@ config/scripts/ssh-relay-runtime-workflow.test.mjs`.
   job/run ID and result under `E-M5-PACKAGED-MANIFEST-CI-001` before adding resource embedding,
   production keys, cache-root selection, or a consumer.
 
+### E-M5-PACKAGED-MANIFEST-CI-001 — All-six native fixed-resource loader proof
+
+- Date: 2026-07-15
+- Owner: Codex implementation owner
+- Source: exact pushed implementation commit
+  `ffc7947a4afe823fe56c4972cca4af8c509eca83` on draft PR #8741.
+- Workflow: [SSH Relay Runtime Artifacts run
+  29466359518](https://github.com/stablyai/orca/actions/runs/29466359518). The exact workflow source
+  and `E-M5-PACKAGED-MANIFEST-CI-WIRING-LOCAL-001` require the purpose-named loader suite inside the
+  `Run runtime artifact contract tests` step for both POSIX and PowerShell job families.
+- Exact native primary results; every listed contract-test step and complete primary job passes
+  under Node 24.18.0:
+  - Linux x64, `ubuntu-24.04`, job
+    [87520232532](https://github.com/stablyai/orca/actions/runs/29466359518/job/87520232532):
+    contract step 02:21:10–02:21:26Z; job 02:20:48–02:23:11Z;
+  - Linux arm64, `ubuntu-24.04-arm`, job
+    [87520232493](https://github.com/stablyai/orca/actions/runs/29466359518/job/87520232493):
+    contract step 02:21:29–02:21:40Z; job 02:20:51–02:23:34Z;
+  - macOS x64, `macos-15-intel`, job
+    [87520232509](https://github.com/stablyai/orca/actions/runs/29466359518/job/87520232509):
+    contract step 02:22:02–02:22:36Z; job 02:20:49–02:24:26Z;
+  - macOS arm64, `macos-15`, job
+    [87520232533](https://github.com/stablyai/orca/actions/runs/29466359518/job/87520232533):
+    contract step 02:21:45–02:22:04Z; job 02:20:49–02:23:06Z;
+  - Windows x64, `windows-2022`, job
+    [87520232476](https://github.com/stablyai/orca/actions/runs/29466359518/job/87520232476):
+    contract step 02:22:01–02:22:25Z; job 02:20:48–02:26:38Z;
+  - Windows arm64, `windows-11-arm`, job
+    [87520232497](https://github.com/stablyai/orca/actions/runs/29466359518/job/87520232497):
+    contract step 02:24:36–02:25:10Z; job 02:20:49–02:30:39Z.
+- Repository gates: [PR Checks run
+  29466359581](https://github.com/stablyai/orca/actions/runs/29466359581), job
+  [87520232413](https://github.com/stablyai/orca/actions/runs/29466359581/job/87520232413), passes
+  in 14m33s. [Golden E2E run
+  29466359541](https://github.com/stablyai/orca/actions/runs/29466359541) passes Linux job
+  [87520232284](https://github.com/stablyai/orca/actions/runs/29466359541/job/87520232284) in
+  4m30s and macOS job
+  [87520232283](https://github.com/stablyai/orca/actions/runs/29466359541/job/87520232283) in
+  5m08s.
+- Supplemental result: both Linux oldest-userland jobs and Windows x64 oldest-floor job
+  [87521425899](https://github.com/stablyai/orca/actions/runs/29466359518/job/87521425899) pass.
+  Windows arm64 primary source/build/runtime proof passes; its separate oldest-floor job
+  [87521425836](https://github.com/stablyai/orca/actions/runs/29466359518/job/87521425836) executes
+  the exact runtime successfully, including Node v24.18.0, PTY, watcher, 2s settlement, and
+  49,745,920-byte RSS, then rejects observed build `10.0.26200` against required build 26100
+  (`osBuild: false`). The artifact workflow is therefore expected red solely for the previously
+  declared floor gap; no Windows arm64 tuple is enabled.
+- Closure: the source-only packaged loader's path, stable-read, mutation, accepted-key signature,
+  and exact build/protocol contracts execute on all six native client families. This closes the
+  loader's native source gate, not packaged-app embedding or product use.
+- Residual gaps: no production accepted-key file or protected seed/environment exists; no signed
+  manifest bytes are embedded; builder `extraResources`, release required-assets composition,
+  packaged-app extraction/smoke, Electron adapter, cache root, downloader orchestration, offline
+  transfer, SSH install/launch, per-target Beta, fallback, tuple, publication, and default behavior
+  remain open.
+- Follow-up: commit this evidence-only checkpoint, then audit the smallest PR-contained accepted-key
+  and immutable resource-input contract. External protected-environment/secret provisioning remains
+  a separate repository-administrator gate and must not be inferred from source tests.
+
 ## Accepted Gaps
 
 No product gap is accepted merely because it appears in this list. Each entry requires explicit
@@ -13932,10 +13991,10 @@ The project is not complete until every applicable item below is checked with ev
 
 ## Next Required Action
 
-Add and run the purpose-named official-build manifest-loader RED fixed by
-E-M5-PACKAGED-MANIFEST-AUDIT-001, then implement only stable fixed-resource loading, accepted-key
-signature verification, and exact desktop build/protocol identity. Do not add resource embedding,
-production keys, cache-root/downloader orchestration, SSH transfer/install, mode wiring, tuple
+Audit the smallest PR-contained accepted-key and immutable resource-input boundary now that
+`E-M5-PACKAGED-MANIFEST-CI-001` closes the all-six native source-loader gate. Add a purpose-named RED
+before implementation. Do not provision production secrets/environments, embed unreviewed keys or
+manifest bytes, add cache-root/downloader orchestration, SSH transfer/install, mode wiring, tuple
 enablement, release publication, or default behavior.
 Keep Node upstream `.tar.xz` inputs, Windows ZIP, `ORCA_RELAY_PATH`, existing desktop required-assets
 behavior, detached-signature byte encoding, Windows arm64 build 26100, macOS 13.5, Linux kernel 4.18,
