@@ -268,6 +268,7 @@ jobs:
             src/main/ssh/ssh-relay-artifact-cache-entry.test.ts \
             src/main/ssh/ssh-relay-artifact-cache-in-use-lease.test.ts \
             src/main/ssh/ssh-relay-artifact-cache-eviction.test.ts \
+            src/main/ssh/ssh-relay-compiled-manifest-trust.test.ts \
             src/main/ssh/ssh-relay-manifest-accepted-keys.test.ts \
             src/main/ssh/ssh-relay-packaged-manifest.test.ts \
             src/main/ssh/ssh-relay-runtime-identity.test.ts \
@@ -804,6 +805,7 @@ jobs:
             src/main/ssh/ssh-relay-artifact-cache-entry.test.ts `
             src/main/ssh/ssh-relay-artifact-cache-in-use-lease.test.ts `
             src/main/ssh/ssh-relay-artifact-cache-eviction.test.ts `
+            src/main/ssh/ssh-relay-compiled-manifest-trust.test.ts `
             src/main/ssh/ssh-relay-manifest-accepted-keys.test.ts `
             src/main/ssh/ssh-relay-packaged-manifest.test.ts `
             src/main/ssh/ssh-relay-runtime-identity.test.ts `

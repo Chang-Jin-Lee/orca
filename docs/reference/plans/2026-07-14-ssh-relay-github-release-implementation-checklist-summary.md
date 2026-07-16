@@ -9,12 +9,18 @@ keeps commands, hashes, runner identities, timings, and failure details.
 A checked box means the work has evidence in the detailed ledger. Design approval alone does not
 complete a box.
 
-Active checkpoint: **Milestone 5 / Work Package 4 desktop resolver/cache — disconnected desktop
-accepted-public-key parser locally proven and wired; isolated commit/all-six native proof next,
-2026-07-15, Codex implementation owner.** `E-M5-ACCEPTED-KEYS-AUDIT-001` and its RED precede
-`E-M5-ACCEPTED-KEYS-LOCAL-001`: 4/4 focused, 19/19 trust, 304/304 non-full-size SSH relay, 12/12
-workflow/aggregate, typecheck, and lint gates pass. No production public key file or secret exists,
-and no resource or consumer is connected. The prior `E-M5-PACKAGED-MANIFEST-LOCAL-001` passes 6/6
+Active checkpoint: **Milestone 5 / Work Package 4 desktop resolver/cache — disconnected compile-time
+manifest trust-root provider locally green and wired; isolated commit/all-six native proof next,
+2026-07-15, Codex implementation owner.** `E-M5-COMPILED-TRUST-AUDIT-001` and its RED precede
+`E-M5-COMPILED-TRUST-LOCAL-001`: 3/3 focused, 22/22 trust, 307/307 non-full-size SSH relay, 279/279
+release-script, workflow-oracle, typecheck, lint, format, max-lines, and diff gates pass. The build
+constant is literal `null`; no production key file, resource bytes, or consumer exists. Prior exact
+head `11f367e66` passes all six primary native accepted-key jobs under
+`E-M5-ACCEPTED-KEYS-CI-001` and Golden E2E; the artifact workflow is red only for the retained
+Windows arm64 hosted build-26200 versus required-26100 floor gap. PR Checks attempt 1 failed one
+renderer PTY ownership race in untouched code after 30,100 passes; attempt 2 has passed the complete
+job, including tests, unpacked build, and packaged CLI smoke. Real Apple/SignPath rehearsal remains
+a late explicit gate. The prior `E-M5-PACKAGED-MANIFEST-LOCAL-001` passes 6/6
 purpose-named tests, 300/300 non-full-size SSH relay tests, 279/279 release-script tests, typecheck,
 lint, format, max-lines, and diff gates. `E-M5-PACKAGED-MANIFEST-CI-WIRING-LOCAL-001` pins the suite
 into both native job families; exact-head run

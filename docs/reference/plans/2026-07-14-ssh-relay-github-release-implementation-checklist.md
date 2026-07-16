@@ -8,8 +8,8 @@ work; keep exact commands, runner identities, hashes, metrics, and residual gaps
 
 Date created: 2026-07-14<br>
 Last updated: 2026-07-15<br>
-Current phase: Milestone 5 / Work Package 4 desktop resolver/cache — **In progress — 2026-07-15, Codex implementation owner: checkpoint and obtain all-six native evidence for the locally proven disconnected accepted-public-key parser**. `E-M5-ACCEPTED-KEYS-LOCAL-001` proves strict protected-aggregate document parity and both native workflow command lists locally. Keep the production key file/seed/environment, signed embedded bytes, builder/resource/consumer/cache/downloader/SSH/settings/tuples/publication/default behavior absent until exact-head native proof passes.<br>
-Session checkpoint: **In progress — 2026-07-15, Codex implementation owner** — user authority covers end-to-end PR-contained implementation, commits, pushes, CI, rehearsals, and release writes; merging to `main` remains explicitly prohibited. Commit `b79bcbd04` passes all six native source/full-size cache jobs, PR Checks, and Golden E2E. The artifact workflow is red only for the retained hosted Windows arm64 build-26200 versus required-26100 floor rejection after its primary proof. No Electron, downloader, SSH, setting, tuple, publication, or default-path consumer exists. Legacy remains the production default.<br>
+Current phase: Milestone 5 / Work Package 4 desktop resolver/cache — **In progress — 2026-07-15, Codex implementation owner: checkpoint and obtain all-six native proof for the locally green, disconnected compile-time manifest trust-root provider**. The build constant remains hardcoded to `null`; keep the production key file/seed/environment, signed embedded bytes, builder/resource/consumer/cache/downloader/SSH/settings/tuples/publication/default behavior absent. Real Apple/SignPath rehearsals remain an explicit late gate and are not on this package's critical path.<br>
+Session checkpoint: **In progress — 2026-07-15, Codex implementation owner** — `E-M5-ACCEPTED-KEYS-CI-001` closes all-six native accepted-key parser proof at exact head `11f367e6613b0cae61a1153b77a5be332fd4e763`; Golden E2E passes and the artifact workflow is red only for the retained hosted Windows arm64 build-26200 versus required-26100 floor rejection. The first PR Checks attempt reached 30,100 passing tests and failed one unrelated renderer PTY ownership race test in untouched code; attempt 2 passes the complete job, including full tests, unpacked build, and packaged CLI smoke. `E-M5-COMPILED-TRUST-LOCAL-001` is green locally and wired into both native job families. User authority covers end-to-end PR-contained implementation, commits, pushes, CI, rehearsals, and release writes; merging to `main` remains explicitly prohibited. No Electron resource, downloader, SSH, setting, tuple, publication, or default-path consumer exists. Legacy remains the production default.<br>
 Primary design: [SSH relay GitHub Release plan](./2026-07-14-ssh-relay-github-release-plan.html)<br>
 Motivating issues: [#8450](https://github.com/stablyai/orca/issues/8450), [#1693](https://github.com/stablyai/orca/issues/1693)
 
@@ -14008,6 +14008,119 @@ config/vitest.config.ts --maxWorkers=1 src/main/ssh/ssh-relay-manifest-accepted-
   requires the production accepted-key file to be absent; no key/seed/environment, resource bytes,
   builder mapping, Electron/cache/network/SSH/mode/tuple/publication/default caller is added.
 
+### E-M5-ACCEPTED-KEYS-CI-001 — All-six native accepted-key document proof
+
+- Date: 2026-07-15
+- Owner: Codex implementation owner
+- Source: exact pushed implementation head `11f367e6613b0cae61a1153b77a5be332fd4e763` on draft PR
+  #8741.
+- Workflow: [SSH Relay Runtime Artifacts run
+  29467318532](https://github.com/stablyai/orca/actions/runs/29467318532). The purpose-named accepted-key
+  suite runs in `Run runtime artifact contract tests` under Node 24.18.0 on both native shell
+  families. All six primary contract steps and complete jobs pass:
+  - Linux x64, `ubuntu-24.04`, job
+    [87523112196](https://github.com/stablyai/orca/actions/runs/29467318532/job/87523112196),
+    contract step 02:45:28–02:45:43Z; job 02:45:00–02:47:39Z;
+  - Linux arm64, `ubuntu-24.04-arm`, job
+    [87523112194](https://github.com/stablyai/orca/actions/runs/29467318532/job/87523112194),
+    contract step 02:45:39–02:45:52Z; job 02:45:03–02:47:45Z;
+  - macOS x64, `macos-15-intel`, job
+    [87523112227](https://github.com/stablyai/orca/actions/runs/29467318532/job/87523112227),
+    contract step 02:46:19–02:47:07Z; job 02:45:02–02:49:48Z;
+  - macOS arm64, `macos-15`, job
+    [87523112181](https://github.com/stablyai/orca/actions/runs/29467318532/job/87523112181),
+    contract step 02:45:39–02:45:52Z; job 02:45:00–02:46:31Z;
+  - Windows x64, `windows-2022`, job
+    [87523112207](https://github.com/stablyai/orca/actions/runs/29467318532/job/87523112207),
+    contract step 02:46:18–02:46:43Z; job 02:45:00–02:50:59Z;
+  - Windows arm64, `windows-11-arm`, job
+    [87523112204](https://github.com/stablyai/orca/actions/runs/29467318532/job/87523112204),
+    contract step 02:48:32–02:49:06Z; job 02:44:59–02:54:31Z.
+- Supplemental results: both Linux oldest-userland jobs and Windows x64 oldest-floor job pass.
+  Windows arm64 primary proof passes; its separate job
+  [87524225012](https://github.com/stablyai/orca/actions/runs/29467318532/job/87524225012)
+  executes the exact runtime successfully and then rejects hosted build 26200 against required build 26100. The overall artifact run is expected red only for that declared floor gap; no tuple is
+  enabled.
+- Adjacent gates: [Golden E2E run
+  29467318535](https://github.com/stablyai/orca/actions/runs/29467318535) passes Linux job
+  [87523101812](https://github.com/stablyai/orca/actions/runs/29467318535/job/87523101812) and macOS
+  job [87523101778](https://github.com/stablyai/orca/actions/runs/29467318535/job/87523101778).
+  [PR Checks run 29467318537](https://github.com/stablyai/orca/actions/runs/29467318537) attempt 1
+  fails after 30,100 passed / 57 skipped tests only in untouched
+  `src/renderer/src/components/terminal-pane/pty-connection.test.ts` (“drops confirmed idle exit
+  when a different hook owner appears between null samples”). Failed-job attempt 2, job
+  [87530011046](https://github.com/stablyai/orca/actions/runs/29467318537/job/87530011046), passes
+  03:43:02–03:57:22Z, including the full test step, unpacked build, and packaged CLI smoke. This
+  classifies the first failure as unrelated/flaky rather than an accepted product regression.
+- Closure: the strict accepted-key format, canonical fingerprint, key cloning/freezing, and hostile
+  input behavior execute on all six supported native client families. This does not provision a
+  production key, embed a manifest, run native signing, publish assets, connect SSH, or enable a
+  tuple/default path.
+
+### E-M5-COMPILED-TRUST-AUDIT-001 — Immutable desktop trust-root boundary selection
+
+- Date: 2026-07-15
+- Owner: Codex implementation owner
+- Source: exact pushed head `11f367e6613b0cae61a1153b77a5be332fd4e763`; draft PR #8741.
+- Audit: complete reads of the packaged manifest loader, accepted-key parser, manifest signature
+  verifier, Electron Vite compile-time constant boundary, Electron builder resource mapping and
+  tests, protected aggregate accepted-key reader, and Milestone 4/5 embedding contracts.
+- Findings: the manifest loader correctly receives accepted keys from its caller, but no immutable
+  desktop provider exists. A mutable adjacent accepted-key resource would let untrusted manifest
+  bytes move their own trust root and remains prohibited. The smallest safe package is a main-bundle
+  compile-time constant that is `null` in all current builds plus a strict provider that reuses the
+  proven accepted-key parser. Runtime environment variables, filesystem lookup, Electron resources,
+  production keys, signed manifest bytes, and consumers remain outside this package.
+- Selected RED: a purpose-named source test requires unprovisioned builds to return unavailable even
+  when a similarly named runtime environment variable is set; valid build-injected documents must
+  yield cloned/frozen keys and the canonical fingerprint; malformed input must fail closed.
+
+### E-M5-COMPILED-TRUST-LOCAL-RED-001 — Compile-time desktop trust provider is absent
+
+- Date: 2026-07-15
+- Owner: Codex implementation owner
+- Source: purpose-named `src/main/ssh/ssh-relay-compiled-manifest-trust.test.ts` atop exact pushed
+  head `11f367e6613b0cae61a1153b77a5be332fd4e763`; provider deliberately absent.
+- Exact command: `pnpm exec vitest run --config config/vitest.config.ts --maxWorkers=1
+src/main/ssh/ssh-relay-compiled-manifest-trust.test.ts`.
+- Result: required RED; one failed suite / zero collected tests in 504ms because
+  `./ssh-relay-compiled-manifest-trust` does not exist. No production key, resource, consumer, SSH
+  behavior, mode, tuple, publication, or default path changed.
+
+### E-M5-COMPILED-TRUST-LOCAL-001 — Unprovisioned compile-time trust boundary
+
+- Date: 2026-07-15
+- Owner: Codex implementation owner
+- Source: working package atop exact pushed head
+  `11f367e6613b0cae61a1153b77a5be332fd4e763`; implementation/test are
+  `src/main/ssh/ssh-relay-compiled-manifest-trust.ts` and its purpose-named test.
+- Focused command: `/usr/bin/time -l pnpm exec vitest run --config config/vitest.config.ts
+--maxWorkers=1 src/main/ssh/ssh-relay-compiled-manifest-trust.test.ts` — PASS, 1 file / 3 tests in
+  2.00s Vitest / 7.39s wall, 132,743,168-byte maximum RSS, 97,031,712-byte peak footprint, zero
+  swaps.
+- Proven behavior: the main-bundle constant is exactly literal `null`; an unprovisioned build stays
+  unavailable even when a similarly named runtime environment variable is set; an explicitly
+  supplied compile-time document reuses the strict parser and returns cloned/frozen accepted keys
+  plus its canonical SHA-256 fingerprint; malformed injected state fails closed.
+- Regression commands/results on the final local state:
+  - compiled/accepted/signature/packaged-loader trust suites pass 4 files / 22 tests in 14.71s;
+  - complete `src/main/ssh/ssh-relay-*.test.ts` passes 24 files / 307 tests with three declared
+    full-size suites/tests skipped in 26.34s Vitest / 30.43s wall, 261,341,184-byte maximum RSS and
+    zero swaps;
+  - complete `config/scripts/ssh-relay-runtime-*.test.mjs` passes 50 files / 279 tests in 50.75s
+    Vitest / 54.71s wall, 189,218,816-byte maximum RSS and zero swaps;
+  - the workflow oracle passes 7/7; full `pnpm typecheck` and `pnpm lint` pass, including 41
+    reliability gates, 355 grandfathered max-lines suppressions with no new bypass, and localization
+    parity/coverage; focused `oxfmt --check`, `git diff --check`, and protected resolver zero-diff
+    checks pass.
+- Native wiring: the purpose suite appears exactly once in each POSIX/PowerShell command list and
+  the workflow oracle requires exactly two occurrences. Exact-head all-six Node 24 execution remains
+  required before this source gate closes.
+- Consumer-disconnection oracle: the provider is imported only by its purpose test; repository
+  search and `test ! -e config/ssh-relay-runtime-manifest-accepted-keys.json` confirm that no real
+  key file, mutable trust lookup, resource bytes/mapping, manifest consumer, cache/network/SSH/mode,
+  tuple, publication, or default behavior exists.
+
 ## Accepted Gaps
 
 No product gap is accepted merely because it appears in this list. Each entry requires explicit
@@ -14066,11 +14179,11 @@ The project is not complete until every applicable item below is checked with ev
 
 ## Next Required Action
 
-Audit the smallest PR-contained accepted-key and immutable resource-input boundary now that
-`E-M5-PACKAGED-MANIFEST-CI-001` closes the all-six native source-loader gate. Add a purpose-named RED
-before implementation. Do not provision production secrets/environments, embed unreviewed keys or
-manifest bytes, add cache-root/downloader orchestration, SSH transfer/install, mode wiring, tuple
-enablement, release publication, or default behavior.
+Checkpoint the disconnected compile-time trust-root package and require exact-head Node 24 proof on
+Linux, macOS, and Windows x64/arm64. After that proof, audit the next smallest non-signing desktop
+orchestration boundary; do not provision production secrets/environments, embed unreviewed keys or
+manifest bytes, add SSH transfer/install, mode wiring, tuple enablement, release publication, or
+default behavior.
 Keep Node upstream `.tar.xz` inputs, Windows ZIP, `ORCA_RELAY_PATH`, existing desktop required-assets
 behavior, detached-signature byte encoding, Windows arm64 build 26100, macOS 13.5, Linux kernel 4.18,
 release-cut, desktop builds, publication, and every tuple separately gated.
