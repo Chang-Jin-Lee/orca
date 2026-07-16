@@ -5,6 +5,7 @@ import {
   clearGitStatusLineStatsCache,
   clearGitStatusLineStatsCacheKey,
   GIT_STATUS_LINE_STATS_CACHE_MAX_AGE_MS,
+  reuseOrRecomputeGitStatusLineStats,
   storeGitStatusLineStats
 } from './git-status-line-stats-cache'
 
@@ -100,6 +101,33 @@ describe('git status line stats cache', () => {
       writeToken: recomputeWrite
     })
 
+    const entries: { path: string; status: string; area: string; added?: number }[] = [
+      { path: 'src/a.ts', status: 'modified', area: 'unstaged' }
+    ]
+    expect(
+      applyCachedGitStatusLineStats({ cacheKey: 'native\0/repo', head: 'head-1', entries })
+    ).toBe(true)
+    expect(entries[0]?.added).toBe(3)
+  })
+
+  it('keeps a prior good snapshot reusable when an overlapping recompute is aborted', async () => {
+    // A completed scan stored healthy counts.
+    storeGitStatusLineStats({ cacheKey: 'native\0/repo', head: 'head-1', entries: cachedEntries })
+
+    // A later scan begins and recomputes but is aborted before it can store.
+    const abortedWrite = beginGitStatusLineStatsCacheWrite('native\0/repo')
+    await reuseOrRecomputeGitStatusLineStats({
+      cacheKey: 'native\0/repo',
+      head: 'head-1',
+      entries: [{ path: 'src/a.ts', status: 'modified', area: 'unstaged' }],
+      writeToken: abortedWrite,
+      reuse: false,
+      isAborted: () => true,
+      recompute: async () => true
+    })
+
+    // The aborted pass persisted nothing, so it must not evict the healthy
+    // snapshot — a following safety read still reuses the stored counts.
     const entries: { path: string; status: string; area: string; added?: number }[] = [
       { path: 'src/a.ts', status: 'modified', area: 'unstaged' }
     ]

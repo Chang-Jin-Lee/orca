@@ -168,6 +168,8 @@ export async function getStatusOp(
       }
     }
   } catch (error) {
+    // Why: an aborted scan must reject, not resolve — swallowing here would let
+    // a cancelled request be mistaken for a completed (empty) status result.
     if (options.signal?.aborted) {
       throw error
     }
@@ -218,6 +220,9 @@ async function runNumstat(
     )
     return parseNumstat(stdout)
   } catch (error) {
+    // Why: an aborted pass must reject so a cancelled scan is never treated as
+    // a completed one; only a genuine (non-abort) numstat failure degrades to
+    // uncounted rows below.
     if (signal?.aborted) {
       throw error
     }

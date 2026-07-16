@@ -196,7 +196,9 @@ export async function reuseOrRecomputeGitStatusLineStats(input: {
   }
   const complete = await input.recompute()
   if (input.isAborted()) {
-    clearGitStatusLineStatsCacheKey(input.cacheKey, input.writeToken)
+    // Why: an aborted pass never reached storeGitStatusLineStats, so there is
+    // nothing partial to undo; clearing here would instead evict a concurrent
+    // scan's healthy snapshot and force a redundant numstat on the next read.
     return
   }
   if (!complete) {
