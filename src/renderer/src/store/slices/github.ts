@@ -45,6 +45,7 @@ import { rightSidebarShowsPullRequestData } from '@/lib/right-sidebar-visibility
 import { hostedReviewInfoFromGitHubPRInfo } from '../../../../shared/hosted-review-github'
 import { getHostedReviewCacheKey, linkedReviewHintKey } from './hosted-review-cache-identity'
 import { getGitHubPRCacheKey, getGitHubRepoCacheKey } from './github-cache-key'
+import { findRepoForHost } from './repo-host-identity'
 import { isGitHubWorkItemsQueryTooLarge } from './github-work-items-query-bounds'
 import { isMacAppDataPath } from '@/lib/passive-macos-app-data-access'
 import { translate } from '@/i18n/i18n'
@@ -152,13 +153,13 @@ function getPRRefreshRuntimeRepoTarget(
   }
   // Why: PR refreshes must follow the repo owner host, not the Active Server
   // dropdown. A runtime-owned worktree can be visible while Local desktop is focused.
-  return getRuntimeRepoTarget(
-    state,
-    candidate.repoPath,
-    state.settings
-      ? { ...state.settings, activeRuntimeEnvironmentId: ownerRuntimeEnvironmentId }
-      : ({ activeRuntimeEnvironmentId: ownerRuntimeEnvironmentId } as AppState['settings'])
-  )
+  const repo = findRepoForHost(state.repos, candidate.repoId, {
+    hostId: getRefreshAliasExecutionHostId(candidate),
+    settings: state.settings
+  }) as Repo | null
+  return repo?.path === candidate.repoPath
+    ? { target: { kind: 'environment', environmentId: ownerRuntimeEnvironmentId }, repo }
+    : null
 }
 
 function shouldEnqueueLocalPRRefresh(candidate: GitHubPRRefreshCandidate): boolean {
@@ -240,7 +241,7 @@ function settingsForGitHubFocusedRepoOwner(
   return settingsForGitHubRepoOwner(settings, repo)
 }
 
-function getRefreshAliasExecutionHostId(alias: GitHubPRRefreshAlias): string {
+function getRefreshAliasExecutionHostId(alias: GitHubPRRefreshAlias): ExecutionHostId {
   const explicitHostId = normalizeExecutionHostId(alias.executionHostId)
   if (explicitHostId) {
     return explicitHostId
@@ -1165,7 +1166,7 @@ function buildPRRefreshCandidate(
   worktree: Worktree,
   repoPath?: string
 ): GitHubPRRefreshCandidate | null {
-  const repo = state.repos.find((r) => r.id === worktree.repoId)
+  const repo = findWorktreeOwnerRepo(state, worktree)
   if (!repo) {
     return null
   }
@@ -1243,6 +1244,18 @@ function buildPRRefreshCandidate(
     cachedMergeable: cachedPR?.mergeable ?? null,
     cachedMergeStateStatus: cachedPR?.mergeStateStatus ?? null
   }
+}
+
+function findWorktreeOwnerRepo(
+  state: AppState,
+  worktree: Pick<Worktree, 'repoId' | 'hostId'>
+): Repo | null {
+  // Why: paired hosts can expose the same repo id; the worktree's explicit
+  // owner wins, while legacy rows use the focused-host ambiguity rules.
+  return findRepoForHost(state.repos, worktree.repoId, {
+    hostId: worktree.hostId,
+    settings: state.settings
+  }) as Repo | null
 }
 
 function githubHostedReviewFallbackPRNumber(
@@ -1892,6 +1905,7 @@ export type GitHubSlice = {
     repoPath: string,
     branch: string,
     options?: RepoScopedFetchOptions & {
+      hostId?: ExecutionHostId
       worktreeId?: string
       linkedPRNumber?: number | null
       fallbackPRNumber?: number | null
@@ -3042,11 +3056,25 @@ export const createGitHubSlice: StateCreator<AppState, [], [], GitHubSlice> = (s
   },
 
   fetchPRForBranch: async (repoPath, branch, options): Promise<PRInfo | null> => {
-    const repo = get().repos?.find((candidate) =>
-      options?.repoId ? candidate.id === options.repoId : candidate.path === repoPath
+    const requestState = get()
+    const reposAtPath = (requestState.repos ?? []).filter(
+      (candidate) => candidate.path === repoPath
     )
+    const repo = (
+      options?.repoId
+        ? findRepoForHost(reposAtPath, options.repoId, {
+            hostId: options.hostId,
+            settings: requestState.settings
+          })
+        : reposAtPath[0]
+    ) as Repo | null | undefined
+    // Why: an explicit refresh owner must not silently fall back to another
+    // same-id repo if its catalog row or path disappears mid-request.
+    if (options?.hostId && repo?.path !== repoPath) {
+      return null
+    }
     const repoId = options?.repoId ?? repo?.id
-    const requestSettings = settingsForGitHubRepoOwner(get().settings, repo)
+    const requestSettings = settingsForGitHubRepoOwner(requestState.settings, repo ?? undefined)
     const cacheKey = prCacheKey(
       repoPath,
       repoId,
@@ -3150,7 +3178,14 @@ export const createGitHubSlice: StateCreator<AppState, [], [], GitHubSlice> = (s
 
     const request = (async () => {
       try {
-        const runtimeRepo = getRuntimeRepoTarget(get(), repoPath, requestSettings)
+        const repoHost = repo ? parseExecutionHostId(getRepoExecutionHostId(repo)) : null
+        const runtimeRepo =
+          repo && repoHost?.kind === 'runtime'
+            ? {
+                target: { kind: 'environment' as const, environmentId: repoHost.environmentId },
+                repo
+              }
+            : getRuntimeRepoTarget(get(), repoPath, requestSettings)
         const candidateWorktree = options?.worktreeId
           ? findWorktreeById(get(), options.worktreeId)
           : null
@@ -3329,6 +3364,7 @@ export const createGitHubSlice: StateCreator<AppState, [], [], GitHubSlice> = (s
             void get().fetchPRForBranch(repoPath, branch, {
               force: true,
               repoId,
+              hostId: options?.hostId,
               worktreeId: options.worktreeId
             })
           }
@@ -3992,6 +4028,7 @@ export const createGitHubSlice: StateCreator<AppState, [], [], GitHubSlice> = (s
       void get().fetchPRForBranch(candidate.repoPath, candidate.branch, {
         force: bypassesGitHubPRRefreshFreshness(reason),
         repoId: candidate.repoId,
+        hostId: getRefreshAliasExecutionHostId(candidate),
         worktreeId: candidate.worktreeId,
         linkedPRNumber: candidate.linkedPRNumber ?? null,
         fallbackPRNumber: candidate.fallbackPRNumber ?? null,
@@ -4006,6 +4043,7 @@ export const createGitHubSlice: StateCreator<AppState, [], [], GitHubSlice> = (s
       await get().fetchPRForBranch(candidate.repoPath, candidate.branch, {
         force: bypassesGitHubPRRefreshFreshness(reason),
         repoId: candidate.repoId,
+        hostId: getRefreshAliasExecutionHostId(candidate),
         worktreeId: candidate.worktreeId,
         linkedPRNumber: candidate.linkedPRNumber ?? null,
         fallbackPRNumber: candidate.fallbackPRNumber ?? null,
@@ -4027,6 +4065,7 @@ export const createGitHubSlice: StateCreator<AppState, [], [], GitHubSlice> = (s
       if (getPRRefreshRuntimeRepoTarget(state, candidate)) {
         void get().fetchPRForBranch(candidate.repoPath, candidate.branch, {
           repoId: candidate.repoId,
+          hostId: getRefreshAliasExecutionHostId(candidate),
           worktreeId: candidate.worktreeId,
           linkedPRNumber: candidate.linkedPRNumber ?? null,
           fallbackPRNumber: candidate.fallbackPRNumber ?? null,
@@ -4444,13 +4483,10 @@ export const createGitHubSlice: StateCreator<AppState, [], [], GitHubSlice> = (s
       .sort((a, b) => b.score - a.score)
       .slice(0, isPRStatusGrouping ? stalePRCandidates.length : 5)
     for (const { candidate } of candidatesToRefresh) {
-      const candidateSettings = settingsForGitHubRepoOwner(
-        state.settings,
-        candidate as Pick<Repo, 'connectionId' | 'executionHostId'>
-      )
-      if (getRuntimeRepoTarget(state, candidate.repoPath, candidateSettings)) {
+      if (getPRRefreshRuntimeRepoTarget(state, candidate)) {
         void get().fetchPRForBranch(candidate.repoPath, candidate.branch, {
           repoId: candidate.repoId,
+          hostId: getRefreshAliasExecutionHostId(candidate),
           worktreeId: candidate.worktreeId,
           linkedPRNumber: candidate.linkedPRNumber ?? null,
           fallbackPRNumber: candidate.fallbackPRNumber ?? null,
@@ -4525,6 +4561,7 @@ export const createGitHubSlice: StateCreator<AppState, [], [], GitHubSlice> = (s
           void get().fetchPRForBranch(candidate.repoPath, candidate.branch, {
             force: true,
             repoId: candidate.repoId,
+            hostId: getRefreshAliasExecutionHostId(candidate),
             worktreeId: candidate.worktreeId,
             linkedPRNumber: candidate.linkedPRNumber ?? null,
             fallbackPRNumber: candidate.fallbackPRNumber ?? null,
@@ -4723,6 +4760,7 @@ export const createGitHubSlice: StateCreator<AppState, [], [], GitHubSlice> = (s
           void get().fetchPRForBranch(candidate.repoPath, candidate.branch, {
             force: true,
             repoId: candidate.repoId,
+            hostId: getRefreshAliasExecutionHostId(candidate),
             worktreeId: candidate.worktreeId,
             linkedPRNumber: candidate.linkedPRNumber ?? null,
             fallbackPRNumber: candidate.fallbackPRNumber ?? null,
