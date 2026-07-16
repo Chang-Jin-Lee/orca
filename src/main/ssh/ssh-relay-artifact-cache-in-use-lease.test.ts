@@ -170,6 +170,14 @@ describe('SSH relay artifact cache in-use lease', () => {
     await expect(
       acquireSshRelayArtifactCacheInUseLease({ cacheRoot: root, entry })
     ).rejects.toThrow(/entry/i)
+    const misplacedEntryPath = join(root, 'entries', 'b'.repeat(64))
+    await mkdir(misplacedEntryPath, { recursive: true })
+    await expect(
+      acquireSshRelayArtifactCacheInUseLease({
+        cacheRoot: root,
+        entry: { ...entry, entryPath: misplacedEntryPath }
+      })
+    ).rejects.toThrow(/identity/i)
     await mkdir(join(root, 'in-use'), { recursive: true })
     expect(sshRelayArtifactCacheInUseLeasePath(root, entry.contentId, 'd'.repeat(32))).toContain(
       join('in-use', 'a'.repeat(64))

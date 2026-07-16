@@ -9,15 +9,35 @@ keeps commands, hashes, runner identities, timings, and failure details.
 A checked box means the work has evidence in the detailed ledger. Design approval alone does not
 complete a box.
 
-Active checkpoint: **Milestone 5 / Work Package 4 desktop resolver/cache — disconnected warm-cache
-resolution locally green and wired; commit/all-six native proof next, 2026-07-15, Codex
-implementation owner.** `E-M5-ARTIFACT-CACHE-RESOLUTION-LOCAL-001` passes 9/9 purpose tests,
+Active checkpoint: **Milestone 5 / Work Package 4 desktop resolver/cache — disconnected cold-cache
+population locally green and wired; commit/all-six native proof next, 2026-07-15, Codex
+implementation owner.** `E-M5-ARTIFACT-CACHE-RESOLUTION-CI-001` closes warm-cache commit
+`22031fa68` on all six native clients, both Linux supplements, Windows x64 baseline, PR Checks,
+Golden E2E, and computer-use; Windows arm64 remains the expected build-26200 rejection against 26100. `E-M5-ARTIFACT-CACHE-RESOLUTION-LOCAL-001` passes 9/9 purpose tests,
 16/16 focused+workflow-oracle tests, 323/323 non-full-size SSH relay tests, 280/280 release-script
 tests, typecheck, lint, format, reliability, max-lines, localization, and diff gates. Missing trust
 and compatibility legacy results perform no cache I/O; a miss returns only the immutable selected
 artifact; a verified hit acquires an in-use lease before exposure; corruption and lease failures
 propagate closed. No download, Electron/startup, SSH/Beta mode/tuple/publication/default caller
-exists.
+exists. The active package composes only download, existing immutable cache-entry publication, and
+in-use lease operations behind an explicit canonical cache root; it adds no Electron/startup,
+proxy, SSH/Beta mode/tuple enablement/release publication/fallback/default behavior. SignPath stays
+deferred to the final signing gate.
+`E-M5-ARTIFACT-CACHE-POPULATION-AUDIT-001` selects cache-local exclusive download staging → existing
+strict immutable publication → staging cleanup → in-use lease as the next boundary; the publisher
+already owns strict extraction and complete-tree verification, so no second extractor is added.
+`E-M5-ARTIFACT-CACHE-POPULATION-LOCAL-RED-001` records the expected missing-module failure before
+implementation. `E-M5-ARTIFACT-CACHE-POPULATION-LOCAL-001` passes 9/9 purpose/integration tests,
+16/16 focused+workflow-oracle tests, 332/332 non-full-size SSH relay tests, 280/280 release-script tests,
+typecheck, lint, format, reliability, max-lines, localization, and diff gates. Every failure remains
+unclassified and fail-closed at this layer; exact-head native proof is next.
+The first real cold→warm assertion then exposed a logical `/var/...` versus physical
+`/private/var/...` lease-root mismatch under `E-M5-ARTIFACT-CACHE-PHYSICAL-ROOT-LOCAL-RED-001`.
+The primary plan already requires physical cache ownership, so its content is unchanged; the
+implementation now canonicalizes lease identity/locking/recency to the existing physical root under
+`E-M5-ARTIFACT-CACHE-PHYSICAL-ROOT-CORRECTION-LOCAL-001`: 7/7 correction tests and 21/21 focused+
+workflow-oracle tests pass while missing/misplaced entries remain rejected. Broader exact-head proof
+is still required before checkpointing.
 `E-M5-ARTIFACT-CACHE-ROOT-CI-001` closes the pure cache-root contract at exact head `aefcaa9a9`:
 all six primary native Node 24 jobs, both Linux supplements, Windows x64 baseline, PR Checks, Golden
 E2E, and computer-use pass; Windows arm64 build 26200 remains correctly gated against 26100. The

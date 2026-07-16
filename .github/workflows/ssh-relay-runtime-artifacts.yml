@@ -270,6 +270,8 @@ jobs:
             src/main/ssh/ssh-relay-artifact-cache-eviction.test.ts \
             src/main/ssh/ssh-relay-artifact-cache-root.test.ts \
             src/main/ssh/ssh-relay-artifact-cache-resolution.test.ts \
+            src/main/ssh/ssh-relay-artifact-cache-population.test.ts \
+            src/main/ssh/ssh-relay-artifact-cache-population-integration.test.ts \
             src/main/ssh/ssh-relay-compiled-manifest-trust.test.ts \
             src/main/ssh/ssh-relay-official-manifest.test.ts \
             src/main/ssh/ssh-relay-manifest-accepted-keys.test.ts \
@@ -810,6 +812,8 @@ jobs:
             src/main/ssh/ssh-relay-artifact-cache-eviction.test.ts `
             src/main/ssh/ssh-relay-artifact-cache-root.test.ts `
             src/main/ssh/ssh-relay-artifact-cache-resolution.test.ts `
+            src/main/ssh/ssh-relay-artifact-cache-population.test.ts `
+            src/main/ssh/ssh-relay-artifact-cache-population-integration.test.ts `
             src/main/ssh/ssh-relay-compiled-manifest-trust.test.ts `
             src/main/ssh/ssh-relay-official-manifest.test.ts `
             src/main/ssh/ssh-relay-manifest-accepted-keys.test.ts `

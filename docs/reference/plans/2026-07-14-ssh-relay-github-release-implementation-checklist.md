@@ -8,8 +8,8 @@ work; keep exact commands, runner identities, hashes, metrics, and residual gaps
 
 Date created: 2026-07-14<br>
 Last updated: 2026-07-15<br>
-Current phase: Milestone 5 / Work Package 4 desktop resolver/cache — **In progress — 2026-07-15, Codex implementation owner: audit the smallest disconnected resolver/cache composition**. Require the eventual startup caller to supply Orca's pre-`app.setName()` canonical user-data path; keep filesystem orchestration outside import time and production manifest/resources, proxy, SSH/settings/tuples/publication/default behavior absent. Real Apple/SignPath rehearsals remain an explicit late gate and are not on this package's critical path.<br>
-Session checkpoint: **In progress — 2026-07-15, Codex implementation owner** — `E-M5-ARTIFACT-CACHE-ROOT-CI-001` closes the pure cache-root contract at exact head `aefcaa9a938710e275e3b49ab71446f73b01e075`: all six primary native Node 24 jobs, both Linux supplements, Windows x64 baseline, PR Checks, Golden E2E, and computer-use pass. `E-M5-ARTIFACT-CACHE-STARTUP-BOUNDARY-AUDIT-001` rejects a late direct Electron adapter because `app.setName()` can change `app.getPath('userData')`; the eventual startup caller must pass `getCanonicalUserDataPath()`. Begin only the disconnected resolver/cache composition audit; merging to `main` remains prohibited and SignPath is deferred. No SSH, setting, tuple, publication, or default-path consumer exists. Legacy remains the production default.<br>
+Current phase: Milestone 5 / Work Package 4 desktop resolver/cache — **In progress — 2026-07-15, Codex implementation owner: prove disconnected cold-cache population**. Require the eventual startup caller to supply Orca's pre-`app.setName()` canonical user-data path; keep filesystem orchestration outside import time and production manifest/resources, proxy, SSH/settings/tuples/release publication/default behavior absent. Real Apple/SignPath rehearsals remain an explicit late gate and are not on this package's critical path.<br>
+Session checkpoint: **In progress — 2026-07-15, Codex implementation owner** — `E-M5-ARTIFACT-CACHE-RESOLUTION-CI-001` closes warm-cache commit `22031fa686d2a7c96e687bc02c16fdb08bc987d7` on all six primary native clients, both Linux supplements, Windows x64 baseline, PR Checks, Golden E2E, and computer-use; Windows arm64 remains the expected build-26200 rejection against 26100. The disconnected cold population is locally green under `E-M5-ARTIFACT-CACHE-POPULATION-LOCAL-001`: exclusive cache-local download staging → strict existing immutable publication → staging cleanup → in-use lease, with failures propagating closed. Merging to `main` remains prohibited and SignPath is deferred. No Electron/startup, SSH, setting, tuple enablement, release publication, fallback, or default-path consumer exists. Legacy remains the production default.<br>
 Primary design: [SSH relay GitHub Release plan](./2026-07-14-ssh-relay-github-release-plan.html)<br>
 Motivating issues: [#8450](https://github.com/stablyai/orca/issues/8450), [#1693](https://github.com/stablyai/orca/issues/1693)
 
@@ -14488,6 +14488,164 @@ config/vitest.config.ts --maxWorkers=1 --silent=true config/scripts/ssh-relay-ru
 - Remaining proof for this slice: commit the coherent package and require all six primary native
   Node 24 jobs plus adjacent PR/E2E gates before adding cold download/publication composition.
 
+### E-M5-ARTIFACT-CACHE-RESOLUTION-CI-001 — all-six native warm-cache resolution proof
+
+- Date/owner: 2026-07-15, Codex implementation owner.
+- Exact source/workflow: `22031fa686d2a7c96e687bc02c16fdb08bc987d7`, artifact run
+  [29474175664](https://github.com/stablyai/orca/actions/runs/29474175664). The purpose suite passes
+  within the complete runtime contract step under Node 24.18.0 on all six primary native clients.
+- Primary jobs: Windows arm64 87543508784 passes in 9m27s; macOS arm64 87543508815 in 2m17s; Linux
+  x64 87543508833 in 6m30s; macOS x64 87543508875 in 5m06s; Windows x64 87543508878 in 5m27s; and
+  Linux arm64 87543508960 in 5m19s. Every job completes deterministic artifact build, exact runtime
+  smoke, full-size extraction/cache measurement, and unpublished artifact upload after the contract
+  step.
+- Supplements/floors: Linux x64/arm64 supplement jobs 87544380719/87544380722 pass in 47s/58s.
+  Windows x64 baseline job 87544783538 passes in 2m06s. Windows arm64 baseline job 87544783520
+  verifies and executes the exact unpublished runtime, then correctly rejects observed build
+  `10.0.26200` against required build 26100 (`qualified: false`, `osBuild: false`) in 5m09s. The
+  tuple remains disabled and this retained floor gate is the artifact workflow's sole expected
+  failure.
+- Adjacent gates: PR Checks run
+  [29474175599](https://github.com/stablyai/orca/actions/runs/29474175599), job 87543508131, passes in
+  14m15s including lint, typecheck, Git compatibility, full tests, unpacked app, and packaged CLI
+  smoke. Golden E2E run
+  [29474175584](https://github.com/stablyai/orca/actions/runs/29474175584) passes Linux/macOS jobs
+  87543508216/87543508224 in 5m17s/4m48s. Computer-use run
+  [29474175581](https://github.com/stablyai/orca/actions/runs/29474175581) passes Ubuntu/Windows jobs
+  87543508291/87543508301 in 3m09s/5m42s.
+- Closure: missing trust and compatibility short circuits, immutable cache miss, verified hit,
+  lookup-before-lease order, cancellation release, absolute-root rejection, and fail-closed cache
+  integrity/lease errors are proven on Linux, macOS, and Windows x64/arm64. No downloader,
+  Electron/startup/product caller, SSH, setting, fallback, tuple, release publication, or default-
+  path behavior is connected; legacy remains unchanged.
+- Residual gaps: cold-cache population native proof, Electron/startup adaptation, proxy/certificate/
+  live download, offline transfer, SSH install/launch, native trust, oldest Windows arm64/macOS/
+  Linux-kernel floors, per-target Beta wiring, and every tuple remain open.
+
+### E-M5-ARTIFACT-CACHE-POPULATION-AUDIT-001 — cold-cache composition boundary
+
+- Date/owner: 2026-07-15, Codex implementation owner.
+- Audit: complete reads of the disconnected downloader, strict extractor, cache entry publication/
+  verification, in-use lease, eviction, and warm-cache resolution modules plus their purpose tests
+  and workflow wiring. Caller search confirms there is still no product consumer.
+- Finding: cache entry publication already copies and re-hashes the verified archive, performs strict
+  archive inspection/extraction, verifies the complete extracted tree, writes the structured proof,
+  re-verifies the staged entry, and atomically publishes under the content lock. Calling the
+  extractor separately would duplicate work and widen the orchestration surface. The smallest cold
+  capability is therefore cache-local exclusive download staging, exact download-result identity
+  checking, existing immutable publication, staging cleanup, then in-use lease acquisition before
+  exposure. A publish-to-lease eviction race must propagate closed; later resolution may retry it.
+- Required boundary: absolute explicit cache root, physically owned `downloads` namespace, unique
+  per-attempt directory, exact operation order, cleanup on success/failure/cancellation, immutable
+  returned entry, and lease release when cancellation wins after acquisition. Download, extracted-
+  tree/integrity, cleanup, publication, and lease errors are not fallback-classified here.
+- Deliberately absent: Electron/startup caller, proxy policy, SSH transfer/install/launch,
+  `ORCA_RELAY_PATH`, Beta setting, fallback state machine, tuple enablement, release publication,
+  eviction scheduling, production resources, and default behavior.
+- Implementation evidence correction: the first real cold→warm integration run exposed that cache
+  lookup/publication return physical entry paths while in-use acquisition compared them with the
+  caller's logical cache-root spelling. This is an implementation defect under a symlinked ancestor,
+  not a primary-plan decision change; the HTML plan already requires physically owned cache paths
+  and needs no content correction. Canonicalize the lease operation to the existing physical cache
+  root before identity comparison, locking, lease creation, and recency recording.
+
+### E-M5-ARTIFACT-CACHE-POPULATION-LOCAL-RED-001 — cold population composition is absent
+
+- Date/owner: 2026-07-15, Codex implementation owner.
+- Command: `pnpm exec vitest run --config config/vitest.config.ts --maxWorkers=1
+src/main/ssh/ssh-relay-artifact-cache-population.test.ts`.
+- Result: expected FAIL, one failed suite / zero tests in 1.52 s because
+  `./ssh-relay-artifact-cache-population` does not exist. Seven purpose cases fix exclusive staging,
+  download → publish → cleanup → lease ordering, absolute-root rejection, download identity,
+  fail-closed download/publication/lease behavior, post-lease cancellation release, and concurrent
+  staging isolation before implementation.
+- Consumer disconnection: only the purpose test imports the absent module; no Electron/startup,
+  SSH, mode, fallback, tuple, release publication, or default caller exists.
+
+### E-M5-ARTIFACT-CACHE-PHYSICAL-ROOT-LOCAL-RED-001 — cold-to-warm lease spelling mismatch
+
+- Date/owner: 2026-07-15, Codex implementation owner.
+- Command: `pnpm exec vitest run --config config/vitest.config.ts --maxWorkers=1
+src/main/ssh/ssh-relay-artifact-cache-population-integration.test.ts`.
+- Result: expected FAIL after adding the real post-population warm lookup/lease assertion: 1 file,
+  2/2 failed in 787 ms with `SSH relay artifact cache in-use entry path disagrees with its content
+identity`. On macOS, `tmpdir()` uses logical `/var/...` while cache publication/lookup correctly
+  return physical `/private/var/...`; lease acquisition compared the physical entry to the logical
+  root before any I/O. Both Linux tar/Brotli and Windows ZIP fixture cases reproduce the same client-
+  path defect.
+- Required correction: resolve the physical cache root once inside lease acquisition and use it for
+  entry identity, the content lock, lease creation, and recency. Do not weaken exact-entry checks or
+  change cache ownership, eviction, SSH, fallback, tuple, publication, or default behavior.
+
+### E-M5-ARTIFACT-CACHE-PHYSICAL-ROOT-CORRECTION-LOCAL-001 — exact physical lease identity
+
+- Date/owner: 2026-07-15, Codex implementation owner.
+- Correction: `acquireSshRelayArtifactCacheInUseLease` resolves the existing cache root and existing
+  entry to physical paths, requires the entry to equal the exact physical content-addressed path,
+  and uses that physical root for locking, lease creation, and recency. A missing entry retains the
+  existing domain error; a different existing path remains rejected. No final-entry symlink or
+  alternate content path becomes acceptable.
+- Evidence-gated refinement: the first root-only attempt caused 3/5 existing lease tests to reject
+  legitimate logical entry spellings; the root+entry attempt left 1/5 red because raw `realpath`
+  `ENOENT` bypassed the established missing-entry diagnostic. Neither result was accepted. The final
+  correction wraps only `ENOENT` and preserves all other failures.
+- Focused command: `/usr/bin/time -l pnpm exec vitest run --config config/vitest.config.ts
+--maxWorkers=1 src/main/ssh/ssh-relay-artifact-cache-population-integration.test.ts
+src/main/ssh/ssh-relay-artifact-cache-in-use-lease.test.ts` — PASS, 2 files / 7 tests in 2.40 s
+  Vitest, 4.14 s wall, 134,299,648-byte maximum RSS. A subsequent assertion for an existing but
+  misplaced content path also passes while remaining rejected by exact identity.
+- Focused plus native workflow oracle: `/usr/bin/time -l pnpm exec vitest run --config
+config/vitest.config.ts --maxWorkers=1 src/main/ssh/ssh-relay-artifact-cache-population.test.ts
+src/main/ssh/ssh-relay-artifact-cache-population-integration.test.ts
+src/main/ssh/ssh-relay-artifact-cache-in-use-lease.test.ts
+config/scripts/ssh-relay-runtime-workflow.test.mjs` — PASS, 4 files / 21 tests in 4.20 s Vitest,
+  7.89 s wall, 138,723,328-byte maximum RSS.
+- Boundary: this corrects physical path identity only. It adds no network, Electron/startup caller,
+  SSH, setting, fallback, tuple, release publication, or default behavior.
+
+### E-M5-ARTIFACT-CACHE-POPULATION-LOCAL-001 — disconnected cold-cache population
+
+- Date/owner: 2026-07-15, Codex implementation owner.
+- Implementation: `ssh-relay-artifact-cache-population.ts` creates a physically validated cache-
+  local `downloads` namespace and unique per-attempt directory, invokes the bounded verified
+  downloader, checks its exact destination/size/hash result, delegates strict copy/hash/extraction/
+  complete-tree proof and atomic publication to the existing publisher, removes download staging,
+  then acquires an in-use lease before exposing a frozen entry. All errors propagate without
+  availability/fallback classification; cancellation after lease acquisition releases the lease.
+- Focused command: `/usr/bin/time -l pnpm exec vitest run --config config/vitest.config.ts
+--maxWorkers=1 src/main/ssh/ssh-relay-artifact-cache-population.test.ts
+src/main/ssh/ssh-relay-artifact-cache-population-integration.test.ts` — PASS, 2 files / 9 tests in
+  1.01 s Vitest, 1.88 s wall, 139,051,008-byte maximum RSS. Seven operation-order/failure cases
+  cover cleanup-before-lease exposure, absolute-root rejection, inconsistent download identity,
+  download/publication failure cleanup, publish-to-lease eviction failure, post-lease cancellation
+  release, and concurrent unique staging. Two credential-free integration cases feed exact signed
+  Linux tar/Brotli and Windows ZIP fixtures through an in-memory Electron response into the real
+  downloader, strict publisher, complete-tree verifier, and in-use lease.
+- Native workflow wiring/oracle: the purpose suite is present once in each POSIX and PowerShell
+  native artifact command. `/usr/bin/time -l pnpm exec vitest run --config config/vitest.config.ts
+--maxWorkers=1 src/main/ssh/ssh-relay-artifact-cache-population.test.ts
+src/main/ssh/ssh-relay-artifact-cache-population-integration.test.ts
+config/scripts/ssh-relay-runtime-workflow.test.mjs` — PASS, 3 files / 16 tests in 1.52 s Vitest,
+  2.44 s wall, 132,792,320-byte maximum RSS.
+- Broader SSH relay command: `/usr/bin/time -l pnpm exec vitest run --config
+config/vitest.config.ts --maxWorkers=1 --silent=true src/main/ssh/ssh-relay-*.test.ts` — PASS, 29
+  files / 332 tests; 3 declared full-size files/tests skipped; final post-correction run 25.88 s
+  Vitest, 27.58 s wall, 253,640,704-byte maximum RSS.
+- Release-script command: `/usr/bin/time -l pnpm exec vitest run --config
+config/vitest.config.ts --maxWorkers=1 --silent=true config/scripts/ssh-relay-runtime-*.test.mjs`
+  — PASS, 50 files / 280 tests in a final post-correction 38.77 s Vitest, 40.68 s wall,
+  189,661,184-byte maximum RSS.
+- Repository gates: targeted `oxfmt --write` completes on six files in 7.640 s; `pnpm typecheck`
+  and `pnpm lint` pass. Lint includes switch exhaustiveness, 41 reliability gates, no new max-lines
+  bypass, bundled skill-guide verification, 9,837 localization references and locale parity, and
+  zero localization coverage candidates. Local Node 26.0.0 emits only the expected engine warning;
+  exact Node 24 native proof remains pending.
+- Boundary: no Electron/startup caller, live network/proxy integration, eviction scheduling, SSH
+  transfer/install/launch, `ORCA_RELAY_PATH`, Beta setting, fallback classification, tuple
+  enablement, release publication, or default-path change. Legacy remains unchanged.
+- Remaining proof for this slice: commit the coherent package and require all six primary native
+  Node 24 jobs plus adjacent PR/E2E gates before adding another desktop orchestration boundary.
+
 ## Accepted Gaps
 
 No product gap is accepted merely because it appears in this list. Each entry requires explicit
@@ -14546,11 +14704,11 @@ The project is not complete until every applicable item below is checked with ev
 
 ## Next Required Action
 
-Checkpoint the disconnected compile-time trust-root package and require exact-head Node 24 proof on
+Checkpoint the disconnected cold-cache population package and require exact-head Node 24 proof on
 Linux, macOS, and Windows x64/arm64. After that proof, audit the next smallest non-signing desktop
-orchestration boundary; do not provision production secrets/environments, embed unreviewed keys or
-manifest bytes, add SSH transfer/install, mode wiring, tuple enablement, release publication, or
-default behavior.
+orchestration boundary; do not provision production secrets/environments, add an Electron/startup
+consumer, embed unreviewed keys or manifest bytes, add SSH transfer/install, mode wiring, fallback,
+tuple enablement, release publication, or default behavior.
 Keep Node upstream `.tar.xz` inputs, Windows ZIP, `ORCA_RELAY_PATH`, existing desktop required-assets
 behavior, detached-signature byte encoding, Windows arm64 build 26100, macOS 13.5, Linux kernel 4.18,
 release-cut, desktop builds, publication, and every tuple separately gated.

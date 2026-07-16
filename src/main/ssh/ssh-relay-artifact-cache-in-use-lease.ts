@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto'
-import { lstat, mkdir, open, rename, rm, type FileHandle } from 'node:fs/promises'
+import { lstat, mkdir, open, realpath, rename, rm, type FileHandle } from 'node:fs/promises'
 import { hostname } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 
@@ -217,14 +217,23 @@ export async function acquireSshRelayArtifactCacheInUseLease({
   const timeout = AbortSignal.timeout(ACQUISITION_TIMEOUT_MS)
   const activeSignal = signal ? AbortSignal.any([signal, timeout]) : timeout
   activeSignal.throwIfAborted()
-  const expectedPath = resolve(cacheRoot, 'entries', exactContentHex(entry.contentId))
-  if (resolve(entry.entryPath) !== expectedPath) {
+  // Why: publication returns physical entry paths, so logical aliases such as macOS /var must be
+  // canonicalized before exact identity checks and all lease-owned writes.
+  const physicalCacheRoot = await realpath(resolve(cacheRoot))
+  const expectedPath = resolve(physicalCacheRoot, 'entries', exactContentHex(entry.contentId))
+  const physicalEntryPath = await realpath(resolve(entry.entryPath)).catch((error) => {
+    if (sshRelayArtifactCacheErrorCode(error) === 'ENOENT') {
+      throw new Error('SSH relay artifact cache in-use entry no longer exists', { cause: error })
+    }
+    throw error
+  })
+  if (physicalEntryPath !== expectedPath) {
     throw new Error(
       'SSH relay artifact cache in-use entry path disagrees with its content identity'
     )
   }
   const lock = await acquireSshRelayArtifactCacheLock({
-    cacheRoot,
+    cacheRoot: physicalCacheRoot,
     contentId: entry.contentId,
     signal: activeSignal
   })
@@ -238,9 +247,12 @@ export async function acquireSshRelayArtifactCacheInUseLease({
     if (!metadata.isDirectory() || metadata.isSymbolicLink()) {
       throw new Error('SSH relay artifact cache in-use entry is not a complete final directory')
     }
-    const lease = await createLease(cacheRoot, entry.contentId)
+    const lease = await createLease(physicalCacheRoot, entry.contentId)
     try {
-      await recordSshRelayArtifactCacheRecency({ cacheRoot, contentId: entry.contentId })
+      await recordSshRelayArtifactCacheRecency({
+        cacheRoot: physicalCacheRoot,
+        contentId: entry.contentId
+      })
       return lease
     } catch (error) {
       await lease.release().catch(() => {})
