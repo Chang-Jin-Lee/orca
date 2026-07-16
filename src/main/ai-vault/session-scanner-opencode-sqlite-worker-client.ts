@@ -48,6 +48,13 @@ type PendingCall = {
 // or crash (→ scan issue), so the routing callers pick the right degraded path.
 class OpenCodeSqliteWorkerUnavailableError extends Error {}
 
+/**
+ * Main-thread bridge that runs OpenCode SQLite reads on a persistent worker
+ * thread. Dispatches one request at a time (FIFO), times each request out from
+ * dispatch, respawns after faults (capped by `MAX_CONSECUTIVE_DEATHS`), tears
+ * the worker down after `IDLE_TEARDOWN_MS` of inactivity, and transparently
+ * falls back to the in-process readers when no worker can be spawned.
+ */
 export class OpenCodeSqliteWorkerClient {
   private worker: Worker | null = null
   private active: PendingCall | null = null
@@ -65,6 +72,14 @@ export class OpenCodeSqliteWorkerClient {
     this.log = options.log ?? ((message) => console.warn(message))
   }
 
+  /**
+   * List session candidates from the given OpenCode databases on the worker.
+   * @param args.dbPaths - Absolute paths to opencode.db files to scan.
+   * @param args.limit - Maximum number of sessions to return per database.
+   * @param args.issues - Collected scan issues (worker issues are merged in).
+   * @returns Synthetic candidates sorted by `time_updated` DESC; empty (with a
+   *   scan issue) when the worker times out or crashes.
+   */
   async list(args: {
     dbPaths: readonly string[]
     limit: number
@@ -95,6 +110,14 @@ export class OpenCodeSqliteWorkerClient {
     }
   }
 
+  /**
+   * Parse a single OpenCode session on the worker.
+   * @param args.dbPath - Absolute path to the opencode.db file.
+   * @param args.sessionId - Primary key in the `session` table.
+   * @param args.platform - Platform used for resume-command generation.
+   * @returns The parsed session, or `null` when it does not exist; rejects on
+   *   worker timeout/crash so the scanner records a per-session scan issue.
+   */
   async parse(args: {
     dbPath: string
     sessionId: string
@@ -230,7 +253,10 @@ export class OpenCodeSqliteWorkerClient {
   }
 
   private onWorkerExit(code: number): void {
-    if (code === 0 && !this.active) {
+    // A clean self-exit is not a death, but the stale handle must be dropped
+    // or the next dispatch would post into the dead worker and stall to timeout.
+    if (code === 0 && !this.active && this.queue.length === 0) {
+      this.destroyWorker()
       return
     }
     this.onWorkerFault(new Error(`OpenCode SQLite worker exited with code ${code}`))

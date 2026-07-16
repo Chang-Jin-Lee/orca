@@ -46,6 +46,13 @@ function getSharedClient(): OpenCodeSqliteWorkerClient {
   return sharedClient
 }
 
+/**
+ * List OpenCode SQLite session candidates through the shared worker client.
+ * @param args.dbPaths - Absolute paths to opencode.db files to scan.
+ * @param args.limit - Maximum number of sessions to return per database.
+ * @param args.issues - Collected scan issues to append errors to.
+ * @returns Synthetic candidates sorted by `time_updated` DESC.
+ */
 export function listOpenCodeSqliteSessionsViaWorker(args: {
   dbPaths: readonly string[]
   limit: number
@@ -54,6 +61,13 @@ export function listOpenCodeSqliteSessionsViaWorker(args: {
   return getSharedClient().list(args)
 }
 
+/**
+ * Parse one OpenCode SQLite session through the shared worker client.
+ * @param args.dbPath - Absolute path to the opencode.db file.
+ * @param args.sessionId - Primary key in the `session` table.
+ * @param args.platform - Platform used for resume-command generation.
+ * @returns The parsed session, or `null` when it does not exist.
+ */
 export function parseOpenCodeSqliteSessionViaWorker(args: {
   dbPath: string
   sessionId: string
