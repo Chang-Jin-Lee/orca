@@ -29,7 +29,9 @@ type SchedulerDebugApi = {
 }
 
 const SIMULATED_SECONDS = 10
-const FRAME_INTERVAL_MS = 16
+// Fractional 60Hz interval: integer 16ms would gate at 62.5 frames/s and
+// overstate the frame-capped delivery ceiling.
+const FRAME_INTERVAL_MS = 1000 / 60
 const CHUNK_BYTES = 80
 
 function createTerminal() {
@@ -74,13 +76,15 @@ async function measureRate(chunksPerSecond: number): Promise<{
   const totalMs = SIMULATED_SECONDS * 1000
   let deliveries = 0
   let nextChunkAt = 0
+  let nextFrameAt = 0
 
   for (let now = 0; now <= totalMs; now += 1) {
-    if (now % FRAME_INTERVAL_MS === 0 && pendingFrames.length > 0) {
+    if (now >= nextFrameAt && pendingFrames.length > 0) {
       const frames = pendingFrames.splice(0, pendingFrames.length)
       for (const frame of frames) {
         frame(now)
       }
+      nextFrameAt += FRAME_INTERVAL_MS
     }
     while (now >= nextChunkAt && deliveries < chunksPerSecond * SIMULATED_SECONDS) {
       scheduler.writeTerminalOutput(terminal as never, chunk, {
