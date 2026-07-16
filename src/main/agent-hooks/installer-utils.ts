@@ -2,6 +2,7 @@ import {
   existsSync,
   mkdirSync,
   readFileSync,
+  statSync,
   writeFileSync,
   chmodSync,
   copyFileSync,
@@ -353,7 +354,11 @@ function writeScriptWithAclRetry(scriptPath: string, content: string): void {
   }
 }
 
-export function writeHooksJson(configPath: string, config: HooksConfig): void {
+export function writeHooksJson(
+  configPath: string,
+  config: HooksConfig,
+  options?: { preserveMode?: boolean }
+): void {
   const dir = dirname(configPath)
   mkdirSync(dir, { recursive: true })
 
@@ -368,6 +373,8 @@ export function writeHooksJson(configPath: string, config: HooksConfig): void {
   // UUID suffix makes the tmp path unique per call.
   const tmpPath = join(dir, `.${Date.now()}-${randomUUID()}.tmp`)
   const serialized = `${JSON.stringify(config, null, 2)}\n`
+  const existingMode =
+    options?.preserveMode === true && existsSync(configPath) ? statSync(configPath).mode : undefined
 
   // Why: skip the write (and therefore the .bak rotation) when the on-disk
   // content is already identical. Without this, every install() rewrites the
@@ -386,7 +393,7 @@ export function writeHooksJson(configPath: string, config: HooksConfig): void {
   }
 
   try {
-    writeFileSync(tmpPath, serialized, 'utf-8')
+    writeFileSync(tmpPath, serialized, { encoding: 'utf-8', mode: existingMode })
     // Why: single rolling backup — one file, no accumulation in ~/.claude.
     // Protects against a merge-logic bug producing bad JSON; the original is
     // always recoverable from <configPath>.bak until the next write.

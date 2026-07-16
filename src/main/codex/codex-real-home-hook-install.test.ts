@@ -1,5 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  chmodSync,
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+  writeFileSync
+} from 'node:fs'
 import type * as NodeOs from 'node:os'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -137,6 +148,67 @@ describe('ensureRealHomeCodexHookState (install)', () => {
       readFileSync(join(userDataDir, 'codex-real-home-hooks', 'hooks.json.pre-orca'), 'utf-8')
     ).toBe(`${JSON.stringify(userConfig, null, 2)}\n`)
   })
+
+  it('updates a symlinked hooks.json target without replacing the symlink', () => {
+    grantSucceeds()
+    const dotfilesDir = join(fakeHomeDir, 'dotfiles')
+    const targetPath = join(dotfilesDir, 'hooks.json')
+    mkdirSync(dotfilesDir, { recursive: true })
+    writeFileSync(
+      targetPath,
+      `${JSON.stringify({ hooks: { Stop: [{ hooks: [{ type: 'command', command: 'mine.sh' }] }] } }, null, 2)}\n`,
+      'utf-8'
+    )
+    symlinkSync(targetPath, getRealHooksJsonPath())
+
+    expect(ensureRealHomeCodexHookState({ hooksEnabled: true, userDataPath: userDataDir })).toBe(
+      'installed'
+    )
+
+    expect(lstatSync(getRealHooksJsonPath()).isSymbolicLink()).toBe(true)
+    expect(JSON.parse(readFileSync(targetPath, 'utf-8')).hooks.Stop).toHaveLength(2)
+  })
+
+  it('keeps the managed lane and original bytes when the pristine backup cannot be created', () => {
+    grantSucceeds()
+    const original = `${JSON.stringify({ hooks: { Stop: [] } }, null, 2)}\n`
+    writeFileSync(getRealHooksJsonPath(), original, 'utf-8')
+    writeFileSync(join(userDataDir, 'codex-real-home-hooks'), 'blocks backup directory', 'utf-8')
+
+    expect(ensureRealHomeCodexHookState({ hooksEnabled: true, userDataPath: userDataDir })).toBe(
+      'unavailable'
+    )
+
+    expect(readFileSync(getRealHooksJsonPath(), 'utf-8')).toBe(original)
+    expect(grantMock).not.toHaveBeenCalled()
+  })
+
+  it.skipIf(process.platform === 'win32')('preserves restrictive hooks.json permissions', () => {
+    grantSucceeds()
+    writeFileSync(getRealHooksJsonPath(), '{ "hooks": {} }\n', 'utf-8')
+    chmodSync(getRealHooksJsonPath(), 0o600)
+
+    expect(ensureRealHomeCodexHookState({ hooksEnabled: true, userDataPath: userDataDir })).toBe(
+      'installed'
+    )
+
+    expect(statSync(getRealHooksJsonPath()).mode & 0o777).toBe(0o600)
+  })
+
+  it.skipIf(process.platform === 'win32')(
+    'restores restrictive hooks.json permissions after grant fallback',
+    () => {
+      grantUnavailable()
+      writeFileSync(getRealHooksJsonPath(), '{ "hooks": {} }\n', 'utf-8')
+      chmodSync(getRealHooksJsonPath(), 0o600)
+
+      expect(ensureRealHomeCodexHookState({ hooksEnabled: true, userDataPath: userDataDir })).toBe(
+        'unavailable'
+      )
+
+      expect(statSync(getRealHooksJsonPath()).mode & 0o777).toBe(0o600)
+    }
+  )
 
   it('rolls the file back byte-exactly when the grant lane is unavailable', () => {
     grantUnavailable()
