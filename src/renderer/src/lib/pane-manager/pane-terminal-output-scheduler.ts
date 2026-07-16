@@ -1222,7 +1222,15 @@ export function writeTerminalOutput(
       clearForegroundCoalesce(queued)
       clearForegroundHoldSafety(queued)
       if (options.latencySensitive === false) {
-        scheduleForegroundFrameDrain(queued)
+        if (queued.foregroundFrameWait) {
+          scheduleForegroundFrameDrain(queued)
+          return
+        }
+        // Why: the frame gate covers only the initial drain of an idle queue.
+        // A backlog the frame already released keeps the parse-clocked
+        // continuation; re-gating every arrival would collapse sustained
+        // floods to one drain per animation frame.
+        scheduleDrain(0)
         return
       }
       releaseForegroundFrameWait(queued)

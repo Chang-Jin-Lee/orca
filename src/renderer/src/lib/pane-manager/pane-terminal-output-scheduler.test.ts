@@ -631,6 +631,41 @@ describe('pane terminal output scheduler', () => {
     )
   })
 
+  it('keeps the parse-clocked continuation when passive chunks arrive behind a released backlog', async () => {
+    // Why: the frame gate must cover only the initial drain. Re-gating every
+    // passive arrival collapsed sustained visible floods to one 128KB drain
+    // per frame (~4MB/s vs the ~30MB/s parse-clocked ceiling).
+    vi.useFakeTimers()
+    const frames = installManualAnimationFrames()
+    const { writeTerminalOutput } = await loadScheduler()
+    const terminal = createTerminal()
+
+    writeTerminalOutput(terminal, 'x'.repeat(512 * 1024), {
+      foreground: true,
+      latencySensitive: false
+    })
+    expect(frames.pendingCount()).toBe(1)
+    frames.runNext()
+    const writesAfterFrame = terminal.write.mock.calls.length
+    expect(writesAfterFrame).toBeGreaterThan(0)
+
+    writeTerminalOutput(terminal, 'y'.repeat(64 * 1024), {
+      foreground: true,
+      latencySensitive: false
+    })
+
+    expect(frames.pendingCount()).toBe(0)
+    vi.advanceTimersByTime(8)
+    expect(terminal.write.mock.calls.length).toBeGreaterThan(writesAfterFrame)
+
+    for (let tick = 0; tick < 200; tick++) {
+      vi.advanceTimersByTime(4)
+    }
+    const written = terminal.write.mock.calls.map(([data]) => data as string).join('')
+    expect(written).toBe('x'.repeat(512 * 1024) + 'y'.repeat(64 * 1024))
+    expect(frames.pendingCount()).toBe(0)
+  })
+
   it('coalesces passive tiny chunks and their ACK credits into one frame write', async () => {
     vi.useFakeTimers()
     const frames = installManualAnimationFrames()
@@ -1515,12 +1550,14 @@ describe('pane terminal output scheduler', () => {
     expect(output).not.toContain('Orca skipped')
     expect(output).toContain('x'.repeat(1024))
 
-    // But the scaled cap still bounds a runaway flood.
+    // But the scaled cap still bounds a runaway flood. The backlog was already
+    // frame-released, so these arrivals ride the parse-clocked continuation.
     terminal.write.mockClear()
     for (let i = 0; i < 13; i++) {
       writeTerminalOutput(terminal, chunk, { foreground: true, latencySensitive: false })
     }
-    frames.runNext()
+    expect(frames.pendingCount()).toBe(0)
+    vi.advanceTimersByTime(0)
     output = terminal.write.mock.calls.map(([data]) => data).join('')
     expect(output).toContain('Orca skipped a burst of terminal output')
   })
