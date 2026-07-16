@@ -46,6 +46,21 @@ describe('Codex trust config rollback', () => {
     expect(() => readFileSync(configPath)).toThrowError(/ENOENT/)
   })
 
+  it('removes an RPC-created dangling-symlink target without deleting the user link', () => {
+    const configPath = tempConfigPath()
+    const targetDir = join(configPath, '..', 'dotfiles')
+    const targetPath = join(targetDir, 'codex-config.toml')
+    mkdirSync(targetDir)
+    symlinkSync(join('dotfiles', 'codex-config.toml'), configPath)
+    const snapshot = captureCodexTrustConfig(configPath)
+    writeFileSync(targetPath, 'rpc mutation')
+
+    restoreCodexTrustConfig(configPath, snapshot)
+
+    expect(lstatSync(configPath).isSymbolicLink()).toBe(true)
+    expect(() => readFileSync(targetPath)).toThrowError(/ENOENT/)
+  })
+
   it('atomically recreates exact contents and mode after the file disappears', () => {
     const configPath = tempConfigPath()
     const original = Buffer.from('# comment\r\n[hooks]\r\n')

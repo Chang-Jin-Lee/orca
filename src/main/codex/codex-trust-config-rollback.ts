@@ -5,20 +5,34 @@ import {
   lstatSync,
   openSync,
   readFileSync,
+  readlinkSync,
   realpathSync,
   unlinkSync,
   writeFileSync
 } from 'node:fs'
 import { randomUUID } from 'node:crypto'
+import { dirname, resolve } from 'node:path'
 import { renameFileWithWindowsRetry } from '../codex-accounts/fs-utils'
 
 export type CodexTrustConfigSnapshot =
-  | { existed: false }
+  | { existed: false; restorePath?: string }
   | { existed: true; contents: Buffer; mode: number; restorePath: string }
 
 function resolveConfigRestorePath(tomlPath: string): string {
   try {
-    return lstatSync(tomlPath).isSymbolicLink() ? realpathSync.native(tomlPath) : tomlPath
+    if (!lstatSync(tomlPath).isSymbolicLink()) {
+      return tomlPath
+    }
+    try {
+      return realpathSync.native(tomlPath)
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+        throw error
+      }
+      // Why: a dangling dotfiles link is still user-owned state. Target the
+      // lexical destination so rollback removes an RPC-created file, not the link.
+      return resolve(dirname(tomlPath), readlinkSync(tomlPath))
+    }
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
       return tomlPath
@@ -34,7 +48,7 @@ export function captureCodexTrustConfig(tomlPath: string): CodexTrustConfigSnaps
     descriptor = openSync(restorePath, 'r')
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-      return { existed: false }
+      return restorePath === tomlPath ? { existed: false } : { existed: false, restorePath }
     }
     throw error
   }
@@ -58,7 +72,7 @@ export function restoreCodexTrustConfig(
 ): void {
   if (!snapshot.existed) {
     try {
-      unlinkSync(tomlPath)
+      unlinkSync(snapshot.restorePath ?? tomlPath)
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
         throw error
