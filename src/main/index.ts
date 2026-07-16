@@ -135,6 +135,7 @@ import {
 } from './codex/codex-real-home-hook-install'
 import { setCodexTrustGrantTelemetry } from './codex/codex-hook-trust-grant'
 import { startCodexSessionBackfillInBackground } from './codex/codex-session-backfill'
+import { startCodexSessionIndexHealInBackground } from './codex/codex-session-index-heal'
 import { resolveHostCodexSessionSourceHome } from './codex/codex-session-source-home'
 import { getDefaultWslDistro } from './wsl'
 import { ClaudeAccountService } from './claude-accounts/service'
@@ -1807,9 +1808,15 @@ app.whenReady().then(async () => {
   // #8612). Deferred so startup and first PTY spawns never compete with the
   // sessions tree walk.
   setTimeout(() => {
-    void startCodexSessionBackfillInBackground(
-      {},
-      resolveHostCodexSessionSourceHome(store!.getSettings())
+    const systemCodexHomePathOverride = resolveHostCodexSessionSourceHome(store!.getSettings())
+    // Why: the heal pass chains after the backfill settles so thread/read only
+    // runs once the audit ledger covers this startup's newly linked rollouts;
+    // it also drains sessions left pending by an interrupted earlier pass.
+    void startCodexSessionBackfillInBackground({}, systemCodexHomePathOverride).then(() =>
+      startCodexSessionIndexHealInBackground(
+        { shouldStop: () => isQuitting },
+        systemCodexHomePathOverride
+      )
     )
   }, 15_000)
   claudeRuntimeAuth = new ClaudeRuntimeAuthService(store)
