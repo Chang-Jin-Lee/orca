@@ -8,8 +8,8 @@ work; keep exact commands, runner identities, hashes, metrics, and residual gaps
 
 Date created: 2026-07-14<br>
 Last updated: 2026-07-15<br>
-Current phase: Milestone 5 / Work Package 4 desktop cache boundary — **Checkpoint — 2026-07-15, Codex implementation owner: immutable cache-entry gate closed; evidence checkpoint/push required before in-use lease/eviction work**. E-M5-ARTIFACT-CACHE-ENTRY-CI-001 closes all six primary Node 24 source and exact full-size cold-publication/warm-verified-lookup cells at `3c1ead8fb1e1f3b64abaf78705abb0c801a1d64b`. PR Checks and Golden E2E pass. No cache consumer, eviction, SSH path, mode, tuple, release write, or default behavior is connected.<br>
-Session checkpoint: **In progress — 2026-07-15, Codex implementation owner** — resumed with user authority for end-to-end PR-contained implementation, commits, pushes, CI, rehearsals, and release writes, with merging to `main` explicitly prohibited. The first native run exposed and recorded Windows open-handle rename and equivalent zlib-error-oracle REDs; narrow corrections passed locally and at exact-head CI. In replacement run `29459424864`, all six primary jobs pass the 10 lock and 21 extraction contracts plus deterministic artifact build/smoke. The workflow's sole failure is the retained Windows arm64 hosted build-26200 versus required-26100 floor rejection after runtime/archive/tree/Node/PTTY/watcher proof; no tuple is enabled from it. PR Checks `29459424977` and Golden E2E `29459424789` pass. There is no release publication, cache entry, cache consumer, SSH transfer/install, tuple enablement, or production/default behavior change. Legacy remains the production default.<br>
+Current phase: Milestone 5 / Work Package 4 desktop cache boundary — **In progress — 2026-07-15, Codex implementation owner: wire and prove disconnected in-use lease/recency/2 GiB eviction on all six native runners**. The purpose-named RED is recorded, 14 focused contracts and the 126-test artifact source suite are locally green, and the next gate is full-size eviction measurement plus workflow-contract and all-six native evidence. Keep every Electron, downloader, SSH, setting, tuple, publication, and default-path consumer disconnected.<br>
+Session checkpoint: **In progress — 2026-07-15, Codex implementation owner** — user authority covers end-to-end PR-contained implementation, commits, pushes, CI, rehearsals, and release writes; merging to `main` remains explicitly prohibited. The active uncommitted package implements only cross-process in-use leases, persistent recency, exact logical-byte accounting, and bounded eviction. It has no Electron, downloader, SSH, setting, tuple, publication, or default-path consumer. Legacy remains the production default.<br>
 Primary design: [SSH relay GitHub Release plan](./2026-07-14-ssh-relay-github-release-plan.html)<br>
 Motivating issues: [#8450](https://github.com/stablyai/orca/issues/8450), [#1693](https://github.com/stablyai/orca/issues/1693)
 
@@ -13490,6 +13490,170 @@ src/main/ssh/ssh-relay-artifact-cache-entry-full-size.test.ts`: workflow and foc
 - Follow-up: checkpoint and push this evidence, then audit and RED-test only the disconnected in-use
   lease/recency/2 GiB eviction package. Keep consumers and SSH behavior separate.
 
+### E-M5-ARTIFACT-CACHE-EVICTION-AUDIT-001 — In-use lease, recency, and 2 GiB eviction boundary
+
+- Date: 2026-07-15
+- Owner: Codex implementation owner
+- Source: exact pushed cache-entry evidence head `0ae3e005f` on draft PR #8741.
+- Exact audit commands: complete reads of the cache entry, proof, verification, content-lock record,
+  content-lock lease, and content-lock tests; `rg --files src/main/ssh` over relay cache/artifact
+  modules; targeted `rg -n` over cache eviction, in-use lease, recency/LRU, protected content, and
+  native workflow invocations in `src/main`, `src/shared`, `.github/workflows`, and `config/scripts`.
+- Findings:
+  - no relay cache eviction, in-use lease, persistent recency, exact cache-byte accounting, or
+    consumer exists. The immutable entry becomes selectable only after complete verification, but a
+    future consumer needs a cross-process reference before the content lock is released to eviction;
+  - in-use references must be shared, not exclusive. Each exact content ID therefore owns a
+    token-named lease directory with a strict nonce/host/PID/acquired/heartbeat record and owner-handle
+    heartbeat. Active, malformed, remote-host, PID-reused, or otherwise ambiguous leases protect the
+    entry. Only a confirmed stale same-host dead owner may be tombstoned and removed;
+  - lease acquisition and eviction both acquire the proven per-content lock. Acquisition rechecks the
+    exact final entry path before making its lease visible; eviction rechecks entry state, staging, and
+    leases while holding the same lock. This closes the lookup-to-reference/delete race without
+    changing cache lookup or adding a consumer;
+  - successful lease acquisition/release records persistent recency outside the immutable entry via
+    token-shaped append records. Readers take the greatest valid timestamp; malformed or unexpected
+    recency is ambiguous and conservatively protects the entry. Missing recency uses the immutable
+    entry timestamp as its initial publication order;
+  - one global eviction transaction is serialized by the proven lock implementation in a dedicated
+    eviction namespace, so no valid content digest is reserved. Per-entry locks still serialize with
+    publication and reference acquisition;
+  - exact accounting sums stable logical regular-file sizes without following links and rejects
+    unsafe-integer arithmetic or ambiguous/special trees. The 2 GiB limit applies to complete
+    selectable entries; staging, locked, ambiguous, current-manifest, and running content are never
+    deleted and can leave an explicit over-budget residual;
+  - eviction orders idle complete entries by persistent LRU with a content-ID tie break. Strictly
+    protected content is never removed. Caller-declared current/previous retention is considered only
+    after ordinary candidates and may be removed only when required to meet the cap, matching “retain
+    when they fit”;
+  - deletion rechecks all guards under the content lock, atomically renames only the exact final entry
+    to a token-shaped unselectable tombstone, then removes owned bytes. Cancellation is checked before
+    each bounded scan/acquire/delete stage and all acquired locks/leases must settle.
+- Required purpose-named contracts: exact paths/limits; multiple concurrent references; real
+  cross-process visibility; heartbeat and owner-only release; stale-dead cleanup; live/malformed/
+  remote/displaced-owner preservation; exact logical-byte accounting; deterministic LRU and tie
+  break; hard and preferred retention; staging/content-lock protection; concurrent eviction;
+  cancellation settlement; symlink/special/unsafe state protection; and no partial/tombstone selection.
+- Deliberately separate: cache-root selection, embedded-manifest loading, proxy/certificates,
+  downloader calls, offline transfer, SSH, remote install, ORCA_RELAY_PATH, fallback classification,
+  settings/mode, tuple enablement, release publication, and production/default behavior.
+- Follow-up: add `ssh-relay-artifact-cache-eviction.test.ts` with production modules absent, record
+  the RED, then implement only the audited lease/recency/eviction modules and require focused,
+  broad/static, native-workflow wiring, and all-six native evidence.
+
+### E-M5-ARTIFACT-CACHE-EVICTION-LOCAL-RED-001 — In-use lease and eviction capabilities are absent
+
+- Date: 2026-07-15
+- Owner: Codex implementation owner
+- Source: purpose-named `ssh-relay-artifact-cache-in-use-lease.test.ts` and
+  `ssh-relay-artifact-cache-eviction.test.ts` atop pushed evidence head `0ae3e005f`; production
+  lease/eviction modules deliberately absent.
+- Exact command: `/usr/bin/time -l pnpm exec vitest run --config config/vitest.config.ts
+--maxWorkers=1 src/main/ssh/ssh-relay-artifact-cache-in-use-lease.test.ts
+src/main/ssh/ssh-relay-artifact-cache-eviction.test.ts`.
+- Environment: macOS 26.2 arm64 build 25C56, Node v26.0.0, pnpm 10.24.0, Vitest 4.1.5.
+- Result: required RED; two failed suites / zero collected tests in 642ms Vitest / 2.57s wall,
+  132,841,472-byte maximum RSS, zero swaps. Imports fail because both audited production modules do
+  not exist.
+- Contracts encoded before implementation: exact paths/limits; shared concurrent and real
+  second-process leases; heartbeat and displaced-owner release; missing-entry rejection; exact
+  logical-byte accounting; LRU; hard/preferred retention; active/malformed/live/remote/stale-dead
+  lease handling; staging/content-lock/cancellation safety; concurrent evictors; and unsafe-link
+  preservation.
+- Consumer-disconnection oracle: tests import the new source capabilities directly and construct
+  isolated cache fixtures. No Electron, downloader, SSH, setting, mode, tuple, release, or default
+  call site is added.
+- Follow-up: implement only concrete in-use record, recency, lease, and eviction responsibilities;
+  make both purpose suites green without weakening conservative ambiguity or reference safety.
+
+### E-M5-ARTIFACT-CACHE-EVICTION-LOCAL-001 — Disconnected in-use leases and bounded eviction pass locally
+
+- Date: 2026-07-15
+- Owner: Codex implementation owner
+- Source: uncommitted package atop exact pushed evidence head `0ae3e005f`, following
+  E-M5-ARTIFACT-CACHE-EVICTION-AUDIT-001 and E-M5-ARTIFACT-CACHE-EVICTION-LOCAL-RED-001.
+- Implementation:
+  - strict token-named shared lease records bind content ID, nonce, host, PID, acquisition, heartbeat,
+    and directory identity. Acquisition and release serialize through the proven per-content lock;
+  - 5s heartbeats and owner-only release preserve active and displaced owners. Active, malformed,
+    remote-host, PID-reused/live, or otherwise ambiguous references block deletion. Only a stale
+    same-host owner whose PID is confirmed dead is atomically tombstoned and reclaimed;
+  - persistent token-shaped recency records live outside immutable entries and are bounded to the
+    newest valid timestamp. Missing recency starts at publication mtime; malformed/racing state is
+    ambiguous and protected;
+  - exact stable logical-file accounting follows no links and bounds each entry to 10,000 members.
+    Unsafe, special, unstable, or unaccountable trees remain protected;
+  - one dedicated global eviction lock serializes transactions, while per-content locks close
+    publication/reference/delete races. The default cap is 2 GiB; hard-protected content is never
+    removed, preferred current/previous content follows ordinary LRU candidates, and complete idle
+    entries become unselectable by atomic tombstone rename before owned recursive deletion.
+- Exact focused command: `/usr/bin/time -l pnpm exec vitest run --config
+config/vitest.config.ts --maxWorkers=1
+src/main/ssh/ssh-relay-artifact-cache-in-use-lease.test.ts
+src/main/ssh/ssh-relay-artifact-cache-eviction.test.ts`.
+- Final focused result: two passed files / 14 passed tests in 2.10s Vitest / 4.12s wall,
+  131,629,056-byte maximum RSS, zero swaps on macOS 26.2 arm64 build 25C56, Node v26.0.0, pnpm
+  10.24.0, Vitest 4.1.5.
+- Contracts prove exact paths/limits and invalid-input rejection, multiple references, real
+  child-process visibility, heartbeat/displaced-owner safety, missing-entry rejection, bounded
+  recency, exact accounting/deterministic LRU, hard/preferred retention, active/malformed/live/
+  remote/stale-dead behavior, staging/content-lock/cancellation settlement, concurrent eviction, and
+  unsafe linked-tree preservation.
+- Exact broader commands/results:
+  - `/usr/bin/time -l pnpm exec vitest run --config config/vitest.config.ts --maxWorkers=1
+src/main/ssh/ssh-relay-artifact-*.test.ts`: eight passed files / two environment-skipped files,
+    126 passed / two skipped tests in 15.49s Vitest / 23.55s wall, 159,383,552-byte maximum RSS,
+    zero swaps;
+  - `/usr/bin/time -l pnpm exec vitest run --config config/vitest.config.ts --maxWorkers=1
+src/main/ssh/ssh-relay-*.test.ts`: 21 passed files / three skipped files, 294 passed / three
+    skipped tests in 52.31s Vitest / 55.78s wall, 205,340,672-byte maximum RSS, zero swaps;
+  - `/usr/bin/time -l pnpm exec vitest run --config config/vitest.config.ts --maxWorkers=1
+config/scripts/ssh-relay-runtime-*.test.mjs`: 50 passed files / 279 passed tests in 86.52s
+    Vitest / 93.38s wall, 188,940,288-byte maximum RSS, zero swaps;
+  - `/usr/bin/time -l pnpm typecheck`: pass in 5.70s wall with 1,208,139,776-byte maximum RSS;
+  - `/usr/bin/time -l pnpm lint`: pass in 30.71s wall with 2,093,400,064-byte maximum RSS. Full
+    lint retains only existing unrelated warnings and includes switch exhaustiveness, 41 reliability
+    gates, max-lines ratchet, bundled-skill, and localization gates;
+  - `pnpm exec oxfmt --write` over all package/workflow/checklist files: pass in 4.334s;
+    `/usr/bin/git diff --check`: pass. No max-lines suppression or ratchet exception was added.
+- Consumer/diff oracle: direct source tests are the only caller. The preserved Milestone 0 resolver
+  pair has zero diff. No Electron/cache-root/downloader/SSH/setting/mode/tuple/publication/default
+  consumer exists; legacy remains the only production path.
+- Does not prove: Node 24/native-client behavior, exact full-size active retention/eviction resources,
+  disk-full/read-only/quota/inode faults, crash/power-loss durability, packaged Electron, SSH, native
+  trust, or any enabled tuple. All remain separately gated.
+- Follow-up: wire the purpose suites into both native families and extend the exact full-size cache
+  measurement through active retention, release, exact-byte eviction, and cleanup. Push the isolated
+  package and require all-six native source/full-size evidence before closing this combined cache
+  item or adding any consumer.
+
+### E-M5-ARTIFACT-CACHE-EVICTION-CI-WIRING-LOCAL-001 — Both native families require source and full-size eviction gates
+
+- Date: 2026-07-15
+- Owner: Codex implementation owner
+- Source: uncommitted workflow/test extension atop E-M5-ARTIFACT-CACHE-EVICTION-LOCAL-001.
+- Implementation: both POSIX and PowerShell native Node 24 source commands now require the 14
+  purpose-named lease/eviction contracts. The existing exact-artifact cache measurement keeps every
+  cold/warm JSON field and additionally acquires a real in-use lease, proves a zero-byte-cap eviction
+  retains the complete entry, releases the lease, then measures exact logical bytes reclaimed,
+  elapsed time, incremental RSS, entry removal, and test-root cleanup.
+- Budgets/oracles: each retention and eviction transaction is bounded at 5m and 80 MiB incremental
+  RSS; lease acquisition is bounded at 2m. The test timeout is the explicit sum of two entry, two
+  eviction, one acquisition, and 10s cleanup budgets. The native workflow must remove the measurement
+  root after the test on both shell families.
+- Exact command: `/usr/bin/time -l pnpm exec vitest run --config config/vitest.config.ts
+--maxWorkers=1 config/scripts/ssh-relay-runtime-workflow.test.mjs
+src/main/ssh/ssh-relay-artifact-cache-entry-full-size.test.ts`.
+- Result without full-size environment: workflow file passes seven tests and the full-size file skips
+  its one environment-gated test as intended in 1.36s Vitest / 3.41s wall, 134,496,256-byte maximum
+  RSS, zero swaps. The standalone workflow command also passed seven tests in 861ms Vitest / 4.32s
+  wall, 131,629,056-byte maximum RSS.
+- Does not prove: actual full-size eviction or native runner behavior. Those require the pushed exact
+  head on Linux, macOS, and Windows x64/arm64; no checklist box closes from this local wiring proof.
+- Follow-up: commit and push this isolated package, then capture exact run/job IDs, commit SHA,
+  runner images/architectures, per-tuple retention/eviction timings and RSS, exact reclaimed bytes,
+  cleanup results, and residual floor gaps under a new CI evidence ID.
+
 ## Accepted Gaps
 
 No product gap is accepted merely because it appears in this list. Each entry requires explicit
@@ -13548,15 +13712,13 @@ The project is not complete until every applicable item below is checked with ev
 
 ## Next Required Action
 
-Audit cache ownership across processes/windows, immutable entry naming/proofs, exclusive locking,
-stale-lock recovery, atomic publication, corruption quarantine, in-use protection, and bounded 2 GiB
-eviction. Record the audit and add purpose-named failing contracts before implementing this narrow,
-disconnected cache-state package. Do not add a desktop call site, SSH transfer/install, mode wiring,
-tuple enablement, release publication, or default behavior. Keep Node upstream `.tar.xz` inputs,
-Windows ZIP,
-`ORCA_RELAY_PATH`, existing desktop required-assets behavior, detached-signature byte encoding,
-Windows arm64 build 26100, macOS 13.5, Linux kernel 4.18, release-cut, desktop builds, publication,
-and every tuple separately gated.
+Commit and push the disconnected in-use lease/recency/2 GiB eviction package, then require both
+purpose suites and exact full-size active-retention/release/eviction measurements on all six native
+jobs. Do not add a desktop call site, SSH transfer/install, mode wiring, tuple enablement, release
+publication, or default behavior until that CI evidence is complete.
+Keep Node upstream `.tar.xz` inputs, Windows ZIP, `ORCA_RELAY_PATH`, existing desktop required-assets
+behavior, detached-signature byte encoding, Windows arm64 build 26100, macOS 13.5, Linux kernel 4.18,
+release-cut, desktop builds, publication, and every tuple separately gated.
 
 Cross-family Layer B targets, the protected manifest-signing environment, oldest-baseline/native-
 trust cells, and the paired legacy performance baseline remain release/default-path blockers. No

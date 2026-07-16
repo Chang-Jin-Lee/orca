@@ -266,6 +266,8 @@ jobs:
             src/main/ssh/ssh-relay-artifact-extraction.test.ts \
             src/main/ssh/ssh-relay-artifact-cache-lock.test.ts \
             src/main/ssh/ssh-relay-artifact-cache-entry.test.ts \
+            src/main/ssh/ssh-relay-artifact-cache-in-use-lease.test.ts \
+            src/main/ssh/ssh-relay-artifact-cache-eviction.test.ts \
             src/main/ssh/ssh-relay-runtime-identity.test.ts \
             config/scripts/ssh-relay-runtime-compatibility.test.mjs \
             config/scripts/ssh-relay-node-release-verification.test.mjs \
@@ -798,6 +800,8 @@ jobs:
             src/main/ssh/ssh-relay-artifact-extraction.test.ts `
             src/main/ssh/ssh-relay-artifact-cache-lock.test.ts `
             src/main/ssh/ssh-relay-artifact-cache-entry.test.ts `
+            src/main/ssh/ssh-relay-artifact-cache-in-use-lease.test.ts `
+            src/main/ssh/ssh-relay-artifact-cache-eviction.test.ts `
             src/main/ssh/ssh-relay-runtime-identity.test.ts `
             config/scripts/ssh-relay-runtime-compatibility.test.mjs `
             config/scripts/ssh-relay-node-release-verification.test.mjs `

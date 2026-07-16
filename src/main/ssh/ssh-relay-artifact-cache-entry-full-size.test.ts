@@ -8,6 +8,14 @@ import {
   publishSshRelayArtifactCacheEntry,
   SSH_RELAY_ARTIFACT_CACHE_ENTRY_LIMITS
 } from './ssh-relay-artifact-cache-entry'
+import {
+  evictSshRelayArtifactCache,
+  SSH_RELAY_ARTIFACT_CACHE_EVICTION_LIMITS
+} from './ssh-relay-artifact-cache-eviction'
+import {
+  acquireSshRelayArtifactCacheInUseLease,
+  SSH_RELAY_ARTIFACT_CACHE_IN_USE_LIMITS
+} from './ssh-relay-artifact-cache-in-use-lease'
 import type { SshRelaySelectedArtifact } from './ssh-relay-artifact-selector'
 
 type MeasurementIdentity = {
@@ -87,7 +95,7 @@ async function measure<T>(operation: () => Promise<T>): Promise<{
 
 describe.skipIf(!hasMeasurementInput)('SSH relay full-size immutable artifact cache entry', () => {
   it(
-    'keeps cold publication and verified lookup within desktop resource budgets',
+    'keeps cold publication, verified lookup, active retention, and eviction within budgets',
     async () => {
       const identity = measurementIdentity(
         JSON.parse(await readFile(identityPath as string, 'utf8')) as unknown
@@ -105,6 +113,19 @@ describe.skipIf(!hasMeasurementInput)('SSH relay full-size immutable artifact ca
         const warm = await measure(() =>
           lookupSshRelayArtifactCacheEntry({ cacheRoot: cacheRoot as string, artifact })
         )
+        if (warm.result.kind !== 'hit') {
+          throw new Error('Full-size cache entry unexpectedly missed after cold publication')
+        }
+        const lease = await acquireSshRelayArtifactCacheInUseLease({
+          cacheRoot: cacheRoot as string,
+          entry: warm.result.entry
+        })
+        const retained = await measure(() =>
+          evictSshRelayArtifactCache({ cacheRoot: cacheRoot as string, maximumBytes: 0 })
+        ).finally(() => lease.release())
+        const eviction = await measure(() =>
+          evictSshRelayArtifactCache({ cacheRoot: cacheRoot as string, maximumBytes: 0 })
+        )
         console.log(
           `ssh_relay_full_size_cache=${JSON.stringify({
             tupleId: identity.tupleId,
@@ -114,7 +135,13 @@ describe.skipIf(!hasMeasurementInput)('SSH relay full-size immutable artifact ca
             coldElapsedMs: cold.elapsedMs,
             coldIncrementalRssBytes: cold.incrementalRssBytes,
             warmElapsedMs: warm.elapsedMs,
-            warmIncrementalRssBytes: warm.incrementalRssBytes
+            warmIncrementalRssBytes: warm.incrementalRssBytes,
+            retainedElapsedMs: retained.elapsedMs,
+            retainedIncrementalRssBytes: retained.incrementalRssBytes,
+            evictionElapsedMs: eviction.elapsedMs,
+            evictionIncrementalRssBytes: eviction.incrementalRssBytes,
+            evictionInitialBytes: eviction.result.initialBytes,
+            evictionReclaimedBytes: eviction.result.reclaimedBytes
           })}`
         )
         expect(cold.result).toMatchObject({
@@ -124,9 +151,36 @@ describe.skipIf(!hasMeasurementInput)('SSH relay full-size immutable artifact ca
           expandedBytes: identity.archive.expandedSize
         })
         expect(warm.result).toEqual({ kind: 'hit', entry: cold.result })
+        expect(retained.result).toMatchObject({
+          initialBytes: expect.any(Number),
+          finalBytes: expect.any(Number),
+          reclaimedBytes: 0,
+          evictedContentIds: [],
+          blockedContentIds: [identity.contentId],
+          accountingComplete: true
+        })
+        expect(retained.result.initialBytes).toBeGreaterThan(0)
+        expect(retained.result.finalBytes).toBe(retained.result.initialBytes)
+        expect(eviction.result).toEqual({
+          initialBytes: retained.result.initialBytes,
+          finalBytes: 0,
+          reclaimedBytes: retained.result.initialBytes,
+          evictedContentIds: [identity.contentId],
+          blockedContentIds: [],
+          accountingComplete: true
+        })
+        await expect(stat(cold.result.entryPath)).rejects.toMatchObject({ code: 'ENOENT' })
         for (const measurement of [cold, warm]) {
           expect(measurement.elapsedMs).toBeLessThanOrEqual(
             SSH_RELAY_ARTIFACT_CACHE_ENTRY_LIMITS.transactionTimeoutMs
+          )
+          expect(measurement.incrementalRssBytes).toBeLessThanOrEqual(
+            SSH_RELAY_ARTIFACT_CACHE_ENTRY_LIMITS.maximumIncrementalMemoryBytes
+          )
+        }
+        for (const measurement of [retained, eviction]) {
+          expect(measurement.elapsedMs).toBeLessThanOrEqual(
+            SSH_RELAY_ARTIFACT_CACHE_EVICTION_LIMITS.transactionTimeoutMs
           )
           expect(measurement.incrementalRssBytes).toBeLessThanOrEqual(
             SSH_RELAY_ARTIFACT_CACHE_ENTRY_LIMITS.maximumIncrementalMemoryBytes
@@ -136,6 +190,9 @@ describe.skipIf(!hasMeasurementInput)('SSH relay full-size immutable artifact ca
         await rm(cacheRoot as string, { recursive: true, force: true })
       }
     },
-    SSH_RELAY_ARTIFACT_CACHE_ENTRY_LIMITS.transactionTimeoutMs * 2 + 10_000
+    SSH_RELAY_ARTIFACT_CACHE_ENTRY_LIMITS.transactionTimeoutMs * 2 +
+      SSH_RELAY_ARTIFACT_CACHE_EVICTION_LIMITS.transactionTimeoutMs * 2 +
+      SSH_RELAY_ARTIFACT_CACHE_IN_USE_LIMITS.acquisitionTimeoutMs +
+      10_000
   )
 })
