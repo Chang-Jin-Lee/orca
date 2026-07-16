@@ -24,7 +24,7 @@ const { fsMockState } = vi.hoisted(() => ({
   fsMockState: {
     failLink: false,
     failInstallLink: false,
-    failInstallRename: false,
+    failInstallLinkTransiently: false,
     failCopy: false,
     failAuditMkdirOnce: false,
     failDirectoryPath: null as string | null,
@@ -81,17 +81,12 @@ vi.mock('node:fs/promises', async () => {
         error.code = 'EPERM'
         throw error
       }
-      return actual.link(...args)
-    },
-    rename: (...args: Parameters<typeof actual.rename>) => {
-      // Simulate an interrupted atomic install (crash/ENOSPC mid-rename) on a
-      // hardlink-less target, exercising the no-partial-stranded guarantee.
-      if (fsMockState.failInstallRename && String(args[0]).includes('.orca-backfill-')) {
-        const error = new Error('EIO: rename interrupted') as NodeJS.ErrnoException
+      if (fsMockState.failInstallLinkTransiently && String(args[0]).includes('.orca-backfill-')) {
+        const error = new Error('EIO: transient install failure') as NodeJS.ErrnoException
         error.code = 'EIO'
         throw error
       }
-      return actual.rename(...args)
+      return actual.link(...args)
     },
     copyFile: async (...args: Parameters<typeof actual.copyFile>) => {
       if (fsMockState.failCopy) {
@@ -166,7 +161,7 @@ function readAuditActions(): string[] {
 beforeEach(() => {
   fsMockState.failLink = false
   fsMockState.failInstallLink = false
-  fsMockState.failInstallRename = false
+  fsMockState.failInstallLinkTransiently = false
   fsMockState.failCopy = false
   fsMockState.failAuditMkdirOnce = false
   fsMockState.failDirectoryPath = null
@@ -335,48 +330,40 @@ describe('backfillManagedCodexSessionsIntoSystemHome', () => {
     expect(readAuditActions()).toEqual(['copy', 'run-summary'])
   })
 
-  it('installs via atomic rename when the target volume has no hardlink support', async () => {
-    // Why: exFAT/FAT and some network targets support no hardlinks, so even the
-    // staged-copy install link fails and the atomic-rename fallback must run.
+  it('fails closed when the target filesystem cannot install without overwrite', async () => {
     fsMockState.failLink = true
     fsMockState.failInstallLink = true
-    const managedPath = writeManagedSession(
-      join('2026', '05', '26', 'rollout-a.jsonl'),
-      '{"id":"a"}\n'
-    )
-
-    const summary = await backfillManagedCodexSessionsIntoSystemHome(
-      resolveCodexSessionBackfillPaths()
-    )
-
-    expect(summary).toMatchObject({ linkedFiles: 0, copiedFiles: 1, failedFiles: 0 })
-    const targetPath = join(getSystemSessionsRoot(), '2026', '05', '26', 'rollout-a.jsonl')
-    expect(readFileSync(targetPath, 'utf-8')).toBe(readFileSync(managedPath, 'utf-8'))
-    // Staged temp file is renamed into place, not stranded in the sessions tree.
-    expect(
-      readdirSync(dirname(targetPath)).filter((name) => name.includes('.orca-backfill-'))
-    ).toEqual([])
-    expect(readAuditActions()).toEqual(['copy', 'run-summary'])
-  })
-
-  it('never strands a partial rollout when the atomic install is interrupted', async () => {
-    // Why: a hardlink-less target plus an interrupted install must leave the
-    // real rollout filename absent (not truncated), so the next run retries
-    // instead of skipping a partial session as already-present.
-    fsMockState.failLink = true
-    fsMockState.failInstallLink = true
-    fsMockState.failInstallRename = true
     writeManagedSession(join('2026', '05', '26', 'rollout-a.jsonl'), '{"id":"a"}\n')
 
     const summary = await backfillManagedCodexSessionsIntoSystemHome(
       resolveCodexSessionBackfillPaths()
     )
 
-    expect(summary).toMatchObject({ failedFiles: 1, copiedFiles: 0, linkedFiles: 0 })
+    expect(summary).toMatchObject({
+      linkedFiles: 0,
+      copiedFiles: 0,
+      skippedUnsupportedFilesystemFiles: 1,
+      failedFiles: 0
+    })
     const targetPath = join(getSystemSessionsRoot(), '2026', '05', '26', 'rollout-a.jsonl')
     expect(existsSync(targetPath)).toBe(false)
-    // No partial rollout and no leftover staging file in the user's tree.
     expect(readdirSync(dirname(targetPath))).toEqual([])
+    expect(readAuditActions()).toEqual(['copy-unsupported', 'run-summary'])
+  })
+
+  it('keeps transient install failures retryable', async () => {
+    fsMockState.failLink = true
+    fsMockState.failInstallLinkTransiently = true
+    writeManagedSession(join('2026', '05', '26', 'rollout-a.jsonl'), '{"id":"a"}\n')
+
+    const summary = await backfillManagedCodexSessionsIntoSystemHome(
+      resolveCodexSessionBackfillPaths()
+    )
+
+    expect(summary).toMatchObject({
+      skippedUnsupportedFilesystemFiles: 0,
+      failedFiles: 1
+    })
     expect(readAuditActions()).toEqual(['failed', 'run-summary'])
   })
 
@@ -421,6 +408,18 @@ describe('startCodexSessionBackfillInBackground', () => {
     expect(
       existsSync(join(getSystemSessionsRoot(), '2026', '07', '01', 'rollout-later.jsonl'))
     ).toBe(false)
+  })
+
+  it('does not retry a stable hardlink-less filesystem limitation', async () => {
+    fsMockState.failLink = true
+    fsMockState.failInstallLink = true
+    writeManagedSession(join('2026', '05', '26', 'rollout-a.jsonl'), '{"id":"a"}\n')
+
+    const first = await startCodexSessionBackfillInBackground()
+    expect(first).toMatchObject({ skippedUnsupportedFilesystemFiles: 1, failedFiles: 0 })
+    expect(existsSync(getMarkerPath())).toBe(true)
+
+    expect(await startCodexSessionBackfillInBackground()).toBeNull()
   })
 
   it('leaves the marker unset when any file fails so the next startup retries', async () => {

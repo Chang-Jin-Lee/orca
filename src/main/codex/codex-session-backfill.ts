@@ -11,7 +11,10 @@ import {
   createCodexSessionBackfillAuditWriter,
   type CodexSessionBackfillAuditWriter
 } from './codex-session-backfill-audit'
-import { copySessionFileWithoutOverwrite } from './codex-session-backfill-copy'
+import {
+  copySessionFileWithoutOverwrite,
+  isAtomicNoReplaceUnsupportedError
+} from './codex-session-backfill-copy'
 import { listCodexSessionJsonlFilesIncrementally } from './codex-session-file-listing'
 import type { CodexSessionBridgeIncrementalOptions } from './codex-session-file-listing'
 
@@ -26,6 +29,7 @@ export type CodexSessionBackfillSummary = {
   skippedExistingFiles: number
   skippedUnexpectedFiles: number
   skippedSymlinkFiles: number
+  skippedUnsupportedFilesystemFiles: number
   failedDirectories: number
   failedFiles: number
 }
@@ -122,6 +126,7 @@ export async function backfillManagedCodexSessionsIntoSystemHome(
     skippedExistingFiles: 0,
     skippedUnexpectedFiles: 0,
     skippedSymlinkFiles: 0,
+    skippedUnsupportedFilesystemFiles: 0,
     failedDirectories: 0,
     failedFiles: 0
   }
@@ -261,6 +266,15 @@ async function backfillOneManagedSessionFile(
     } catch (copyError) {
       if (isExistsError(copyError)) {
         summary.skippedExistingFiles += 1
+        return
+      }
+      if (isAtomicNoReplaceUnsupportedError(copyError)) {
+        summary.skippedUnsupportedFilesystemFiles += 1
+        await appendAuditRecord({
+          action: 'copy-unsupported',
+          source: managedSessionFilePath,
+          target: systemSessionFilePath
+        })
         return
       }
       summary.failedFiles += 1

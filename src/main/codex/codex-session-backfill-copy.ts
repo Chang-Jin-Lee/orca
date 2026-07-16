@@ -1,6 +1,8 @@
 import { randomUUID } from 'node:crypto'
-import { copyFile, link, lstat, rename, rm, writeFile } from 'node:fs/promises'
+import { copyFile, link, rm, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
+
+const ATOMIC_NO_REPLACE_UNSUPPORTED_CODE = 'ORCA_ATOMIC_NO_REPLACE_UNSUPPORTED'
 
 export async function copySessionFileWithoutOverwrite(
   sourcePath: string,
@@ -20,16 +22,12 @@ export async function copySessionFileWithoutOverwrite(
       if (isExistsError(installLinkError)) {
         throw installLinkError
       }
-      // Why: some target filesystems support no hardlinks at all. Install the
-      // fully-staged copy with an atomic rename — never a raw copy into the
-      // rollout filename — so an interrupted install cannot strand a truncated
-      // session that a later run skips as already-present. Re-check existence
-      // first because rename, unlike the hardlink above, would clobber a target
-      // that appeared mid-run.
-      if (await pathEntryExists(targetPath)) {
-        throw makeTargetExistsError(targetPath)
+      if (!isHardlinkUnsupportedError(installLinkError)) {
+        throw installLinkError
       }
-      await rename(temporaryPath, targetPath)
+      // Why: Node has no portable atomic rename-if-absent. Fail closed on a
+      // hardlink-less target instead of risking replacement of a concurrent file.
+      throw makeAtomicNoReplaceUnsupportedError(targetPath, installLinkError)
     }
   } finally {
     try {
@@ -42,23 +40,33 @@ export async function copySessionFileWithoutOverwrite(
   }
 }
 
-/** Existence via lstat so a broken symlink at the target still counts as taken. */
-async function pathEntryExists(entryPath: string): Promise<boolean> {
-  try {
-    await lstat(entryPath)
-    return true
-  } catch {
-    return false
-  }
-}
-
 function isExistsError(error: unknown): boolean {
   return (error as NodeJS.ErrnoException | null)?.code === 'EEXIST'
 }
 
-/** EEXIST so a rename-install collision routes to the skip path, not a failure. */
-function makeTargetExistsError(targetPath: string): NodeJS.ErrnoException {
-  const error = new Error(`EEXIST: backfill target already exists: ${targetPath}`)
-  ;(error as NodeJS.ErrnoException).code = 'EEXIST'
+function isHardlinkUnsupportedError(error: unknown): boolean {
+  const code = (error as NodeJS.ErrnoException | null)?.code
+  return (
+    code === 'EPERM' ||
+    code === 'EACCES' ||
+    code === 'ENOTSUP' ||
+    code === 'EOPNOTSUPP' ||
+    code === 'ENOSYS'
+  )
+}
+
+function makeAtomicNoReplaceUnsupportedError(
+  targetPath: string,
+  cause: unknown
+): NodeJS.ErrnoException {
+  const error = new Error(
+    `Cannot atomically install backfill without overwrite on this filesystem: ${targetPath}`,
+    { cause }
+  ) as NodeJS.ErrnoException
+  error.code = ATOMIC_NO_REPLACE_UNSUPPORTED_CODE
   return error
+}
+
+export function isAtomicNoReplaceUnsupportedError(error: unknown): boolean {
+  return (error as NodeJS.ErrnoException | null)?.code === ATOMIC_NO_REPLACE_UNSUPPORTED_CODE
 }
