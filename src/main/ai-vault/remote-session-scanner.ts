@@ -11,6 +11,10 @@ import type { FileStat, IFilesystemProvider } from '../providers/types'
 import type { RemoteHostPlatform } from '../ssh/ssh-remote-platform'
 import { joinRemotePath } from '../ssh/ssh-remote-platform'
 import { sessionSortTime } from './session-scanner-accumulator'
+import {
+  dedupeCodexRolloutFileAliases,
+  dedupeCodexSessionsBySessionId
+} from './codex-session-root-dedup'
 import { partitionSubagentTranscriptPaths } from './session-scanner-subagent-transcripts'
 import type { FileWithMtime } from './session-scanner-types'
 import { errorMessage } from './session-scanner-values'
@@ -41,21 +45,29 @@ export async function scanRemoteAiVaultSessions(args: {
     hostPlatform: args.hostPlatform,
     titleCaches: new Map()
   }
-  const candidates = (
-    await mapRemoteScanConcurrently(
-      remoteSessionSources(args.remoteHome, args.hostPlatform),
-      (source) => discoverRemoteSourceCandidates({ source, context, issues })
+  const candidates = dedupeCodexRolloutFileAliases(
+    (
+      await mapRemoteScanConcurrently(
+        remoteSessionSources(args.remoteHome, args.hostPlatform),
+        (source) => discoverRemoteSourceCandidates({ source, context, issues })
+      )
     )
+      .flat()
+      .sort((left, right) => right.file.mtimeMs - left.file.mtimeMs),
+    {
+      isCodex: (candidate) => candidate.source.agent === 'codex',
+      getFilePath: (candidate) => candidate.file.path,
+      getCodexHome: (candidate) => candidate.source.codexHome ?? null
+    }
   )
-    .flat()
-    .sort((left, right) => right.file.mtimeMs - left.file.mtimeMs)
 
   const parsed = await parseRemoteSessionCandidates({ candidates, context, issues, limit })
-  const cappedSessions = parsed.sessions
+  const parsedSessions = dedupeCodexSessionsBySessionId(parsed.sessions)
+  const cappedSessions = parsedSessions
     .sort((left, right) => sessionSortTime(right) - sessionSortTime(left))
     .slice(0, limit)
   const scopePaths = normalizeRemoteScopePaths(args.scopePaths ?? [])
-  const parsedScopeSessions = parsed.sessions.filter((session) =>
+  const parsedScopeSessions = parsedSessions.filter((session) =>
     isRemoteSessionInScope(session, scopePaths)
   )
   const extraScopeSessions = await scanRemoteInScopeSessions({

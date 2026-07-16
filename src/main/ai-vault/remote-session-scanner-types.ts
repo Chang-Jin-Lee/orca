@@ -19,6 +19,9 @@ export type RemoteParserOptions = {
 export type RemoteSessionSource = {
   agent: AiVaultAgent
   rootDir: string
+  // Codex sources only: the CODEX_HOME the root belongs to, so bridged or
+  // backfilled rollout aliases across remote roots collapse to one canonical row.
+  codexHome?: string
   extensions: readonly string[]
   filePredicate?: (path: string) => boolean
   // Claude layout: count `<session>/subagents/*.jsonl` siblings from the walked

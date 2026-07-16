@@ -10,6 +10,9 @@ export type AiVaultScanOptions = {
   claudeProjectsDir?: string
   codexSessionsDir?: string
   additionalCodexSessionsDirs?: readonly string[]
+  // Why: tests inject a sandbox "real ~/.codex" so real-home attribution
+  // (codexHome null → unprefixed resume) is testable without the user's home.
+  defaultCodexHomeDir?: string
   wslHomeDirs?: readonly string[]
   geminiSessionsDir?: string
   copilotSessionsDir?: string

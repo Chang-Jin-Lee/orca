@@ -6,6 +6,10 @@ import type {
 import { LOCAL_EXECUTION_HOST_ID, type ExecutionHostId } from '../../shared/execution-host'
 import { withSpan } from '../observability/tracer'
 import { sessionSortTime } from './session-scanner-accumulator'
+import {
+  dedupeCodexRolloutFileAliases,
+  dedupeCodexSessionsBySessionId
+} from './codex-session-root-dedup'
 import { codexHomeForSessionsDir } from './session-scanner-codex-paths'
 import {
   createSessionParseStats,
@@ -56,20 +60,30 @@ export async function scanAiVaultSessions(
     const parseStats = createSessionParseStats()
     const discoveries = await discoverAiVaultSessionSources({ options, limitPerAgent, issues })
 
-    const candidates = discoveries
-      .flatMap((discovery) =>
-        discovery.files.map(
-          (file): SessionFileCandidate => ({
-            agent: discovery.agent,
-            file,
-            codexHome:
-              discovery.agent === 'codex'
-                ? codexHomeForSessionsDir(discovery.rootDir, DEFAULT_CODEX_HOME_DIR)
-                : null
-          })
+    const candidates = dedupeCodexRolloutFileAliases(
+      discoveries
+        .flatMap((discovery) =>
+          discovery.files.map(
+            (file): SessionFileCandidate => ({
+              agent: discovery.agent,
+              file,
+              codexHome:
+                discovery.agent === 'codex'
+                  ? codexHomeForSessionsDir(
+                      discovery.rootDir,
+                      options.defaultCodexHomeDir ?? DEFAULT_CODEX_HOME_DIR
+                    )
+                  : null
+            })
+          )
         )
-      )
-      .sort((left, right) => right.file.mtimeMs - left.file.mtimeMs)
+        .sort((left, right) => right.file.mtimeMs - left.file.mtimeMs),
+      {
+        isCodex: (candidate) => candidate.agent === 'codex',
+        getFilePath: (candidate) => candidate.file.path,
+        getCodexHome: (candidate) => candidate.codexHome
+      }
+    )
 
     const parsedSessions = await parseSessionCandidates({
       candidates,
@@ -80,7 +94,7 @@ export async function scanAiVaultSessions(
       parseStats
     })
 
-    const cappedSessions = parsedSessions
+    const cappedSessions = dedupeCodexSessionsBySessionId(parsedSessions)
       .sort((left, right) => sessionSortTime(right) - sessionSortTime(left))
       .slice(0, limit)
 
