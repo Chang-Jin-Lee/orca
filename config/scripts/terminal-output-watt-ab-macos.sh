@@ -20,6 +20,12 @@ fi
 REPO_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
 BASELINE_REF="${1:-main}"
 SECONDS_PER_PHASE="${2:-90}"
+# Why the floor: SAMPLES must stay positive — `top -l 0` samples forever and
+# a tiny window leaves fewer than the 3 records the summary requires.
+if [ "$SECONDS_PER_PHASE" -lt 35 ]; then
+  echo "seconds-per-phase must be >= 35 (sampling window is seconds - 25)"
+  exit 1
+fi
 SAMPLES=$((SECONDS_PER_PHASE - 25))
 BASELINE_DIR="$(mktemp -d /tmp/orca-watt-baseline.XXXXXX)"
 rmdir "$BASELINE_DIR"
@@ -130,10 +136,15 @@ def collect(phase):
         if pid == "0" or pid not in stats or len(stats[pid]["cpu"]) < 3:
             continue
         # First top record reports cumulative totals since process start.
-        result[label] = {
+        entry = {
             key: (statistics.mean(vals[1:]), statistics.stdev(vals[1:]))
             for key, vals in stats[pid].items()
+            if key != "idlew"
         }
+        # idlew stays cumulative in every record; report the in-window rate.
+        wakeups = stats[pid]["idlew"][1:]
+        entry["idlew"] = ((wakeups[-1] - wakeups[0]) / (len(wakeups) - 1), 0.0)
+        result[label] = entry
     return result
 
 before, after = collect("before"), collect("after")
