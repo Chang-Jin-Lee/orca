@@ -25,6 +25,7 @@ import type {
   TerminalSideEffectFact
 } from '../../shared/terminal-side-effect-facts'
 import type { TerminalGitHubPRLink } from '../../shared/terminal-github-pr-link-detector'
+import { TerminalKittyKeyboardModeTracker } from '../../shared/terminal-kitty-keyboard-mode-tracker'
 import {
   AGENT_STATUS_STALE_AFTER_MS,
   isFreshNonDoneAgentStatus,
@@ -54,7 +55,7 @@ import {
   AGENT_PROMPT_SUBMIT_DELAY_MS,
   buildAgentPromptPasteBytes
 } from '../../shared/agent-prompt-injection'
-import { gitExecFileAsync, gitSpawn } from '../git/runner'
+import { gitExecFileAsync, gitSpawn, nonInteractiveGitEnv } from '../git/runner'
 import { runWithGitReadCacheInvalidation } from '../git/status'
 import {
   cleanupClaimedCloneTarget,
@@ -351,6 +352,7 @@ import { serveSimStateWatcher } from '../emulator/serve-sim-state-watcher'
 import type { EmulatorBridge } from '../emulator/emulator-bridge'
 import { RuntimeFileCommands } from './orca-runtime-files'
 import { RuntimeGitCommands } from './orca-runtime-git'
+import type { PtyProviderBufferSnapshot } from '../providers/types'
 import { ClaudeAgentTeamsService } from './claude-agent-teams-service'
 import type {
   AgentTeamsTmuxCompatRequest,
@@ -664,7 +666,11 @@ import {
   getDefaultVoiceSettings
 } from '../../shared/constants'
 import { listRepoWorktrees } from '../repo-worktrees'
-import { createWorktreeLinkedPaths, removeWorktreeLinkedPaths } from '../ipc/worktree-symlinks'
+import {
+  createWorktreeLinkedPaths,
+  findExistingWorktreeSymlinkPaths,
+  removeWorktreeLinkedPaths
+} from '../ipc/worktree-symlinks'
 import { deleteWorktreeHistoryDir } from '../terminal-history'
 import {
   cleanupUnusedWorktreePushTargetRemote,
@@ -713,7 +719,15 @@ import {
 import { prefetchWorktreeCreateBase } from '../worktree-create-base-prefetch'
 import { invalidateAuthorizedRootsCache } from '../ipc/filesystem-auth'
 import { prepareLocalWorktreeRootForRepo } from '../worktree-root-preparation'
-import { closeLocalWatcherForWorktreePath } from '../ipc/filesystem-watcher'
+import {
+  closeLocalWatcherForWorktreePath,
+  closeRemoteWatcherForWorktreePath,
+  forgetLocalWatcherRemovalSnapshot,
+  forgetRemoteWatcherRemovalSnapshot,
+  restoreLocalWatcherAfterFailedRemoval,
+  restoreRemoteWatcherAfterFailedRemoval
+} from '../ipc/filesystem-watcher'
+import { acquireWatcherRemovalGate } from '../ipc/watcher-removal-gate'
 import { HeadlessEmulator } from '../daemon/headless-emulator'
 import {
   isNativeWindowsConptyPty,
@@ -725,6 +739,10 @@ import {
   registerTerminalViewAttributesApplier
 } from './terminal-view-attribute-store'
 import { killAllProcessesForWorktree } from './worktree-teardown'
+import {
+  MobileNotificationReplayBuffer,
+  type ReplayableMobileNotification
+} from './mobile-notification-replay'
 import { MOBILE_SUBSCRIBE_SCROLLBACK_ROWS } from './scrollback-limits'
 import {
   createMobileSessionTabsNotifyCoalescer,
@@ -1175,6 +1193,8 @@ type RuntimeHeadlessTerminal = {
 type HeadlessSeedMetadata = {
   cwd?: string | null
   oscLinks?: TerminalOscLinkRange[]
+  /** Cold restore history must outrank a model that only saw new-generation bytes. */
+  preferProviderIfExisting?: boolean
   /** Persisted kitty flags from the daemon snapshot, re-applied to the fresh
    *  emulator so hidden `CSI ? u` answers the real flags instead of ?0u
    *  (terminal-query-authority.md §kitty). */
@@ -1187,6 +1207,7 @@ type RuntimePtyController = {
     rows: number
     cwd?: string
     command?: string
+    launchAgent?: TuiAgent
     commandDelivery?: 'renderer' | 'provider'
     startupCommandDelivery?: WorktreeStartupLaunch['startupCommandDelivery']
     env?: Record<string, string>
@@ -1214,6 +1235,11 @@ type RuntimePtyController = {
     ptyId: string,
     opts?: { scrollbackRows?: number; altScreenForcesZeroRows?: boolean }
   ): Promise<{ data: string; cols: number; rows: number; lastTitle?: string } | null>
+  /** Authoritative provider-owned snapshot for restored PTYs with no mounted renderer. */
+  serializeProviderBuffer?(
+    ptyId: string,
+    opts?: { scrollbackRows?: number }
+  ): Promise<PtyProviderBufferSnapshot | null>
   // Why: synchronous probe used by maybeHydrateHeadlessFromRenderer to skip
   // hydration when no renderer is authoritative for this PTY. See
   // docs/mobile-prefer-renderer-scrollback.md.
@@ -2040,6 +2066,10 @@ type ResolvedWorktreeInFlight = {
   promise: Promise<ResolvedWorktreeSnapshot>
 }
 
+// Why: notificationSeq is the desktop-assigned monotonic sequence used for
+// mobile reconnect catch-up (#8129). It is added on dispatch (and replay) so a
+// client can watermark the last event it delivered and request exactly the
+// events after it — idempotent, no duplicate local pushes.
 export type MobileNotificationDispatchEvent = {
   type: 'notification'
   source: 'agent-task-complete' | 'terminal-bell' | 'test'
@@ -2047,11 +2077,13 @@ export type MobileNotificationDispatchEvent = {
   body: string
   worktreeId?: string
   notificationId?: string
+  notificationSeq?: number
 }
 
 export type MobileNotificationDismissEvent = {
   type: 'dismiss'
   notificationId: string
+  notificationSeq?: number
 }
 
 export type MobileNotificationEvent =
@@ -2209,7 +2241,11 @@ export class OrcaRuntimeService {
     >
   >()
   private driverListeners = new Map<string, Set<(driver: DriverState) => void>>()
-  private subscriptionCleanups = new Map<string, () => void>()
+  private subscriptionCleanups = new Map<string, () => void | Promise<void>>()
+  private subscriptionCleanupPromises = new Map<
+    string,
+    { cleanup: () => void | Promise<void>; promise: Promise<void> }
+  >()
   // Why: index of subscriptionIds by per-WebSocket connectionId so the
   // server can sweep all subscriptions for a closing socket without
   // touching subscriptions on other live sockets that share the same
@@ -2233,6 +2269,14 @@ export class OrcaRuntimeService {
   private titleObservationSequence = 0
   private headlessTerminals = new Map<string, RuntimeHeadlessTerminal>()
   private ptyOutputSequenceById = new Map<string, number>()
+  private providerSequenceInitializedPtys = new Set<string>()
+  private providerSequenceOffsetByPtyId = new Map<string, number>()
+  private providerSnapshotPreferredPtys = new Set<string>()
+  private providerModeTrackersByPtyId = new Map<string, TerminalKittyKeyboardModeTracker>()
+  private providerModeSnapshotScansByPtyId = new Map<
+    string,
+    Set<TerminalKittyKeyboardModeTracker>
+  >()
   private recentPtyPathCandidatesById = new Map<string, string[]>()
   // Why: OSC 9999 status can span PTY chunks. Keeping parser state in the
   // runtime lets hidden/model-owned terminals observe agent state without a
@@ -2503,6 +2547,7 @@ export class OrcaRuntimeService {
   private removeManagedWorktreeInFlight = new Map<string, RuntimeWorktreeRemovalInFlight>()
   private preservedBranchCleanupByWorktreeId = new Map<string, PreservedBranchCleanupTarget>()
   private readonly getLocalProviderFn: (() => IPtyProvider) | null
+  private readonly getSshProviderFn: ((connectionId: string) => IPtyProvider | undefined) | null
   private readonly onPtyStopped: ((ptyId: string) => void) | null
   private readonly onTerminalAgentStatus: ((event: RuntimeTerminalAgentStatusEvent) => void) | null
   private readonly onTerminalSideEffects: ((batch: TerminalSideEffectBatch) => void) | null
@@ -2530,6 +2575,7 @@ export class OrcaRuntimeService {
     stats?: StatsCollector,
     deps?: {
       getLocalProvider?: () => IPtyProvider
+      getSshProvider?: (connectionId: string) => IPtyProvider | undefined
       onPtyStopped?: (ptyId: string) => void
       onTerminalAgentStatus?: (event: RuntimeTerminalAgentStatusEvent) => void
       onTerminalSideEffects?: (batch: TerminalSideEffectBatch) => void
@@ -2567,6 +2613,7 @@ export class OrcaRuntimeService {
     // lazily via thunk so teardown always sees the currently-installed
     // provider (design §4.3 wire-up).
     this.getLocalProviderFn = deps?.getLocalProvider ?? null
+    this.getSshProviderFn = deps?.getSshProvider ?? null
     this.onPtyStopped = deps?.onPtyStopped ?? null
     this.onTerminalAgentStatus = deps?.onTerminalAgentStatus ?? null
     this.buildAgentHookPtyEnv = deps?.buildAgentHookPtyEnv ?? null
@@ -2589,6 +2636,32 @@ export class OrcaRuntimeService {
 
   getLocalProvider(): IPtyProvider | null {
     return this.getLocalProviderFn ? this.getLocalProviderFn() : null
+  }
+
+  private async stopPtysForDestructiveWorktreeRemoval(
+    worktreeId: string,
+    connectionId?: string
+  ): Promise<void> {
+    const provider = connectionId ? this.getSshProviderFn?.(connectionId) : this.getLocalProvider()
+    if (!provider) {
+      throw new Error(`PTY provider unavailable for worktree deletion: ${worktreeId}`)
+    }
+    const teardownResult = await killAllProcessesForWorktree(worktreeId, {
+      runtime: this,
+      localProvider: provider,
+      onPtyStopped: this.onPtyStopped ?? undefined,
+      requirePhysicalStop: true,
+      ...(connectionId ? { includeLocalRegistry: false } : {})
+    })
+    const total =
+      teardownResult.runtimeStopped +
+      teardownResult.providerStopped +
+      teardownResult.registryStopped
+    if (total > 0) {
+      console.info(
+        `[worktree-teardown] ${worktreeId} killed runtime=${teardownResult.runtimeStopped} provider=${teardownResult.providerStopped} registry=${teardownResult.registryStopped}`
+      )
+    }
   }
 
   getStatsSummary(): StatsSummary | null {
@@ -5388,6 +5461,91 @@ export class OrcaRuntimeService {
     this.fileCommands.readFileExplorerDir.bind(this.fileCommands)
   watchFileExplorer: RuntimeFileCommands['watchFileExplorer'] =
     this.fileCommands.watchFileExplorer.bind(this.fileCommands)
+  closeFileWatchersForRemoval = async (
+    worktreePath: string,
+    connectionId?: string
+  ): Promise<void> => {
+    const results = await Promise.allSettled([
+      connectionId
+        ? closeRemoteWatcherForWorktreePath(connectionId, worktreePath)
+        : closeLocalWatcherForWorktreePath(worktreePath),
+      this.fileCommands.closeFileExplorerWatchersForPath(worktreePath, connectionId)
+    ])
+    const failure = results.find((result): result is PromiseRejectedResult => {
+      return result.status === 'rejected'
+    })
+    if (failure) {
+      // Why: restoration must start only after every bounded teardown settles;
+      // otherwise a late close can stale a just-restored logical subscription.
+      throw failure.reason
+    }
+  }
+  restoreFileWatchersAfterFailedRemoval = async (
+    worktreePath: string,
+    connectionId?: string
+  ): Promise<void> => {
+    await Promise.all([
+      connectionId
+        ? restoreRemoteWatcherAfterFailedRemoval(connectionId, worktreePath)
+        : restoreLocalWatcherAfterFailedRemoval(worktreePath),
+      this.fileCommands.restoreFileExplorerWatchersAfterFailedRemoval(worktreePath, connectionId)
+    ])
+  }
+  forgetFileWatchersAfterRemoval = (worktreePath: string, connectionId?: string): void => {
+    if (connectionId) {
+      forgetRemoteWatcherRemovalSnapshot(connectionId, worktreePath)
+    } else {
+      forgetLocalWatcherRemovalSnapshot(worktreePath)
+    }
+    this.fileCommands.forgetFileExplorerWatchersAfterRemoval(worktreePath, connectionId)
+  }
+  acquireFileWatcherRemoval = async (
+    worktreePath: string,
+    connectionId?: string
+  ): Promise<{ finish(removed: boolean): Promise<void> }> => {
+    const gate = acquireWatcherRemovalGate(worktreePath, connectionId)
+    try {
+      // Why: the first pass aborts desktop setup immediately; the second catches
+      // any pre-gate runtime install that published after the first snapshot.
+      await this.closeFileWatchersForRemoval(worktreePath, connectionId)
+      await gate.ready
+      await this.closeFileWatchersForRemoval(worktreePath, connectionId)
+      let finished = false
+      return {
+        finish: async (removed) => {
+          if (finished) {
+            return
+          }
+          finished = true
+          if (removed) {
+            this.forgetFileWatchersAfterRemoval(worktreePath, connectionId)
+          }
+          gate.release()
+          if (!removed) {
+            await this.restoreFileWatchersAfterFailedRemoval(worktreePath, connectionId).catch(
+              (restoreError: unknown) => {
+                console.error('[worktrees] failed to restore watchers after removal failed', {
+                  worktreePath,
+                  restoreError
+                })
+              }
+            )
+          }
+        }
+      }
+    } catch (error) {
+      gate.release()
+      await this.restoreFileWatchersAfterFailedRemoval(worktreePath, connectionId).catch(
+        (restoreError: unknown) => {
+          console.error('[worktrees] failed to restore watchers after removal setup failed', {
+            worktreePath,
+            restoreError
+          })
+        }
+      )
+      throw error
+    }
+  }
   readFileExplorerPreview: RuntimeFileCommands['readFileExplorerPreview'] =
     this.fileCommands.readFileExplorerPreview.bind(this.fileCommands)
   readFileExplorerChunk: RuntimeFileCommands['readFileExplorerChunk'] =
@@ -5669,6 +5827,10 @@ export class OrcaRuntimeService {
   onPtyData(ptyId: string, data: string, at: number, sequenceChars = data.length): number {
     const outputSequence = (this.ptyOutputSequenceById.get(ptyId) ?? 0) + sequenceChars
     this.ptyOutputSequenceById.set(ptyId, outputSequence)
+    this.providerModeTrackersByPtyId.get(ptyId)?.scan(data)
+    for (const tracker of this.providerModeSnapshotScansByPtyId.get(ptyId) ?? []) {
+      tracker.scan(data)
+    }
     const osc7Metadata = this.recordOsc7MetadataForPty(ptyId, data)
     const cwd = osc7Metadata.cwd
     const cwdChanged = osc7Metadata.cwdChanged
@@ -6393,6 +6555,29 @@ export class OrcaRuntimeService {
     this.ptyTitleTrackersByPtyId.delete(ptyId)
   }
 
+  private resetTrackedTerminalStateForProviderGeneration(ptyId: string): void {
+    // Why: a replacement daemon session can reuse the PTY id, but title/parser
+    // state from the prior process must not bleed into its snapshots or chunks.
+    this.disposePtyTitleTracker(ptyId)
+    this.oscTitleScanTailByPtyId.delete(ptyId)
+    this.osc7ScanTailByPtyId.delete(ptyId)
+    this.agentStatusOscProcessorsByPtyId.delete(ptyId)
+    const pty = this.ptysById.get(ptyId)
+    if (pty) {
+      pty.lastOscTitle = null
+      pty.lastOscTitleAt = null
+      pty.lastAgentStatus = null
+      pty.managementTitle = null
+      pty.managementTitleAt = null
+    }
+    for (const leaf of this.getLeavesForPty(ptyId)) {
+      leaf.lastOscTitle = null
+      leaf.lastOscTitleAt = null
+      leaf.lastAgentStatus = null
+    }
+    this.clearAgentRowSnapshotsForPty(ptyId)
+  }
+
   private setTerminalSideEffectConsumerAvailable(available: boolean): void {
     const nextAvailable = available && this.onTerminalSideEffects !== null
     if (nextAvailable === this.terminalSideEffectConsumerAvailable) {
@@ -6583,6 +6768,80 @@ export class OrcaRuntimeService {
     return this.ptyOutputSequenceById.get(ptyId) ?? 0
   }
 
+  synchronizePtyOutputSequenceFromProvider(
+    ptyId: string,
+    providerSequence: { value: number; generation: 'continued' | 'reset' },
+    runtimeSequenceAtSpawnStart = 0
+  ): number {
+    if (
+      !Number.isFinite(providerSequence.value) ||
+      providerSequence.value < 0 ||
+      !Number.isFinite(runtimeSequenceAtSpawnStart) ||
+      runtimeSequenceAtSpawnStart < 0
+    ) {
+      return this.getPtyOutputSequence(ptyId)
+    }
+    const baseline = Math.floor(providerSequence.value)
+    const currentSequence = this.getPtyOutputSequence(ptyId)
+    const sequenceAtSpawnStart = Math.min(currentSequence, Math.floor(runtimeSequenceAtSpawnStart))
+    const postSpawnSequence = currentSequence - sequenceAtSpawnStart
+    const wasInitialized = this.providerSequenceInitializedPtys.has(ptyId)
+    const replacesExistingRuntimeGeneration = wasInitialized || sequenceAtSpawnStart > 0
+    const providerOffset =
+      providerSequence.generation === 'reset'
+        ? sequenceAtSpawnStart
+        : (this.providerSequenceOffsetByPtyId.get(ptyId) ?? 0)
+    const providerBaseline = providerOffset + baseline
+
+    if (providerSequence.generation === 'reset') {
+      // Why: daemon respawn/cold restore starts a new absolute domain. Old
+      // emulator state cannot remain authoritative over the replacement.
+      if (replacesExistingRuntimeGeneration) {
+        this.disposeHeadlessTerminal(ptyId)
+      }
+      this.providerModeTrackersByPtyId.delete(ptyId)
+      if (replacesExistingRuntimeGeneration && postSpawnSequence === 0) {
+        this.resetTrackedTerminalStateForProviderGeneration(ptyId)
+      }
+    }
+
+    const synchronizedSequence =
+      providerSequence.generation === 'reset'
+        ? currentSequence
+        : wasInitialized
+          ? currentSequence
+          : providerBaseline + postSpawnSequence
+    this.ptyOutputSequenceById.set(ptyId, synchronizedSequence)
+    this.providerSequenceInitializedPtys.add(ptyId)
+    this.providerSequenceOffsetByPtyId.set(ptyId, providerOffset)
+
+    const snapshotMayCoverMissingState =
+      (providerSequence.generation === 'continued' && !wasInitialized) ||
+      (postSpawnSequence > 0 &&
+        providerSequence.generation === 'reset' &&
+        replacesExistingRuntimeGeneration) ||
+      (providerSequence.generation === 'continued' &&
+        wasInitialized &&
+        providerBaseline > currentSequence)
+    if (snapshotMayCoverMissingState) {
+      // Why: bytes can cross the control/stream sockets around attach. Until a
+      // full renderer/provider snapshot is available, a partial model is unsafe.
+      this.providerSnapshotPreferredPtys.add(ptyId)
+    } else if (providerSequence.generation === 'reset') {
+      this.providerSnapshotPreferredPtys.delete(ptyId)
+    }
+
+    const headless = this.headlessTerminals.get(ptyId)
+    if (headless && !wasInitialized && providerSequence.generation === 'continued') {
+      // Why: daemon bytes can reach main just before spawn resolves. Queue the
+      // baseline behind those writes so their emulator sequence is rebased too.
+      headless.writeChain = headless.writeChain.then(() => {
+        headless.outputSequence = synchronizedSequence
+      })
+    }
+    return synchronizedSequence
+  }
+
   subscribeToTerminalData(
     ptyId: string,
     listener: (data: string, meta?: { seq?: number; rawLength?: number; cwd?: string }) => void
@@ -6755,7 +7014,8 @@ export class OrcaRuntimeService {
     // Why: hidden-output recovery is initiated by the desktop renderer. If the
     // runtime has not built headless state yet, the mounted xterm is still the
     // best available state and avoids a false "snapshot unavailable" result.
-    return this.serializeRendererTerminalBuffer(ptyId, opts)
+    const rendererSnapshot = await this.serializeRendererTerminalBuffer(ptyId, opts)
+    return rendererSnapshot ?? this.serializeProviderTerminalBuffer(ptyId, opts)
   }
 
   async clearTerminalBuffer(handle: string): Promise<{ handle: string; cleared: boolean }> {
@@ -6780,10 +7040,17 @@ export class OrcaRuntimeService {
   // scrollback to mobile so it rewraps at the new cols, but alternate-screen
   // TUIs (vim, Claude Code) own their repaint and have no scrollback — for
   // those the mobile client just resizes xterm geometry and consumes the
-  // TUI's own redraw, so the resize re-stream must be skipped. Returns false
-  // when there is no headless emulator (resize falls back to geometry-only).
+  // TUI's own redraw, so the resize re-stream must be skipped. Provider state
+  // covers restored PTYs whose main-side emulator is only a partial suffix.
   isTerminalAlternateScreen(ptyId: string): boolean {
-    return this.headlessTerminals.get(ptyId)?.emulator.isAlternateScreen ?? false
+    if (this.providerSnapshotPreferredPtys.has(ptyId)) {
+      return this.providerModeTrackersByPtyId.get(ptyId)?.isAlternateScreen ?? false
+    }
+    return (
+      this.headlessTerminals.get(ptyId)?.emulator.isAlternateScreen ??
+      this.providerModeTrackersByPtyId.get(ptyId)?.isAlternateScreen ??
+      false
+    )
   }
 
   // Why: daemon-backed PTYs that the runtime adopted after an Orca relaunch
@@ -6807,10 +7074,14 @@ export class OrcaRuntimeService {
     if (existing) {
       // Why: emulator already has live data — re-seeding would duplicate
       // every byte. The seed is only valid when the emulator is fresh.
+      if (metadata.preferProviderIfExisting) {
+        this.providerSnapshotPreferredPtys.add(ptyId)
+      }
       return
     }
     const dims = size ?? this.getTerminalSize(ptyId) ?? { cols: 80, rows: 24 }
     const state = this.createPtyHeadlessTerminalState(ptyId, dims)
+    state.outputSequence = this.getPtyOutputSequence(ptyId)
     this.headlessTerminals.set(ptyId, state)
     this.recordOsc7MetadataForPty(ptyId, data)
     this.recordRecentPtyOutputForPathProvenance(ptyId, data)
@@ -6832,6 +7103,7 @@ export class OrcaRuntimeService {
         if (metadata.oscLinks !== undefined) {
           state.emulator.setRestoredOscLinks(metadata.oscLinks)
         }
+        this.providerSnapshotPreferredPtys.delete(ptyId)
       })
       .catch(() => {
         // Seeding is best-effort; live data will continue to populate the
@@ -6849,7 +7121,8 @@ export class OrcaRuntimeService {
     if (this.headlessHydrationState.has(ptyId)) {
       return
     }
-    if (this.headlessTerminals.has(ptyId)) {
+    const providerSnapshotPreferred = this.providerSnapshotPreferredPtys.has(ptyId)
+    if (this.headlessTerminals.has(ptyId) && !providerSnapshotPreferred) {
       // Daemon-snapshot seed already populated the emulator — skip hydration.
       this.headlessHydrationState.set(ptyId, 'done')
       return
@@ -6864,11 +7137,18 @@ export class OrcaRuntimeService {
       return
     }
 
+    if (providerSnapshotPreferred) {
+      // Why: a stream byte can create a partial model before restored history
+      // arrives. A mounted renderer snapshot can safely replace that model.
+      this.disposeHeadlessTerminal(ptyId)
+    }
+
     this.headlessHydrationState.set(ptyId, 'pending')
     const dims = this.getTerminalSize(ptyId) ?? { cols: 80, rows: 24 }
     // Why: hydration writes below never set forwardQueryReplies (main-side
     // replay guard) — renderer-buffer snapshots can embed stale queries.
     const state = this.createPtyHeadlessTerminalState(ptyId, dims)
+    state.outputSequence = this.getPtyOutputSequence(ptyId)
     this.headlessTerminals.set(ptyId, state)
 
     // Why: append the seed work to writeChain so live writes queued by
@@ -6907,6 +7187,7 @@ export class OrcaRuntimeService {
           state.emulator.setLastTitle(seedTitle)
           this.applySeededAgentStatus(ptyId, seedTitle)
         }
+        this.providerSnapshotPreferredPtys.delete(ptyId)
       } catch {
         // Hydration is best-effort. Live writes continue via the same
         // writeChain that this catch-arm leaves intact.
@@ -7099,12 +7380,39 @@ export class OrcaRuntimeService {
     alternateScreen?: boolean
     pendingEscapeTailAnsi?: string
   } | null> {
+    if (this.providerSnapshotPreferredPtys.has(ptyId)) {
+      // Why: pre-attach stream bytes only form a suffix of restored state. A
+      // sequenced provider snapshot safely reconciles live bytes; renderer is
+      // the fallback when an older provider cannot expose that boundary.
+      const providerSnapshot = await this.serializeProviderTerminalBuffer(ptyId, opts)
+      if (providerSnapshot) {
+        return providerSnapshot
+      }
+      const rendererSnapshot = await this.serializeRendererTerminalBuffer(ptyId, opts)
+      if (rendererSnapshot) {
+        return rendererSnapshot
+      }
+    }
     const headlessSnapshot = await this.serializeHeadlessTerminalBuffer(ptyId, opts)
     if (headlessSnapshot) {
       return headlessSnapshot
     }
 
-    return this.serializeRendererTerminalBuffer(ptyId, opts)
+    const rendererSnapshot = await this.serializeRendererTerminalBuffer(ptyId, opts)
+    if (!rendererSnapshot) {
+      return this.serializeProviderTerminalBuffer(ptyId, opts)
+    }
+    if (rendererSnapshot.data.length > 0) {
+      return rendererSnapshot
+    }
+    // Why: parked desktop panes register serializers before their xterm has
+    // hydrated. Treat that empty shell as provisional so retained provider
+    // history can restore mobile without forcing the desktop pane to mount.
+    const providerSnapshot = await this.serializeProviderTerminalBuffer(ptyId, opts)
+    return providerSnapshot &&
+      (providerSnapshot.data.length > 0 || Boolean(providerSnapshot.scrollbackAnsi))
+      ? providerSnapshot
+      : rendererSnapshot
   }
 
   private async serializeRendererTerminalBuffer(
@@ -7119,6 +7427,9 @@ export class OrcaRuntimeService {
     source?: 'renderer'
     oscLinks?: TerminalOscLinkRange[]
   } | null> {
+    if (this.ptyController?.hasRendererSerializer?.(ptyId) === false) {
+      return null
+    }
     let rendererSnapshot: {
       data: string
       cols: number
@@ -7147,6 +7458,49 @@ export class OrcaRuntimeService {
           source: 'renderer' as const
         })
       : null
+  }
+
+  private async serializeProviderTerminalBuffer(
+    ptyId: string,
+    opts: { scrollbackRows?: number } = {}
+  ): Promise<PtyProviderBufferSnapshot | null> {
+    const liveModeTracker = new TerminalKittyKeyboardModeTracker()
+    let liveModeTrackers = this.providerModeSnapshotScansByPtyId.get(ptyId)
+    if (!liveModeTrackers) {
+      liveModeTrackers = new Set()
+      this.providerModeSnapshotScansByPtyId.set(ptyId, liveModeTrackers)
+    }
+    liveModeTrackers.add(liveModeTracker)
+    try {
+      // Why: daemon PTYs survive an app relaunch before any renderer mounts.
+      // Mobile still needs their retained history without navigating desktop.
+      const snapshot = await this.ptyController?.serializeProviderBuffer?.(ptyId, opts)
+      if (typeof snapshot?.alternateScreen === 'boolean') {
+        const modeTracker = new TerminalKittyKeyboardModeTracker()
+        if (snapshot.alternateScreen) {
+          modeTracker.scan('\x1b[?1049h')
+        }
+        if (liveModeTracker.hasObservedAlternateScreenSwitch) {
+          modeTracker.scan(liveModeTracker.isAlternateScreen ? '\x1b[?1049h' : '\x1b[?1049l')
+        }
+        this.providerModeTrackersByPtyId.set(ptyId, modeTracker)
+      }
+      if (!snapshot) {
+        return null
+      }
+      const providerOffset = this.providerSequenceOffsetByPtyId.get(ptyId) ?? 0
+      return this.preferTrackedLastTitle(ptyId, {
+        ...snapshot,
+        seq: providerOffset + snapshot.seq
+      })
+    } catch {
+      return null
+    } finally {
+      liveModeTrackers.delete(liveModeTracker)
+      if (liveModeTrackers.size === 0) {
+        this.providerModeSnapshotScansByPtyId.delete(ptyId)
+      }
+    }
   }
 
   private async withVisibleSnapshotFallback(
@@ -7389,7 +7743,7 @@ export class OrcaRuntimeService {
 
   registerSubscriptionCleanup(
     subscriptionId: string,
-    cleanup: () => void,
+    cleanup: () => void | Promise<void>,
     connectionId?: string
   ): void {
     // Why: mobile clients reconnect frequently (phone lock, network switch).
@@ -7398,6 +7752,9 @@ export class OrcaRuntimeService {
     // listener leaks in dataListeners and duplicates every PTY data event.
     const existing = this.subscriptionCleanups.get(subscriptionId)
     if (existing) {
+      // Why: the stable id is about to belong to a newer connection; detach
+      // the old owner before its asynchronous cleanup can overlap the rebind.
+      this.removeSubscriptionConnectionIndex(subscriptionId)
       this.cleanupSubscription(subscriptionId)
     }
     this.subscriptionCleanups.set(subscriptionId, cleanup)
@@ -7413,21 +7770,83 @@ export class OrcaRuntimeService {
   }
 
   cleanupSubscription(subscriptionId: string): void {
-    const cleanup = this.subscriptionCleanups.get(subscriptionId)
-    if (cleanup) {
-      this.subscriptionCleanups.delete(subscriptionId)
-      const connectionId = this.subscriptionConnectionByEntry.get(subscriptionId)
-      if (connectionId) {
-        this.subscriptionConnectionByEntry.delete(subscriptionId)
-        const set = this.subscriptionsByConnection.get(connectionId)
-        if (set) {
-          set.delete(subscriptionId)
-          if (set.size === 0) {
-            this.subscriptionsByConnection.delete(connectionId)
+    void this.cleanupSubscriptionAndWait(subscriptionId).catch((error) => {
+      console.error(`[runtime] subscription cleanup failed for ${subscriptionId}:`, error)
+    })
+  }
+
+  retrySubscriptionCleanupAfter(
+    subscriptionId: string,
+    cleanupOwner: () => void | Promise<void>,
+    gate: Promise<void>
+  ): void {
+    const failedGeneration = this.subscriptionCleanupPromises.get(subscriptionId)
+    void gate.then(
+      async () => {
+        await (failedGeneration?.cleanup === cleanupOwner
+          ? failedGeneration.promise.catch(() => undefined)
+          : undefined)
+        while (this.subscriptionCleanups.get(subscriptionId) === cleanupOwner) {
+          const newerGeneration = this.subscriptionCleanupPromises.get(subscriptionId)
+          if (newerGeneration?.cleanup === cleanupOwner) {
+            // Why: a caller may already be retrying this owner; wait for that
+            // exact generation so a rejected join cannot consume our retry.
+            await newerGeneration.promise.catch(() => undefined)
+            continue
           }
+          this.cleanupSubscription(subscriptionId)
+          return
+        }
+      },
+      () => undefined
+    )
+  }
+
+  async cleanupSubscriptionAndWait(subscriptionId: string): Promise<void> {
+    const cleanup = this.subscriptionCleanups.get(subscriptionId)
+    if (!cleanup) {
+      return
+    }
+    const inFlight = this.subscriptionCleanupPromises.get(subscriptionId)
+    if (inFlight?.cleanup === cleanup) {
+      return inFlight.promise
+    }
+    let cleanupResult: void | Promise<void>
+    try {
+      cleanupResult = cleanup()
+    } catch (error) {
+      cleanupResult = Promise.reject(error)
+    }
+    const promise = Promise.resolve(cleanupResult)
+      .then(() => {
+        // Why: a reconnect can replace this id while old async cleanup runs;
+        // only the generation that registered this callback may remove it.
+        if (this.subscriptionCleanups.get(subscriptionId) !== cleanup) {
+          return
+        }
+        this.subscriptionCleanups.delete(subscriptionId)
+        this.removeSubscriptionConnectionIndex(subscriptionId)
+      })
+      .finally(() => {
+        if (this.subscriptionCleanupPromises.get(subscriptionId)?.promise === promise) {
+          this.subscriptionCleanupPromises.delete(subscriptionId)
+        }
+      })
+    this.subscriptionCleanupPromises.set(subscriptionId, { cleanup, promise })
+    return promise
+  }
+
+  private removeSubscriptionConnectionIndex(subscriptionId: string): void {
+    const connectionId = this.subscriptionConnectionByEntry.get(subscriptionId)
+    if (connectionId) {
+      this.subscriptionConnectionByEntry.delete(subscriptionId)
+      const set = this.subscriptionsByConnection.get(connectionId)
+      if (set) {
+        set.delete(subscriptionId)
+        if (set.size === 0) {
+          this.subscriptionsByConnection.delete(connectionId)
         }
       }
-      cleanup()
     }
   }
 
@@ -7451,7 +7870,14 @@ export class OrcaRuntimeService {
     // mutates both the set and the index map.
     const ids = Array.from(set)
     for (const id of ids) {
+      if (this.subscriptionConnectionByEntry.get(id) !== connectionId) {
+        set.delete(id)
+        continue
+      }
       this.cleanupSubscription(id)
+    }
+    if (set.size === 0) {
+      this.subscriptionsByConnection.delete(connectionId)
     }
   }
 
@@ -7469,10 +7895,28 @@ export class OrcaRuntimeService {
     return this.notificationListeners.size
   }
 
+  // Why: bounded replay buffer for the mobile reconnect catch-up (#8129).
+  // Every dispatched notification is recorded with a monotonic seq so a
+  // reconnecting client can fetch exactly the events it missed. Kept on the
+  // service instance (not per-client) because the buffer is a global,
+  // idempotent-by-seq source of truth; clients watermark their own position.
+  private readonly mobileNotificationReplay = new MobileNotificationReplayBuffer()
+
   dispatchMobileNotification(event: MobileNotificationEvent): void {
+    const seq = this.mobileNotificationReplay.record(event)
     for (const listener of this.notificationListeners) {
-      listener(event)
+      // Why: surface the desktop-assigned seq to live listeners so they can
+      // watermark the last event delivered and feed it back to getMissedSince
+      // on reconnect (idempotent catch-up, no duplicate local pushes).
+      listener({ ...event, notificationSeq: seq })
     }
+  }
+
+  // Returns notifications dispatched after lastSeenSeq. Idempotent: the same
+  // watermark always yields the same set, so a client cannot be re-pushed an
+  // already-delivered event (the adversarial-review gate for #8129).
+  getMissedNotificationsSince(lastSeenSeq: number): ReplayableMobileNotification[] {
+    return this.mobileNotificationReplay.getMissedSince(lastSeenSeq)
   }
 
   dismissMobileNotification(notificationId: string): void {
@@ -7827,6 +8271,17 @@ export class OrcaRuntimeService {
     const { rateLimits } = this.requireAccountServices()
     await Promise.allSettled([
       rateLimits.refresh(),
+      rateLimits.fetchInactiveClaudeAccountsOnOpen(),
+      rateLimits.fetchInactiveCodexAccountsOnOpen()
+    ])
+  }
+
+  // Why: connection migration replays subscriptions; use the stale-aware lane
+  // so a reconnect cannot turn one mobile viewer into continuous forced fetches.
+  async refreshAccountsForMobileSubscriber(): Promise<void> {
+    const { rateLimits } = this.requireAccountServices()
+    await Promise.allSettled([
+      rateLimits.refreshIfStale(),
       rateLimits.fetchInactiveClaudeAccountsOnOpen(),
       rateLimits.fetchInactiveCodexAccountsOnOpen()
     ])
@@ -8216,6 +8671,11 @@ export class OrcaRuntimeService {
     this.clearWaitBlockedCheckState(ptyId)
     this.recentPtyPathCandidatesById.delete(ptyId)
     this.ptyOutputSequenceById.delete(ptyId)
+    this.providerSequenceInitializedPtys.delete(ptyId)
+    this.providerSequenceOffsetByPtyId.delete(ptyId)
+    this.providerSnapshotPreferredPtys.delete(ptyId)
+    this.providerModeTrackersByPtyId.delete(ptyId)
+    this.providerModeSnapshotScansByPtyId.delete(ptyId)
     this.agentStatusOscProcessorsByPtyId.delete(ptyId)
     this.terminalSpawnCommandsByPtyId.delete(ptyId)
     this.disposePtyTitleTracker(ptyId)
@@ -11260,6 +11720,7 @@ export class OrcaRuntimeService {
       const previousLastOutputAt = summary.lastOutputAt
       summary.liveTerminalCount += 1
       summary.hasAttachedPty = true
+      summary.hasHostSidebarActivity = true
       summary.lastOutputAt = maxTimestamp(summary.lastOutputAt, pty.lastOutputAt)
       summary.status = mergeWorktreeStatus(summary.status, 'active')
       if (
@@ -11271,6 +11732,19 @@ export class OrcaRuntimeService {
     }
 
     const session = this.store?.getWorkspaceSession?.()
+    for (const worktreeId of session?.activeWorktreeIdsOnShutdown ?? []) {
+      const summary = this.getSummaryForRuntimeWorktreeId(
+        summaries,
+        runtimeWorktreeSummaryPathIndex,
+        missingRuntimeWorktreeIds,
+        worktreeId
+      )
+      if (summary) {
+        // Why: desktop advertises deferred reattach ids as live before their
+        // panes mount; mobile must preserve the same startup activity view.
+        summary.hasHostSidebarActivity = true
+      }
+    }
     for (const [worktreeId, tabs] of Object.entries(session?.tabsByWorktree ?? {})) {
       if (tabs.length === 0) {
         continue
@@ -11297,6 +11771,23 @@ export class OrcaRuntimeService {
           summary.status,
           getSavedTabWorktreeStatus(tab.title, tab.ptyId !== null)
         )
+      }
+    }
+
+    for (const [worktreeId, tabs] of Object.entries(session?.browserTabsByWorktree ?? {})) {
+      if (tabs.length === 0) {
+        continue
+      }
+      const summary = this.getSummaryForRuntimeWorktreeId(
+        summaries,
+        runtimeWorktreeSummaryPathIndex,
+        missingRuntimeWorktreeIds,
+        worktreeId
+      )
+      if (summary) {
+        // Why: desktop's sleeping predicate treats any open browser workspace
+        // as active, so the mobile host projection must preserve that parity.
+        summary.hasHostSidebarActivity = true
       }
     }
 
@@ -12240,6 +12731,12 @@ export class OrcaRuntimeService {
       try {
         proc = gitSpawn(['clone', '--progress', '--', trimmedUrl, clonePath], {
           cwd: trimmedDestination,
+          // Why: without the non-interactive guard, a clone that needs GitHub
+          // auth makes Git Credential Manager pop its "Connect to GitHub" OAuth
+          // window on Windows; in a network-restricted env the browser/device
+          // flow can never complete and git's credential retry re-pops it
+          // (issue #7652). Fail fast with a clear error instead.
+          env: nonInteractiveGitEnv(),
           stdio: ['ignore', 'ignore', 'pipe']
         })
       } catch (err) {
@@ -17190,7 +17687,18 @@ export class OrcaRuntimeService {
             throw new Error(ORPHANED_WORKTREE_DIRECTORY_MESSAGE)
           }
           if (repo.connectionId) {
-            await fsProvider!.deletePath(removalTarget.path, true)
+            const removalGate = await this.acquireFileWatcherRemoval(
+              removalTarget.path,
+              repo.connectionId
+            )
+            let removalCompleted = false
+            try {
+              await this.stopPtysForDestructiveWorktreeRemoval(removalTarget.id, repo.connectionId)
+              await fsProvider!.deletePath(removalTarget.path, true)
+              removalCompleted = true
+            } finally {
+              await removalGate.finish(removalCompleted)
+            }
             await cleanupUnusedWorktreePushTargetRemoteSsh(
               provider!,
               repo.path,
@@ -17199,7 +17707,15 @@ export class OrcaRuntimeService {
               store
             )
           } else {
-            await removeLocalWorktreePath(removalTarget.path, localWorktreeGitOptions)
+            const removalGate = await this.acquireFileWatcherRemoval(removalTarget.path)
+            let removalCompleted = false
+            try {
+              await this.stopPtysForDestructiveWorktreeRemoval(removalTarget.id)
+              await removeLocalWorktreePath(removalTarget.path, localWorktreeGitOptions)
+              removalCompleted = true
+            } finally {
+              await removalGate.finish(removalCompleted)
+            }
             await cleanupUnusedWorktreePushTargetRemote(
               repo.path,
               removalTarget.id,
@@ -17237,10 +17753,15 @@ export class OrcaRuntimeService {
             if (!force) {
               throw new Error(ORPHANED_WORKTREE_DIRECTORY_MESSAGE)
             }
-            await closeLocalWatcherForWorktreePath(removalTarget.path).catch((err) => {
-              console.warn(`[filesystem-watcher] failed to close ${removalTarget.path}:`, err)
-            })
-            await removeLocalWorktreePath(removalTarget.path, localWorktreeGitOptions)
+            const removalGate = await this.acquireFileWatcherRemoval(removalTarget.path)
+            let removalCompleted = false
+            try {
+              await this.stopPtysForDestructiveWorktreeRemoval(removalTarget.id)
+              await removeLocalWorktreePath(removalTarget.path, localWorktreeGitOptions)
+              removalCompleted = true
+            } finally {
+              await removalGate.finish(removalCompleted)
+            }
             await cleanupUnusedWorktreePushTargetRemote(
               repo.path,
               removalTarget.id,
@@ -17341,9 +17862,21 @@ export class OrcaRuntimeService {
       }
       if (repo.connectionId) {
         const remoteRemoveOptions = !deleteBranch ? { deleteBranch } : {}
-        const rawRemovalResult = await (Object.keys(remoteRemoveOptions).length > 0
-          ? provider!.removeWorktree(canonicalWorktreePath, force, remoteRemoveOptions)
-          : provider!.removeWorktree(canonicalWorktreePath, force))
+        const removalGate = await this.acquireFileWatcherRemoval(
+          canonicalWorktreePath,
+          repo.connectionId
+        )
+        let rawRemovalResult: RemoveWorktreeResult | undefined
+        let removalCompleted = false
+        try {
+          await this.stopPtysForDestructiveWorktreeRemoval(removalTarget.id, repo.connectionId)
+          rawRemovalResult = await (Object.keys(remoteRemoveOptions).length > 0
+            ? provider!.removeWorktree(canonicalWorktreePath, force, remoteRemoveOptions)
+            : provider!.removeWorktree(canonicalWorktreePath, force))
+          removalCompleted = true
+        } finally {
+          await removalGate.finish(removalCompleted)
+        }
         const removalResult = this.preserveBranchHeadFallback(
           rawRemovalResult,
           registeredWorktree.head
@@ -17409,133 +17942,122 @@ export class OrcaRuntimeService {
         throw new Error(formatWorktreeRemovalError(error, canonicalWorktreePath, force))
       }
 
-      let shouldTearDownPtys = true
-      if (repo.symlinkPaths && repo.symlinkPaths.length > 0) {
-        await removeWorktreeLinkedPaths(canonicalWorktreePath, repo.symlinkPaths)
-      }
+      const linkedPaths = repo.symlinkPaths ?? []
+      const ignoredLinkedPaths = force
+        ? []
+        : await findExistingWorktreeSymlinkPaths(canonicalWorktreePath, linkedPaths)
       try {
         await (hasLocalWorktreeGitOptions
-          ? assertWorktreeCleanForRemoval(canonicalWorktreePath, force, localWorktreeGitOptions)
-          : assertWorktreeCleanForRemoval(canonicalWorktreePath, force))
+          ? assertWorktreeCleanForRemoval(canonicalWorktreePath, force, {
+              ...localWorktreeGitOptions,
+              ...(ignoredLinkedPaths.length > 0
+                ? { ignoredUntrackedPaths: ignoredLinkedPaths }
+                : {})
+            })
+          : ignoredLinkedPaths.length > 0
+            ? assertWorktreeCleanForRemoval(canonicalWorktreePath, force, {
+                ignoredUntrackedPaths: ignoredLinkedPaths
+              })
+            : assertWorktreeCleanForRemoval(canonicalWorktreePath, force))
       } catch (error) {
         if (!isOrphanCompatiblePreflightError(error)) {
           throw new Error(formatWorktreeRemovalError(error, canonicalWorktreePath, force))
         }
-        // Why: orphan cleanup does not need live shells to be killed first,
-        // and preflight did not prove the worktree is cleanly removable.
-        shouldTearDownPtys = false
-      }
-
-      const localProvider = this.getLocalProvider()
-      await closeLocalWatcherForWorktreePath(canonicalWorktreePath).catch((err) => {
-        console.warn(`[filesystem-watcher] failed to close ${canonicalWorktreePath}:`, err)
-      })
-      if (localProvider && shouldTearDownPtys) {
-        // Why: once preflight proves normal deletion is clean, kill PTYs before
-        // git-level removal so Windows handles cannot keep the directory busy. This also
-        // closes the headless-CLI leak for confirmed-removable worktrees.
-        await killAllProcessesForWorktree(removalTarget.id, {
-          runtime: this,
-          localProvider,
-          onPtyStopped: this.onPtyStopped ?? undefined
-        })
-          .then((r) => {
-            const total = r.runtimeStopped + r.providerStopped + r.registryStopped
-            if (total > 0) {
-              // Why (design §4.4 observability): breadcrumb lets ops
-              // distinguish a renderer-state-induced leak (diff-path purge
-              // non-empty) from a backend-induced one (nothing to kill but
-              // memory still pinned). Emit only when the sweep actually did
-              // work so steady-state logs stay quiet.
-              console.info(
-                `[worktree-teardown] ${removalTarget.id} killed runtime=${r.runtimeStopped} provider=${r.providerStopped} registry=${r.registryStopped}`
-              )
-            }
-          })
-          .catch((err) => {
-            console.warn(`[worktree-teardown] failed for ${removalTarget.id}:`, err)
-          })
+        // Why: Git can still classify this as an orphan after preflight;
+        // retain strict PTY teardown before any recursive fallback deletion.
       }
 
       let removalResult: RemoveWorktreeResult | undefined
+      const removalGate = await this.acquireFileWatcherRemoval(canonicalWorktreePath)
+      let removalCompleted = false
       try {
-        const removeOptions = {
-          ...(!deleteBranch ? { deleteBranch } : {}),
-          // Why: removal already validated the Git row under the selected
-          // project runtime; keep branch cleanup on that same canonical row.
-          knownRemovedWorktree: refreshedRegisteredWorktree,
-          ...localWorktreeGitOptions
+        // Why: linked-path deletion is destructive too; PTYs must release every
+        // handle before Windows or WSL filesystem cleanup starts.
+        await this.stopPtysForDestructiveWorktreeRemoval(removalTarget.id)
+
+        if (linkedPaths.length > 0) {
+          await removeWorktreeLinkedPaths(canonicalWorktreePath, linkedPaths)
         }
-        removalResult = this.preserveBranchHeadFallback(
-          await removeWorktree(repo.path, canonicalWorktreePath, force, removeOptions),
-          refreshedRegisteredWorktree.head
-        )
-      } catch (error) {
-        // Why: Git for Windows can deregister a clean worktree before its
-        // recursive filesystem deletion fails transiently.
-        const recoveredRemovalResult = await recoverLocalWindowsWorktreeRemoval({
-          error,
-          force,
-          canonicalWorktreePath,
-          repoPath: repo.path,
-          localWorktreeGitOptions,
-          registeredWorktree: refreshedRegisteredWorktree,
-          deleteBranch,
-          closeWatcher: (worktreePath) =>
-            closeLocalWatcherForWorktreePath(worktreePath).catch((err) => {
-              console.warn(`[filesystem-watcher] failed to close ${worktreePath}:`, err)
-            })
-        })
-        if (recoveredRemovalResult) {
-          removalResult = recoveredRemovalResult
-        } else if (isOrphanedWorktreeError(error)) {
-          const access = getLocalWorktreePathAccess(localWorktreeGitOptions)
-          if (
-            await canSafelyRemoveOrphanedWorktreeDirectory(
-              toLocalWorktreeRuntimePath(canonicalWorktreePath, localWorktreeGitOptions),
-              toLocalWorktreeRuntimePath(repo.path, localWorktreeGitOptions),
-              access.statPath,
-              access.readPath
-            )
-          ) {
-            await closeLocalWatcherForWorktreePath(canonicalWorktreePath).catch((err) => {
-              console.warn(`[filesystem-watcher] failed to close ${canonicalWorktreePath}:`, err)
-            })
-            await removeLocalWorktreePath(canonicalWorktreePath, localWorktreeGitOptions).catch(
-              () => {}
-            )
-          } else {
-            console.warn(
-              `[worktrees] Refusing recursive cleanup for unproven worktree directory: ${canonicalWorktreePath}`
-            )
-          }
-          // Why: `git worktree remove` failed, so git's internal worktree tracking
-          // (`.git/worktrees/<name>`) is still intact. Without pruning, `git worktree
-          // list` continues to show the stale entry and the branch it had checked out
-          // remains locked — other worktrees cannot check it out.
-          await gitExecFileAsync(['worktree', 'prune'], {
-            cwd: repo.path,
+
+        try {
+          const removeOptions = {
+            ...(!deleteBranch ? { deleteBranch } : {}),
+            // Why: removal already validated the Git row under the selected
+            // project runtime; keep branch cleanup on that same canonical row.
+            knownRemovedWorktree: refreshedRegisteredWorktree,
             ...localWorktreeGitOptions
-          }).catch(() => {})
-          await cleanupUnusedWorktreePushTargetRemote(
-            repo.path,
-            removalTarget.id,
-            removedPushTarget,
-            store,
-            localWorktreeGitOptions
-          )
-          this.clearOptimisticReconcileToken(removalTarget.id)
-          this.removeWorktreeMetadataAndHistory(store, removalTarget.id)
-          this.preservedBranchCleanupByWorktreeId.delete(removalTarget.id)
-          this.invalidateResolvedWorktreeCache()
-          invalidateAuthorizedRootsCache()
-          this.notifyWorktreesChanged(repo.id)
-          return {
-            ...(warning ? { warning } : {})
           }
-        } else {
-          throw new Error(formatWorktreeRemovalError(error, canonicalWorktreePath, force))
+          removalResult = this.preserveBranchHeadFallback(
+            await removeWorktree(repo.path, canonicalWorktreePath, force, removeOptions),
+            refreshedRegisteredWorktree.head
+          )
+        } catch (error) {
+          // Why: Git for Windows can deregister a clean worktree before its
+          // recursive filesystem deletion fails transiently.
+          const recoveredRemovalResult = await recoverLocalWindowsWorktreeRemoval({
+            error,
+            force,
+            canonicalWorktreePath,
+            repoPath: repo.path,
+            localWorktreeGitOptions,
+            registeredWorktree: refreshedRegisteredWorktree,
+            deleteBranch,
+            closeWatcher: (worktreePath) => this.closeFileWatchersForRemoval(worktreePath)
+          })
+          if (recoveredRemovalResult) {
+            removalResult = recoveredRemovalResult
+            removalCompleted = true
+          } else if (isOrphanedWorktreeError(error)) {
+            const access = getLocalWorktreePathAccess(localWorktreeGitOptions)
+            if (
+              await canSafelyRemoveOrphanedWorktreeDirectory(
+                toLocalWorktreeRuntimePath(canonicalWorktreePath, localWorktreeGitOptions),
+                toLocalWorktreeRuntimePath(repo.path, localWorktreeGitOptions),
+                access.statPath,
+                access.readPath
+              )
+            ) {
+              await this.closeFileWatchersForRemoval(canonicalWorktreePath)
+              await removeLocalWorktreePath(canonicalWorktreePath, localWorktreeGitOptions).catch(
+                () => {}
+              )
+            } else {
+              console.warn(
+                `[worktrees] Refusing recursive cleanup for unproven worktree directory: ${canonicalWorktreePath}`
+              )
+            }
+            // Why: `git worktree remove` failed, so git's internal worktree tracking
+            // (`.git/worktrees/<name>`) is still intact. Without pruning, `git worktree
+            // list` continues to show the stale entry and the branch it had checked out
+            // remains locked — other worktrees cannot check it out.
+            await gitExecFileAsync(['worktree', 'prune'], {
+              cwd: repo.path,
+              ...localWorktreeGitOptions
+            }).catch(() => {})
+            await cleanupUnusedWorktreePushTargetRemote(
+              repo.path,
+              removalTarget.id,
+              removedPushTarget,
+              store,
+              localWorktreeGitOptions
+            )
+            this.clearOptimisticReconcileToken(removalTarget.id)
+            this.removeWorktreeMetadataAndHistory(store, removalTarget.id)
+            this.preservedBranchCleanupByWorktreeId.delete(removalTarget.id)
+            this.invalidateResolvedWorktreeCache()
+            invalidateAuthorizedRootsCache()
+            this.notifyWorktreesChanged(repo.id)
+            removalCompleted = true
+            return {
+              ...(warning ? { warning } : {})
+            }
+          } else {
+            throw new Error(formatWorktreeRemovalError(error, canonicalWorktreePath, force))
+          }
         }
+        removalCompleted = true
+      } finally {
+        await removalGate.finish(removalCompleted)
       }
 
       await cleanupUnusedWorktreePushTargetRemote(
@@ -17787,6 +18309,7 @@ export class OrcaRuntimeService {
         command: sequencedStartupCommand
           ? launchOpts.command
           : (agentTeamsPlan?.command ?? launchOpts.command),
+        launchAgent: launchOpts.launchAgent,
         commandDelivery: 'provider',
         startupCommandDelivery: launchOpts.startupCommandDelivery,
         env,
@@ -18985,12 +19508,24 @@ export class OrcaRuntimeService {
     })
   }
 
-  async stopTerminalsForWorktree(worktreeSelector: string): Promise<{ stopped: number }> {
+  async stopTerminalsForWorktree(
+    worktreeSelector: string,
+    options: {
+      deadline?: number
+      stopPty?: (
+        ptyId: string,
+        stop: () => boolean | Promise<boolean>
+      ) => Promise<{ stopped: boolean; owner: boolean }>
+    } = {}
+  ): Promise<{ stopped: number }> {
     // Why: this mutates live PTYs, so the runtime must reject it while the
     // renderer graph is reloading instead of acting on cached leaf ownership.
     const graphEpoch = this.captureReadyGraphEpoch()
     const worktree = await this.resolveWorktreeSelector(worktreeSelector)
     this.assertStableReadyGraph(graphEpoch)
+    if (options.deadline !== undefined && Date.now() >= options.deadline) {
+      return { stopped: 0 }
+    }
     const ptyIds = new Set<string>()
     for (const leaf of this.leaves.values()) {
       if (leaf.worktreeId === worktree.id && leaf.ptyId) {
@@ -19005,7 +19540,24 @@ export class OrcaRuntimeService {
 
     let stopped = 0
     for (const ptyId of ptyIds) {
-      if (this.ptyController?.kill(ptyId)) {
+      if (options.deadline !== undefined && Date.now() >= options.deadline) {
+        break
+      }
+      const stop = (): boolean | Promise<boolean> => {
+        if (options.deadline !== undefined && Date.now() >= options.deadline) {
+          return false
+        }
+        if (options.stopPty) {
+          // Why: destructive worktree cleanup must not let its cross-surface
+          // dedupe treat fire-and-forget controller.kill as physical exit.
+          return this.ptyController?.stopAndWait?.(ptyId) ?? false
+        }
+        return Boolean(this.ptyController?.kill(ptyId))
+      }
+      const stopResult = options.stopPty
+        ? await options.stopPty(ptyId, stop)
+        : { stopped: stop(), owner: true }
+      if (stopResult.owner && stopResult.stopped) {
         stopped += 1
       }
     }
@@ -20365,10 +20917,16 @@ export class OrcaRuntimeService {
       return null
     }
     const sessions = sessionsResult.value
+    const persistedWorktreeIdByPtyId = indexPersistedPtyWorktreeBindings(
+      this.store?.getWorkspaceSession?.()
+    )
     const livePtyIds = new Set(sessions.map((session) => session.id))
     for (const session of sessions) {
       this.adoptControllerTerminalHandle(session.id, session.terminalHandle)
+      // Why: workspace identity migration rekeys persisted ownership while a
+      // running daemon PTY keeps the worktree id minted into its session id.
       const worktreeId =
+        persistedWorktreeIdByPtyId.get(session.id) ??
         inferWorktreeIdFromPtyId(session.id) ??
         findResolvedWorktreeIdForPath(resolvedWorktrees, session.cwd)
       if (targetWorktreeId && worktreeId !== targetWorktreeId) {
@@ -20433,6 +20991,11 @@ export class OrcaRuntimeService {
     this.clearWaitBlockedCheckState(ptyId)
     this.recentPtyPathCandidatesById.delete(ptyId)
     this.ptyOutputSequenceById.delete(ptyId)
+    this.providerSequenceInitializedPtys.delete(ptyId)
+    this.providerSequenceOffsetByPtyId.delete(ptyId)
+    this.providerSnapshotPreferredPtys.delete(ptyId)
+    this.providerModeTrackersByPtyId.delete(ptyId)
+    this.providerModeSnapshotScansByPtyId.delete(ptyId)
     this.agentStatusOscProcessorsByPtyId.delete(ptyId)
     this.terminalSpawnCommandsByPtyId.delete(ptyId)
     this.disposePtyTitleTracker(ptyId)
@@ -26662,6 +27225,39 @@ function runtimePathsEqual(left: string, right: string): boolean {
 
 function inferWorktreeIdFromPtyId(ptyId: string): string | null {
   return parsePtySessionId(ptyId).worktreeId
+}
+
+function indexPersistedPtyWorktreeBindings(
+  session: WorkspaceSessionState | null | undefined
+): ReadonlyMap<string, string> {
+  const worktreeIdByPtyId = new Map<string, string>()
+  const ambiguousPtyIds = new Set<string>()
+  const bind = (ptyId: string | null | undefined, worktreeId: string): void => {
+    if (!ptyId || ambiguousPtyIds.has(ptyId)) {
+      return
+    }
+    const existingWorktreeId = worktreeIdByPtyId.get(ptyId)
+    if (existingWorktreeId && existingWorktreeId !== worktreeId) {
+      // Why: corrupt/stale duplicate bindings must not attribute a live PTY to
+      // whichever workspace happened to be visited first.
+      worktreeIdByPtyId.delete(ptyId)
+      ambiguousPtyIds.add(ptyId)
+      return
+    }
+    worktreeIdByPtyId.set(ptyId, worktreeId)
+  }
+
+  for (const [worktreeId, tabs] of Object.entries(session?.tabsByWorktree ?? {})) {
+    for (const tab of tabs) {
+      bind(tab.ptyId, worktreeId)
+      bind(session?.remoteSessionIdsByTabId?.[tab.id], worktreeId)
+      const layout = session?.terminalLayoutsByTabId[tab.id]
+      for (const ptyId of Object.values(layout?.ptyIdsByLeafId ?? {})) {
+        bind(ptyId, worktreeId)
+      }
+    }
+  }
+  return worktreeIdByPtyId
 }
 
 function setsEqual<T>(a: ReadonlySet<T>, b: ReadonlySet<T>): boolean {

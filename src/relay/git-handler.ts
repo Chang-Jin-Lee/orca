@@ -38,6 +38,7 @@ import {
   removeWorktreeOp,
   worktreeIsCleanOp
 } from './git-handler-worktree-ops'
+import { annotatePrunableWorktreesByExistence } from './git-handler-worktree-list'
 import { forceDeletePreservedRelayBranch } from './git-handler-branch-cleanup'
 import { refreshLocalBaseRefForWorktreeCreateOp } from './git-handler-local-base-ref-refresh'
 import { gitExecMutatesRepository } from '../shared/git-exec-mutation'
@@ -59,7 +60,7 @@ import {
   resolveEffectiveGitUpstream
 } from '../shared/git-effective-upstream'
 import { loadGitHistoryFromExecutor } from '../shared/git-history'
-import { buildRelayGitEnv } from './relay-command-env'
+import { buildRelayGitEnv, buildRelayUnattendedGitEnv } from './relay-command-env'
 import {
   removeSafeUntrackedDiscardTarget,
   removeSafeUntrackedDiscardTargets
@@ -69,6 +70,7 @@ import { syncForkDefaultBranch, validateGitForkSyncExpectedUpstream } from '../s
 import { InFlightPromiseDedupe, stableInFlightKey } from '../shared/in-flight-promise-dedupe'
 import { GIT_FETCH_SKIP_AUTO_MAINTENANCE_CONFIG_ARGS } from '../shared/git-fetch-auto-maintenance'
 import { GitCapabilityCache } from '../shared/git-capability-cache'
+import type { RelayFilesystemWatchRegistry } from './relay-filesystem-watch-registry'
 import {
   hasUnsupportedRevParsePathFormatEcho,
   isUnsupportedRevParsePathFormatError
@@ -179,7 +181,11 @@ export class GitHandler {
 
   // Why: RelayContext is accepted for protocol back-compat (see
   // docs/relay-fs-allowlist-removal.md) but no longer consulted on git ops.
-  constructor(dispatcher: RelayDispatcher, _context: RelayContext) {
+  constructor(
+    dispatcher: RelayDispatcher,
+    _context: RelayContext,
+    private readonly watcherRegistry?: Pick<RelayFilesystemWatchRegistry, 'runWithRemovalFence'>
+  ) {
     this.dispatcher = dispatcher
     this.registerHandlers()
     // Why: a detached client's git.responseAck frames will never arrive; wake
@@ -309,15 +315,9 @@ export class GitHandler {
       timeout?: number
     }
   ): Promise<{ stdout: string; stderr: string }> {
-    const env = buildRelayGitEnv()
+    const env = opts?.nonInteractive ? buildRelayUnattendedGitEnv() : buildRelayGitEnv()
     if (opts?.disableOptionalLocks) {
       env.GIT_OPTIONAL_LOCKS = '0'
-    }
-    if (opts?.nonInteractive) {
-      env.GIT_TERMINAL_PROMPT = '0'
-      env.GIT_ASKPASS = ''
-      env.SSH_ASKPASS = ''
-      env.GIT_SSH_COMMAND ??= 'ssh -o BatchMode=yes'
     }
     const execOptions = {
       cwd: expandTilde(cwd),
@@ -1184,7 +1184,7 @@ export class GitHandler {
     return await new Promise((resolve, reject) => {
       const child = spawn('git', args, {
         cwd: expandTilde(cwd),
-        env: buildRelayGitEnv(),
+        env: buildRelayUnattendedGitEnv(),
         stdio: ['ignore', 'pipe', 'pipe']
       })
       let stdout = ''
@@ -1377,7 +1377,16 @@ export class GitHandler {
             const { stdout } = await this.git(['worktree', 'list', '--porcelain'], repoPath, {
               signal: context?.signal
             })
-            return this.normalizeMainWorktreePath(repoPath, parseWorktreeList(stdout))
+            const normalized = await this.normalizeMainWorktreePath(
+              repoPath,
+              parseWorktreeList(stdout)
+            )
+            // Why: this `-z`-unsupported fallback (Git <2.36) also serves Git
+            // <2.31, which emits no `prunable` annotation; probe each linked
+            // worktree path instead of treating stale registrations as live.
+            // On Git 2.31–2.35 the annotation is already parsed, so the probe
+            // is a harmless backstop (issue #8389).
+            return annotatePrunableWorktreesByExistence(normalized)
           } catch {
             return []
           }
@@ -1392,9 +1401,14 @@ export class GitHandler {
   }
 
   private async removeWorktree(params: Record<string, unknown>) {
-    return this.runWithGitReadCacheClear(() =>
-      removeWorktreeOp(this.git.bind(this), params, this.gitCapabilities)
-    )
+    const remove = () =>
+      this.runWithGitReadCacheClear(() =>
+        removeWorktreeOp(this.git.bind(this), params, this.gitCapabilities)
+      )
+    const worktreePath = params.worktreePath
+    return this.watcherRegistry && typeof worktreePath === 'string'
+      ? this.watcherRegistry.runWithRemovalFence(expandTilde(worktreePath), remove)
+      : remove()
   }
 
   private async worktreeIsClean(params: Record<string, unknown>) {
