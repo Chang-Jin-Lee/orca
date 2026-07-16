@@ -11,6 +11,7 @@ import {
   resetSessionParseCacheForTests
 } from './session-scanner-parse-cache'
 import { listOpenCodeSqliteSessions } from './session-scanner-opencode-sqlite-discovery'
+import { loadOpenCodeSqliteCandidateMetadata } from './session-scanner-opencode-sqlite-metadata'
 
 let tempRoots: string[] = []
 let tempDbDirs: string[] = []
@@ -216,6 +217,8 @@ describe('OpenCode SQLite coexistence and cache identity', () => {
     expect(legacyEntry!.cwd).toBe('/tmp/sqlite')
     expect(legacyEntry!.filePath).toBe(dbPath)
     expect(legacyEntry!.totalTokens).toBe(150)
+    expect(legacyEntry!.messageCount).toBe(1)
+    expect(legacyEntry!.previewMessages.map((message) => message.text)).toEqual(['sqlite hello'])
     expect(legacyEntry!.resumeCommand).toBe(
       "cd '/tmp/sqlite' && opencode --session 'legacy-session'"
     )
@@ -233,8 +236,18 @@ describe('OpenCode SQLite coexistence and cache identity', () => {
     ).run()
     db.close()
 
-    const first = await listOpenCodeSqliteSessions({ dbPaths: [dbPath], limit: 10, issues: [] })
-    const second = await listOpenCodeSqliteSessions({ dbPaths: [dbPath], limit: 10, issues: [] })
+    const firstDiscovery = await listOpenCodeSqliteSessions({
+      dbPaths: [dbPath],
+      limit: 10,
+      issues: []
+    })
+    const secondDiscovery = await listOpenCodeSqliteSessions({
+      dbPaths: [dbPath],
+      limit: 10,
+      issues: []
+    })
+    const first = loadOpenCodeSqliteCandidateMetadata(firstDiscovery).candidates
+    const second = loadOpenCodeSqliteCandidateMetadata(secondDiscovery).candidates
     expect(second[0].file.path).toBe(first[0].file.path)
     expect(second[0].file.mtimeMs).toBe(first[0].file.mtimeMs)
 

@@ -7,6 +7,7 @@ import { LOCAL_EXECUTION_HOST_ID, type ExecutionHostId } from '../../shared/exec
 import { withSpan } from '../observability/tracer'
 import { sessionSortTime } from './session-scanner-accumulator'
 import { codexHomeForSessionsDir } from './session-scanner-codex-paths'
+import { loadOpenCodeSqliteCandidateMetadata } from './session-scanner-opencode-sqlite-metadata'
 import {
   createSessionParseStats,
   parseAgentSessionFileCached,
@@ -56,7 +57,7 @@ export async function scanAiVaultSessions(
     const parseStats = createSessionParseStats()
     const discoveries = await discoverAiVaultSessionSources({ options, limitPerAgent, issues })
 
-    const candidates = discoveries
+    const discoveredCandidates = discoveries
       .flatMap((discovery) =>
         discovery.files.map(
           (file): SessionFileCandidate => ({
@@ -70,6 +71,12 @@ export async function scanAiVaultSessions(
         )
       )
       .sort((left, right) => right.file.mtimeMs - left.file.mtimeMs)
+
+    const metadataLoad = loadOpenCodeSqliteCandidateMetadata(discoveredCandidates)
+    const candidates = metadataLoad.candidates
+    for (const failure of metadataLoad.failures) {
+      issues.push({ agent: 'opencode', path: failure.dbPath, message: failure.message })
+    }
 
     const parsedSessions = await parseSessionCandidates({
       candidates,

@@ -52,6 +52,39 @@ export type SessionFileCandidate = {
   agent: AiVaultAgent
   file: FileWithMtime
   codexHome: string | null
+  // SQLite message/part metadata is prefetched once per DB so parsing many
+  // OpenCode rows never turns into one full-table scan per visible session.
+  opencodeSqliteMetadata?: OpenCodeSqliteSessionMetadata
+}
+
+export type OpenCodeSqlitePreviewMetadata = {
+  role: AiVaultSessionPreviewMessage['role']
+  partData: string
+  timeCreated: number
+  summaryTitle: string | null
+  summaryBody: string | null
+}
+
+export type OpenCodeSqliteSessionMetadata = {
+  sessionRow?: OpenCodeSqliteSessionRowMetadata | null
+  messageCount: number
+  // Chronological, matching the accumulator's preview ring-buffer contract.
+  previewRows: readonly OpenCodeSqlitePreviewMetadata[]
+}
+
+export type OpenCodeSqliteSessionRowMetadata = {
+  id: string
+  title: string | null
+  directory: string | null
+  time_created: number
+  time_updated: number
+  model_json: string | null
+  agent: string | null
+  tokens_input: number
+  tokens_output: number
+  tokens_reasoning: number
+  tokens_cache_read: number
+  cost: number
 }
 
 export type SessionFileDiscovery = {

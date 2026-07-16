@@ -1,4 +1,4 @@
-import type { AiVaultSession, AiVaultSessionPreviewMessage } from '../../shared/ai-vault-types'
+import type { AiVaultSession } from '../../shared/ai-vault-types'
 import {
   addPreviewMessage,
   createAccumulator,
@@ -6,6 +6,10 @@ import {
   updateTimeline
 } from './session-scanner-accumulator'
 import { normalizeTitleText } from './session-scanner-values'
+import type {
+  OpenCodeSqliteSessionMetadata,
+  OpenCodeSqliteSessionRowMetadata
+} from './session-scanner-types'
 import SyncDatabase from '../sqlite/sync-database'
 import { columnExists, tableExists } from '../opencode-usage/schema-helpers'
 
@@ -14,32 +18,6 @@ import { columnExists, tableExists } from '../opencode-usage/schema-helpers'
 // parses individual sessions from the DB into AiVaultSession objects. The
 // discovery layer (listing candidates) lives in
 // session-scanner-opencode-sqlite-discovery.ts.
-
-const OPENCODE_SQLITE_PREVIEW_LIMIT = 5
-
-type SessionRow = {
-  id: string
-  title: string | null
-  directory: string | null
-  time_created: number
-  time_updated: number
-  model_json: string | null
-  agent: string | null
-  tokens_input: number
-  tokens_output: number
-  tokens_reasoning: number
-  tokens_cache_read: number
-  cost: number
-  message_count: number
-}
-
-type PreviewRow = {
-  role: string | null
-  part_data: string
-  time_created: number
-  summary_title: string | null
-  summary_body: string | null
-}
 
 function openReadonlyDatabase(dbPath: string): SyncDatabase {
   const db = new SyncDatabase(dbPath, { readonly: true, fileMustExist: true })
@@ -65,20 +43,7 @@ function sessionNumberColumnSelect(db: SyncDatabase, columnName: string): string
   return columnExists(db, 'session', columnName) ? `s.${columnName}` : '0'
 }
 
-function canCountOpenCodeMessages(db: SyncDatabase): boolean {
-  return (
-    tableExists(db, 'message') &&
-    columnExists(db, 'message', 'session_id') &&
-    columnExists(db, 'message', 'data')
-  )
-}
-
 function buildSessionQuery(db: SyncDatabase): string {
-  const messageCountSubquery = canCountOpenCodeMessages(db)
-    ? `(SELECT COUNT(*) FROM message m
-        WHERE m.session_id = s.id
-          AND json_extract(m.data, '$.role') IN ('user','assistant'))`
-    : '0'
   return `SELECT s.id,
                  ${sessionColumnSelect(db, 'title')} AS title,
                  ${sessionColumnSelect(db, 'directory')} AS directory,
@@ -90,8 +55,7 @@ function buildSessionQuery(db: SyncDatabase): string {
                  ${sessionNumberColumnSelect(db, 'tokens_output')} AS tokens_output,
                  ${sessionNumberColumnSelect(db, 'tokens_reasoning')} AS tokens_reasoning,
                  ${sessionNumberColumnSelect(db, 'tokens_cache_read')} AS tokens_cache_read,
-                 ${sessionNumberColumnSelect(db, 'cost')} AS cost,
-                 ${messageCountSubquery} AS message_count
+                 ${sessionNumberColumnSelect(db, 'cost')} AS cost
           FROM session s
           WHERE s.id = ?
           LIMIT 1`
@@ -122,13 +86,6 @@ function extractModelId(modelJson: string | null): string | null {
   }
 }
 
-function mapPreviewRole(role: string | null): AiVaultSessionPreviewMessage['role'] {
-  if (role === 'user' || role === 'assistant' || role === 'system' || role === 'tool') {
-    return role
-  }
-  return 'unknown'
-}
-
 function extractPartText(partData: string): string | null {
   try {
     const parsed = JSON.parse(partData) as unknown
@@ -148,40 +105,16 @@ function extractPartText(partData: string): string | null {
   }
 }
 
-function buildPreviewQuery(db: SyncDatabase): string | null {
-  if (
-    !canCountOpenCodeMessages(db) ||
-    !tableExists(db, 'part') ||
-    !columnExists(db, 'message', 'id') ||
-    !columnExists(db, 'part', 'message_id') ||
-    !columnExists(db, 'part', 'time_created') ||
-    !columnExists(db, 'part', 'data')
-  ) {
-    return null
-  }
-  return `SELECT json_extract(m.data, '$.role') AS role,
-                 p.data AS part_data,
-                 p.time_created,
-                 json_extract(m.data, '$.summary.title') AS summary_title,
-                 json_extract(m.data, '$.summary.body') AS summary_body
-          FROM message m
-          JOIN part p ON p.message_id = m.id
-          WHERE m.session_id = ?
-            AND json_extract(m.data, '$.role') IN ('user','assistant')
-            AND json_extract(p.data, '$.type') = 'text'
-          ORDER BY p.time_created DESC
-          LIMIT ?`
-}
-
 /**
  * Parse a single OpenCode session from the SQLite database into an
  * `AiVaultSession`. Reads session metadata (title, cwd, model, tokens, cost)
- * and up to 5 preview messages by joining the `message` and `part` tables.
- * The database is opened read-only with `PRAGMA query_only = ON` as a
- * belt-and-suspenders guard against mutations.
+ * and folds in count/preview metadata loaded by the batched scanner stage.
+ * A direct caller without prefetched session metadata falls back to opening
+ * the database read-only with `PRAGMA query_only = ON`.
  * @param args.dbPath - Absolute path to the opencode.db file.
  * @param args.sessionId - The session ID (primary key in the `session` table).
  * @param args.platform - The platform to use for resume command generation.
+ * @param args.metadata - Count and preview rows prefetched in one DB-wide batch.
  * @returns The parsed `AiVaultSession`, or `null` if the session does not exist
  *   or the database lacks the required schema.
  */
@@ -189,15 +122,25 @@ export async function parseOpenCodeSqliteSession(args: {
   dbPath: string
   sessionId: string
   platform: NodeJS.Platform
+  metadata?: OpenCodeSqliteSessionMetadata
 }): Promise<AiVaultSession | null> {
   const { dbPath, sessionId, platform } = args
+  const metadata = args.metadata ?? { messageCount: 0, previewRows: [] }
   let db: SyncDatabase | null = null
   try {
-    db = openReadonlyDatabase(dbPath)
-    if (!canReadOpenCodeSessions(db)) {
+    if (metadata.sessionRow === null) {
       return null
     }
-    const row = db.prepare(buildSessionQuery(db)).get(sessionId) as SessionRow | undefined
+    let row = metadata.sessionRow
+    if (!row) {
+      db = openReadonlyDatabase(dbPath)
+      if (!canReadOpenCodeSessions(db)) {
+        return null
+      }
+      row = db.prepare(buildSessionQuery(db)).get(sessionId) as
+        | OpenCodeSqliteSessionRowMetadata
+        | undefined
+    }
     if (!row || row.id !== sessionId) {
       return null
     }
@@ -222,37 +165,26 @@ export async function parseOpenCodeSqliteSession(args: {
     accumulator.model = extractModelId(row.model_json)
     accumulator.totalTokens =
       (row.tokens_input ?? 0) + (row.tokens_output ?? 0) + (row.tokens_reasoning ?? 0)
-    accumulator.messageCount = row.message_count ?? 0
+    // Why: this plain row count is a history-list indicator and avoids reading
+    // foreign message.data blobs solely to re-check OpenCode's turn role.
+    accumulator.messageCount = metadata.messageCount
     updateTimeline(accumulator, row.time_created)
     updateTimeline(accumulator, row.time_updated)
 
-    const previewSql = buildPreviewQuery(db)
-    if (previewSql) {
-      const previewRows = db
-        .prepare(previewSql)
-        .all(sessionId, OPENCODE_SQLITE_PREVIEW_LIMIT) as PreviewRow[]
-      // Why: query returns newest-first; push in chronological order so the
-      // accumulator's ring buffer keeps the newest OPENCODE_SQLITE_PREVIEW_LIMIT
-      // messages.
-      for (let i = previewRows.length - 1; i >= 0; i--) {
-        const previewRow = previewRows[i]
-        if (!previewRow) {
-          continue
-        }
-        const text = extractPartText(previewRow.part_data)
-        if (!text) {
-          continue
-        }
-        addPreviewMessage(accumulator, {
-          role: mapPreviewRole(previewRow.role),
-          text,
-          timestamp: previewRow.time_created
-        })
-        if (previewRow.role === 'user' && !accumulator.title) {
-          accumulator.title =
-            normalizeTitleText(previewRow.summary_title ?? '') ||
-            normalizeTitleText(previewRow.summary_body ?? '')
-        }
+    for (const previewRow of metadata.previewRows) {
+      const text = extractPartText(previewRow.partData)
+      if (!text) {
+        continue
+      }
+      addPreviewMessage(accumulator, {
+        role: previewRow.role,
+        text,
+        timestamp: previewRow.timeCreated
+      })
+      if (previewRow.role === 'user' && !accumulator.title) {
+        accumulator.title =
+          normalizeTitleText(previewRow.summaryTitle ?? '') ||
+          normalizeTitleText(previewRow.summaryBody ?? '')
       }
     }
 
