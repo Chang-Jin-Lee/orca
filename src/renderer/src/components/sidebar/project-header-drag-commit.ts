@@ -24,7 +24,13 @@ export function commitProjectHeaderDragDrop(args: {
 
   const sidebarRepoHeaderIds = args.session.sidebarRepoHeaderIds
   const sourceIndex = sidebarRepoHeaderIds.indexOf(args.session.repoId)
-  if (args.sidebarDropIndex === sourceIndex) {
+  // Why: both slots bordering the dragged header are visual no-ops. In
+  // particular, do not compact paired-host occurrences on an unchanged drop.
+  if (
+    sourceIndex === -1 ||
+    args.sidebarDropIndex === sourceIndex ||
+    args.sidebarDropIndex === sourceIndex + 1
+  ) {
     return
   }
 

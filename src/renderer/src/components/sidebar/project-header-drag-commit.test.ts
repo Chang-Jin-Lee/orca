@@ -71,6 +71,24 @@ describe('commitProjectHeaderDragDrop', () => {
     expect(onCommitRepoOrder).toHaveBeenCalledWith(['same', 'same', 'b', 'c'])
   })
 
+  it('does not reorder host occurrences when a merged header stays in place', () => {
+    const onCommitRepoOrder = vi.fn()
+    const repos = [makeRepo('b'), makeRepo('same'), makeRepo('c')]
+    const repoById = new Map(repos.map((repo) => [repo.id, repo]))
+
+    commitProjectHeaderDragDrop({
+      session: makeSession('same', ['b', 'same', 'c']),
+      sidebarDropIndex: 2,
+      orderedRepoIds: ['b', 'same', 'c', 'same'],
+      repoById,
+      usesProjectGroupOrdering: false,
+      onCommitRepoOrder,
+      onCommitProjectGroupOrder: vi.fn()
+    })
+
+    expect(onCommitRepoOrder).not.toHaveBeenCalled()
+  })
+
   it('commits projectGroupOrder when project groups are present', () => {
     const onCommitProjectGroupOrder = vi.fn()
     const repos = [
