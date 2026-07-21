@@ -7473,6 +7473,7 @@
             "bea27bac4b": "links",
             "44d14df30d": "preview",
             "5cb082b3e3": "Link Routing",
+            "d0fdcd86b1": "Open http(s) links in Orca's built-in browser — from the terminal, markdown, and the editor. {{value0}} always uses your system browser.",
             "95944898e0": "percentage",
             "483a0eb5e0": "new tab",
             "726f2a8556": "page zoom",

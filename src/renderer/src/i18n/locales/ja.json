@@ -7463,7 +7463,8 @@
             "a942905148": "新規ブラウザ タブを作成するときに開かれる URL。空白のタブを開くには、空白のままにします。",
             "c3903322d2": "デフォルトのホームページ",
             "19ea5607cf": "ローカルホストのワークツリーのラベル",
-            "4e0fdf0a3f": "ワークスペース ポートをワークツリー固有の Orca localhost URL として開くと、ブラウザーのタブを区別しやすくなります。"
+            "4e0fdf0a3f": "ワークスペース ポートをワークツリー固有の Orca localhost URL として開くと、ブラウザーのタブを区別しやすくなります。",
+            "d0fdcd86b1": "Open http(s) links in Orca's built-in browser — from the terminal, markdown, and the editor. {{value0}} always uses your system browser."
           },
           "use": {
             "search": {

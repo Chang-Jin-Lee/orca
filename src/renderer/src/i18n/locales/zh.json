@@ -7426,7 +7426,8 @@
             "a942905148": "创建新浏览器选项卡时打开的 URL。留空以打开空白选项卡。",
             "c3903322d2": "默认主页",
             "19ea5607cf": "本地主机工作区标签",
-            "4e0fdf0a3f": "将工作区端口打开为特定于工作区的 Orca localhost URL，便于区分浏览器标签页。"
+            "4e0fdf0a3f": "将工作区端口打开为特定于工作区的 Orca localhost URL，便于区分浏览器标签页。",
+            "d0fdcd86b1": "Open http(s) links in Orca's built-in browser — from the terminal, markdown, and the editor. {{value0}} always uses your system browser."
           },
           "use": {
             "search": {

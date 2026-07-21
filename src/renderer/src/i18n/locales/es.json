@@ -7441,7 +7441,8 @@
             "a942905148": "URL abierta al crear una nueva pestaña del navegador. Déjelo vacío para abrir una pestaña en blanco.",
             "c3903322d2": "Página de inicio predeterminada",
             "19ea5607cf": "Etiquetas de localhost para worktrees",
-            "4e0fdf0a3f": "Abre los puertos del workspace como URL localhost de Orca específicas del worktree para que las pestañas del navegador sean más fáciles de distinguir."
+            "4e0fdf0a3f": "Abre los puertos del workspace como URL localhost de Orca específicas del worktree para que las pestañas del navegador sean más fáciles de distinguir.",
+            "d0fdcd86b1": "Open http(s) links in Orca's built-in browser — from the terminal, markdown, and the editor. {{value0}} always uses your system browser."
           },
           "use": {
             "search": {
