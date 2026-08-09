@@ -4,8 +4,22 @@ import { useAppStore } from '@/store'
 import { ONBOARDING_FINAL_STEP, ONBOARDING_FLOW_VERSION } from '../../../../shared/constants'
 import type { EventProps } from '../../../../shared/telemetry-events'
 import type { GlobalSettings, OnboardingState, TuiAgent } from '../../../../shared/types'
-import { applyAgentPermissionMode } from '../../../../shared/tui-agent-permissions'
+import {
+  applyAgentPermissionMode,
+  resolveAgentPermissionModeSummary
+} from '../../../../shared/tui-agent-permissions'
 import type { StepId, StepNumber } from './use-onboarding-flow-types'
+
+export function resolvePermissiveOnboardingMode(
+  settings: Pick<GlobalSettings, 'agentDefaultArgs' | 'agentDefaultEnv'>
+): 'yolo' | 'auto' {
+  return resolveAgentPermissionModeSummary({
+    agentDefaultArgs: settings.agentDefaultArgs,
+    agentDefaultEnv: settings.agentDefaultEnv
+  }) === 'auto'
+    ? 'auto'
+    : 'yolo'
+}
 
 export async function persistStep(
   stepNumber: number,
@@ -193,7 +207,10 @@ export function usePersistCurrentStep({
         await updateSettings({
           defaultTuiAgent,
           ...applyAgentPermissionMode({
-            mode: yoloPermissions ? 'yolo' : 'manual',
+            // Why: the onboarding switch is binary, so an existing Auto profile
+            // has to stay Auto — reading the toggle as plain yolo would silently
+            // strip the intermediate mode off a returning user's agents.
+            mode: yoloPermissions ? resolvePermissiveOnboardingMode(settings) : 'manual',
             agentDefaultArgs: settings.agentDefaultArgs,
             agentDefaultEnv: settings.agentDefaultEnv
           })

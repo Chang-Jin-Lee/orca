@@ -34,6 +34,7 @@ function buildAgentSettingsKeywords(): string[] {
     { key: 'auto.components.settings.agents.search.permission', fallback: 'permission' },
     { key: 'auto.components.settings.agents.search.permissions', fallback: 'permissions' },
     { key: 'auto.components.settings.agents.search.yolo', fallback: 'yolo', englishOnly: true },
+    { key: 'auto.components.settings.agents.search.auto', fallback: 'auto' },
     { key: 'auto.components.settings.agents.search.manual', fallback: 'manual' },
     {
       key: 'auto.components.settings.agents.search.e2b7c0dcd7',
@@ -123,7 +124,7 @@ const getAllAgentsPaneSearchEntries = createLocalizedCatalog(() => [
     ),
     description: translate(
       'auto.components.settings.agents.search.agentPermissionsDescription',
-      'Switch agent permission defaults between Yolo and Manual.'
+      'Switch agent permission defaults between Yolo, Auto, and Manual.'
     ),
     keywords: [
       ...translateSearchKeyword('auto.components.settings.agents.search.permission', 'permission'),
@@ -132,6 +133,7 @@ const getAllAgentsPaneSearchEntries = createLocalizedCatalog(() => [
         'permissions'
       ),
       ...translateSearchKeyword('auto.components.settings.agents.search.yolo', 'yolo'),
+      ...translateSearchKeyword('auto.components.settings.agents.search.auto', 'auto'),
       ...translateSearchKeyword('auto.components.settings.agents.search.manual', 'manual'),
       ...translateSearchKeyword('auto.components.settings.agents.search.skip', 'skip'),
       ...translateSearchKeyword('auto.components.settings.agents.search.checks', 'checks')

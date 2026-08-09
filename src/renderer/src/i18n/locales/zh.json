@@ -5374,8 +5374,6 @@
           "2d133152fa": "无默认环境",
           "agentPermissions": "智能体权限",
           "agentPermissionsInfo": "智能体权限信息",
-          "agentPermissionsTooltip": "切换模式时，自定义智能体参数保持不变。",
-          "agentPermissionsDescription": "选择 Orca 是以更少的权限提示启动智能体，还是手动检查。",
           "agentPermissionsYolo": "Yolo",
           "agentPermissionsManual": "手动",
           "3f1bdf3cb4": "环境文本过长，无法安全解析。",
@@ -7611,7 +7609,6 @@
             "a79d266f71": "会话",
             "afbf35be68": "稳定会话",
             "agentPermissions": "智能体权限",
-            "agentPermissionsDescription": "在 Yolo 和手动之间切换智能体权限默认值。",
             "agentRuntime": "智能体运行时",
             "agentRuntimeDescription": "选择默认在 Windows 还是 WSL 中检测并启动智能体。"
           }

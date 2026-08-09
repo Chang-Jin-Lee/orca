@@ -207,7 +207,7 @@ export function AgentPermissionsSetting({
   mode,
   onChange
 }: AgentPermissionsSettingProps): React.JSX.Element {
-  const visibleMode: Exclude<AgentPermissionMode, 'mixed'> = mode === 'manual' ? 'manual' : 'yolo'
+  const visibleMode: Exclude<AgentPermissionMode, 'mixed'> = mode === 'mixed' ? 'yolo' : mode
   return (
     <section className="space-y-3">
       <SettingsSubsectionHeader
@@ -230,7 +230,7 @@ export function AgentPermissionsSetting({
               <TooltipContent side="top" sideOffset={6}>
                 {translate(
                   'auto.components.settings.AgentsPane.agentPermissionsTooltip',
-                  "Doesn't apply to agents where you've overridden launch arguments."
+                  "Doesn't apply to agents where you've overridden launch arguments. Auto covers the agents whose CLI documents an intermediate mode — Claude Code and Codex today; the rest stay on Manual."
                 )}
               </TooltipContent>
             </Tooltip>
@@ -238,7 +238,7 @@ export function AgentPermissionsSetting({
         }
         description={translate(
           'auto.components.settings.AgentsPane.agentPermissionsDescription',
-          'Choose whether Orca launches agents with fewer permission prompts or with manual checks.'
+          'Choose how much Orca lets agents do unprompted. Yolo turns off every check, Auto runs edits and ordinary commands but keeps the CLI asking before sensitive actions, and Manual confirms each one.'
         )}
         action={
           <SettingsSegmentedControl<AgentPermissionMode>
@@ -257,6 +257,10 @@ export function AgentPermissionsSetting({
               {
                 value: 'yolo',
                 label: translate('auto.components.settings.AgentsPane.agentPermissionsYolo', 'Yolo')
+              },
+              {
+                value: 'auto',
+                label: translate('auto.components.settings.AgentsPane.agentPermissionsAuto', 'Auto')
               },
               {
                 value: 'manual',

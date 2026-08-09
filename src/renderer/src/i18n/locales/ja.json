@@ -5362,8 +5362,6 @@
           "2d133152fa": "デフォルト環境なし",
           "agentPermissions": "エージェント権限",
           "agentPermissionsInfo": "エージェント権限情報",
-          "agentPermissionsTooltip": "カスタムエージェント引数はモード切り替え時も変更されません。",
-          "agentPermissionsDescription": "Orcaが権限プロンプトの少ないエージェントを起動するか、手動チェックを含むエージェントを起動するかを選択します。",
           "agentPermissionsYolo": "Yolo",
           "agentPermissionsManual": "手動",
           "3f1bdf3cb4": "環境テキストが大きすぎるため安全に解析できません。",
@@ -7636,7 +7634,6 @@
             "a79d266f71": "セッション",
             "afbf35be68": "安定したセッション",
             "agentPermissions": "Agent Permissions",
-            "agentPermissionsDescription": "Switch agent permission defaults between Yolo and Manual.",
             "agentRuntime": "Agent のランタイム",
             "agentRuntimeDescription": "デフォルトで agents を Windows または WSL のどちらで検出および起動するかを選択します。"
           }

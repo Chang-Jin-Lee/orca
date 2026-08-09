@@ -5576,14 +5576,15 @@
           "2d133152fa": "No default environment",
           "agentPermissions": "Agent Permissions",
           "agentPermissionsInfo": "Agent permissions info",
-          "agentPermissionsTooltip": "Doesn't apply to agents where you've overridden launch arguments.",
-          "agentPermissionsDescription": "Choose whether Orca launches agents with fewer permission prompts or with manual checks.",
+          "agentPermissionsTooltip": "Doesn't apply to agents where you've overridden launch arguments. Auto covers the agents whose CLI documents an intermediate mode — Claude Code and Codex today; the rest stay on Manual.",
+          "agentPermissionsDescription": "Choose how much Orca lets agents do unprompted. Yolo turns off every check, Auto runs edits and ordinary commands but keeps the CLI asking before sensitive actions, and Manual confirms each one.",
           "agentPermissionsYolo": "Yolo",
           "agentPermissionsManual": "Manual",
           "3f1bdf3cb4": "Environment text is too large to parse safely.",
           "codexSessionSource": "Codex home to import from",
           "codexSessionSourceInfo": "About importing Codex history",
-          "codexSessionSourceTooltip": "Orca runs Codex in an isolated home. Point this at your existing Codex home to import that session history. Empty uses ~/.codex."
+          "codexSessionSourceTooltip": "Orca runs Codex in an isolated home. Point this at your existing Codex home to import that session history. Empty uses ~/.codex.",
+          "agentPermissionsAuto": "Auto"
         },
         "AppIconSelector": {
           "d5a112dc9b": "Next icon",
@@ -7903,7 +7904,7 @@
             "a79d266f71": "session",
             "afbf35be68": "stable session",
             "agentPermissions": "Agent Permissions",
-            "agentPermissionsDescription": "Switch agent permission defaults between Yolo and Manual.",
+            "agentPermissionsDescription": "Switch agent permission defaults between Yolo, Auto, and Manual.",
             "agentRuntime": "Agent Runtime",
             "agentRuntimeDescription": "Choose whether agents are detected and launched on Windows or in WSL by default."
           }

@@ -15,11 +15,46 @@ vi.mock('@/lib/telemetry', () => ({
 import {
   buildCompletedOnboardingNotificationSettings,
   buildOnboardingDismissedPayload,
+  resolvePermissiveOnboardingMode,
   useCloseWith,
   type DismissedExtras,
   trackOnboardingDismissed
 } from './use-onboarding-flow-persistence'
+import {
+  applyAgentPermissionMode,
+  YOLO_TUI_AGENT_ARGS,
+  YOLO_TUI_AGENT_ENV
+} from '../../../../shared/tui-agent-permissions'
 import type { StepNumber } from './use-onboarding-flow-types'
+
+describe('resolvePermissiveOnboardingMode', () => {
+  it('keeps an existing auto profile instead of upgrading it to yolo', () => {
+    const auto = applyAgentPermissionMode({
+      mode: 'auto',
+      agentDefaultArgs: YOLO_TUI_AGENT_ARGS,
+      agentDefaultEnv: YOLO_TUI_AGENT_ENV
+    })
+
+    expect(
+      resolvePermissiveOnboardingMode({
+        agentDefaultArgs: auto.agentDefaultArgs,
+        agentDefaultEnv: auto.agentDefaultEnv
+      })
+    ).toBe('auto')
+  })
+
+  it('treats a yolo or untouched profile as yolo', () => {
+    expect(
+      resolvePermissiveOnboardingMode({
+        agentDefaultArgs: YOLO_TUI_AGENT_ARGS,
+        agentDefaultEnv: YOLO_TUI_AGENT_ENV
+      })
+    ).toBe('yolo')
+    expect(resolvePermissiveOnboardingMode({ agentDefaultArgs: {}, agentDefaultEnv: {} })).toBe(
+      'yolo'
+    )
+  })
+})
 
 type CloseWithCallback = (
   outcome: 'completed' | 'dismissed',

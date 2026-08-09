@@ -1,7 +1,7 @@
 import { TUI_AGENT_CONFIG } from './tui-agent-config'
 import type { TuiAgent } from './types'
 
-export type AgentPermissionMode = 'yolo' | 'manual' | 'mixed'
+export type AgentPermissionMode = 'yolo' | 'auto' | 'manual' | 'mixed'
 
 export const YOLO_TUI_AGENT_ARGS: Partial<Record<TuiAgent, string>> = {
   claude: '--dangerously-skip-permissions',
@@ -35,9 +35,25 @@ export const YOLO_TUI_AGENT_ENV: Partial<Record<TuiAgent, Record<string, string>
   goose: { GOOSE_MODE: 'auto' }
 }
 
+// Why: the vendors' own recommended middle ground — edits and most commands run
+// without a prompt, but the CLI still stops for genuinely sensitive actions.
+// Only agents whose intermediate mode is verifiable belong here: `auto` is a
+// documented `claude --permission-mode` choice, and `--full-auto` is already how
+// this codebase represents Codex "Approve for me" (see
+// agent-completion-coordinator.ts). Agents absent from this table fall back to
+// manual, so picking Auto can never silently mean "allow everything".
+export const AUTO_TUI_AGENT_ARGS: Partial<Record<TuiAgent, string>> = {
+  claude: '--permission-mode auto',
+  codex: '--full-auto'
+}
+
 const PERMISSION_AGENT_IDS = Object.keys(TUI_AGENT_CONFIG).filter(
   (agent): agent is TuiAgent => agent in YOLO_TUI_AGENT_ARGS || agent in YOLO_TUI_AGENT_ENV
 )
+
+export function supportsAgentAutoPermissionMode(agent: TuiAgent): boolean {
+  return agent in AUTO_TUI_AGENT_ARGS
+}
 
 function normalizeArgs(value: string | null | undefined): string {
   return value?.trim() ?? ''
@@ -55,11 +71,21 @@ function sameEnv(
   return leftEntries.every(([name, value]) => right?.[name] === value)
 }
 
-function resolveAgentPermissionMode(args: string, yoloArgs: string): AgentPermissionMode {
+function resolveAgentPermissionMode(
+  args: string,
+  yoloArgs: string,
+  autoArgs: string
+): AgentPermissionMode {
   if (!args) {
     return 'manual'
   }
-  return args === yoloArgs ? 'yolo' : 'mixed'
+  if (args === yoloArgs) {
+    return 'yolo'
+  }
+  if (autoArgs && args === autoArgs) {
+    return 'auto'
+  }
+  return 'mixed'
 }
 
 function resolveAgentEnvPermissionMode(
@@ -73,24 +99,23 @@ function resolveAgentEnvPermissionMode(
 }
 
 function combinePermissionModes(modes: AgentPermissionMode[]): AgentPermissionMode {
-  let sawYolo = false
-  let sawManual = false
-  let sawMixed = false
+  const distinct = new Set<AgentPermissionMode>()
 
   for (const mode of modes) {
-    if (mode === 'yolo') {
-      sawYolo = true
-    } else if (mode === 'manual') {
-      sawManual = true
-    } else {
-      sawMixed = true
+    if (mode === 'mixed') {
+      return 'mixed'
     }
+    distinct.add(mode)
   }
 
-  if (sawMixed || (sawYolo && sawManual)) {
+  if (distinct.size === 0) {
+    return 'manual'
+  }
+  if (distinct.size > 1) {
     return 'mixed'
   }
-  return sawYolo ? 'yolo' : 'manual'
+  const [only] = distinct
+  return only ?? 'manual'
 }
 
 export function resolveTuiAgentPermissionMode(args: {
@@ -103,7 +128,8 @@ export function resolveTuiAgentPermissionMode(args: {
     modes.push(
       resolveAgentPermissionMode(
         normalizeArgs(args.agentArgs),
-        YOLO_TUI_AGENT_ARGS[args.agent] ?? ''
+        YOLO_TUI_AGENT_ARGS[args.agent] ?? '',
+        AUTO_TUI_AGENT_ARGS[args.agent] ?? ''
       )
     )
   }
@@ -118,10 +144,11 @@ export function resolveAgentPermissionModeSummary(args: {
   agentDefaultArgs?: Partial<Record<TuiAgent, string>> | null
   agentDefaultEnv?: Partial<Record<TuiAgent, Record<string, string>>> | null
 }): AgentPermissionMode {
-  const modes: AgentPermissionMode[] = []
+  const modeByAgent = new Map<TuiAgent, AgentPermissionMode>()
 
   for (const agent of PERMISSION_AGENT_IDS) {
-    modes.push(
+    modeByAgent.set(
+      agent,
       resolveTuiAgentPermissionMode({
         agent,
         agentArgs: args.agentDefaultArgs?.[agent],
@@ -130,7 +157,20 @@ export function resolveAgentPermissionModeSummary(args: {
     )
   }
 
-  return combinePermissionModes(modes)
+  // Why: Auto leaves every agent without a vendor intermediate mode on manual,
+  // so that split is the auto profile rather than a mixed one — without this the
+  // segmented control would snap back to "mixed" the moment Auto is selected.
+  const matchesAutoProfile =
+    PERMISSION_AGENT_IDS.some(supportsAgentAutoPermissionMode) &&
+    PERMISSION_AGENT_IDS.every(
+      (agent) =>
+        modeByAgent.get(agent) === (supportsAgentAutoPermissionMode(agent) ? 'auto' : 'manual')
+    )
+  if (matchesAutoProfile) {
+    return 'auto'
+  }
+
+  return combinePermissionModes([...modeByAgent.values()])
 }
 
 export function applyAgentPermissionMode(args: {
@@ -147,15 +187,20 @@ export function applyAgentPermissionMode(args: {
   for (const agent of PERMISSION_AGENT_IDS) {
     if (agent in YOLO_TUI_AGENT_ARGS) {
       const yoloArgs = YOLO_TUI_AGENT_ARGS[agent] ?? ''
+      const autoArgs = AUTO_TUI_AGENT_ARGS[agent] ?? ''
       const currentArgs = normalizeArgs(nextArgs[agent])
-      if (!currentArgs || currentArgs === yoloArgs) {
-        nextArgs[agent] = args.mode === 'yolo' ? yoloArgs : ''
+      // Why: only rewrite the launch strings Orca itself owns — a user's custom
+      // arguments have to survive a permission-mode switch untouched.
+      if (!currentArgs || currentArgs === yoloArgs || (autoArgs && currentArgs === autoArgs)) {
+        nextArgs[agent] = args.mode === 'yolo' ? yoloArgs : args.mode === 'auto' ? autoArgs : ''
       }
     }
 
     if (agent in YOLO_TUI_AGENT_ENV) {
       const yoloEnv = YOLO_TUI_AGENT_ENV[agent]
       const currentEnv = nextEnv[agent]
+      // Why: no env-driven agent exposes a verified intermediate mode yet, so
+      // Auto lands them on manual rather than guessing a middle value.
       if (sameEnv(currentEnv, {}) || sameEnv(currentEnv, yoloEnv)) {
         nextEnv[agent] = args.mode === 'yolo' ? { ...yoloEnv } : {}
       }
