@@ -158,8 +158,13 @@ export class AgentExecHandler {
         }
         resolve(result)
       }
+      // Why: the login-shell lookup runs a shell of its own, outside the child
+      // tree terminated here. Cancel and timeout have to reach it too, or a
+      // canceled exec waits on it and a timed-out one leaves it running.
+      const lookupAbort = new AbortController()
       const cancelCurrent = (): void => {
         canceled = true
+        lookupAbort.abort()
         terminateRelaySubprocessTree(child)
       }
       if (laneKey) {
@@ -180,6 +185,7 @@ export class AgentExecHandler {
         // Why: tree-kill because some CLIs trap SIGTERM and continue streaming;
         // also Windows wraps `.cmd` shims in cmd.exe, so the immediate child
         // is not the real node.exe process.
+        lookupAbort.abort()
         terminateRelaySubprocessTree(child)
         finish({ stdout, stderr, exitCode: null, timedOut, canceled })
       }, timeoutMs)
@@ -235,32 +241,34 @@ export class AgentExecHandler {
         }
         attemptedLoginShellFallback = true
         detachChildListeners()
-        void resolvePosixBinaryViaLoginShell(binary, spawnEnv).then((resolvedPath) => {
-          if (settled) {
-            return
+        void resolvePosixBinaryViaLoginShell(binary, spawnEnv, lookupAbort.signal).then(
+          (resolvedPath) => {
+            if (settled) {
+              return
+            }
+            if (canceled) {
+              finish({ stdout, stderr, exitCode: null, timedOut, canceled })
+              return
+            }
+            if (!resolvedPath) {
+              finish({ stdout, stderr, exitCode: null, timedOut, spawnError: error.message })
+              return
+            }
+            try {
+              child = spawnChild(resolvedPath, args)
+            } catch (retryError) {
+              finish({
+                stdout,
+                stderr,
+                exitCode: null,
+                timedOut,
+                spawnError: retryError instanceof Error ? retryError.message : String(retryError)
+              })
+              return
+            }
+            wireChild()
           }
-          if (canceled) {
-            finish({ stdout, stderr, exitCode: null, timedOut, canceled })
-            return
-          }
-          if (!resolvedPath) {
-            finish({ stdout, stderr, exitCode: null, timedOut, spawnError: error.message })
-            return
-          }
-          try {
-            child = spawnChild(resolvedPath, args)
-          } catch (retryError) {
-            finish({
-              stdout,
-              stderr,
-              exitCode: null,
-              timedOut,
-              spawnError: retryError instanceof Error ? retryError.message : String(retryError)
-            })
-            return
-          }
-          wireChild()
-        })
+        )
       }
       const onClose = (code: number | null): void => {
         finish({ stdout, stderr, exitCode: code, timedOut, canceled })
