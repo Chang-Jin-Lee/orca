@@ -47,8 +47,9 @@ function lookupResultPath(stdout: string): string | null {
 export function resolvePosixBinaryViaLoginShell(
   binary: string,
   env: NodeJS.ProcessEnv,
-  signal?: AbortSignal
+  options: { cwd?: string; signal?: AbortSignal } = {}
 ): Promise<string | null> {
+  const { cwd, signal } = options
   return new Promise((resolve) => {
     if (signal?.aborted) {
       resolve(null)
@@ -62,6 +63,14 @@ export function resolvePosixBinaryViaLoginShell(
     try {
       child = spawn(shell, [mode, `command -v ${shellQuote(binary)}`], {
         stdio: ['ignore', 'pipe', 'ignore'],
+        // Why: the retry exec runs in the caller's cwd, and a login profile can
+        // answer differently per directory (direnv, nvm's .nvmrc, asdf), quite
+        // apart from relative PATH entries. The lookup has to ask from there.
+        cwd,
+        // Why: the profile can background work of its own. Killing the shell
+        // PID alone leaves those children behind, so the lookup leads its own
+        // process group and the whole group is signalled below.
+        detached: true,
         // Why: without this the lookup runs against the relay's own PATH while
         // the retry exec runs against spawnEnv, so `command -v` can answer for
         // a different environment than the one that will run the binary.
@@ -77,9 +86,20 @@ export function resolvePosixBinaryViaLoginShell(
     let settled = false
     const kill = (): void => {
       try {
-        child.kill('SIGKILL')
+        // Negative pid signals the whole group, which detached: true made this
+        // child the leader of. Falls back to the single child if the group is
+        // already gone.
+        if (child.pid) {
+          process.kill(-child.pid, 'SIGKILL')
+        } else {
+          child.kill('SIGKILL')
+        }
       } catch {
-        /* already exited */
+        try {
+          child.kill('SIGKILL')
+        } catch {
+          /* already exited */
+        }
       }
     }
     const finish = (result: string | null): void => {

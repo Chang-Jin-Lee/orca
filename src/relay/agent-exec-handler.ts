@@ -241,34 +241,35 @@ export class AgentExecHandler {
         }
         attemptedLoginShellFallback = true
         detachChildListeners()
-        void resolvePosixBinaryViaLoginShell(binary, spawnEnv, lookupAbort.signal).then(
-          (resolvedPath) => {
-            if (settled) {
-              return
-            }
-            if (canceled) {
-              finish({ stdout, stderr, exitCode: null, timedOut, canceled })
-              return
-            }
-            if (!resolvedPath) {
-              finish({ stdout, stderr, exitCode: null, timedOut, spawnError: error.message })
-              return
-            }
-            try {
-              child = spawnChild(resolvedPath, args)
-            } catch (retryError) {
-              finish({
-                stdout,
-                stderr,
-                exitCode: null,
-                timedOut,
-                spawnError: retryError instanceof Error ? retryError.message : String(retryError)
-              })
-              return
-            }
-            wireChild()
+        void resolvePosixBinaryViaLoginShell(binary, spawnEnv, {
+          cwd,
+          signal: lookupAbort.signal
+        }).then((resolvedPath) => {
+          if (settled) {
+            return
           }
-        )
+          if (canceled) {
+            finish({ stdout, stderr, exitCode: null, timedOut, canceled })
+            return
+          }
+          if (!resolvedPath) {
+            finish({ stdout, stderr, exitCode: null, timedOut, spawnError: error.message })
+            return
+          }
+          try {
+            child = spawnChild(resolvedPath, args)
+          } catch (retryError) {
+            finish({
+              stdout,
+              stderr,
+              exitCode: null,
+              timedOut,
+              spawnError: retryError instanceof Error ? retryError.message : String(retryError)
+            })
+            return
+          }
+          wireChild()
+        })
       }
       const onClose = (code: number | null): void => {
         finish({ stdout, stderr, exitCode: code, timedOut, canceled })

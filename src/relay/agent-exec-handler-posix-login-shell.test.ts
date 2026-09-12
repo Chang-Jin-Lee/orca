@@ -370,4 +370,88 @@ describe('AgentExecHandler POSIX login-shell PATH fallback', () => {
       expect(loginShellLookup.kill).toHaveBeenCalledWith('SIGKILL')
     })
   })
+
+  it('asks the login shell from the requested execution directory', async () => {
+    await withPlatform('linux', async () => {
+      const directAttempt = createFakeChild()
+      const loginShellLookup = createFakeChild()
+      const resolvedRetry = createFakeChild()
+      spawnMock
+        .mockReturnValueOnce(directAttempt as never)
+        .mockReturnValueOnce(loginShellLookup as never)
+        .mockReturnValueOnce(resolvedRetry as never)
+      const handlers = createHandlers()
+
+      const pending = handlers.get('agent.execNonInteractive')!(
+        {
+          binary: 'opencode',
+          args: [],
+          cwd: '/repo/packages/api',
+          stdin: null,
+          timeoutMs: 5_000
+        },
+        requestContext()
+      )
+
+      directAttempt.emit(
+        'error',
+        Object.assign(new Error('spawn opencode ENOENT'), { code: 'ENOENT' })
+      )
+      await vi.waitFor(() => expect(spawnMock).toHaveBeenCalledTimes(2))
+      loginShellLookup.stdout.emit(
+        'data',
+        Buffer.from('/repo/packages/api/node_modules/.bin/opencode\n')
+      )
+      loginShellLookup.emit('close', 0)
+      await vi.waitFor(() => expect(spawnMock).toHaveBeenCalledTimes(3))
+      resolvedRetry.emit('close', 0)
+      await pending
+
+      // A login profile can answer per directory (direnv, .nvmrc), so the
+      // lookup has to run where the retry will.
+      const lookupOptions = spawnMock.mock.calls[1]?.[2] as { cwd?: string }
+      expect(lookupOptions.cwd).toBe('/repo/packages/api')
+    })
+  })
+
+  it('signals the whole lookup process group, not just the shell', async () => {
+    await withPlatform('linux', async () => {
+      const directAttempt = createFakeChild()
+      const loginShellLookup = createFakeChild()
+      spawnMock
+        .mockReturnValueOnce(directAttempt as never)
+        .mockReturnValueOnce(loginShellLookup as never)
+      const handlers = createHandlers()
+      const controller = new AbortController()
+      const killSpy = vi.spyOn(process, 'kill').mockImplementation((() => true) as never)
+
+      try {
+        const pending = handlers.get('agent.execNonInteractive')!(
+          {
+            binary: 'opencode',
+            args: [],
+            cwd: '/repo',
+            stdin: null,
+            timeoutMs: 5_000
+          },
+          { ...requestContext(), signal: controller.signal }
+        )
+
+        directAttempt.emit(
+          'error',
+          Object.assign(new Error('spawn opencode ENOENT'), { code: 'ENOENT' })
+        )
+        await vi.waitFor(() => expect(spawnMock).toHaveBeenCalledTimes(2))
+        controller.abort()
+        await pending
+
+        // detached: true makes the shell a group leader; the negative pid is
+        // what reaches anything its profile backgrounded.
+        expect(spawnMock.mock.calls[1]?.[2]).toMatchObject({ detached: true })
+        expect(killSpy).toHaveBeenCalledWith(-loginShellLookup.pid, 'SIGKILL')
+      } finally {
+        killSpy.mockRestore()
+      }
+    })
+  })
 })
